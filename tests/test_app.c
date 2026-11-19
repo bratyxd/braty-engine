@@ -111,8 +111,33 @@ static void test_game_config_main(void)
     br_app_quit(state, SDL_APP_SUCCESS);
 }
 
+/* API_REVIEW item 4: --assets / BRATY_ASSETS point the asset root anywhere (cwd-relative). */
+static void test_assets_override(void)
+{
+    char *cwd = SDL_GetCurrentDirectory();
+    char expected[1024];
+    SDL_snprintf(expected, sizeof(expected), "%sdata", cwd);
+    char *argv[] = { "test_app", "--headless", "--assets", "data" };
+    br_app_desc desc;
+    SDL_zero(desc);
+    desc.asset_root = "somewhere/else";
+    void *state = NULL;
+    BR_CHECK(br_app_init(&state, &desc, 4, argv) == SDL_APP_CONTINUE);
+    BR_CHECK(SDL_strcmp(br_engine_asset_root(state), expected) == 0);
+    br_app_quit(state, SDL_APP_SUCCESS);
+
+    SDL_setenv_unsafe("BRATY_ASSETS", "data", 1);
+    state = NULL;
+    BR_CHECK(br_app_init(&state, &desc, 2, argv) == SDL_APP_CONTINUE);
+    BR_CHECK(SDL_strcmp(br_engine_asset_root(state), expected) == 0);
+    br_app_quit(state, SDL_APP_SUCCESS);
+    SDL_unsetenv_unsafe("BRATY_ASSETS");
+    SDL_free(cwd);
+}
+
 int main(void)
 {
+    test_assets_override();
     test_user_and_args();
     test_game_config_main();
     return br_test_finish();

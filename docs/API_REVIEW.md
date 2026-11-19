@@ -51,6 +51,11 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
    `--assets <dir>` option in `br_game_config_args` (and `BRATY_ASSETS` environment variable)
    that overrides `asset_root`, so `star_courier --assets ../../sample_projects/star_courier/data/assets`
    hot-reloads the sources.
+   **Resolved (Task 14):** every `br_app` executable takes `--assets <dir>` (relative to the
+   working directory) and the `BRATY_ASSETS` environment variable, both overriding
+   `br_app_desc.asset_root` / game.json's `asset_root`:
+   `star_courier --assets sample_projects/star_courier/data/assets` hot-reloads the sources.
+   Test: `tests/test_app.c`, `test_assets_override`.
 
 ## 2. Scene graph and data
 

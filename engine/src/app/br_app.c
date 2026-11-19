@@ -9,11 +9,13 @@ typedef struct br_app_args {
     const char *screenshot;
     const char *gpu_driver;
     bool        headless;
+    const char *assets;   /* --assets DIR or $BRATY_ASSETS, NULL if neither */
 } br_app_args;
 
 static void br_app_parse_args(int argc, char **argv, br_app_args *out)
 {
     SDL_zerop(out);
+    out->assets = SDL_getenv("BRATY_ASSETS");
     for (int i = 1; i < argc; i++) {
         bool has_value = i + 1 < argc;
         if (SDL_strcmp(argv[i], "--frames") == 0 && has_value) {
@@ -24,6 +26,8 @@ static void br_app_parse_args(int argc, char **argv, br_app_args *out)
             out->gpu_driver = argv[++i];
         } else if (SDL_strcmp(argv[i], "--headless") == 0) {
             out->headless = true;
+        } else if (SDL_strcmp(argv[i], "--assets") == 0 && has_value) {
+            out->assets = argv[++i];
         }
         /* anything else belongs to the game (it sees argv in br_main) */
     }
@@ -102,7 +106,23 @@ SDL_AppResult br_app_init(void **appstate, const br_app_desc *desc, int argc, ch
     br_app_args args;
     br_app_parse_args(argc, argv, &args);
     const char *title = desc->title != NULL ? desc->title : "braty";
-    br_engine *e = br_engine_create(title, desc->asset_root);
+    const char *asset_root = desc->asset_root;
+    char override_root[1024];
+    if (args.assets != NULL && args.assets[0] != '\0') {
+        /* relative to the working directory (a shell path), unlike asset_root (exe-relative) */
+        char *cwd = SDL_GetCurrentDirectory();
+        bool ok = br_path_is_absolute(args.assets) || cwd == NULL
+                      ? br_str_copy(override_root, sizeof(override_root), args.assets)
+                      : br_path_join(override_root, sizeof(override_root), cwd, args.assets);
+        SDL_free(cwd);
+        if (ok) {
+            asset_root = override_root;
+            br_log_info("asset root overridden: %s", override_root);
+        } else {
+            br_log_error("--assets / BRATY_ASSETS: path too long, ignored");
+        }
+    }
+    br_engine *e = br_engine_create(title, asset_root);
     bool ok = e != NULL;
     if (ok) {
         *appstate = e;
