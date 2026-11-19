@@ -76,15 +76,16 @@ struct br_engine {
     struct br_mesh_state      *mesh;
     struct br_particles_state *particles;
     struct br_events_state    *events;
+    struct br_input_state     *input;
     struct br_audio_state     *audio;
     struct br_filters_state   *filters;
     struct br_three_d_state   *three_d;
-    struct br_gltf_state      *gltf;
+    struct br_gltf_state      *gltf;      /* glTF + 3D animation (Task 11) */
     struct br_data_state      *data;
     struct br_debug_state     *debug;
 };
 
-/* Registers every built-in module. Defined in br_builtin.c (owned by Task 2 onwards). */
+/* Registers every built-in module. Defined in br_builtin.c (owned by Task 2). */
 void br_builtin_register(br_engine *e);
 
 #endif

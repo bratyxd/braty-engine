@@ -15,6 +15,19 @@ void br_builtin_register(br_engine *e)
     br_render_register(e);         /* textures, sprite type, batcher, collect/submit systems */
     br_assets_register(e);         /* asset cache (after render: unloads textures before render frees them) */
     br_texture_register_loader(e); /* png/jpg/... -> br_texture */
+    br_input_register(e);
+    br_events_register(e);
+    br_audio_register(e);
+    br_graphics_register(e);
+    br_text_register(e);
+    br_sprites_register(e);
+    br_mesh_register(e);
+    br_particles_register(e);
+    br_filters_register(e);
+    br_three_d_register(e);
+    br_gltf_register(e);
+    br_data_register(e);
+    br_debug_register(e);
     /* registered last so it runs first at shutdown: every node's on_destroy still sees its module */
     br_engine_on_shutdown(e, br_scene_shutdown_nodes, NULL);
 }
