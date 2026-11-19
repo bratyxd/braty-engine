@@ -130,6 +130,7 @@ typedef struct br_animator_data {
     const br_anim_graph   *graph;
     int32_t                state;
     int32_t               *state_motion;  /* per graph state: motion index */
+    uint32_t              *cond_params;   /* per graph condition: parameter index */
     bool                   root_motion;
     br_anim_target         root_node;
     float                  root_prev[3];
@@ -156,6 +157,7 @@ typedef struct br_tween_data {
     uint32_t         handle_generation;
     br_anim_target   target;          /* kind NONE: a callback-only tween */
     br_anim_prop_ref prop;
+    br_anim_set_fn   set;             /* the registry row's setter (NULL: component field) */
     uint32_t         count;
     float            from[BR_ANIM_MAX_COMPONENTS];
     float            to[BR_ANIM_MAX_COMPONENTS];
@@ -191,6 +193,7 @@ typedef struct br_animation_state {
     uint32_t stat_tracks;
     bool     updating;        /* inside the animator loop: removals are deferred */
     uint32_t destroy_epoch;   /* bumped whenever a node dies: animators re-check their targets */
+    uint32_t tween_epoch;     /* destroy_epoch when the tweens last checked their targets */
 } br_animation_state;
 
 /* ---- br_anim_property.c */

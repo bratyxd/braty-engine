@@ -299,9 +299,18 @@ bool br_anim_graph_attach(br_engine *e, br_animator_data *d)
         }
     }
     br_free(d->state_motion);
+    br_free(d->cond_params);
     d->state_motion = br_alloc(sizeof(int32_t) * g->state_count);
-    if (d->state_motion == NULL) {
+    d->cond_params = br_alloc(sizeof(uint32_t) * BR_ANIM_GRAPH_MAX_CONDS * (g->transition_count > 0 ? g->transition_count : 1));
+    if (d->state_motion == NULL || d->cond_params == NULL) {
         return false;
+    }
+    /* conditions read parameters by index every frame: resolve the names once */
+    for (uint32_t i = 0; i < g->transition_count; i++) {
+        for (uint32_t k = 0; k < g->transitions[i].cond_count; k++) {
+            d->cond_params[i * BR_ANIM_GRAPH_MAX_CONDS + k] =
+                br_animator_param_index(d, g->transitions[i].conds[k].param, BR_ANIM_PARAM_FLOAT, true);
+        }
     }
     for (uint32_t i = 0; i < g->state_count; i++) {
         const br_anim_graph_state *st = &g->states[i];
@@ -340,9 +349,8 @@ bool br_anim_graph_attach(br_engine *e, br_animator_data *d)
     return true;
 }
 
-static bool br_anim_graph_holds(br_animator_data *d, const br_anim_graph_cond *c)
+static bool br_anim_graph_holds(const br_animator_data *d, const br_anim_graph_cond *c, uint32_t p)
 {
-    uint32_t p = br_animator_param_index(d, c->param, BR_ANIM_PARAM_FLOAT, false);
     float v = p != BR_ANIM_NONE ? d->params[p].value : 0.0f;
     switch (c->op) {
     case BR_ANIM_OP_GT: return v > c->value;
@@ -378,14 +386,15 @@ void br_anim_graph_update(br_engine *e, br_animator_data *d)
             }
         }
         bool all = true;
+        const uint32_t *params = &d->cond_params[i * BR_ANIM_GRAPH_MAX_CONDS];
         for (uint32_t k = 0; k < t->cond_count && all; k++) {
-            all = br_anim_graph_holds(d, &t->conds[k]);
+            all = br_anim_graph_holds(d, &t->conds[k], params[k]);
         }
         if (!all) {
             continue;
         }
         for (uint32_t k = 0; k < t->cond_count; k++) {
-            uint32_t p = br_animator_param_index(d, t->conds[k].param, BR_ANIM_PARAM_FLOAT, false);
+            uint32_t p = params[k];
             if (p != BR_ANIM_NONE && d->params[p].type == BR_ANIM_PARAM_TRIGGER) {
                 d->params[p].value = 0.0f; /* triggers are consumed by the transition that used them */
             }

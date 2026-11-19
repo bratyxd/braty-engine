@@ -46,6 +46,7 @@ static br_tween br_tween_make(br_engine *e, br_anim_target target, const char *p
         return none;
     }
     d.count = br_anim_value_components(d.prop.type);
+    d.set = d.prop.property != BR_ANIM_NONE ? br_anim_property_get_desc(e, d.prop.property)->set : NULL;
     if (from != NULL) {
         SDL_memcpy(d.from, from, sizeof(float) * d.count);
         d.has_from = true;
@@ -315,7 +316,11 @@ static void br_tween_apply(br_engine *e, br_tween_data *d)
             v.f[i] = d->from[i] + (d->to[i] - d->from[i]) * k;
         }
     }
-    br_anim_prop_set(e, d->target, &d->prop, &v);
+    if (d->set != NULL) {
+        d->set(e, d->target, &v);
+    } else {
+        br_anim_prop_set(e, d->target, &d->prop, &v); /* component field */
+    }
 }
 
 void br_tween_system(br_engine *e, float dt, void *user)
@@ -323,6 +328,9 @@ void br_tween_system(br_engine *e, float dt, void *user)
     (void)user;
     br_animation_state *s = e->animation;
     uint32_t count = s->tweens.count; /* tweens made by callbacks start next frame */
+    /* targets are re-checked only after some node was destroyed */
+    bool check_targets = s->tween_epoch != s->destroy_epoch;
+    s->tween_epoch = s->destroy_epoch;
     s->updating = true;
     for (uint32_t i = 0; i < count; i++) {
         br_tween_data *d = br_array_at(&s->tweens, i);
@@ -330,7 +338,7 @@ void br_tween_system(br_engine *e, float dt, void *user)
             continue;
         }
         bool has_target = d->target.kind != BR_ANIM_TARGET_NONE;
-        if (has_target && !br_anim_target_valid(e, d->target)) {
+        if (has_target && check_targets && !br_anim_target_valid(e, d->target)) {
             d->dead = true; /* the node was destroyed: the tween goes with it */
             continue;
         }

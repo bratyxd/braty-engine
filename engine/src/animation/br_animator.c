@@ -143,6 +143,7 @@ static void br_animator_free_data(br_engine *e, br_animator_data *d)
     br_array_free(&d->slots);
     br_array_free(&d->trees);
     br_free(d->state_motion);
+    br_free(d->cond_params);
     if (d->model != NULL) {
         br_animator_model_unref(e, d->model);
     }
@@ -1129,10 +1130,15 @@ static void br_anim_accumulate(br_anim_slot *slot, const float *v, br_texture te
     slot->acc_weight += w;
 }
 
-/* Samples clip k at time t into the slots of layer `layer` with weight w. direct: the base layer
- * plays this clip alone, so samples go straight into the final values. */
+/* How br_anim_sample_clip stores what it samples. */
+typedef enum br_anim_sample_mode {
+    BR_ANIM_SAMPLE_BLEND,      /* into the layer blend (weights, additive) */
+    BR_ANIM_SAMPLE_FINAL       /* the base layer plays this clip alone: straight into final */
+} br_anim_sample_mode;
+
+/* Samples clip k at time t into the slots of layer `layer` with weight w (see the modes). */
 static void br_anim_sample_clip(br_engine *e, br_animator_data *d, uint32_t layer, uint32_t k, float t, float w,
-                                bool direct)
+                                br_anim_sample_mode mode)
 {
     if (w <= 0.0f) {
         return;
@@ -1163,7 +1169,7 @@ static void br_anim_sample_clip(br_engine *e, br_animator_data *d, uint32_t laye
             uint32_t ti = (uint32_t)SDL_max(0.0f, v[0]);
             tex = ti < clip->texture_count ? clip->textures[ti] : tex;
         }
-        if (direct) {
+        if (mode == BR_ANIM_SAMPLE_FINAL) {
             SDL_memcpy(slot->final.f, v, sizeof(float) * slot->count);
             slot->final.texture = tex;
             slot->touched = true;
@@ -1197,14 +1203,15 @@ static void br_anim_sample_player(br_engine *e, br_animator_data *d, uint32_t la
         return;
     }
     if (p->motion >= 0) {
-        br_anim_sample_clip(e, d, layer, (uint32_t)p->motion, p->time, w, false);
+        br_anim_sample_clip(e, d, layer, (uint32_t)p->motion, p->time, w, BR_ANIM_SAMPLE_BLEND);
         return;
     }
     br_anim_tree *t = br_array_at(&d->trees, (uint32_t)(-p->motion - 1));
     br_anim_tree_weights(d, t);
     for (uint32_t i = 0; i < t->count; i++) {
         float child_duration = br_animator_clip(d, t->clips[i])->duration;
-        br_anim_sample_clip(e, d, layer, t->clips[i], p->time * child_duration, w * t->weights[i], false);
+        br_anim_sample_clip(e, d, layer, t->clips[i], p->time * child_duration, w * t->weights[i],
+                            BR_ANIM_SAMPLE_BLEND);
     }
 }
 
@@ -1363,7 +1370,7 @@ static void br_anim_update_layer(br_engine *e, br_animator_data *d, uint32_t lay
         br_anim_sample_player(e, d, layer, &l->cur, 1.0f);
         br_anim_blend_fade(d, layer, f);
     } else if (layer == 0 && l->cur.motion >= 0) {
-        br_anim_sample_clip(e, d, 0, (uint32_t)l->cur.motion, l->cur.time, 1.0f, true); /* the common case */
+        br_anim_sample_clip(e, d, 0, (uint32_t)l->cur.motion, l->cur.time, 1.0f, BR_ANIM_SAMPLE_FINAL); /* the common case */
         return;
     } else {
         br_anim_reset_acc(d);
