@@ -21,10 +21,11 @@ typedef struct br_playtest_exposed {
 typedef enum br_playtest_release_kind {
     BR_PLAYTEST_RELEASE_KEY,
     BR_PLAYTEST_RELEASE_MOUSE,
-    BR_PLAYTEST_RELEASE_GAMEPAD
+    BR_PLAYTEST_RELEASE_GAMEPAD,
+    BR_PLAYTEST_PRESS_MOUSE      /* the delayed press of a click (the move came a frame before) */
 } br_playtest_release_kind;
 
-/* Input to release later (the second half of a tap / hold / click). */
+/* Input to send later (the second half of a tap / hold, the press and release of a click). */
 typedef struct br_playtest_release {
     uint64_t     frame;    /* released at the start of this frame */
     br_playtest_release_kind kind;

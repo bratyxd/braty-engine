@@ -36,7 +36,7 @@ from playtest import Playtest
 
 with Playtest("build/windows-gcc/sample_projects/star_courier/star_courier.exe") as game:
     game.step(60)                       # the title screen
-    game.action("start")                # the "start" action from game.json (Return)
+    game.action("start")                # the "start" input action (game.json binds it to Return)
     game.step(30)
     game.key("Right", frames=20)        # hold Right for 20 frames...
     game.step(20)                       # ...while 20 frames pass
@@ -93,7 +93,7 @@ One JSON object each, the same in scripts and on stdin.
 | `key` | `{"cmd": "key", "key": "Space"}` | `"action"`: `tap` (default: down now, up after `"frames"`, default 1), `down`, `up`. SDL key names: `Space`, `Return`, `Escape`, `Left`, `A`, `F1`... |
 | `action` | `{"cmd": "action", "name": "start"}` | Drives the input action itself (`br_input_inject_action`), whatever it is bound to (game.json or code). `"action"`: `tap` (default, `"frames"` long), `down` / `press` (held until `up`), `up` / `release`. `"value"` 0..1 (default 1) for analogue actions: `{"cmd": "action", "name": "throttle", "action": "down", "value": 0.4}`. Games that read keys directly (`br_input_key_down`) do not see it: use `key`. |
 | `mouse` | `{"cmd": "mouse", "action": "tap", "x": 640, "y": 360}` | `move`, `down`, `up`, `tap`, `wheel` (`"dx"`, `"dy"`); `"button"`: 1 left, 2 middle, 3 right. Window coordinates. |
-| `click` | `{"cmd": "click", "label": "play_button"}` | Moves the mouse to the centre of the node's bounds and taps the left button. |
+| `click` | `{"cmd": "click", "label": "play_button"}` | Moves the mouse to the centre of the node's bounds now, presses the left button (`"button"`) in the next frame and releases it in the frame after: step 3 frames to see the result. |
 | `text` | `{"cmd": "text", "text": "PLAYER 1"}` | One text-input event, as an IME would send. |
 | `touch` | `{"cmd": "touch", "action": "down", "finger": 0, "x": 100, "y": 200}` | `down`, `move`, `up`; window coordinates. |
 | `gamepad` | see below | Virtual pads, buttons, sticks and triggers. |
@@ -149,8 +149,9 @@ so `connect` is only needed for a specific family. A pad of a recorded session c
 
 `type`, `children`, `world_position`, `bounds`, `screen_position` and `exists` are read-only.
 3D nodes work with `get`, `set`, `expect`, `wait_until`, `find` and `click` (`{"cmd": "click",
-"label": "/torus"}` clicks where the node's origin is on screen, so the view's 3D pointer events
-fire); `dump` lists the 3D subtree of every view under `"views3d"`.
+"label": "/cube"}` clicks where the node's origin is on screen, so the view's 3D pointer events
+fire; a node whose origin is not on its surface, such as a torus, is missed); `dump` lists the
+3D subtree of every view under `"views3d"`.
 
 ## A game's side: exposing state
 

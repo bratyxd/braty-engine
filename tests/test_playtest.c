@@ -389,7 +389,11 @@ static void test_3d_paths(void)
     BR_CHECK(reply_has(e, "{\"cmd\":\"dump\"}", "\"label\":\"cube\",\"type\":\"mesh3d\",\"position\":[0,0,0]"));
     /* click: the node's origin through the view's camera, picked as a 3D CLICK */
     BR_CHECK(reply_has(e, "{\"cmd\":\"click\",\"label\":\"world/cube\"}", "\"ok\":true"));
-    br_playtest_step(e, 2);
+    br_playtest_step(e, 1); /* the move */
+    BR_CHECK(!br_input_mouse_down(e, SDL_BUTTON_LEFT) && br_input_mouse_delta(e).x > 0.0f);
+    br_playtest_step(e, 1); /* the press: no pointer jump while down (camera drags stay put) */
+    BR_CHECK(br_input_mouse_down(e, SDL_BUTTON_LEFT) && br_input_mouse_delta(e).x == 0.0f);
+    br_playtest_step(e, 1); /* the release */
     BR_CHECK(s_cube_clicks == 1);
     br_engine_destroy(e);
 }

@@ -153,8 +153,8 @@ static void br_pt_run_releases(br_engine *e)
         br_array_remove_ordered(&s->releases, i);
         if (r.kind == BR_PLAYTEST_RELEASE_KEY) {
             br_pt_key(e, r.key, false);
-        } else if (r.kind == BR_PLAYTEST_RELEASE_MOUSE) {
-            br_pt_button(e, r.x, r.y, r.button, false);
+        } else if (r.kind == BR_PLAYTEST_RELEASE_MOUSE || r.kind == BR_PLAYTEST_PRESS_MOUSE) {
+            br_pt_button(e, r.x, r.y, r.button, r.kind == BR_PLAYTEST_PRESS_MOUSE);
         } else {
             br_pt_pad_button(e, r.slot, (SDL_GamepadButton)r.button, false);
         }
@@ -268,11 +268,14 @@ static bool br_pt_cmd_click(br_engine *e, const cJSON *cmd)
         return false;
     }
     int button = (int)br_pt_clamped(cmd, "button", SDL_BUTTON_LEFT, 1.0, 8.0);
+    /* move now, press next frame, release the frame after: like a hand, and the press frame
+     * sees no pointer jump (a game that drags a camera while the button is down stays put) */
     e->playtest->injecting = true;
     br_input_inject_pointer_move(e, x, y);
     e->playtest->injecting = false;
-    br_pt_button(e, x, y, button, true);
-    br_pt_schedule_release(e, br_pt_input_frame(e) + 1, BR_PLAYTEST_RELEASE_MOUSE, SDL_SCANCODE_UNKNOWN, button, x, y);
+    uint64_t frame = br_pt_input_frame(e);
+    br_pt_schedule_release(e, frame + 1, BR_PLAYTEST_PRESS_MOUSE, SDL_SCANCODE_UNKNOWN, button, x, y);
+    br_pt_schedule_release(e, frame + 2, BR_PLAYTEST_RELEASE_MOUSE, SDL_SCANCODE_UNKNOWN, button, x, y);
     return true;
 }
 
