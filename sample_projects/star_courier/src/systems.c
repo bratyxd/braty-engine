@@ -73,14 +73,6 @@ static void sc_kick(br_engine *e, sc_game *g, br_node n)
     }
 }
 
-/* Sets a text node's text only when it changed (a change re-lays out the text). */
-static void sc_set_text(br_engine *e, br_node n, const char *text)
-{
-    if (br_node_valid(e, n) && SDL_strcmp(br_text_get_text(e, n), text) != 0) {
-        br_text_set_text(e, n, text);
-    }
-}
-
 static float sc_distance(br_vec2 a, br_vec2 b)
 {
     return br_vec2_length(br_vec2_sub(a, b));
@@ -229,15 +221,15 @@ void sc_enter_state(br_engine *e, sc_game *g, sc_state state)
             sc_save_best(e, g);
         }
         SDL_snprintf(text, sizeof(text), "SCORE %d", (int)g->score);
-        sc_set_text(e, g->final_score, text);
+        br_text_set_text(e, g->final_score, text);
         sc_kick(e, g, g->final_score);
         SDL_snprintf(text, sizeof(text), record && g->score > 0 ? "NEW BEST!" : "BEST %d", (int)g->best);
-        sc_set_text(e, g->best_text, text);
+        br_text_set_text(e, g->best_text, text);
         br_log_info("star_courier: round %u over, score %d, level %d", g->round, (int)g->score, (int)g->level);
     }
     if (state == SC_STATE_TITLE && g->best > 0) {
         SDL_snprintf(text, sizeof(text), "BEST %d", (int)g->best);
-        sc_set_text(e, g->best_text, text);
+        br_text_set_text(e, g->best_text, text);
     }
 }
 
@@ -251,7 +243,7 @@ static void sc_state_system(br_engine *e, float dt, void *user)
     switch (g->state) {
     case SC_STATE_TITLE:
         if (g->assets_ready) {
-            sc_set_text(e, g->press_start, "PRESS ENTER, START OR CLICK");
+            br_text_set_text(e, g->press_start, "PRESS ENTER, START OR CLICK");
             if (br_input_action_pressed(e, "start")) {
                 sc_enter_state(e, g, SC_STATE_PLAY);
             }
@@ -598,7 +590,7 @@ static void sc_rules_system(br_engine *e, float dt, void *user)
             br_node_destroy(e, ev->other);
             sc_play_sfx(e, g, "pickup");
             sc_burst(e, g, ev->position, t->pickup_burst, br_color_from_hex(0xffb547, 1.0f));
-            sc_set_text(e, g->hint, "Deliver it to the station");
+            br_text_set_text(e, g->hint, "Deliver it to the station");
             sc_kick(e, g, g->hint);
         } else if (ev->kind == SC_EVENT_DELIVER) {
             pilot->carrying = false;
@@ -608,7 +600,7 @@ static void sc_rules_system(br_engine *e, float dt, void *user)
             sc_play_sfx(e, g, "deliver");
             sc_burst(e, g, ev->position, t->deliver_burst, br_color_from_hex(0xa78bfa, 1.0f));
             sc_move_station(e, g, t);
-            sc_set_text(e, g->hint, "Pick up a crate");
+            br_text_set_text(e, g->hint, "Pick up a crate");
             sc_kick(e, g, g->hint);
             if (t->deliveries_per_level > 0 && g->deliveries % t->deliveries_per_level == 0) {
                 g->level++;
@@ -719,9 +711,9 @@ static void sc_hud_system(br_engine *e, float dt, void *user)
     char text[64];
     if (g->state == SC_STATE_PLAY || g->state == SC_STATE_DYING) {
         SDL_snprintf(text, sizeof(text), "SCORE %d", (int)g->score);
-        sc_set_text(e, g->score_text, text);
+        br_text_set_text(e, g->score_text, text);
         SDL_snprintf(text, sizeof(text), "LEVEL %d", (int)g->level);
-        sc_set_text(e, g->level_text, text);
+        br_text_set_text(e, g->level_text, text);
         for (int i = 0; i < SC_MAX_LIFE_ICONS; i++) {
             br_node_set_visible(e, g->life_icons[i], i < g->lives);
         }
