@@ -140,6 +140,11 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
     **Fix:** count allocations and bytes in `br_alloc/br_realloc/br_free` (a 16-byte size header
     in debug builds), expose `br_memory_stats(e)` and show it in the debug Stats panel; Phase 2
     Task 14 (arenas) adds per-arena numbers on top.
+    **Resolved (Task 14):** `br_alloc/br_realloc/br_free` keep a size header and spinlock-guarded
+    counters; `br_memory_get_stats(&s)` (process-wide: live blocks/bytes, total allocations, peak)
+    is shown in the Stats panel with every tracked arena. `br_file_read_all` now returns a
+    `br_alloc` block and audio frees SDL-converted samples with `SDL_free`, so no pointer crosses
+    allocators. Test: `tests/test_arena.c` (`test_heap_stats`).
 21. **friction - the debug frame graph is red at 60 Hz** (`engine/src/debug/br_debug_panels.c`,
     fixed `ms > 17.0f`). With vsync at 60 Hz, ordinary 16.6-17.2 ms frames show as red bars.
     **Fix:** compare against the display's refresh period (`SDL_GetCurrentDisplayMode`) + 10%.
