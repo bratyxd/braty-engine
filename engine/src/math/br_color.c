@@ -1,4 +1,4 @@
-/* br_color: hex, HSL, CSS-style parsing, premultiply. */
+/* br_color: hex, HSL, HSV, CSS-style parsing, premultiply, sRGB <-> linear, OKLab. */
 #include "braty/br_math.h"
 
 #include <SDL3/SDL_stdinc.h>
@@ -293,4 +293,105 @@ bool br_color_parse(const char *text, br_color *out)
         }
     }
     return false;
+}
+
+/* ---- colour spaces */
+
+float br_srgb_to_linear(float c)
+{
+    return c <= 0.04045f ? c / 12.92f : SDL_powf((c + 0.055f) / 1.055f, 2.4f);
+}
+
+float br_linear_to_srgb(float c)
+{
+    return c <= 0.0031308f ? c * 12.92f : 1.055f * SDL_powf(c, 1.0f / 2.4f) - 0.055f;
+}
+
+br_color br_color_to_linear(br_color c)
+{
+    return br_color_make(br_srgb_to_linear(c.r), br_srgb_to_linear(c.g), br_srgb_to_linear(c.b), c.a);
+}
+
+br_color br_color_to_srgb(br_color c)
+{
+    return br_color_make(br_linear_to_srgb(c.r), br_linear_to_srgb(c.g), br_linear_to_srgb(c.b), c.a);
+}
+
+br_color br_color_from_hsv(float h, float s, float v, float alpha)
+{
+    float hue = SDL_fmodf(h, 360.0f);
+    if (hue < 0.0f) {
+        hue += 360.0f;
+    }
+    /* each channel: v - v*s*clamp(min(k, 4-k), 0, 1) with k = (n + h/60) mod 6 */
+    float n[3] = { 5.0f, 3.0f, 1.0f };
+    float out[3];
+    for (int i = 0; i < 3; i++) {
+        float k = SDL_fmodf(n[i] + hue / 60.0f, 6.0f);
+        out[i] = v - v * s * br_clamp01f(br_minf(k, 4.0f - k));
+    }
+    return br_color_make(out[0], out[1], out[2], alpha);
+}
+
+void br_color_to_hsv(br_color c, float *h, float *s, float *v)
+{
+    float max = br_maxf(c.r, br_maxf(c.g, c.b));
+    float min = br_minf(c.r, br_minf(c.g, c.b));
+    float d = max - min;
+    *v = max;
+    *s = max > 0.0f ? d / max : 0.0f;
+    if (d == 0.0f) {
+        *h = 0.0f;
+        return;
+    }
+    float hue;
+    if (max == c.r) {
+        hue = (c.g - c.b) / d + (c.g < c.b ? 6.0f : 0.0f);
+    } else if (max == c.g) {
+        hue = (c.b - c.r) / d + 2.0f;
+    } else {
+        hue = (c.r - c.g) / d + 4.0f;
+    }
+    *h = hue * 60.0f;
+}
+
+br_vec3 br_color_to_oklab(br_color c)
+{
+    /* Bjorn Ottosson, "A perceptual color space for image processing" (2020) */
+    br_color lin = br_color_to_linear(c);
+    float l = 0.4122214708f * lin.r + 0.5363325363f * lin.g + 0.0514459929f * lin.b;
+    float m = 0.2119034982f * lin.r + 0.6806995451f * lin.g + 0.1073969566f * lin.b;
+    float s = 0.0883024619f * lin.r + 0.2817188376f * lin.g + 0.6299787005f * lin.b;
+    l = SDL_copysignf(SDL_powf(SDL_fabsf(l), 1.0f / 3.0f), l);
+    m = SDL_copysignf(SDL_powf(SDL_fabsf(m), 1.0f / 3.0f), m);
+    s = SDL_copysignf(SDL_powf(SDL_fabsf(s), 1.0f / 3.0f), s);
+    return br_vec3_make(0.2104542553f * l + 0.7936177850f * m - 0.0040720468f * s,
+                        1.9779984951f * l - 2.4285922050f * m + 0.4505937099f * s,
+                        0.0259040371f * l + 0.7827717662f * m - 0.8086757660f * s);
+}
+
+/* Linear channel to sRGB that tolerates the small negatives OKLab round trips produce. */
+static float br_linear_to_srgb_signed(float c)
+{
+    return SDL_copysignf(br_linear_to_srgb(SDL_fabsf(c)), c);
+}
+
+br_color br_color_from_oklab(br_vec3 lab, float alpha)
+{
+    float l = lab.x + 0.3963377774f * lab.y + 0.2158037573f * lab.z;
+    float m = lab.x - 0.1055613458f * lab.y - 0.0638541728f * lab.z;
+    float s = lab.x - 0.0894841775f * lab.y - 1.2914855480f * lab.z;
+    l = l * l * l;
+    m = m * m * m;
+    s = s * s * s;
+    float r = 4.0767416621f * l - 3.3077115913f * m + 0.2309699292f * s;
+    float g = -1.2684380046f * l + 2.6097574011f * m - 0.3413193965f * s;
+    float b = -0.0041960863f * l - 0.7034186147f * m + 1.7076147010f * s;
+    return br_color_make(br_linear_to_srgb_signed(r), br_linear_to_srgb_signed(g), br_linear_to_srgb_signed(b), alpha);
+}
+
+br_color br_color_lerp_oklab(br_color a, br_color b, float t)
+{
+    br_vec3 lab = br_vec3_lerp(br_color_to_oklab(a), br_color_to_oklab(b), t);
+    return br_color_from_oklab(lab, br_lerpf(a.a, b.a, t));
 }

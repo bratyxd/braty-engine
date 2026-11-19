@@ -1,6 +1,7 @@
 /* br_events: hit testing, federated pointer events, per-node listener table. */
 #include "braty/br_app.h"
 #include "braty/br_events.h"
+#include "events/br_input_internal.h"
 #include "scene/br_scene_internal.h"
 
 #define BR_EVENTS_MAX_DEPTH    64   /* propagation path length */
@@ -520,7 +521,9 @@ static void br_events_update_cursor(br_engine *e, const br_event_path *path)
     if (s->cursors[shown] == NULL) {
         s->cursors[shown] = SDL_CreateSystemCursor((SDL_SystemCursor)shown);
     }
-    if (s->cursors[shown] != NULL) {
+    if (cursor < 0 && br_input_custom_cursor(e) != NULL) {
+        SDL_SetCursor(br_input_custom_cursor(e));   /* the game's cursor image is the default */
+    } else if (s->cursors[shown] != NULL) {
         SDL_SetCursor(s->cursors[shown]);
     }
     s->cursor = cursor;

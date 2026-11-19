@@ -1,75 +1,11 @@
-/* br_input: polled input state fed from SDL events, named actions, event injection. */
-#include "app/br_engine_internal.h"
-#include "braty/br_app.h"
-#include "braty/br_input.h"
-
-#define BR_INPUT_MOUSE_BUTTONS 8
-#define BR_INPUT_TEXT_SIZE     256
-
-/* Edge flags: bit 0 = pressed since the last latch, bit 1 = released since the last latch. */
-#define BR_EDGE_PRESSED  1u
-#define BR_EDGE_RELEASED 2u
-
-typedef enum br_binding_kind {
-    BR_BINDING_KEY,
-    BR_BINDING_MOUSE,
-    BR_BINDING_GAMEPAD_BUTTON,
-    BR_BINDING_GAMEPAD_AXIS
-} br_binding_kind;
-
-typedef struct br_binding {
-    br_binding_kind kind;
-    int             code;        /* scancode, mouse button, gamepad button or axis */
-    int             direction;   /* axes: +1 or -1 */
-} br_binding;
-
-typedef struct br_action {
-    char    *name;
-    br_array bindings;           /* br_binding */
-    bool     down;
-    bool     was_down;
-    float    value;
-} br_action;
-
-typedef struct br_gamepad_slot {
-    SDL_JoystickID id;           /* 0 = empty slot */
-    SDL_Gamepad   *pad;          /* NULL for injected pads */
-    bool    down[SDL_GAMEPAD_BUTTON_COUNT];
-    uint8_t edges[SDL_GAMEPAD_BUTTON_COUNT];       /* accumulated by events */
-    uint8_t frame_edges[SDL_GAMEPAD_BUTTON_COUNT]; /* latched for this frame */
-    float   axes[SDL_GAMEPAD_AXIS_COUNT];
-} br_gamepad_slot;
-
-typedef struct br_input_state {
-    bool    keys[SDL_SCANCODE_COUNT];
-    uint8_t key_edges[SDL_SCANCODE_COUNT];
-    uint8_t key_frame_edges[SDL_SCANCODE_COUNT];
-
-    br_vec2 mouse;
-    br_vec2 mouse_delta_acc;
-    br_vec2 mouse_delta;
-    br_vec2 wheel_acc;
-    br_vec2 wheel;
-    bool    mouse_buttons[BR_INPUT_MOUSE_BUTTONS];
-    uint8_t mouse_edges[BR_INPUT_MOUSE_BUTTONS];
-    uint8_t mouse_frame_edges[BR_INPUT_MOUSE_BUTTONS];
-
-    br_touch touches[BR_INPUT_MAX_TOUCHES];
-    uint32_t touch_count;
-    br_pen   pen;
-
-    br_gamepad_slot gamepads[BR_INPUT_MAX_GAMEPADS];
-    bool            gamepad_subsystem;
-
-    char     text_acc[BR_INPUT_TEXT_SIZE];
-    char     text[BR_INPUT_TEXT_SIZE];
-
-    br_array actions;            /* br_action */
-} br_input_state;
+/* br_input: polled keyboard / mouse / touch / pen / text state fed from SDL events, the
+ * per-frame latch, and event injection. Gamepads: br_input_gamepad.c, actions:
+ * br_input_action.c, glyphs: br_input_glyph.c. */
+#include "events/br_input_internal.h"
 
 /* ---- helpers */
 
-static void br_input_set_button(bool *down, uint8_t *edges, bool now_down)
+void br_input_set_button(bool *down, uint8_t *edges, bool now_down)
 {
     if (now_down && !*down) {
         *edges |= BR_EDGE_PRESSED;
@@ -77,24 +13,6 @@ static void br_input_set_button(bool *down, uint8_t *edges, bool now_down)
         *edges |= BR_EDGE_RELEASED;
     }
     *down = now_down;
-}
-
-static br_gamepad_slot *br_input_find_pad(br_input_state *s, SDL_JoystickID id)
-{
-    for (int i = 0; i < BR_INPUT_MAX_GAMEPADS; i++) {
-        if (s->gamepads[i].id == id && id != 0) {
-            return &s->gamepads[i];
-        }
-    }
-    return NULL;
-}
-
-static br_gamepad_slot *br_input_pad_at(br_engine *e, int slot)
-{
-    if (slot < 0 || slot >= BR_INPUT_MAX_GAMEPADS || e->input->gamepads[slot].id == 0) {
-        return NULL;
-    }
-    return &e->input->gamepads[slot];
 }
 
 static br_vec2 br_input_touch_to_window(br_engine *e, float nx, float ny)
@@ -125,6 +43,9 @@ static void br_input_touch_event(br_engine *e, const SDL_TouchFingerEvent *f, SD
         }
         return;
     }
+    if (type == SDL_EVENT_FINGER_DOWN) {
+        s->last_device = BR_INPUT_DEVICE_TOUCH;
+    }
     if (found == s->touch_count) {
         if (s->touch_count == BR_INPUT_MAX_TOUCHES) {
             return;
@@ -136,35 +57,17 @@ static void br_input_touch_event(br_engine *e, const SDL_TouchFingerEvent *f, SD
     s->touches[found].pressure = f->pressure;
 }
 
-static void br_input_gamepad_added(br_input_state *s, SDL_JoystickID id)
+/* True for SDL's mouse events synthesised from touch or pen, when those are switched off. */
+static bool br_input_skip_mouse(const br_input_state *s, SDL_MouseID which)
 {
-    if (br_input_find_pad(s, id) != NULL) {
-        return;
-    }
-    for (int i = 0; i < BR_INPUT_MAX_GAMEPADS; i++) {
-        if (s->gamepads[i].id == 0) {
-            SDL_zero(s->gamepads[i]);
-            s->gamepads[i].id = id;
-            s->gamepads[i].pad = SDL_OpenGamepad(id);
-            br_log_info("input: gamepad %d connected (%s)", i,
-                        s->gamepads[i].pad != NULL ? SDL_GetGamepadName(s->gamepads[i].pad) : "unknown");
-            return;
-        }
-    }
-    br_log_warn("input: more than %d gamepads, ignoring one", BR_INPUT_MAX_GAMEPADS);
+    return !s->touch_mouse && (which == SDL_TOUCH_MOUSEID || which == SDL_PEN_MOUSEID);
 }
 
-static void br_input_gamepad_removed(br_input_state *s, SDL_JoystickID id)
+static void br_input_mouse_used(br_input_state *s, SDL_MouseID which)
 {
-    br_gamepad_slot *pad = br_input_find_pad(s, id);
-    if (pad == NULL) {
-        return;
+    if (which != SDL_TOUCH_MOUSEID && which != SDL_PEN_MOUSEID) {
+        s->last_device = BR_INPUT_DEVICE_KEYBOARD_MOUSE;
     }
-    if (pad->pad != NULL) {
-        SDL_CloseGamepad(pad->pad);
-    }
-    SDL_zerop(pad);
-    br_log_info("input: gamepad disconnected");
 }
 
 static void br_input_event(br_engine *e, const SDL_Event *ev, void *user)
@@ -176,23 +79,37 @@ static void br_input_event(br_engine *e, const SDL_Event *ev, void *user)
     case SDL_EVENT_KEY_UP:
         if (ev->key.scancode < SDL_SCANCODE_COUNT && !ev->key.repeat) {
             br_input_set_button(&s->keys[ev->key.scancode], &s->key_edges[ev->key.scancode], ev->key.down);
+            if (ev->key.down) {
+                s->last_device = BR_INPUT_DEVICE_KEYBOARD_MOUSE;
+            }
         }
         break;
     case SDL_EVENT_MOUSE_MOTION:
+        if (br_input_skip_mouse(s, ev->motion.which)) {
+            break;
+        }
         s->mouse = br_vec2_make(ev->motion.x, ev->motion.y);
         s->mouse_delta_acc = br_vec2_add(s->mouse_delta_acc, br_vec2_make(ev->motion.xrel, ev->motion.yrel));
+        br_input_mouse_used(s, ev->motion.which);
         break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
     case SDL_EVENT_MOUSE_BUTTON_UP:
+        if (br_input_skip_mouse(s, ev->button.which)) {
+            break;
+        }
         s->mouse = br_vec2_make(ev->button.x, ev->button.y);
         if (ev->button.button < BR_INPUT_MOUSE_BUTTONS) {
             br_input_set_button(&s->mouse_buttons[ev->button.button], &s->mouse_edges[ev->button.button],
                                 ev->button.down);
         }
+        br_input_mouse_used(s, ev->button.which);
         break;
     case SDL_EVENT_MOUSE_WHEEL: {
         float dir = ev->wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -1.0f : 1.0f;
         s->wheel_acc = br_vec2_add(s->wheel_acc, br_vec2_make(ev->wheel.x * dir, ev->wheel.y * dir));
+        s->wheel_ticks_acc = br_vec2_add(s->wheel_ticks_acc, br_vec2_make((float)ev->wheel.integer_x * dir,
+                                                                          (float)ev->wheel.integer_y * dir));
+        s->last_device = BR_INPUT_DEVICE_KEYBOARD_MOUSE;
         break;
     }
     case SDL_EVENT_FINGER_DOWN:
@@ -213,234 +130,28 @@ static void br_input_event(br_engine *e, const SDL_Event *ev, void *user)
         s->pen.position = br_vec2_make(ev->ptouch.x, ev->ptouch.y);
         s->pen.down = ev->ptouch.down;
         s->pen.eraser = ev->ptouch.eraser;
+        if (ev->ptouch.down) {
+            s->last_device = BR_INPUT_DEVICE_PEN;
+        }
         break;
     case SDL_EVENT_PEN_AXIS:
         if (ev->paxis.axis == SDL_PEN_AXIS_PRESSURE) {
             s->pen.pressure = ev->paxis.value;
         }
         break;
-    case SDL_EVENT_GAMEPAD_ADDED:
-        br_input_gamepad_added(s, ev->gdevice.which);
-        break;
-    case SDL_EVENT_GAMEPAD_REMOVED:
-        br_input_gamepad_removed(s, ev->gdevice.which);
-        break;
-    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
-    case SDL_EVENT_GAMEPAD_BUTTON_UP: {
-        br_gamepad_slot *pad = br_input_find_pad(s, ev->gbutton.which);
-        if (pad != NULL && ev->gbutton.button < SDL_GAMEPAD_BUTTON_COUNT) {
-            br_input_set_button(&pad->down[ev->gbutton.button], &pad->edges[ev->gbutton.button], ev->gbutton.down);
-        }
-        break;
-    }
-    case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
-        br_gamepad_slot *pad = br_input_find_pad(s, ev->gaxis.which);
-        if (pad != NULL && ev->gaxis.axis < SDL_GAMEPAD_AXIS_COUNT) {
-            float v = (float)ev->gaxis.value / 32767.0f;
-            pad->axes[ev->gaxis.axis] = br_clampf(v, -1.0f, 1.0f);
-        }
-        break;
-    }
     case SDL_EVENT_TEXT_INPUT:
         SDL_strlcat(s->text_acc, ev->text.text, sizeof(s->text_acc));
+        s->composition[0] = '\0';
+        break;
+    case SDL_EVENT_TEXT_EDITING:
+        SDL_strlcpy(s->composition, ev->edit.text != NULL ? ev->edit.text : "", sizeof(s->composition));
+        s->composition_cursor = ev->edit.start;
+        s->composition_length = ev->edit.length;
         break;
     default:
+        br_input_gamepad_event(e, ev);
         break;
     }
-}
-
-/* ---- actions */
-
-static br_action *br_input_find_action(br_input_state *s, const char *name)
-{
-    for (uint32_t i = 0; i < s->actions.count; i++) {
-        br_action *a = br_array_at(&s->actions, i);
-        if (br_str_equal(a->name, name)) {
-            return a;
-        }
-    }
-    return NULL;
-}
-
-static float br_input_binding_value(br_input_state *s, const br_binding *b)
-{
-    float best = 0.0f;
-    switch (b->kind) {
-    case BR_BINDING_KEY:
-        return s->keys[b->code] || (s->key_frame_edges[b->code] & BR_EDGE_PRESSED) ? 1.0f : 0.0f;
-    case BR_BINDING_MOUSE:
-        return s->mouse_buttons[b->code] || (s->mouse_frame_edges[b->code] & BR_EDGE_PRESSED) ? 1.0f : 0.0f;
-    case BR_BINDING_GAMEPAD_BUTTON:
-        for (int i = 0; i < BR_INPUT_MAX_GAMEPADS; i++) {
-            br_gamepad_slot *pad = &s->gamepads[i];
-            if (pad->id != 0 && (pad->down[b->code] || (pad->frame_edges[b->code] & BR_EDGE_PRESSED))) {
-                best = 1.0f;
-            }
-        }
-        return best;
-    case BR_BINDING_GAMEPAD_AXIS:
-        for (int i = 0; i < BR_INPUT_MAX_GAMEPADS; i++) {
-            br_gamepad_slot *pad = &s->gamepads[i];
-            float v = pad->id != 0 ? pad->axes[b->code] * (float)b->direction : 0.0f;
-            if (v > best) {
-                best = v;
-            }
-        }
-        return best;
-    }
-    return 0.0f;
-}
-
-static void br_input_update_actions(br_input_state *s)
-{
-    for (uint32_t i = 0; i < s->actions.count; i++) {
-        br_action *a = br_array_at(&s->actions, i);
-        a->value = 0.0f;
-        for (uint32_t j = 0; j < a->bindings.count; j++) {
-            float v = br_input_binding_value(s, br_array_at(&a->bindings, j));
-            if (v > a->value) {
-                a->value = v;
-            }
-        }
-        a->was_down = a->down;
-        a->down = a->value >= 0.5f;
-    }
-}
-
-static void br_input_add_binding(br_engine *e, const char *name, br_binding b)
-{
-    br_input_state *s = e->input;
-    br_action *a = br_input_find_action(s, name);
-    if (a == NULL) {
-        br_action fresh;
-        SDL_zero(fresh);
-        fresh.name = br_strdup(name);
-        br_array_init(&fresh.bindings, sizeof(br_binding));
-        a = br_array_push(&s->actions, &fresh);
-        if (a == NULL) {
-            br_free(fresh.name);
-            return;
-        }
-    }
-    br_array_push(&a->bindings, &b);
-}
-
-void br_input_action_bind_key(br_engine *e, const char *action, SDL_Scancode key)
-{
-    if (key <= SDL_SCANCODE_UNKNOWN || key >= SDL_SCANCODE_COUNT) {
-        br_log_error("input: action '%s': bad scancode %d", action, (int)key);
-        return;
-    }
-    br_binding b = { BR_BINDING_KEY, (int)key, 1 };
-    br_input_add_binding(e, action, b);
-}
-
-void br_input_action_bind_mouse(br_engine *e, const char *action, int button)
-{
-    if (button <= 0 || button >= BR_INPUT_MOUSE_BUTTONS) {
-        br_log_error("input: action '%s': bad mouse button %d", action, button);
-        return;
-    }
-    br_binding b = { BR_BINDING_MOUSE, button, 1 };
-    br_input_add_binding(e, action, b);
-}
-
-void br_input_action_bind_gamepad_button(br_engine *e, const char *action, SDL_GamepadButton button)
-{
-    if (button <= SDL_GAMEPAD_BUTTON_INVALID || button >= SDL_GAMEPAD_BUTTON_COUNT) {
-        br_log_error("input: action '%s': bad gamepad button %d", action, (int)button);
-        return;
-    }
-    br_binding b = { BR_BINDING_GAMEPAD_BUTTON, (int)button, 1 };
-    br_input_add_binding(e, action, b);
-}
-
-void br_input_action_bind_gamepad_axis(br_engine *e, const char *action, SDL_GamepadAxis axis, int direction)
-{
-    if (axis <= SDL_GAMEPAD_AXIS_INVALID || axis >= SDL_GAMEPAD_AXIS_COUNT) {
-        br_log_error("input: action '%s': bad gamepad axis %d", action, (int)axis);
-        return;
-    }
-    br_binding b = { BR_BINDING_GAMEPAD_AXIS, (int)axis, direction < 0 ? -1 : 1 };
-    br_input_add_binding(e, action, b);
-}
-
-void br_input_actions_clear(br_engine *e)
-{
-    br_input_state *s = e->input;
-    for (uint32_t i = 0; i < s->actions.count; i++) {
-        br_action *a = br_array_at(&s->actions, i);
-        br_free(a->name);
-        br_array_free(&a->bindings);
-    }
-    br_array_clear(&s->actions);
-}
-
-bool br_input_actions_from_json(br_engine *e, const cJSON *json)
-{
-    if (!cJSON_IsObject(json)) {
-        br_log_error("input: actions JSON must be an object");
-        return false;
-    }
-    const cJSON *action = NULL;
-    cJSON_ArrayForEach(action, json)
-    {
-        const char *name = action->string;
-        const cJSON *item = NULL;
-        cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(action, "keys"))
-        {
-            SDL_Scancode key = cJSON_IsString(item) ? SDL_GetScancodeFromName(item->valuestring) : SDL_SCANCODE_UNKNOWN;
-            if (key == SDL_SCANCODE_UNKNOWN) {
-                br_log_error("input: action '%s': unknown key name", name);
-                continue;
-            }
-            br_input_action_bind_key(e, name, key);
-        }
-        cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(action, "mouse"))
-        {
-            br_input_action_bind_mouse(e, name, cJSON_IsNumber(item) ? item->valueint : 0);
-        }
-        cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(action, "buttons"))
-        {
-            SDL_GamepadButton b = cJSON_IsString(item) ? SDL_GetGamepadButtonFromString(item->valuestring)
-                                                       : SDL_GAMEPAD_BUTTON_INVALID;
-            br_input_action_bind_gamepad_button(e, name, b);
-        }
-        cJSON_ArrayForEach(item, cJSON_GetObjectItemCaseSensitive(action, "axes"))
-        {
-            if (!cJSON_IsString(item) || (item->valuestring[0] != '+' && item->valuestring[0] != '-')) {
-                br_log_error("input: action '%s': axes must look like \"+leftx\" or \"-lefty\"", name);
-                continue;
-            }
-            int direction = item->valuestring[0] == '-' ? -1 : 1;
-            br_input_action_bind_gamepad_axis(e, name, SDL_GetGamepadAxisFromString(item->valuestring + 1), direction);
-        }
-    }
-    return true;
-}
-
-bool br_input_action_down(br_engine *e, const char *action)
-{
-    br_action *a = br_input_find_action(e->input, action);
-    return a != NULL && a->down;
-}
-
-bool br_input_action_pressed(br_engine *e, const char *action)
-{
-    br_action *a = br_input_find_action(e->input, action);
-    return a != NULL && a->down && !a->was_down;
-}
-
-bool br_input_action_released(br_engine *e, const char *action)
-{
-    br_action *a = br_input_find_action(e->input, action);
-    return a != NULL && !a->down && a->was_down;
-}
-
-float br_input_action_value(br_engine *e, const char *action)
-{
-    br_action *a = br_input_find_action(e->input, action);
-    return a != NULL ? a->value : 0.0f;
 }
 
 /* ---- per frame */
@@ -452,41 +163,33 @@ static void br_input_begin_frame(br_engine *e, float dt, void *user)
     br_input_state *s = e->input;
     if (!s->gamepad_subsystem && br_engine_window(e) != NULL) {
         /* only with a window, so headless tests never touch joystick drivers */
-        s->gamepad_subsystem = true;
-        if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) {
-            br_log_warn("input: no gamepad support: %s", SDL_GetError());
-        }
+        br_input_gamepad_init_subsystem(s);
     }
     SDL_memcpy(s->key_frame_edges, s->key_edges, sizeof(s->key_edges));
     SDL_memset(s->key_edges, 0, sizeof(s->key_edges));
     SDL_memcpy(s->mouse_frame_edges, s->mouse_edges, sizeof(s->mouse_edges));
     SDL_memset(s->mouse_edges, 0, sizeof(s->mouse_edges));
-    for (int i = 0; i < BR_INPUT_MAX_GAMEPADS; i++) {
-        SDL_memcpy(s->gamepads[i].frame_edges, s->gamepads[i].edges, sizeof(s->gamepads[i].edges));
-        SDL_memset(s->gamepads[i].edges, 0, sizeof(s->gamepads[i].edges));
-    }
+    br_input_gamepad_latch(s);
     s->mouse_delta = s->mouse_delta_acc;
     s->mouse_delta_acc = br_vec2_make(0.0f, 0.0f);
     s->wheel = s->wheel_acc;
     s->wheel_acc = br_vec2_make(0.0f, 0.0f);
+    s->wheel_ticks = s->wheel_ticks_acc;
+    s->wheel_ticks_acc = br_vec2_make(0.0f, 0.0f);
     SDL_memcpy(s->text, s->text_acc, sizeof(s->text));
     s->text_acc[0] = '\0';
-    br_input_update_actions(s);
+    br_input_capture_update(s);
+    br_input_update_actions(e);
 }
 
 static void br_input_shutdown(br_engine *e, void *user)
 {
     (void)user;
     br_input_state *s = e->input;
-    br_input_actions_clear(e);
-    br_array_free(&s->actions);
-    for (int i = 0; i < BR_INPUT_MAX_GAMEPADS; i++) {
-        if (s->gamepads[i].pad != NULL) {
-            SDL_CloseGamepad(s->gamepads[i].pad);
-        }
-    }
-    if (s->gamepad_subsystem) {
-        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
+    br_input_actions_free(s);
+    br_input_gamepad_shutdown(s);
+    if (s->custom_cursor != NULL) {
+        SDL_DestroyCursor(s->custom_cursor);
     }
     br_free(s);
     e->input = NULL;
@@ -498,10 +201,21 @@ void br_input_register(br_engine *e)
     if (e->input == NULL) {
         return;
     }
-    br_array_init(&e->input->actions, sizeof(br_action));
+    br_input_state *s = e->input;
+    br_array_init(&s->actions, sizeof(br_action));
+    s->touch_mouse = true;
+    s->deadzone_inner = 0.15f;
+    s->deadzone_outer = 0.95f;
+    s->last_gamepad = -1;
+    br_random_seed(&s->rng, 0x853c49e6748fea9bULL, 0xda3e39cb94b95bdbULL);
     br_engine_add_event_handler(e, br_input_event, NULL);
-    br_system_add(e, "input.begin_frame", BR_PHASE_INPUT, -2000000, br_input_begin_frame, NULL);
+    br_system_add(e, "input.begin_frame", BR_PHASE_INPUT, BR_INPUT_PRIORITY_LATCH, br_input_begin_frame, NULL);
     br_engine_on_shutdown(e, br_input_shutdown, NULL);
+}
+
+br_random *br_random_engine(br_engine *e)
+{
+    return &e->input->rng;
 }
 
 /* ---- queries */
@@ -509,6 +223,16 @@ void br_input_register(br_engine *e)
 static bool br_input_edge(const uint8_t *edges, int code, int limit, uint8_t bit)
 {
     return code >= 0 && code < limit && (edges[code] & bit) != 0;
+}
+
+br_input_device br_input_last_device(br_engine *e)
+{
+    return e->input->last_device;
+}
+
+int br_input_last_gamepad(br_engine *e)
+{
+    return e->input->last_gamepad;
 }
 
 bool br_input_key_down(br_engine *e, SDL_Scancode key)
@@ -526,6 +250,57 @@ bool br_input_key_released(br_engine *e, SDL_Scancode key)
     return br_input_edge(e->input->key_frame_edges, (int)key, SDL_SCANCODE_COUNT, BR_EDGE_RELEASED);
 }
 
+bool br_input_keycode_down(br_engine *e, SDL_Keycode key)
+{
+    return br_input_key_down(e, SDL_GetScancodeFromKey(key, NULL));
+}
+
+bool br_input_keycode_pressed(br_engine *e, SDL_Keycode key)
+{
+    return br_input_key_pressed(e, SDL_GetScancodeFromKey(key, NULL));
+}
+
+bool br_input_keycode_released(br_engine *e, SDL_Keycode key)
+{
+    return br_input_key_released(e, SDL_GetScancodeFromKey(key, NULL));
+}
+
+SDL_Keymod br_input_key_mods(br_engine *e)
+{
+    const bool *k = e->input->keys;
+    /* from our own key state, so injected keys count; lock keys only SDL knows */
+    SDL_Keymod mods = SDL_GetModState() & (SDL_KMOD_CAPS | SDL_KMOD_NUM | SDL_KMOD_SCROLL);
+    mods |= k[SDL_SCANCODE_LSHIFT] ? SDL_KMOD_LSHIFT : 0;
+    mods |= k[SDL_SCANCODE_RSHIFT] ? SDL_KMOD_RSHIFT : 0;
+    mods |= k[SDL_SCANCODE_LCTRL] ? SDL_KMOD_LCTRL : 0;
+    mods |= k[SDL_SCANCODE_RCTRL] ? SDL_KMOD_RCTRL : 0;
+    mods |= k[SDL_SCANCODE_LALT] ? SDL_KMOD_LALT : 0;
+    mods |= k[SDL_SCANCODE_RALT] ? SDL_KMOD_RALT : 0;
+    mods |= k[SDL_SCANCODE_LGUI] ? SDL_KMOD_LGUI : 0;
+    mods |= k[SDL_SCANCODE_RGUI] ? SDL_KMOD_RGUI : 0;
+    return mods;
+}
+
+bool br_input_key_name(SDL_Scancode key, char *out, size_t out_size)
+{
+    if (out == NULL || out_size == 0) {
+        return false;
+    }
+    out[0] = '\0';
+    if (key <= SDL_SCANCODE_UNKNOWN || key >= SDL_SCANCODE_COUNT) {
+        return false;
+    }
+    const char *name = SDL_GetKeyName(SDL_GetKeyFromScancode(key, SDL_KMOD_NONE, false));
+    if (name == NULL || name[0] == '\0') {
+        name = SDL_GetScancodeName(key);
+    }
+    if (name == NULL || name[0] == '\0') {
+        return false;
+    }
+    br_str_copy(out, out_size, name);
+    return true;
+}
+
 br_vec2 br_input_mouse_position(br_engine *e)
 {
     return e->input->mouse;
@@ -539,6 +314,11 @@ br_vec2 br_input_mouse_delta(br_engine *e)
 br_vec2 br_input_mouse_wheel(br_engine *e)
 {
     return e->input->wheel;
+}
+
+br_vec2 br_input_mouse_wheel_ticks(br_engine *e)
+{
+    return e->input->wheel_ticks;
 }
 
 bool br_input_mouse_down(br_engine *e, int button)
@@ -556,6 +336,72 @@ bool br_input_mouse_released(br_engine *e, int button)
     return br_input_edge(e->input->mouse_frame_edges, button, BR_INPUT_MOUSE_BUTTONS, BR_EDGE_RELEASED);
 }
 
+bool br_input_mouse_set_relative(br_engine *e, bool relative)
+{
+    SDL_Window *w = br_engine_window(e);
+    if (w == NULL || !SDL_SetWindowRelativeMouseMode(w, relative)) {
+        br_log_error("input: relative mouse mode: %s", w == NULL ? "no window" : SDL_GetError());
+        return false;
+    }
+    return true;
+}
+
+bool br_input_mouse_relative(br_engine *e)
+{
+    SDL_Window *w = br_engine_window(e);
+    return w != NULL && SDL_GetWindowRelativeMouseMode(w);
+}
+
+bool br_input_mouse_set_confined(br_engine *e, bool confined)
+{
+    SDL_Window *w = br_engine_window(e);
+    if (w == NULL || !SDL_SetWindowMouseGrab(w, confined)) {
+        br_log_error("input: mouse confine: %s", w == NULL ? "no window" : SDL_GetError());
+        return false;
+    }
+    return true;
+}
+
+void br_input_mouse_show_cursor(br_engine *e, bool visible)
+{
+    (void)e;
+    if (visible) {
+        SDL_ShowCursor();
+    } else {
+        SDL_HideCursor();
+    }
+}
+
+bool br_input_mouse_set_cursor_image(br_engine *e, const uint8_t *rgba, int width, int height, int hot_x, int hot_y)
+{
+    br_input_state *s = e->input;
+    SDL_Cursor *cursor = NULL;
+    if (rgba != NULL) {
+        SDL_Surface *surface = SDL_CreateSurfaceFrom(width, height, SDL_PIXELFORMAT_RGBA32, (void *)rgba, width * 4);
+        if (surface == NULL) {
+            br_log_error("input: cursor image: %s", SDL_GetError());
+            return false;
+        }
+        cursor = SDL_CreateColorCursor(surface, hot_x, hot_y);
+        SDL_DestroySurface(surface);
+        if (cursor == NULL) {
+            br_log_error("input: cursor image: %s", SDL_GetError());
+            return false;
+        }
+    }
+    SDL_SetCursor(cursor != NULL ? cursor : SDL_GetDefaultCursor());
+    if (s->custom_cursor != NULL) {
+        SDL_DestroyCursor(s->custom_cursor);
+    }
+    s->custom_cursor = cursor;
+    return true;
+}
+
+SDL_Cursor *br_input_custom_cursor(br_engine *e)
+{
+    return e->input != NULL ? e->input->custom_cursor : NULL;
+}
+
 uint32_t br_input_touch_count(br_engine *e)
 {
     return e->input->touch_count;
@@ -570,61 +416,14 @@ bool br_input_touch_get(br_engine *e, uint32_t i, br_touch *out)
     return true;
 }
 
+void br_input_touch_set_mouse_emulation(br_engine *e, bool enabled)
+{
+    e->input->touch_mouse = enabled;
+}
+
 br_pen br_input_pen(br_engine *e)
 {
     return e->input->pen;
-}
-
-bool br_input_gamepad_connected(br_engine *e, int slot)
-{
-    return br_input_pad_at(e, slot) != NULL;
-}
-
-int br_input_gamepad_count(br_engine *e)
-{
-    int count = 0;
-    for (int i = 0; i < BR_INPUT_MAX_GAMEPADS; i++) {
-        count += e->input->gamepads[i].id != 0 ? 1 : 0;
-    }
-    return count;
-}
-
-bool br_input_gamepad_down(br_engine *e, int slot, SDL_GamepadButton button)
-{
-    br_gamepad_slot *pad = br_input_pad_at(e, slot);
-    return pad != NULL && button >= 0 && button < SDL_GAMEPAD_BUTTON_COUNT && pad->down[button];
-}
-
-bool br_input_gamepad_pressed(br_engine *e, int slot, SDL_GamepadButton button)
-{
-    br_gamepad_slot *pad = br_input_pad_at(e, slot);
-    return pad != NULL && br_input_edge(pad->frame_edges, (int)button, SDL_GAMEPAD_BUTTON_COUNT, BR_EDGE_PRESSED);
-}
-
-bool br_input_gamepad_released(br_engine *e, int slot, SDL_GamepadButton button)
-{
-    br_gamepad_slot *pad = br_input_pad_at(e, slot);
-    return pad != NULL && br_input_edge(pad->frame_edges, (int)button, SDL_GAMEPAD_BUTTON_COUNT, BR_EDGE_RELEASED);
-}
-
-float br_input_gamepad_axis(br_engine *e, int slot, SDL_GamepadAxis axis)
-{
-    br_gamepad_slot *pad = br_input_pad_at(e, slot);
-    if (pad == NULL || axis < 0 || axis >= SDL_GAMEPAD_AXIS_COUNT) {
-        return 0.0f;
-    }
-    return pad->axes[axis];
-}
-
-bool br_input_gamepad_rumble(br_engine *e, int slot, float low, float high, uint32_t duration_ms)
-{
-    br_gamepad_slot *pad = br_input_pad_at(e, slot);
-    if (pad == NULL || pad->pad == NULL) {
-        return false;
-    }
-    Uint16 lo = (Uint16)(br_clampf(low, 0.0f, 1.0f) * 65535.0f);
-    Uint16 hi = (Uint16)(br_clampf(high, 0.0f, 1.0f) * 65535.0f);
-    return SDL_RumbleGamepad(pad->pad, lo, hi, duration_ms);
 }
 
 void br_input_text_start(br_engine *e)
@@ -639,11 +438,33 @@ void br_input_text_stop(br_engine *e)
     if (br_engine_window(e) != NULL) {
         SDL_StopTextInput(br_engine_window(e));
     }
+    e->input->composition[0] = '\0';
 }
 
 const char *br_input_text(br_engine *e)
 {
     return e->input->text;
+}
+
+const char *br_input_text_composition(br_engine *e, int *cursor, int *selection_length)
+{
+    br_input_state *s = e->input;
+    if (cursor != NULL) {
+        *cursor = s->composition_cursor;
+    }
+    if (selection_length != NULL) {
+        *selection_length = s->composition_length;
+    }
+    return s->composition;
+}
+
+void br_input_text_set_area(br_engine *e, br_rect area, int cursor)
+{
+    if (br_engine_window(e) == NULL) {
+        return;
+    }
+    SDL_Rect r = { (int)area.x, (int)area.y, (int)area.width, (int)area.height };
+    SDL_SetTextInputArea(br_engine_window(e), &r, cursor);
 }
 
 /* ---- injection */
@@ -653,7 +474,7 @@ static SDL_WindowID br_input_window_id(br_engine *e)
     return br_engine_window(e) != NULL ? SDL_GetWindowID(br_engine_window(e)) : 0;
 }
 
-static void br_input_send(br_engine *e, SDL_Event *ev)
+void br_input_send(br_engine *e, SDL_Event *ev)
 {
     ev->common.timestamp = SDL_GetTicksNS();
     br_app_event(e, ev);
@@ -704,6 +525,8 @@ void br_input_inject_wheel(br_engine *e, float dx, float dy)
     ev.wheel.windowID = br_input_window_id(e);
     ev.wheel.x = dx;
     ev.wheel.y = dy;
+    ev.wheel.integer_x = (Sint32)dx;
+    ev.wheel.integer_y = (Sint32)dy;
     ev.wheel.direction = SDL_MOUSEWHEEL_NORMAL;
     ev.wheel.mouse_x = e->input->mouse.x;
     ev.wheel.mouse_y = e->input->mouse.y;
@@ -736,5 +559,18 @@ void br_input_inject_touch(br_engine *e, SDL_EventType type, uint64_t finger, fl
     ev.tfinger.x = w > 0 ? x / (float)w : x;   /* SDL touch coordinates are normalised */
     ev.tfinger.y = h > 0 ? y / (float)h : y;
     ev.tfinger.pressure = type == SDL_EVENT_FINGER_UP ? 0.0f : 1.0f;
+    br_input_send(e, &ev);
+}
+
+void br_input_inject_text(br_engine *e, const char *utf8)
+{
+    if (utf8 == NULL) {
+        return;
+    }
+    SDL_Event ev;
+    SDL_zero(ev);
+    ev.type = SDL_EVENT_TEXT_INPUT;
+    ev.text.windowID = br_input_window_id(e);
+    ev.text.text = utf8;   /* read synchronously by the handlers */
     br_input_send(e, &ev);
 }

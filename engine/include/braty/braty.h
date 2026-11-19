@@ -69,4 +69,11 @@
 /* play-testing (Phase 2 Task 14) */
 #include "braty/br_playtest.h"
 
+/* easing, random, noise, splines, component queries (Task 14c) */
+#include "braty/br_ease.h"
+#include "braty/br_random.h"
+#include "braty/br_noise.h"
+#include "braty/br_spline.h"
+#include "braty/br_query.h"
+
 #endif
