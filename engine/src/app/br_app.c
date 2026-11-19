@@ -12,11 +12,14 @@ typedef struct br_app_args {
     const char *assets;   /* --assets DIR or $BRATY_ASSETS, NULL if neither */
     const char *vsync;    /* --vsync MODE, NULL = game.json / default */
     const char *max_fps;  /* --max-fps N, NULL = game.json / default */
+    bool        deterministic;
+    uint64_t    seed;     /* --seed N, 1 by default */
 } br_app_args;
 
 static void br_app_parse_args(int argc, char **argv, br_app_args *out)
 {
     SDL_zerop(out);
+    out->seed = 1;
     out->assets = SDL_getenv("BRATY_ASSETS");
     for (int i = 1; i < argc; i++) {
         bool has_value = i + 1 < argc;
@@ -34,6 +37,10 @@ static void br_app_parse_args(int argc, char **argv, br_app_args *out)
             out->vsync = argv[++i];
         } else if (SDL_strcmp(argv[i], "--max-fps") == 0 && has_value) {
             out->max_fps = argv[++i];
+        } else if (SDL_strcmp(argv[i], "--deterministic") == 0) {
+            out->deterministic = true;
+        } else if (SDL_strcmp(argv[i], "--seed") == 0 && has_value) {
+            out->seed = SDL_strtoull(argv[++i], NULL, 10);
         }
         /* anything else belongs to the game (it sees argv in br_main) */
     }
@@ -149,6 +156,9 @@ SDL_AppResult br_app_init(void **appstate, const br_app_desc *desc, int argc, ch
         e->app_user = desc->user;
         e->argc = argc;
         e->argv = argv;
+        if (args.deterministic) {
+            br_app_set_deterministic(e, true, args.seed); /* before init: the game may draw numbers there */
+        }
         ok = br_app_start(e, desc, &args);
     }
     if (desc->config != NULL) {
@@ -179,8 +189,8 @@ SDL_AppResult br_app_iterate(void *appstate)
     e->ticker.fps = e->ticker.fps == 0.0f ? 1.0f / raw : e->ticker.fps * 0.9f + (1.0f / raw) * 0.1f;
 
     float dt = br_ticker_compute_delta(raw, e->ticker.min_fps, e->ticker.speed);
-    if (e->frame_limit > 0) {
-        /* scripted runs (--frames) use a fixed step so screenshots are reproducible */
+    if (e->frame_limit > 0 || e->deterministic) {
+        /* scripted runs (--frames, --deterministic) use a fixed step so screenshots are reproducible */
         dt = br_ticker_compute_delta(1.0f / 60.0f, e->ticker.min_fps, e->ticker.speed);
     }
     bool presented = br_engine_step(e, dt);

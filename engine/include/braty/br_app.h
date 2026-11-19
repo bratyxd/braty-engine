@@ -19,6 +19,9 @@
  *                         the BRATY_ASSETS environment variable)
  *   --vsync MODE          off | on | adaptive | mailbox (overrides game.json)
  *   --max-fps N           frame-rate cap, 0 = uncapped (overrides game.json)
+ *   --deterministic       every frame steps exactly 1/60 s whatever the wall clock says, the
+ *                         engine RNG is seeded (--seed N, default 1) and asset loads complete
+ *                         synchronously: the same input gives the same frames, bit for bit
  * --frames runs log the measured frame interval (avg / max) at exit.
  * The game reads the whole command line with br_engine_args (or in br_main).
  */
@@ -125,6 +128,20 @@ float br_engine_pixel_density(br_engine *e);
 const char *br_engine_asset_root(br_engine *e);
 /* Frames that were stepped but not rendered because no swapchain texture was available. */
 uint64_t br_engine_skipped_frames(br_engine *e);
+/* True under --deterministic (or br_app_set_deterministic). */
+bool br_app_deterministic(br_engine *e);
+/* Turns deterministic stepping on or off (see --deterministic); also seeds the RNG with `seed`. */
+void br_app_set_deterministic(br_engine *e, bool on, uint64_t seed);
+
+/* ---- engine random numbers (one generator per engine; the same seed gives the same sequence) */
+
+/* Next 32 random bits. */
+uint32_t br_engine_random(br_engine *e);
+/* Random float in [0, 1). */
+float br_engine_random_float(br_engine *e);
+/* Restarts the generator from `seed`. Unseeded engines start from the clock. */
+void br_engine_set_seed(br_engine *e, uint64_t seed);
+
 /* br_app_desc.user of the running app (NULL for engines made with br_engine_create). */
 void *br_engine_app_user(br_engine *e);
 /* The app's command line, argv[0] included (NULL / 0 for br_engine_create). argc may be NULL. */

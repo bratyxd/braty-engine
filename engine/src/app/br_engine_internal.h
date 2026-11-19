@@ -73,6 +73,8 @@ struct br_engine {
 
     br_ticker_state ticker;
     br_vsync vsync;                 /* present mode in effect (or requested, while headless) */
+    bool     deterministic;         /* --deterministic: constant dt, seeded RNG, sync asset loads */
+    uint64_t rng_state;             /* xorshift64* state, never 0 */
     bool     quit_requested;
     uint64_t skipped_frames;        /* frames where no swapchain texture was available */
 

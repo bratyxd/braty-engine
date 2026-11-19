@@ -50,6 +50,7 @@ br_engine *br_engine_create(const char *title, const char *asset_root)
     e->ticker.speed = 1.0f;
     e->ticker.min_fps = 10.0f;
     e->vsync = BR_VSYNC_ON;
+    br_engine_set_seed(e, SDL_GetPerformanceCounter());
     br_builtin_register(e);
     return e;
 }
@@ -163,6 +164,43 @@ const char *br_engine_asset_root(br_engine *e)
 uint64_t br_engine_skipped_frames(br_engine *e)
 {
     return e->skipped_frames;
+}
+
+bool br_app_deterministic(br_engine *e)
+{
+    return e->deterministic;
+}
+
+void br_app_set_deterministic(br_engine *e, bool on, uint64_t seed)
+{
+    e->deterministic = on;
+    br_engine_set_seed(e, seed);
+}
+
+// ponytail: xorshift64* is plenty for gameplay randomness; Task 14c's PCG32 (br_random.h) can replace it.
+void br_engine_set_seed(br_engine *e, uint64_t seed)
+{
+    /* splitmix64 scrambles small seeds (1, 2, 3...) into well-mixed, non-zero states */
+    uint64_t z = seed + 0x9e3779b97f4a7c15ull;
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ull;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebull;
+    z = z ^ (z >> 31);
+    e->rng_state = z != 0 ? z : 1;
+}
+
+uint32_t br_engine_random(br_engine *e)
+{
+    uint64_t x = e->rng_state;
+    x ^= x >> 12;
+    x ^= x << 25;
+    x ^= x >> 27;
+    e->rng_state = x;
+    return (uint32_t)((x * 0x2545f4914f6cdd1dull) >> 32);
+}
+
+float br_engine_random_float(br_engine *e)
+{
+    return (float)(br_engine_random(e) >> 8) * (1.0f / 16777216.0f); /* 24 bits: exact in a float */
 }
 
 void *br_engine_app_user(br_engine *e)

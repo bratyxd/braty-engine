@@ -174,8 +174,49 @@ static void test_system_groups(void)
     br_engine_destroy(e);
 }
 
+/* --deterministic: constant dt whatever the wall clock, seeded RNG, synchronous asset loads. */
+static void on_loaded(br_engine *e, const char *path, void *asset, void *user)
+{
+    (void)e;
+    (void)path;
+    *(bool *)user = asset != NULL;
+}
+
+static void test_deterministic(void)
+{
+    char *argv[] = { "test_app", "--headless", "--deterministic", "--seed", "7" };
+    br_app_desc desc;
+    SDL_zero(desc);
+    void *state = NULL;
+    BR_CHECK(br_app_init(&state, &desc, 5, argv) == SDL_APP_CONTINUE);
+    br_engine *e = state;
+    BR_CHECK(br_app_deterministic(e));
+    uint32_t first = br_engine_random(e);
+    for (int i = 0; i < 3; i++) {
+        SDL_Delay(30); /* the wall clock says 30+ ms; the step stays 1/60 s */
+        br_app_iterate(state);
+        BR_CHECK(br_ticker_delta(e) == 1.0f / 60.0f);
+    }
+    br_engine_set_seed(e, 7);
+    BR_CHECK(br_engine_random(e) == first);
+    float f = br_engine_random_float(e);
+    BR_CHECK(f >= 0.0f && f < 1.0f);
+
+    /* async loads finish on the main thread at once, callbacks still come from the next step */
+    BR_CHECK(write_next_to_exe("test_app_async.json", "{ \"x\": 1 }"));
+    char path[1024];
+    SDL_snprintf(path, sizeof(path), "%stest_app_async.json", SDL_GetBasePath());
+    bool loaded = false;
+    br_assets_load_async(e, path, NULL, on_loaded, &loaded);
+    BR_CHECK(br_assets_pending(e) == 0 && !loaded);
+    br_app_iterate(state);
+    BR_CHECK(loaded);
+    br_app_quit(state, SDL_APP_SUCCESS);
+}
+
 int main(void)
 {
+    test_deterministic();
     test_system_groups();
     test_assets_override();
     test_user_and_args();

@@ -410,6 +410,9 @@ static bool br_assets_start_workers(br_assets_state *a)
     if (a->worker_count > 0) {
         return true;
     }
+    if (br_app_deterministic(a->engine)) {
+        return false; /* --deterministic: every load completes on the main thread, in order */
+    }
     if (a->mutex == NULL || a->wake == NULL) {
         return false;
     }
@@ -499,7 +502,9 @@ void br_assets_background_load(br_engine *e, const char *const *names, uint32_t 
 {
     br_assets_state *a = e->assets;
     if (!br_assets_start_workers(a)) {
-        br_log_warn("br_assets_background_load: no worker threads, nothing prefetched");
+        if (!br_app_deterministic(e)) {
+            br_log_warn("br_assets_background_load: no worker threads, nothing prefetched");
+        }
         return;
     }
     for (uint32_t i = 0; i < count; i++) {
