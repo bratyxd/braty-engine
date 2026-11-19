@@ -338,6 +338,7 @@ static void br_data_preload_assets(br_engine *e, const cJSON *assets)
 
 void br_data_apply_node(br_engine *e, br_node n, const cJSON *json, bool build_children)
 {
+    // ponytail: unknown keys (typos like "posiiton") are ignored silently; a per-type list of known keys would let us warn.
     const cJSON *assets = cJSON_GetObjectItemCaseSensitive(json, "assets");
     if (assets != NULL) {
         br_data_preload_assets(e, assets); /* before anything that names them */

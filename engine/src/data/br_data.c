@@ -482,6 +482,7 @@ static br_texture br_data_find_frame(br_engine *e, const char *name)
 
 br_texture br_data_texture(br_engine *e, const char *ref)
 {
+    // ponytail: loads take asset references that destroying the scene does not drop; Phase 2 Task 16 (asset groups) owns release.
     const char *hash = SDL_strchr(ref, '#');
     if (hash != NULL) {
         char sheet_path[BR_DATA_PATH_SIZE];
