@@ -1,0 +1,6 @@
+{ "type": "container", "label": "a_root",
+  "assets": ["scenes/shared.png"],
+  "children": [
+    { "type": "sprite", "label": "red", "texture": "scenes/red.png" },
+    { "type": "sprite", "label": "shared", "texture": "scenes/shared.png", "position": [20, 0] },
+    { "prefab": "scenes/thing.prefab.json", "position": [40, 0] } ] }

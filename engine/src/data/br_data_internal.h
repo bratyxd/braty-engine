@@ -3,6 +3,7 @@
 #define BR_DATA_INTERNAL_H
 
 #include "app/br_engine_internal.h"
+#include "assets/br_assets_internal.h" /* reference capture: a scene load owns what it loads */
 #include "braty/braty.h"
 
 #define BR_DATA_PATH_SIZE 512
@@ -21,11 +22,20 @@ typedef struct br_data_type {
     br_data_write_fn  write;    /* NULL = stored JSON only */
 } br_data_type;
 
-/* The JSON a node was loaded from (children removed), kept for saving. Indexed by node index. */
+/* The JSON a node was loaded from (children removed), kept for saving. Indexed by node index.
+ * A scene file's root also owns the asset references its load took (released when it dies). */
 typedef struct br_data_stored {
-    uint32_t generation;
-    cJSON   *json;
+    uint32_t        generation;
+    cJSON          *json;
+    br_asset_group *assets;   /* NULL if the load took no references (or a br_scene owns them) */
 } br_data_stored;
+
+/* Geometry and material a scene-JSON "mesh" created for one 3D node (freed when it dies). */
+typedef struct br_data_mesh3d {
+    uint32_t       generation;   /* of the 3D node; 0 = slot unused */
+    br_geometry3d  geometry;
+    br_material3d  material;
+} br_data_mesh3d;
 
 typedef enum br_data_ref_kind {
     BR_DATA_REF_FIELD,   /* component field of type BR_FIELD_NODE */
@@ -79,6 +89,10 @@ typedef struct br_data_state {
     uint32_t frame_counter;
 
     cJSON   *game_json;    /* game.json taken over by br_game_config_apply */
+
+    br_asset_group *owner_group;  /* set by the scenes module: loads give their references to it */
+    br_array release;             /* br_asset_group * of destroyed roots, freed after the node flush */
+    br_array meshes3d;            /* br_data_mesh3d, by 3D node index */
 } br_data_state;
 
 /* ---- br_data.c: errors, JSON path, type table */
@@ -163,6 +177,24 @@ br_node br_data_build_node(br_engine *e, const cJSON *json, br_node parent);
 void br_data_apply_node(br_engine *e, br_node n, const cJSON *json, bool build_children);
 /* Resolves queued references against root (then the stage) and clears the queue. */
 void br_data_resolve_refs(br_engine *e, br_node root);
+
+/* Loads a scene file whose asset references go into `owner` (a br_scene's group) instead of a
+ * group of the root node. Hot reload watches it as usual. */
+br_node br_data_load_owned(br_engine *e, const char *path, br_node parent, br_asset_group *owner);
+/* Frees the asset groups of scene-file roots destroyed so far (runs after the node flush). */
+void br_data_release_pending(br_engine *e);
+/* br_scene_file_collect_assets that also looks inside prefab files (each path once per call
+ * order is not deduplicated; the caller does). */
+void br_data_collect_expanded(br_engine *e, const cJSON *json, br_asset_path_fn fn, void *user);
+/* Expands a scene file "assets" list entry: calls fn(path, lazy) per asset (bundle names give
+ * each bundle asset). False (logged at the current JSON path) if the entry is malformed. */
+typedef void (*br_data_asset_entry_fn)(br_engine *e, const char *path, bool lazy, void *user);
+bool br_data_assets_entry(br_engine *e, const cJSON *item, br_data_asset_entry_fn fn, void *user);
+
+/* ---- br_node_json_view3d.c */
+
+/* Frees what scene JSON created for a dying 3D node (node3d destroy listener). */
+void br_data_mesh3d_destroyed(br_engine *e, br_node3d n, void *user);
 
 /* ---- br_game_config.c (br_app_init uses these for br_app_desc.config) */
 

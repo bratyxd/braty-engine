@@ -12,6 +12,7 @@
  *   { "prefab": "prefabs/coin.prefab.json", "position": [120, 40], "tint": "gold" }
  *
  * Parsed prefab files are cached by path (br_prefab_clear_cache forgets them; hot reload does).
+ * Each instance owns the asset references its build took (released when its root dies).
  */
 #ifndef BR_PREFAB_H
 #define BR_PREFAB_H
@@ -21,6 +22,8 @@
 /* Builds one instance of the prefab at `path` under parent (zero handle = detached), with
  * optional overrides (NULL = none). Returns the instance root, zero handle on failure (logged). */
 br_node br_prefab_instantiate(br_engine *e, const char *path, br_node parent, const cJSON *overrides);
+/* br_prefab_instantiate without overrides, placed at `position` (in parent's space). */
+br_node br_prefab_instantiate_at(br_engine *e, const char *path, br_node parent, br_vec2 position);
 /* Forgets every cached prefab file (the next instantiate reads the file again). */
 void br_prefab_clear_cache(br_engine *e);
 

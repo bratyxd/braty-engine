@@ -1,0 +1,1 @@
+{ "type": "container", "label": "loading_root", "children": [ { "type": "sprite", "label": "bar", "texture": "scenes/extra.png" } ] }

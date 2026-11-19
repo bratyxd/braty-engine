@@ -494,7 +494,7 @@ static br_texture br_data_find_frame(br_engine *e, const char *name)
 
 br_texture br_data_texture(br_engine *e, const char *ref)
 {
-    // ponytail: loads take asset references that destroying the scene does not drop; Phase 2 Task 16 (asset groups) owns release.
+    /* references taken here belong to the load in progress (br_scene_file_parse_node captures them) */
     const char *hash = SDL_strchr(ref, '#');
     if (hash != NULL) {
         char sheet_path[BR_DATA_PATH_SIZE];
@@ -554,21 +554,56 @@ static void br_data_on_node_destroy(br_engine *e, br_node n, void *user)
 {
     (void)user;
     br_data_stored *st = br_array_at(&e->data->stored, n.index);
-    if (st != NULL && st->json != NULL) {
-        cJSON_Delete(st->json);
-        st->json = NULL;
-        st->generation = 0;
+    if (st == NULL) {
+        return;
     }
+    if (st->assets != NULL) {
+        /* released after the whole flush: other dying nodes of the tree may still point at a font */
+        br_array_push(&e->data->release, &st->assets);
+        st->assets = NULL;
+    }
+    cJSON_Delete(st->json);
+    st->json = NULL;
+    st->generation = 0;
+}
+
+void br_data_release_pending(br_engine *e)
+{
+    br_data_state *s = e->data;
+    /* destroying a group may destroy nodes (never in practice), which may queue more: re-read count */
+    for (uint32_t i = 0; i < s->release.count; i++) {
+        br_asset_group_destroy(*(br_asset_group **)br_array_at(&s->release, i));
+    }
+    br_array_clear(&s->release);
+}
+
+/* System right after scene.flush_destroyed: frees the asset references of dead scene-file roots. */
+static void br_data_release_system(br_engine *e, float dt, void *user)
+{
+    (void)dt;
+    (void)user;
+    br_data_release_pending(e);
 }
 
 static void br_data_shutdown(br_engine *e, void *user)
 {
     (void)user;
     br_data_state *s = e->data;
+    br_data_release_pending(e);
     for (uint32_t i = 0; i < s->stored.count; i++) {
         br_data_stored *st = br_array_at(&s->stored, i);
         cJSON_Delete(st->json);
+        br_asset_group_destroy(st->assets);
     }
+    for (uint32_t i = 0; i < s->meshes3d.count; i++) {
+        br_data_mesh3d *m = br_array_at(&s->meshes3d, i);
+        if (m->generation != 0) {
+            br_geometry3d_destroy(e, m->geometry);
+            br_material3d_destroy(e, m->material);
+        }
+    }
+    br_array_free(&s->release);
+    br_array_free(&s->meshes3d);
     br_data_prefabs_free(e);
     br_array_free(&s->stored);
     br_array_free(&s->types);
@@ -592,6 +627,8 @@ void br_data_register(br_engine *e)
     br_array_init(&s->stored, sizeof(br_data_stored));
     br_array_init(&s->refs, sizeof(br_data_ref));
     br_array_init(&s->watches, sizeof(br_data_watch));
+    br_array_init(&s->release, sizeof(br_asset_group *));
+    br_array_init(&s->meshes3d, sizeof(br_data_mesh3d));
     br_map_init(&s->handlers, sizeof(br_data_handler));
     br_map_init(&s->prefabs, sizeof(cJSON *));
     s->poll_frames = 30;
@@ -599,6 +636,8 @@ void br_data_register(br_engine *e)
     s->hot_reload = true; /* debug builds only: release games do not poll the disk */
 #endif
     br_scene_on_node_destroy(e, br_data_on_node_destroy, NULL);
+    br_node3d_on_destroy(e, br_data_mesh3d_destroyed, NULL);
+    br_system_add(e, "data.release_assets", BR_PHASE_INPUT, -999999, br_data_release_system, NULL);
 
     br_node_json_container_register(e);
     br_node_json_sprite_register(e);

@@ -1,0 +1,8 @@
+{ "type": "container", "label": "view_root",
+  "children": [
+    { "type": "view3d", "label": "view", "size": [64, 64],
+      "scene": [
+        { "type": "light", "kind": "directional" },
+        { "type": "mesh", "label": "cube", "shape": "cube", "material": { "color": "#ff0000", "texture": "scenes/red.png" } },
+        { "type": "mesh", "label": "ball", "shape": "sphere" },
+        { "type": "gltf", "label": "model", "source": "tiny.gltf", "animation": "Move" } ] } ] }

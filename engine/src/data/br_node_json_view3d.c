@@ -97,13 +97,45 @@ static br_material3d br_json3d_material(br_engine *e, const cJSON *json)
     return br_material3d_create(e, &d);
 }
 
+void br_data_mesh3d_destroyed(br_engine *e, br_node3d n, void *user)
+{
+    (void)user;
+    if (e->data == NULL) {
+        return;
+    }
+    br_data_mesh3d *m = br_array_at(&e->data->meshes3d, n.index);
+    if (m != NULL && m->generation == n.generation && m->generation != 0) {
+        br_geometry3d_destroy(e, m->geometry);
+        br_material3d_destroy(e, m->material);
+        SDL_zerop(m);
+    }
+}
+
+/* Remembers what a JSON mesh created so it is freed with its node. */
+static void br_json3d_track(br_engine *e, br_node3d n, br_geometry3d g, br_material3d m)
+{
+    br_data_state *s = e->data;
+    if (!br_node3d_valid(e, n)) {
+        br_geometry3d_destroy(e, g);
+        br_material3d_destroy(e, m);
+        return;
+    }
+    if (n.index >= s->meshes3d.count && !br_array_resize(&s->meshes3d, n.index + 1)) {
+        return;
+    }
+    br_data_mesh3d *slot = br_array_at(&s->meshes3d, n.index);
+    slot->generation = n.generation;
+    slot->geometry = g;
+    slot->material = m;
+}
+
 static br_node3d br_json3d_mesh(br_engine *e, const cJSON *json)
 {
     char shape[16] = "cube";
     br_data_get_string(e, json, "shape", shape, sizeof(shape));
     float s[3] = { 1.0f, 1.0f, 1.0f };
     br_geometry3d g;
-    // ponytail: every mesh object creates its own geometry and material, never freed with the view (like scene asset refs, Phase 2 asset groups).
+    /* every mesh object creates its own geometry and material; br_json3d_track frees them with the node */
     if (SDL_strcmp(shape, "cube") == 0) {
         br_json3d_size(e, json, s, 3);
         g = br_geometry3d_cube(e, br_vec3_make(s[0], s[1], s[2]));
@@ -136,7 +168,9 @@ static br_node3d br_json3d_mesh(br_engine *e, const cJSON *json)
         br_node3d none = { 0, 0 };
         return none;
     }
-    br_node3d n = br_mesh3d_create(e, g, br_json3d_material(e, json));
+    br_material3d material = br_json3d_material(e, json);
+    br_node3d n = br_mesh3d_create(e, g, material);
+    br_json3d_track(e, n, g, material);
     br_mesh3d *m = br_mesh3d_get(e, n);
     if (m != NULL) {
         br_data_get_bool(e, json, "cast_shadows", &m->cast_shadows);
@@ -176,7 +210,7 @@ static br_node3d br_json3d_gltf(br_engine *e, const cJSON *json)
         br_data_errorf(e, "a gltf node needs \"source\": \"models/x.glb\"; skipped");
         return none;
     }
-    /* the asset reference stays with the scene (same rule as other scene assets) */
+    /* the asset reference belongs to the load in progress (released with the scene / file root) */
     br_model *model = br_model_load(e, source);
     if (model == NULL) {
         br_data_error(e, "source", "model could not be loaded; skipped");
