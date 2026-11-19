@@ -12,6 +12,10 @@ or `--record FILE` is given (or the C API is called).
 - One system, `playtest.frame` (BR_PHASE_INPUT, priority -3000000, before `input.begin_frame`
   latches input): releases taps that are due, then runs script steps until one has to wait.
   Input is injected with `br_input_inject_*`, so it is indistinguishable from a device.
+- Commands are JSON objects described by one table (`br_pt_commands`: name, typed arguments
+  `"key:string action?:string"`, one-line doc). `br_pt_validate` checks a command against it
+  before anything runs (scripts: at load, with the step number; stdin: one `ok:false` reply),
+  and `{"cmd":"help"}` returns it. A new command = a table row + a branch in `br_pt_exec`.
 - Commands are JSON objects; `br_pt_exec` runs one. `wait` / `wait_until` set a wait that the
   script resumes from in a later frame; `br_playtest_command` (interactive, C API) instead steps
   the engine in place until the wait is over, then replies.
@@ -57,6 +61,9 @@ br_engine_destroy(e);
 ```
 
 ## Gotchas
+
+- `click` moves the pointer now, presses in the next frame and releases in the one after (a
+  press in the move frame looks like a drag to camera controls): step 3 frames before checking.
 
 - Scripts start running in frame 1; a screenshot taken in frame N shows frame N-1 (the last
   rendered one). `{"cmd":"wait","frames":N}` then `screenshot` shows frame N.
