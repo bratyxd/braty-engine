@@ -32,7 +32,7 @@ typedef struct br_game_config {
     char     title[128];                           /* "braty" */
     int      width, height;                        /* 1280 x 720 */
     bool     fullscreen;                           /* false */
-    bool     vsync;                                /* true */
+    br_vsync vsync;                                /* BR_VSYNC_ON; JSON true/false or "off"/"on"/"adaptive"/"mailbox" */
     bool     resizable;                            /* true */
     char     asset_root[BR_GAME_CONFIG_PATH_SIZE]; /* relative to the executable dir; "" = exe dir */
     char     manifest[BR_GAME_CONFIG_PATH_SIZE];   /* asset manifest added at apply; "" = none */
@@ -40,6 +40,7 @@ typedef struct br_game_config {
     float    max_fps;                              /* 0 = uncapped */
     float    min_fps;                              /* 10 */
     float    speed;                                /* 1 */
+    float    fixed_hz;                             /* ticker.fixed_hz: fixed timestep, 0 = off */
     bool     has_clear_color;
     br_color clear_color;                          /* window background (when has_clear_color) */
     bool     debug_overlay;                        /* debug overlay open at start (false) */

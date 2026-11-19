@@ -10,6 +10,8 @@ typedef struct br_app_args {
     const char *gpu_driver;
     bool        headless;
     const char *assets;   /* --assets DIR or $BRATY_ASSETS, NULL if neither */
+    const char *vsync;    /* --vsync MODE, NULL = game.json / default */
+    const char *max_fps;  /* --max-fps N, NULL = game.json / default */
 } br_app_args;
 
 static void br_app_parse_args(int argc, char **argv, br_app_args *out)
@@ -28,6 +30,10 @@ static void br_app_parse_args(int argc, char **argv, br_app_args *out)
             out->headless = true;
         } else if (SDL_strcmp(argv[i], "--assets") == 0 && has_value) {
             out->assets = argv[++i];
+        } else if (SDL_strcmp(argv[i], "--vsync") == 0 && has_value) {
+            out->vsync = argv[++i];
+        } else if (SDL_strcmp(argv[i], "--max-fps") == 0 && has_value) {
+            out->max_fps = argv[++i];
         }
         /* anything else belongs to the game (it sees argv in br_main) */
     }
@@ -92,6 +98,18 @@ static bool br_app_start(br_engine *e, const br_app_desc *desc, const br_app_arg
     }
     /* set only after a successful init, so a failed init does not run the game's shutdown */
     e->game_shutdown = desc->shutdown;
+    /* the command line overrides game.json and whatever init chose */
+    if (args->vsync != NULL) {
+        br_vsync mode;
+        if (br_vsync_from_name(args->vsync, &mode)) {
+            br_app_set_vsync(e, mode);
+        } else {
+            br_log_error("--vsync: expected off, on, adaptive or mailbox, got '%s'", args->vsync);
+        }
+    }
+    if (args->max_fps != NULL) {
+        br_app_set_max_fps(e, (float)SDL_atof(args->max_fps));
+    }
     if (desc->config != NULL && desc->config->start_scene[0] != '\0') {
         /* after init: the scene may use components the game registers there */
         if (!br_node_valid(e, br_game_config_load_start_scene(e, desc->config))) {
@@ -143,10 +161,19 @@ SDL_AppResult br_app_init(void **appstate, const br_app_desc *desc, int argc, ch
 SDL_AppResult br_app_iterate(void *appstate)
 {
     br_engine *e = appstate;
+    br_app_pace_frame(e);
     uint64_t now = SDL_GetTicksNS();
     float raw = 1.0f / 60.0f;
     if (e->ticker.last_ns != 0 && now > e->ticker.last_ns) {
-        raw = (float)((double)(now - e->ticker.last_ns) / 1e9);
+        uint64_t interval = now - e->ticker.last_ns;
+        raw = (float)((double)interval / 1e9);
+    }
+    if (e->ticker.last_ns != 0 && now > e->ticker.last_ns && e->ticker.frame >= 10) {
+        /* frame statistics skip the first frames (window, pipelines and swapchain warm up) */
+        uint64_t interval = now - e->ticker.last_ns;
+        e->ticker.interval_count++;
+        e->ticker.interval_sum_ns += interval;
+        e->ticker.interval_max_ns = interval > e->ticker.interval_max_ns ? interval : e->ticker.interval_max_ns;
     }
     e->ticker.last_ns = now;
     e->ticker.fps = e->ticker.fps == 0.0f ? 1.0f / raw : e->ticker.fps * 0.9f + (1.0f / raw) * 0.1f;
@@ -163,6 +190,12 @@ SDL_AppResult br_app_iterate(void *appstate)
     }
 
     if (e->frame_limit > 0 && e->ticker.frame >= e->frame_limit) {
+        if (e->ticker.interval_count > 0) {
+            double avg_ms = (double)e->ticker.interval_sum_ns / (double)e->ticker.interval_count / 1e6;
+            br_log_info("frames: %llu, frame interval avg %.3f ms (%.2f fps), max %.3f ms, vsync %s, cap %g",
+                        (unsigned long long)e->ticker.frame, avg_ms, 1000.0 / avg_ms,
+                        (double)e->ticker.interval_max_ns / 1e6, br_vsync_name(e->vsync), (double)e->ticker.max_fps);
+        }
         if (e->screenshot_path != NULL) {
             if (!presented) {
                 br_log_error("screenshot: the last frame was not rendered (window minimised?)");

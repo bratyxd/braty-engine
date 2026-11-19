@@ -15,6 +15,11 @@
  *   --screenshot out.png  with --frames: write the last frame as PNG before exiting
  *   --gpu-driver NAME     vulkan | direct3d12 | metal (default: SDL's choice)
  *   --headless            no window and no GPU: systems run, nothing is drawn
+ *   --assets DIR          asset root override, relative to the working directory (or set
+ *                         the BRATY_ASSETS environment variable)
+ *   --vsync MODE          off | on | adaptive | mailbox (overrides game.json)
+ *   --max-fps N           frame-rate cap, 0 = uncapped (overrides game.json)
+ * --frames runs log the measured frame interval (avg / max) at exit.
  * The game reads the whole command line with br_engine_args (or in br_main).
  */
 #ifndef BR_APP_H
@@ -52,8 +57,11 @@ br_app_desc br_main(int argc, char **argv);
 
 /* ---- systems */
 
+/* BR_PHASE_FIXED_UPDATE runs 0..N times per frame with a constant dt when a fixed timestep is
+ * set (br_app_set_fixed_timestep), otherwise once per frame with the frame's dt. */
 typedef enum br_phase {
     BR_PHASE_INPUT,
+    BR_PHASE_FIXED_UPDATE,
     BR_PHASE_UPDATE,
     BR_PHASE_LATE_UPDATE,
     BR_PHASE_PRE_RENDER,
@@ -144,12 +152,47 @@ uint64_t br_ticker_frame(br_engine *e);
 float br_ticker_fps(br_engine *e);
 /* Time scale: 0.5 = slow motion, 0 = paused. Default 1. */
 void br_ticker_set_speed(br_engine *e, float speed);
-/* Caps the frame rate (0 = uncapped; vsync still applies). Uses SDL_HINT_MAIN_CALLBACK_RATE. */
+/* Same as br_app_set_max_fps (kept for existing code). */
 void br_ticker_set_max_fps(br_engine *e, float max_fps);
 /* Clamps delta to at most 1/min_fps so a long stall does not produce one huge step. Default 10. */
 void br_ticker_set_min_fps(br_engine *e, float min_fps);
 /* Pure helper used by the app: raw seconds -> clamped, scaled delta. */
 float br_ticker_compute_delta(float raw_seconds, float min_fps, float speed);
+
+/* ---- frame pacing: vsync, FPS cap, fixed timestep (independent; all switchable at runtime,
+ * from game.json and from the command line) */
+
+typedef enum br_vsync {
+    BR_VSYNC_OFF,       /* present at once, may tear (falls back to mailbox, then on) */
+    BR_VSYNC_ON,        /* wait for the display (always supported) */
+    BR_VSYNC_ADAPTIVE,  /* SDL GPU has no adaptive mode: falls back to on, with a log line */
+    BR_VSYNC_MAILBOX    /* no tearing, never blocks, newest frame wins (falls back to on) */
+} br_vsync;
+
+/* Sets the present mode; unsupported modes fall back (logged). Returns the mode now in effect.
+ * Headless: remembered and applied when a window opens. Default BR_VSYNC_ON. */
+br_vsync br_app_set_vsync(br_engine *e, br_vsync mode);
+/* The present mode in effect. */
+br_vsync br_app_vsync(br_engine *e);
+/* "off" / "on" / "adaptive" / "mailbox" -> mode. False for anything else. */
+bool br_vsync_from_name(const char *name, br_vsync *out);
+/* Mode -> "off" / "on" / "adaptive" / "mailbox". */
+const char *br_vsync_name(br_vsync mode);
+/* Caps the frame rate (0 = uncapped). Works with vsync off: sleeps most of the wait and spins
+ * the last part (SDL_DelayPrecise) against a deadline, so frames do not drift. */
+void br_app_set_max_fps(br_engine *e, float fps);
+/* The cap, 0 = uncapped. */
+float br_app_max_fps(br_engine *e);
+/* Runs BR_PHASE_FIXED_UPDATE at `hz` steps per simulated second (dt = 1/hz each), 0..8 times
+ * per frame; a larger backlog is dropped. 0 = once per frame with the frame's dt (default). */
+void br_app_set_fixed_timestep(br_engine *e, float hz);
+/* The fixed rate, 0 = off. */
+float br_app_fixed_timestep(br_engine *e);
+/* Fraction of a fixed step left over after this frame's steps, in [0, 1): interpolate rendered
+ * positions between the previous and current fixed state with it. 0 when the timestep is off. */
+float br_app_fixed_alpha(br_engine *e);
+/* FIXED_UPDATE runs in the current frame. */
+uint32_t br_app_fixed_steps(br_engine *e);
 
 /* ---- SDL main-callback glue (called by braty_main.h, not by games) */
 

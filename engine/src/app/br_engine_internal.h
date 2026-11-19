@@ -42,7 +42,20 @@ typedef struct br_ticker_state {
     float    max_fps;      /* 0 = unlimited */
     float    min_fps;      /* delta is clamped to 1/min_fps; 0 = no clamp */
     uint64_t last_ns;      /* SDL_GetTicksNS of the previous iterate, 0 before the first */
+    uint64_t deadline_ns;  /* FPS cap: when the next frame may start, 0 = no schedule yet */
+    /* measured frame intervals (logged at exit of --frames runs) */
+    uint64_t interval_count;
+    uint64_t interval_sum_ns;
+    uint64_t interval_max_ns;
+    /* fixed timestep */
+    float    fixed_hz;     /* 0 = FIXED_UPDATE runs once per frame with the frame's dt */
+    double   fixed_accumulator;
+    float    fixed_alpha;  /* leftover / step after this frame's fixed steps, in [0, 1) */
+    uint32_t fixed_steps;  /* FIXED_UPDATE runs this frame */
 } br_ticker_state;
+
+/* At most this many fixed steps per frame; the rest of the backlog is dropped (no spiral of death). */
+#define BR_FIXED_MAX_STEPS 8
 
 struct br_engine {
     char *title;
@@ -59,6 +72,7 @@ struct br_engine {
     br_array shutdown_handlers;     /* br_shutdown_entry, run in reverse order */
 
     br_ticker_state ticker;
+    br_vsync vsync;                 /* present mode in effect (or requested, while headless) */
     bool     quit_requested;
     uint64_t skipped_frames;        /* frames where no swapchain texture was available */
 
@@ -90,6 +104,9 @@ struct br_engine {
     struct br_data_state      *data;
     struct br_debug_state     *debug;
 };
+
+/* FPS cap: waits until the next frame's deadline (br_pacing.c). No-op when uncapped. */
+void br_app_pace_frame(br_engine *e);
 
 /* Registers every built-in module. Defined in br_builtin.c (owned by Task 2). */
 void br_builtin_register(br_engine *e);

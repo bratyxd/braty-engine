@@ -49,6 +49,7 @@ br_engine *br_engine_create(const char *title, const char *asset_root)
     br_array_init(&e->shutdown_handlers, sizeof(br_shutdown_entry));
     e->ticker.speed = 1.0f;
     e->ticker.min_fps = 10.0f;
+    e->vsync = BR_VSYNC_ON;
     br_builtin_register(e);
     return e;
 }
@@ -106,6 +107,9 @@ bool br_engine_open_window(br_engine *e, int width, int height, const char *gpu_
         return false;
     }
     e->gpu = br_gpu_create(e->window, gpu_driver);
+    if (e->gpu != NULL && e->vsync != BR_VSYNC_ON) {
+        br_app_set_vsync(e, e->vsync); /* chosen before the window existed */
+    }
     return e->gpu != NULL;
 }
 
@@ -341,6 +345,37 @@ static void br_run_phases(br_engine *e, br_phase first, br_phase last, float dt)
     }
 }
 
+/* BR_PHASE_FIXED_UPDATE: 0..BR_FIXED_MAX_STEPS runs of 1/hz each, or once with dt when off. */
+static void br_run_fixed_update(br_engine *e, float dt)
+{
+    br_ticker_state *t = &e->ticker;
+    if (t->fixed_hz <= 0.0f) {
+        t->fixed_steps = 1;
+        t->fixed_alpha = 0.0f;
+        br_run_phases(e, BR_PHASE_FIXED_UPDATE, BR_PHASE_FIXED_UPDATE, dt);
+        return;
+    }
+    double step = 1.0 / (double)t->fixed_hz;
+    /* dt is a float: 1/50 s arrives as 0.0199999996. The tolerance keeps such a frame at one
+     * step instead of alternating 0 and 2. */
+    double tolerance = 1e-6;
+    t->fixed_accumulator += (double)dt;
+    t->fixed_steps = 0;
+    while (t->fixed_accumulator + tolerance >= step && t->fixed_steps < BR_FIXED_MAX_STEPS) {
+        br_run_phases(e, BR_PHASE_FIXED_UPDATE, BR_PHASE_FIXED_UPDATE, (float)step);
+        t->fixed_accumulator -= step;
+        t->fixed_steps++;
+    }
+    if (t->fixed_accumulator + tolerance >= step) {
+        /* still behind after the maximum: drop the backlog (no spiral of death) */
+        t->fixed_accumulator = SDL_fmod(t->fixed_accumulator, step);
+    }
+    if (t->fixed_accumulator < 0.0) {
+        t->fixed_accumulator = 0.0;
+    }
+    t->fixed_alpha = (float)(t->fixed_accumulator / step);
+}
+
 bool br_engine_step(br_engine *e, float dt_seconds)
 {
     e->ticker.delta = dt_seconds;
@@ -350,7 +385,9 @@ bool br_engine_step(br_engine *e, float dt_seconds)
         br_gpu_transient_reset(e->gpu);
     }
     e->stepping = true;
-    br_run_phases(e, BR_PHASE_INPUT, BR_PHASE_PRE_RENDER, dt_seconds);
+    br_run_phases(e, BR_PHASE_INPUT, BR_PHASE_INPUT, dt_seconds);
+    br_run_fixed_update(e, dt_seconds);
+    br_run_phases(e, BR_PHASE_UPDATE, BR_PHASE_PRE_RENDER, dt_seconds);
     bool presented = false;
     if (e->gpu != NULL) {
         if (br_gpu_frame_begin(e->gpu)) {
@@ -377,14 +414,6 @@ uint64_t br_ticker_frame(br_engine *e) { return e->ticker.frame; }
 float br_ticker_fps(br_engine *e) { return e->ticker.fps; }
 void br_ticker_set_speed(br_engine *e, float speed) { e->ticker.speed = speed; }
 void br_ticker_set_min_fps(br_engine *e, float min_fps) { e->ticker.min_fps = min_fps; }
-
-void br_ticker_set_max_fps(br_engine *e, float max_fps)
-{
-    e->ticker.max_fps = max_fps;
-    char rate[32];
-    SDL_snprintf(rate, sizeof(rate), "%g", max_fps > 0.0f ? (double)max_fps : 0.0);
-    SDL_SetHint(SDL_HINT_MAIN_CALLBACK_RATE, rate);
-}
 
 float br_ticker_compute_delta(float raw_seconds, float min_fps, float speed)
 {

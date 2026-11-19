@@ -102,6 +102,18 @@ bool br_gpu_set_vsync(br_gpu *g, bool vsync)
     return true;
 }
 
+bool br_gpu_set_present_mode(br_gpu *g, SDL_GPUPresentMode mode)
+{
+    if (!SDL_WindowSupportsGPUPresentMode(g->device, g->window, mode)) {
+        return false;
+    }
+    if (!SDL_SetGPUSwapchainParameters(g->device, g->window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode)) {
+        br_log_error("cannot set present mode: %s", SDL_GetError());
+        return false;
+    }
+    return true;
+}
+
 /* ---- frame */
 
 bool br_gpu_frame_begin(br_gpu *g)

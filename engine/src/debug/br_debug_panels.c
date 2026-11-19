@@ -225,7 +225,7 @@ static void br_debug_systems(br_engine *e, br_debug_state *s)
     if (!mu_begin_window_ex(ui, "Systems", mu_rect(10, 320, 330, 390), MU_OPT_NOCLOSE)) {
         return;
     }
-    static const char *phases[BR_PHASE_COUNT] = { "input", "update", "late", "pre-render", "render", "post" };
+    static const char *phases[BR_PHASE_COUNT] = { "input", "fixed", "update", "late", "pre-render", "render", "post" };
     static const int row[3] = { 170, 72, -1 };
     mu_layout_row(ui, 3, row, 0);
     mu_label(ui, "system (on/off)");

@@ -8,7 +8,7 @@ void br_game_config_defaults(br_game_config *config)
     br_str_copy(config->title, sizeof(config->title), "braty");
     config->width = 1280;
     config->height = 720;
-    config->vsync = true;
+    config->vsync = BR_VSYNC_ON;
     config->resizable = true;
     config->min_fps = 10.0f;
     config->speed = 1.0f;
@@ -126,7 +126,7 @@ static void br_config_check_keys(const char *source, const cJSON *doc)
     br_config_warn_keys(source, "", doc,
                         " window asset_root manifest start_scene clear_color ticker input audio debug game ");
     const char *sections[] = { "window", "ticker", "debug", "audio" };
-    const char *keys[] = { " title width height fullscreen vsync resizable ", " max_fps min_fps speed ",
+    const char *keys[] = { " title width height fullscreen vsync resizable ", " max_fps min_fps speed fixed_hz ",
                            " overlay toggle_key hot_reload ", " master_volume muted buses sprites " };
     for (uint32_t i = 0; i < BR_ARRAY_COUNT(sections); i++) {
         const cJSON *section = cJSON_GetObjectItemCaseSensitive(doc, sections[i]);
@@ -177,13 +177,19 @@ bool br_game_config_parse(const char *json, size_t size, const char *source_name
     br_config_int(&r, window, "width", &config->width);
     br_config_int(&r, window, "height", &config->height);
     br_config_bool(&r, window, "fullscreen", &config->fullscreen);
-    br_config_bool(&r, window, "vsync", &config->vsync);
+    const cJSON *vsync = cJSON_GetObjectItemCaseSensitive(window, "vsync");
+    if (cJSON_IsBool(vsync)) {
+        config->vsync = cJSON_IsTrue(vsync) ? BR_VSYNC_ON : BR_VSYNC_OFF;
+    } else if (vsync != NULL && !(cJSON_IsString(vsync) && br_vsync_from_name(vsync->valuestring, &config->vsync))) {
+        br_config_error(&r, "vsync", "expected true, false, \"off\", \"on\", \"adaptive\" or \"mailbox\"");
+    }
     br_config_bool(&r, window, "resizable", &config->resizable);
 
     const cJSON *ticker = br_config_section(&r, doc, "ticker");
     br_config_float(&r, ticker, "max_fps", &config->max_fps);
     br_config_float(&r, ticker, "min_fps", &config->min_fps);
     br_config_float(&r, ticker, "speed", &config->speed);
+    br_config_float(&r, ticker, "fixed_hz", &config->fixed_hz);
 
     const cJSON *debug = br_config_section(&r, doc, "debug");
     br_config_bool(&r, debug, "overlay", &config->debug_overlay);
@@ -299,8 +305,8 @@ void br_game_config_apply_settings(br_engine *e, br_game_config *config)
             SDL_SetWindowFullscreen(window, true);
         }
     }
+    br_app_set_vsync(e, config->vsync);
     if (gpu != NULL) {
-        br_gpu_set_vsync(gpu, config->vsync);
         if (config->has_clear_color) {
             br_gpu_set_clear_color(gpu, config->clear_color);
         }
@@ -308,6 +314,7 @@ void br_game_config_apply_settings(br_engine *e, br_game_config *config)
     br_ticker_set_max_fps(e, config->max_fps);
     br_ticker_set_min_fps(e, config->min_fps);
     br_ticker_set_speed(e, config->speed);
+    br_app_set_fixed_timestep(e, config->fixed_hz);
     br_scene_file_set_hot_reload(e, config->hot_reload, 0);
 
     SDL_Scancode key = SDL_GetScancodeFromName(config->debug_key);
