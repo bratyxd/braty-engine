@@ -69,20 +69,17 @@ static void build_scene(br_engine *e, demo_state *s)
 {
     br_spritesheet *sheet = br_assets_get(e, "atlas");       /* loaded by the bundle */
     br_node root = br_scene_root(e);
-    br_node gem = add_sprite(e, root, br_spritesheet_frame(e, sheet, "gem.png"), 340.0f, 60.0f);
+    add_sprite(e, root, br_spritesheet_frame(e, sheet, "gem.png"), 340.0f, 60.0f);
     const br_texture *walk = NULL;
     uint32_t walk_count = br_spritesheet_animation(e, sheet, "walk", &walk);
     br_texture missing = br_texture_load(e, "missing");      /* magenta fallback, logged */
-    /* ... */
     /* ---- end of snippet */
-    (void)gem;
     s->sheet = sheet;
     s->walk_frames = walk;
     s->walk_count = walk_count;
 
     /* top row: atlas, panel with its 9-slice borders drawn as lines */
-    br_node atlas = add_sprite(e, root, br_spritesheet_texture(sheet), 20.0f, 20.0f);
-    br_node_set_scale(e, atlas, 1.0f, 1.0f);
+    add_sprite(e, root, br_spritesheet_texture(sheet), 20.0f, 20.0f);
     br_node panel = add_sprite(e, root, br_spritesheet_frame(e, sheet, "panel.png"), 400.0f, 36.0f);
     br_node_set_scale(e, panel, 2.0f, 2.0f);
     float borders[4];
