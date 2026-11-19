@@ -188,6 +188,9 @@ static void demo_update(br_engine *e, float dt, void *user)
             animate_ns = info.last_time_ns;
         }
     }
+    if (br_app_deterministic(e)) {
+        animate_ns = 0; /* the on-screen timing would make every golden image differ */
+    }
     uint64_t now = SDL_GetTicksNS();
     if (s->last_ns != 0 && br_ticker_frame(e) > 30) {
         s->frame_ns_sum += now - s->last_ns;
