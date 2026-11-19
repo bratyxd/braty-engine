@@ -68,6 +68,8 @@ if(BRATY_BUILD_EXAMPLES)
         add_executable(${name} ${src})
         target_compile_options(${name} PRIVATE ${BR_WARNINGS})
         target_link_libraries(${name} PRIVATE braty)
+        # examples read their data from the source tree, so any build directory works
+        target_compile_definitions(${name} PRIVATE BRATY_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples")
     endforeach()
 endif()
 

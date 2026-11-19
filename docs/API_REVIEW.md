@@ -163,6 +163,10 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
     any other directory (`cmake -B out/x`) cannot find the data. Fixed for the sample by the
     post-build copy (see 4); the root `CMakeLists.txt` could copy `examples/` data the same way
     (or pass the source path as a compile definition).
+    **Resolved (Task 14):** CMake passes `BRATY_EXAMPLES_DIR` (the source `examples/` path) to
+    every example, which uses it as asset root / game.json path; `data_demo` also moved to
+    `br_game_config_main`. Verified by running data, text, assets, glTF and audio demos from
+    `%TEMP%` (screenshots written; the golden-image run covers them from then on).
 
 ## What worked well (keep it)
 

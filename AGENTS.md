@@ -19,9 +19,9 @@ build/windows-gcc/sample_projects/star_courier/star_courier.exe --autoplay --fra
 
 Every app built on `br_app` takes `--frames N --screenshot out.png` (fixed 1/60 s steps, exits 0).
 **Open the PNG before claiming a visual feature works**, on both `direct3d12` and `vulkan`.
-Examples find their data at `../../examples` relative to the executable, so they work from any
-working directory but only when built into the default `build/<preset>/`; the sample game
-copies its data next to its executable and works from any build directory. Star Courier's
+Examples read their data from the source tree (`BRATY_EXAMPLES_DIR`, set by CMake), so they work
+from any working directory and any build directory; the sample game copies its data next to its
+executable (`--assets <dir>` or `BRATY_ASSETS` points any app at another asset root). Star Courier's
 `--autoplay` plays itself deterministically: `--frames 60` = title, `700` = gameplay,
 `1300` = game over; `--frames 3600` is the 60-second soak (it logs node/texture/asset counts at
 every game over). Details: `docs/BUILDING.md`, other platforms: `docs/PLATFORMS.md`.

@@ -7,8 +7,6 @@ typedef struct mover {
     float   spin;     /* radians per second */
 } mover;
 
-static br_game_config config; /* br_main's desc points into it */
-
 static void mover_system(br_engine *e, float dt, void *user)
 {
     (void)user;
@@ -34,14 +32,13 @@ static bool demo_init(br_engine *e)
     br_component_desc desc = { "mover", sizeof(mover), fields, BR_ARRAY_COUNT(fields) };
     br_component_register(e, &desc);
     br_system_add(e, "demo.mover", BR_PHASE_UPDATE, 0, mover_system, NULL);
-    return br_node_valid(e, br_game_config_apply(e, &config)); /* loads the start scene */
+    return true; /* game.json was applied before init; its start scene loads after it */
 }
 
 br_app_desc br_main(int argc, char **argv)
 {
-    br_game_config_load(NULL, "../../examples/data/game.json", &config); /* relative to the exe */
-    br_game_config_args(&config, argc, argv);                             /* --debug, --scene */
-    br_app_desc desc = br_game_config_app_desc(&config);
-    desc.init = demo_init;
+    /* BRATY_EXAMPLES_DIR (set by CMake) is the source tree, so any build directory works */
+    br_app_desc desc = br_game_config_main(BRATY_EXAMPLES_DIR "/data/game.json", argc, argv, demo_init);
+    desc.asset_root = BRATY_EXAMPLES_DIR;
     return desc;
 }

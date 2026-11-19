@@ -286,7 +286,7 @@ br_app_desc br_main(int argc, char **argv)
     desc.title = "Braty - text";
     desc.width = 1280;
     desc.height = 720;
-    desc.asset_root = "../../examples"; /* the exe lives in build/<preset>/ */
+    desc.asset_root = BRATY_EXAMPLES_DIR; /* the source tree (CMake), any build dir works */
     desc.init = demo_init;
     return desc;
 }

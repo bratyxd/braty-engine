@@ -187,7 +187,7 @@ br_app_desc br_main(int argc, char **argv)
     desc.height = 540;
     // ponytail: assets are read in place from the source tree (build/<preset>/ -> examples/assets);
     // a packaged build would copy them next to the executable and use "assets".
-    desc.asset_root = "../../examples/assets";
+    desc.asset_root = BRATY_EXAMPLES_DIR "/assets";
     desc.init = demo_init;
     return desc;
 }

@@ -253,7 +253,7 @@ br_app_desc br_main(int argc, char **argv)
     desc.title = "Braty - glTF demo";
     desc.width = 1280;
     desc.height = 720;
-    desc.asset_root = "../../examples/models"; /* the exe lives in build/<preset>/ */
+    desc.asset_root = BRATY_EXAMPLES_DIR "/models"; /* the source tree (CMake) */
     desc.init = demo_init;
     return desc;
 }
