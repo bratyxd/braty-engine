@@ -68,6 +68,15 @@ if(BRATY_BUILD_TESTS)
         target_link_libraries(${name} PRIVATE braty)
         add_test(NAME ${name} COMMAND ${name} WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests)
     endforeach()
+    # golden images (tools/golden.py): every example + the sample game vs tests/golden/*.png.
+    # Opens windows; reported as skipped (exit 77) when no GPU device can be created.
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_FOUND AND BRATY_BUILD_EXAMPLES AND BRATY_BUILD_SAMPLES)
+        add_test(NAME golden
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/golden.py run
+                    --build-dir ${CMAKE_BINARY_DIR} --out ${CMAKE_BINARY_DIR}/golden)
+        set_tests_properties(golden PROPERTIES LABELS golden SKIP_RETURN_CODE 77 TIMEOUT 900)
+    endif()
 endif()
 
 # --- examples: every examples/*.c is one executable
