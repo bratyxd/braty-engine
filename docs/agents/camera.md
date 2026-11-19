@@ -99,12 +99,14 @@ settings into the camera3d nodes and Views3D.
 
 ## Gotchas
 
-- Pointer events and play-test `click` need the events / playtest hooks (they call
-  `br_camera_screen_to_stage` / `br_camera_stage_to_screen`); without them pointer positions
-  are window coordinates even when a camera moves the stage.
+- Pointer events map every incoming window position through `br_camera_screen_to_stage`, and
+  play-test `click` aims at `br_camera_stage_to_screen` of the node's bounds centre, so both work
+  through zoomed / moved 2D cameras (`br_input_mouse_position` stays in window coordinates).
+  `br_event` positions are stage coordinates.
 - 3D cameras render through a View3D that is not on the stage: `br_node3d_on` listeners do not
-  fire through them. Pick with `br_camera_screen_point_to_ray` + `br_view3d_raycast`, or use a
-  View3D on the stage (as `canvas3d_demo` does).
+  fire through them (the events hit test only walks the stage). Pick with
+  `br_camera_screen_point_to_ray` + `br_view3d_raycast`, or use a View3D on the stage (as
+  `canvas3d_demo` does).
 - `background_color` is sRGB; for 3D cameras it is converted to the View3D's linear background.
   `CLEAR_DEPTH` and `CLEAR_NOTHING` both leave lower cameras visible (2D has no depth; a View3D
   always clears its own depth).

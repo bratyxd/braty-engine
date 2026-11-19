@@ -3,6 +3,7 @@
 #include "playtest/br_playtest_internal.h"
 
 #include "data/br_data_internal.h"
+#include "braty/br_camera.h"
 
 /* A parsed path: "ship:pilot.intent.x" -> target "ship", parts "pilot", "intent", "x". */
 #define BR_PT_MAX_PARTS 4
@@ -828,6 +829,7 @@ bool br_playtest_query_click_point(br_engine *e, const char *label, float *x, fl
         if (!br_view3d_world_to_screen(e, view, br_node3d_world_position(e, n3), &p)) {
             return br_playtest_fail(e, "click: 3D node '%s' is behind the camera", label);
         }
+        p = br_camera_stage_to_screen(e, view, p); /* the view's stage point -> window, through cameras */
         *x = p.x;
         *y = p.y;
         return true;
@@ -840,8 +842,9 @@ bool br_playtest_query_click_point(br_engine *e, const char *label, float *x, fl
     if (r.width <= 0.0f || r.height <= 0.0f) {
         return br_playtest_fail(e, "click: node '%s' has empty bounds (not drawn yet?)", label);
     }
-    /* the stage is in window coordinates (no camera yet), so bounds are where the pointer goes */
-    *x = r.x + r.width * 0.5f;
-    *y = r.y + r.height * 0.5f;
+    /* bounds are stage coordinates; the pointer goes to the window point a camera shows them at */
+    br_vec2 p = br_camera_stage_to_screen(e, n, br_vec2_make(r.x + r.width * 0.5f, r.y + r.height * 0.5f));
+    *x = p.x;
+    *y = p.y;
     return true;
 }

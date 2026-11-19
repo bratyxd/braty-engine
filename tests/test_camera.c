@@ -284,6 +284,58 @@ static void test_engine(void)
     br_engine_destroy(e);
 }
 
+/* ---- pointer events through a zoomed, offset 2D camera reach the node drawn under the pointer */
+
+static int s_target_clicks;
+static int s_decoy_clicks;
+
+static void on_target_click(br_engine *e, br_event *ev, void *user)
+{
+    (void)e;
+    (void)ev;
+    (void)user;
+    s_target_clicks++;
+}
+
+static void on_decoy_click(br_engine *e, br_event *ev, void *user)
+{
+    (void)e;
+    (void)ev;
+    (void)user;
+    s_decoy_clicks++;
+}
+
+static br_node make_clickable(br_engine *e, float x, float y, br_event_listener_fn fn)
+{
+    br_node n = br_sprite_create(e, br_texture_white(e));
+    br_sprite_set_size(e, n, 40.0f, 40.0f);
+    br_node_set_position(e, n, x, y);
+    br_node_set_event_mode(e, n, BR_EVENT_MODE_STATIC);
+    br_node_on(e, n, BR_EVENT_CLICK, fn, NULL);
+    br_node_add_child(e, br_scene_root(e), n);
+    return n;
+}
+
+static void test_pointer_events(void)
+{
+    br_engine *e = br_engine_create("test_camera_pointer", NULL);
+    br_camera_set_headless_screen(e, 1280.0f, 720.0f);
+    br_camera c = br_camera_default_2d();
+    c.orthographic_size = 180.0f; /* 2x zoom, centred on (1000, 1000) */
+    br_node cam = br_camera_create(e, &c);
+    br_node_set_position(e, cam, 1000.0f, 1000.0f);
+    br_node_add_child(e, br_scene_root(e), cam);
+    make_clickable(e, 1000.0f, 1000.0f, on_target_click); /* drawn at window (640..720, 360..440) */
+    make_clickable(e, 640.0f, 360.0f, on_decoy_click);   /* where the raw window point would land */
+    br_engine_step(e, 1.0f / 60.0f);
+    br_input_inject_pointer_move(e, 660.0f, 380.0f);
+    br_input_inject_pointer_down(e, 660.0f, 380.0f, SDL_BUTTON_LEFT);
+    br_input_inject_pointer_up(e, 660.0f, 380.0f, SDL_BUTTON_LEFT);
+    BR_CHECK(s_target_clicks == 1);
+    BR_CHECK(s_decoy_clicks == 0);
+    br_engine_destroy(e);
+}
+
 int main(void)
 {
     test_extents_2d();
@@ -293,5 +345,6 @@ int main(void)
     test_pixel_perfect();
     test_helpers();
     test_engine();
+    test_pointer_events();
     return br_test_finish();
 }

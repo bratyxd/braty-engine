@@ -1,5 +1,6 @@
 /* br_events: hit testing, federated pointer events, per-node listener table. */
 #include "braty/br_app.h"
+#include "braty/br_camera.h"
 #include "braty/br_events.h"
 #include "events/br_input_internal.h"
 #include "scene/br_scene_internal.h"
@@ -731,14 +732,14 @@ static void br_events_sdl_event(br_engine *e, const SDL_Event *ev, void *user)
         if (ev->motion.which != SDL_TOUCH_MOUSEID && ev->motion.which != SDL_PEN_MOUSEID) {
             s->mouse_moved = true;
             p = br_events_pointer(s, BR_POINTER_MOUSE, 0);
-            br_events_pointer_move(e, p, br_vec2_make(ev->motion.x, ev->motion.y), t);
+            br_events_pointer_move(e, p, br_camera_screen_to_stage(e, br_vec2_make(ev->motion.x, ev->motion.y)), t);
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
     case SDL_EVENT_MOUSE_BUTTON_UP:
         if (ev->button.which != SDL_TOUCH_MOUSEID && ev->button.which != SDL_PEN_MOUSEID) {
             p = br_events_pointer(s, BR_POINTER_MOUSE, 0);
-            br_vec2 pos = br_vec2_make(ev->button.x, ev->button.y);
+            br_vec2 pos = br_camera_screen_to_stage(e, br_vec2_make(ev->button.x, ev->button.y));
             if (ev->button.down) {
                 br_events_pointer_down(e, p, pos, ev->button.button, t);
             } else {
@@ -750,7 +751,7 @@ static void br_events_sdl_event(br_engine *e, const SDL_Event *ev, void *user)
         if (ev->wheel.which != SDL_TOUCH_MOUSEID && ev->wheel.which != SDL_PEN_MOUSEID) {
             float dir = ev->wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -1.0f : 1.0f;
             p = br_events_pointer(s, BR_POINTER_MOUSE, 0);
-            br_events_wheel(e, p, br_vec2_make(ev->wheel.mouse_x, ev->wheel.mouse_y),
+            br_events_wheel(e, p, br_camera_screen_to_stage(e, br_vec2_make(ev->wheel.mouse_x, ev->wheel.mouse_y)),
                             br_vec2_make(ev->wheel.x * dir, ev->wheel.y * dir), t);
         }
         break;
@@ -768,7 +769,7 @@ static void br_events_sdl_event(br_engine *e, const SDL_Event *ev, void *user)
         if (p == NULL) {
             break;
         }
-        br_vec2 pos = br_events_touch_position(e, ev->tfinger.x, ev->tfinger.y);
+        br_vec2 pos = br_camera_screen_to_stage(e, br_events_touch_position(e, ev->tfinger.x, ev->tfinger.y));
         if (ev->type == SDL_EVENT_FINGER_DOWN) {
             br_events_pointer_down(e, p, pos, SDL_BUTTON_LEFT, t);
         } else if (ev->type == SDL_EVENT_FINGER_MOTION) {
@@ -784,18 +785,20 @@ static void br_events_sdl_event(br_engine *e, const SDL_Event *ev, void *user)
     case SDL_EVENT_PEN_MOTION:
         p = br_events_pointer(s, BR_POINTER_PEN, ev->pmotion.which);
         if (p != NULL) {
-            br_events_pointer_move(e, p, br_vec2_make(ev->pmotion.x, ev->pmotion.y), t);
+            br_events_pointer_move(e, p, br_camera_screen_to_stage(e, br_vec2_make(ev->pmotion.x, ev->pmotion.y)), t);
         }
         break;
     case SDL_EVENT_PEN_DOWN:
-    case SDL_EVENT_PEN_UP:
+    case SDL_EVENT_PEN_UP: {
         p = br_events_pointer(s, BR_POINTER_PEN, ev->ptouch.which);
+        br_vec2 pos = br_camera_screen_to_stage(e, br_vec2_make(ev->ptouch.x, ev->ptouch.y));
         if (p != NULL && ev->ptouch.down) {
-            br_events_pointer_down(e, p, br_vec2_make(ev->ptouch.x, ev->ptouch.y), SDL_BUTTON_LEFT, t);
+            br_events_pointer_down(e, p, pos, SDL_BUTTON_LEFT, t);
         } else if (p != NULL) {
-            br_events_pointer_up(e, p, br_vec2_make(ev->ptouch.x, ev->ptouch.y), SDL_BUTTON_LEFT, t);
+            br_events_pointer_up(e, p, pos, SDL_BUTTON_LEFT, t);
         }
         break;
+    }
     case SDL_EVENT_PEN_PROXIMITY_OUT:
         p = br_events_pointer(s, BR_POINTER_PEN, ev->pproximity.which);
         if (p != NULL) {
@@ -821,6 +824,8 @@ static void br_events_ticker(br_engine *e, float dt, void *user)
             mouse = &s->pointers[i];
         }
     }
+    /* ponytail: replays the stored stage position, so a camera moving under a still mouse does
+     * not re-map it; keep the window position per pointer and map here if that matters */
     if (mouse != NULL && s->dynamic_seen && !s->mouse_moved) {
         br_events_pointer_move(e, mouse, mouse->position, SDL_GetTicksNS());
     }

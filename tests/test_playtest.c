@@ -398,6 +398,44 @@ static void test_3d_paths(void)
     br_engine_destroy(e);
 }
 
+/* ---- click by label with a zoomed, offset 2D camera: the pointer goes where the node is drawn */
+
+static int s_button_clicks;
+
+static void on_button_click(br_engine *e, br_event *ev, void *user)
+{
+    (void)e;
+    (void)ev;
+    (void)user;
+    s_button_clicks++;
+}
+
+static void test_click_with_camera(void)
+{
+    br_engine *e = make_game();
+    br_camera_set_headless_screen(e, 1280.0f, 720.0f);
+    br_camera c = br_camera_default_2d();
+    c.orthographic_size = 180.0f;
+    br_node cam = br_camera_create(e, &c);
+    br_node_set_position(e, cam, 1000.0f, 1000.0f);
+    br_node_add_child(e, br_scene_root(e), cam);
+    br_node button = br_sprite_create(e, br_texture_white(e));
+    br_sprite_set_size(e, button, 40.0f, 40.0f);
+    br_node_set_position(e, button, 1000.0f, 1000.0f);
+    br_node_set_label(e, button, "button");
+    br_node_set_event_mode(e, button, BR_EVENT_MODE_STATIC);
+    br_node_on(e, button, BR_EVENT_CLICK, on_button_click, NULL);
+    br_node_add_child(e, br_scene_root(e), button);
+    br_playtest_step(e, 1);
+    BR_CHECK(reply_has(e, "{\"cmd\":\"click\",\"label\":\"button\"}", "\"ok\":true"));
+    br_playtest_step(e, 3); /* move, press, release */
+    BR_CHECK(s_button_clicks == 1);
+    /* the pointer went to the window point the camera shows the centre (1020, 1020) at */
+    BR_CHECK(SDL_fabsf(br_input_mouse_position(e).x - 680.0f) < 0.01f);
+    BR_CHECK(SDL_fabsf(br_input_mouse_position(e).y - 400.0f) < 0.01f);
+    br_engine_destroy(e);
+}
+
 /* ---- "action" drives any action, also code-bound ones without a key, with analogue values */
 
 static void test_action(void)
@@ -531,6 +569,7 @@ int main(void)
     test_action();
     test_gamepad();
     test_3d_paths();
+    test_click_with_camera();
     test_interactive();
     test_record_replay();
     test_record_replay_gamepad();
