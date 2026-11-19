@@ -81,6 +81,9 @@ typedef void (*br_system_fn)(br_engine *e, float dt_seconds, void *user);
 
 /* Adds a system. Lower priority runs first within a phase. Names must be unique (copied). */
 void br_system_add(br_engine *e, const char *name, br_phase phase, int priority, br_system_fn fn, void *user);
+/* Removes a system by name. Inside a frame it stops running at once and leaves the list after
+ * the frame, so a system may remove itself or others; the name can be added again right away. */
+void br_system_remove(br_engine *e, const char *name);
 /* Enables or disables a system by name. Disabled systems are skipped. */
 void br_system_set_enabled(br_engine *e, const char *name, bool enabled);
 /* Puts a system into a named group ("gameplay"), or into none with NULL. */

@@ -174,6 +174,52 @@ static void test_system_groups(void)
     br_engine_destroy(e);
 }
 
+/* br_system_remove: immediate outside a frame, deferred (but at once silent) inside one; the name
+ * can be added again with another phase and priority. */
+typedef struct remover {
+    br_engine *e;
+    int        runs;
+} remover;
+
+static void remove_victim_system(br_engine *e, float dt, void *user)
+{
+    (void)dt;
+    remover *r = user;
+    r->runs++;
+    br_system_remove(e, "victim");      /* runs after this one in the same phase: skipped now */
+    br_system_remove(e, "self_remover"); /* removing itself mid-run is fine */
+}
+
+static void test_system_remove(void)
+{
+    br_engine *e = br_engine_create("test_app_remove", NULL);
+    int victim = 0;
+    remover r = { e, 0 };
+    br_system_add(e, "self_remover", BR_PHASE_UPDATE, 0, remove_victim_system, &r);
+    br_system_add(e, "victim", BR_PHASE_UPDATE, 10, count_system, &victim);
+    uint32_t before = br_system_count(e);
+    br_engine_step(e, 0.016f);
+    BR_CHECK(r.runs == 1 && victim == 0);
+    BR_CHECK(br_system_count(e) == before - 2);
+    br_engine_step(e, 0.016f);
+    BR_CHECK(r.runs == 1 && victim == 0);
+    /* re-added with a new phase and priority */
+    br_system_add(e, "victim", BR_PHASE_LATE_UPDATE, 7, count_system, &victim);
+    br_engine_step(e, 0.016f);
+    BR_CHECK(victim == 1);
+    bool found = false;
+    for (uint32_t i = 0; i < br_system_count(e); i++) {
+        br_system_info info;
+        if (br_system_get_info(e, i, &info) && SDL_strcmp(info.name, "victim") == 0) {
+            found = info.phase == BR_PHASE_LATE_UPDATE && info.priority == 7;
+        }
+    }
+    BR_CHECK(found);
+    br_system_remove(e, "victim"); /* outside a frame: gone now */
+    BR_CHECK(br_system_count(e) == before - 2);
+    br_engine_destroy(e);
+}
+
 /* --deterministic: constant dt whatever the wall clock, seeded RNG, synchronous asset loads. */
 static void on_loaded(br_engine *e, const char *path, void *asset, void *user)
 {
@@ -218,6 +264,7 @@ int main(void)
 {
     test_deterministic();
     test_system_groups();
+    test_system_remove();
     test_assets_override();
     test_user_and_args();
     test_game_config_main();

@@ -22,6 +22,7 @@ typedef struct br_system_entry {
     char        *group;           /* NULL = none */
     bool         group_enabled;   /* cached from engine.disabled_groups */
     uint64_t     last_time_ns;
+    bool         removed;         /* br_system_remove while stepping: purged after the step */
 } br_system_entry;
 
 typedef struct br_event_handler_entry {
@@ -67,6 +68,7 @@ struct br_engine {
 
     br_array systems;               /* br_system_entry, sorted by phase then priority */
     br_array pending_systems;       /* added while stepping; merged after the step */
+    br_array retired_system_names;  /* char *, names of removed systems (see br_system_remove) */
     bool     stepping;
     br_array disabled_groups;       /* char *, system groups switched off */
     br_array event_handlers;       /* br_event_handler_entry */

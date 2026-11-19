@@ -216,7 +216,16 @@ static void test_scene_systems(br_engine *e)
     BR_CHECK(count == 3);
     /* the name is free again for another scene; a loading scene does not run it yet */
     br_scene b = br_scene_load_async(e, "scenes/b.scene.json", BR_SCENE_SINGLE);
-    br_system_add_for_scene(e, b, "test.scoped", BR_PHASE_UPDATE, 0, count_system, &count);
+    br_system_add_for_scene(e, b, "test.scoped", BR_PHASE_LATE_UPDATE, 42, count_system, &count);
+    /* ... with its own phase and priority (the first scene's system was removed, not reused) */
+    bool fresh = false;
+    for (uint32_t i = 0; i < br_system_count(e); i++) {
+        br_system_info info;
+        if (br_system_get_info(e, i, &info) && strcmp(info.name, "test.scoped") == 0) {
+            fresh = info.phase == BR_PHASE_LATE_UPDATE && info.priority == 42;
+        }
+    }
+    BR_CHECK(fresh);
     settle(e);
     BR_CHECK(br_scene_is_loaded(e, b));
     int at_load = count;

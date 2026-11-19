@@ -45,6 +45,7 @@ br_engine *br_engine_create(const char *title, const char *asset_root)
     }
     br_array_init(&e->systems, sizeof(br_system_entry));
     br_array_init(&e->pending_systems, sizeof(br_system_entry));
+    br_array_init(&e->retired_system_names, sizeof(char *));
     br_array_init(&e->disabled_groups, sizeof(char *));
     br_array_init(&e->event_handlers, sizeof(br_event_handler_entry));
     br_array_init(&e->shutdown_handlers, sizeof(br_shutdown_entry));
@@ -78,6 +79,10 @@ void br_engine_destroy(br_engine *e)
     br_array_free(&e->shutdown_handlers);
     br_free_system_names(&e->systems);
     br_free_system_names(&e->pending_systems);
+    for (uint32_t i = 0; i < e->retired_system_names.count; i++) {
+        br_free(*(char **)br_array_at(&e->retired_system_names, i));
+    }
+    br_array_free(&e->retired_system_names);
     for (uint32_t i = 0; i < e->disabled_groups.count; i++) {
         br_free(*(char **)br_array_at(&e->disabled_groups, i));
     }
@@ -224,11 +229,60 @@ static br_system_entry *br_system_find(br_array *systems, const char *name)
 {
     for (uint32_t i = 0; i < systems->count; i++) {
         br_system_entry *s = br_array_at(systems, i);
-        if (SDL_strcmp(s->name, name) == 0) {
+        if (!s->removed && SDL_strcmp(s->name, name) == 0) {
             return s;
         }
     }
     return NULL;
+}
+
+/* A copy of name for a new system. A removed system's name is kept and handed back when the
+ * name is added again: the profiler caches scope names by pointer, so a freed name whose
+ * address a different system's name reused would be timed under the old name. */
+static char *br_system_name_copy(br_engine *e, const char *name)
+{
+    for (uint32_t i = 0; i < e->retired_system_names.count; i++) {
+        char *old = *(char **)br_array_at(&e->retired_system_names, i);
+        if (SDL_strcmp(old, name) == 0) {
+            br_array_remove_swap(&e->retired_system_names, i);
+            return old;
+        }
+    }
+    return br_strdup(name);
+}
+
+/* Drops entry i of systems: its name is retired, its group freed. */
+static void br_system_drop(br_engine *e, br_array *systems, uint32_t i)
+{
+    br_system_entry *s = br_array_at(systems, i);
+    br_array_push(&e->retired_system_names, &s->name);
+    br_free(s->group);
+    br_array_remove_ordered(systems, i);
+}
+
+void br_system_remove(br_engine *e, const char *name)
+{
+    for (uint32_t i = 0; name != NULL && i < e->pending_systems.count; i++) {
+        br_system_entry *s = br_array_at(&e->pending_systems, i);
+        if (SDL_strcmp(s->name, name) == 0) {
+            br_system_drop(e, &e->pending_systems, i); /* not in the running list yet */
+            return;
+        }
+    }
+    for (uint32_t i = 0; name != NULL && i < e->systems.count; i++) {
+        br_system_entry *s = br_array_at(&e->systems, i);
+        if (s->removed || SDL_strcmp(s->name, name) != 0) {
+            continue;
+        }
+        if (e->stepping) {
+            s->removed = true; /* the running loop must not shift: skipped now, purged after the frame */
+            s->enabled = false;
+        } else {
+            br_system_drop(e, &e->systems, i);
+        }
+        return;
+    }
+    br_log_warn("br_system_remove: no system '%s'", name != NULL ? name : "(null)");
 }
 
 /* Inserts after every entry that sorts before or equal, so equal keys keep adding order. */
@@ -257,7 +311,7 @@ void br_system_add(br_engine *e, const char *name, br_phase phase, int priority,
         return;
     }
     br_system_entry entry;
-    entry.name = br_strdup(name);
+    entry.name = br_system_name_copy(e, name);
     entry.phase = phase;
     entry.priority = priority;
     entry.fn = fn;
@@ -266,6 +320,7 @@ void br_system_add(br_engine *e, const char *name, br_phase phase, int priority,
     entry.group = NULL;
     entry.group_enabled = true;
     entry.last_time_ns = 0;
+    entry.removed = false;
     if (e->stepping) {
         /* the system list must not shift under the running loop; merged after the frame */
         br_array_push(&e->pending_systems, &entry);
@@ -444,6 +499,12 @@ bool br_engine_step(br_engine *e, float dt_seconds)
     }
     br_profiler_frame_end(e);
     e->stepping = false;
+    for (uint32_t i = e->systems.count; i > 0; i--) {
+        br_system_entry *s = br_array_at(&e->systems, i - 1);
+        if (s->removed) {
+            br_system_drop(e, &e->systems, i - 1);
+        }
+    }
     for (uint32_t i = 0; i < e->pending_systems.count; i++) {
         br_system_insert_sorted(&e->systems, br_array_at(&e->pending_systems, i));
     }

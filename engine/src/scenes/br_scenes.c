@@ -24,8 +24,8 @@ typedef struct br_scene_rec {
     br_node         root;
 } br_scene_rec;
 
-/* A system added with br_system_add_for_scene. Heap-allocated once (the engine keeps a pointer
- * as the system's user data) and reused by a later scene adding the same name. */
+/* A system added with br_system_add_for_scene (the engine keeps a pointer to it as the
+ * system's user data). Removed with the system when its scene unloads. */
 typedef struct br_scoped_system {
     char        *name;
     br_scene     scene;
@@ -464,11 +464,15 @@ void br_scene_unload(br_engine *e, br_scene scene)
             return; /* a listener unloaded it already */
         }
     }
-    for (uint32_t i = 0; i < s->scoped.count; i++) {
-        br_scoped_system *sys = *(br_scoped_system **)br_array_at(&s->scoped, i);
+    for (uint32_t i = s->scoped.count; i > 0; i--) {
+        br_scoped_system *sys = *(br_scoped_system **)br_array_at(&s->scoped, i - 1);
         if (br_scene_same(sys->scene, scene)) {
-            sys->scene = br_scene_none();
-            br_system_set_enabled(e, sys->name, false);
+            /* the engine stops calling it at once (deferred removal inside a frame), so the
+             * record can go now */
+            br_system_remove(e, sys->name);
+            br_free(sys->name);
+            br_free(sys);
+            br_array_remove_swap(&s->scoped, i - 1);
         }
     }
     br_node root = rec->root;
@@ -661,19 +665,10 @@ void br_system_add_for_scene(br_engine *e, br_scene scene, const char *name, br_
     }
     for (uint32_t i = 0; i < s->scoped.count; i++) {
         br_scoped_system *sys = *(br_scoped_system **)br_array_at(&s->scoped, i);
-        if (SDL_strcmp(sys->name, name) != 0) {
-            continue;
-        }
-        if (br_scene_valid(e, sys->scene)) {
+        if (SDL_strcmp(sys->name, name) == 0) {
             br_log_error("system '%s' already exists (scene '%s')", name, br_scene_name(e, sys->scene));
             return;
         }
-        // ponytail: the engine cannot remove systems, so a reused name keeps its first phase and priority.
-        sys->scene = scene;
-        sys->fn = fn;
-        sys->user = user;
-        br_system_set_enabled(e, name, true);
-        return;
     }
     br_scoped_system *sys = br_alloc(sizeof(br_scoped_system));
     if (sys == NULL) {

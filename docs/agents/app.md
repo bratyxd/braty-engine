@@ -38,6 +38,7 @@ next frame.
 | `br_engine_screenshot(e, path)` | Last rendered frame as PNG. |
 | `br_system_add(e, name, phase, priority, fn, user)` | Register behaviour. |
 | `br_system_set_enabled(e, name, on)` | Pause a system. |
+| `br_system_remove(e, name)` | Remove a system (safe inside a frame: it stops at once, leaves the list after the frame). |
 | `br_engine_on_shutdown(e, fn, user)` | Free your state (runs before the GPU is destroyed). |
 | `br_engine_add_event_handler(e, fn, user)` | Raw SDL events (input modules). |
 | `br_ticker_delta/elapsed/fps`, `br_ticker_set_speed/max_fps/min_fps` | Time. |

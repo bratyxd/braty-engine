@@ -102,8 +102,8 @@ game.json names the scenes (`examples/scenes/game.json`):
   `br_node_find_by_label(e, br_scene_root_2d(e, s), "hero", true)`.
 - Automatic collection only adds paths that exist as files or are already cached (a bare frame
   name like `"hero.png"` is resolved by the node, not loaded as a file).
-- `br_system_add_for_scene`: the engine cannot remove systems, so a name reused by a later scene
-  keeps its first phase and priority (`ponytail:` in br_scenes.c).
+- `br_system_add_for_scene`: the system is removed (`br_system_remove`) when its scene unloads,
+  so a later scene can add the same name with its own phase and priority.
 - Assets of an unloaded scene are freed at the next frame's flush (or at once outside a frame):
   a report printed in the same frame still lists them.
 - Nodes are built in one frame once the assets are in (not time-sliced).
