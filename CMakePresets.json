@@ -1,0 +1,75 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/.deps/sdl3"
+      }
+    },
+    {
+      "name": "windows-gcc",
+      "displayName": "Windows, MinGW-w64 GCC + Ninja (tested)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": { "CMAKE_C_COMPILER": "gcc" }
+    },
+    {
+      "name": "windows-msvc",
+      "displayName": "Windows, MSVC + Ninja (untested; run from a VS developer prompt)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": { "CMAKE_C_COMPILER": "cl" }
+    },
+    {
+      "name": "linux",
+      "displayName": "Linux, system compiler + Ninja (untested)",
+      "inherits": "base",
+      "generator": "Ninja"
+    },
+    {
+      "name": "macos",
+      "displayName": "macOS, Apple clang + Ninja (untested)",
+      "inherits": "base",
+      "generator": "Ninja"
+    },
+    {
+      "name": "ios",
+      "displayName": "iOS, Xcode (untested)",
+      "inherits": "base",
+      "generator": "Xcode",
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "BRATY_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "android",
+      "displayName": "Android, NDK toolchain + Ninja (untested; set ANDROID_NDK)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "toolchainFile": "$env{ANDROID_NDK}/build/cmake/android.toolchain.cmake",
+      "cacheVariables": {
+        "ANDROID_ABI": "arm64-v8a",
+        "ANDROID_PLATFORM": "android-24",
+        "BRATY_BUILD_TESTS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows-gcc", "configurePreset": "windows-gcc" },
+    { "name": "windows-msvc", "configurePreset": "windows-msvc" },
+    { "name": "linux", "configurePreset": "linux" },
+    { "name": "macos", "configurePreset": "macos" }
+  ],
+  "testPresets": [
+    { "name": "windows-gcc", "configurePreset": "windows-gcc", "output": { "outputOnFailure": true } },
+    { "name": "windows-msvc", "configurePreset": "windows-msvc", "output": { "outputOnFailure": true } },
+    { "name": "linux", "configurePreset": "linux", "output": { "outputOnFailure": true } },
+    { "name": "macos", "configurePreset": "macos", "output": { "outputOnFailure": true } }
+  ]
+}
