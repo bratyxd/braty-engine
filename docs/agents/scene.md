@@ -1,7 +1,7 @@
 # scene - nodes, node types, components, transforms, bounds, culling
 
 Headers: `engine/include/braty/br_node.h`, `br_sprite.h`. Source: `engine/src/scene/`.
-Tests: `tests/test_node.c`, `test_components.c`, `test_transform.c`. Example: `examples/sprites.c`.
+Tests: `tests/test_node.c`, `test_components.c`, `test_transform.c`, `test_query.c`. Example: `examples/sprites.c`.
 
 ## The model
 
@@ -27,6 +27,7 @@ Tests: `tests/test_node.c`, `test_components.c`, `test_transform.c`. Example: `e
 | `br_node_destroy(e, n)` | Deferred: invalid now, freed at the start of next frame. |
 | `br_node_type_register(e, &desc)` | Add a node type (from your module's register function). |
 | `br_component_register/add/get/remove/count/at/owner_at` | Components. |
+| `br_query_begin(e, ids, count)`, `br_query_next(&q)`, `br_query_end(&q)` | Nodes that have 1-4 components at once (`br_query.h`). |
 
 ## Snippet: a node type (from examples/sprites.c, the "demo_wave" type)
 
@@ -61,6 +62,29 @@ static void bunny_system(br_engine *e, float dt, void *user)
     }
 }
 ```
+
+## Snippet: nodes with several components (`br_query.h`, from tests/test_query.c)
+
+```c
+/* a + b: even nodes; data[] follows the ids order whatever array drives */
+uint32_t ab[] = { id.a, id.b };
+br_query q = br_query_begin(e, ab, 2);
+int visited = 0;
+bool data_ok = true;
+while (br_query_next(&q)) {
+    comp_a *a = q.data[0];
+    comp_b *b = q.data[1];
+    data_ok = data_ok && b->value == a->value * 10.0f && br_component_get(e, q.node, id.a) == a;
+    visited++;
+}
+br_query_end(&q);
+```
+
+The query walks the smallest of the component arrays and looks the others up, so it costs what
+the rarest component costs. `br_query_without(&q, id)` skips nodes that have a component. Inside
+the loop, add / remove components or destroy nodes only through `br_query_defer_add / _remove /
+_destroy` (applied by `br_query_end`); direct changes to the walked array stop the loop with an
+error.
 
 Field descriptions (`br_field_desc { name, BR_FIELD_*, offsetof(...) }`) let scene files fill a
 component; strings/asset paths are inline `char[BR_FIELD_STRING_SIZE]`.
