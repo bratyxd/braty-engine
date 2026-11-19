@@ -37,8 +37,8 @@ typedef struct br_light3d {
     float           inner_angle;        /* spot: full intensity inside (half angle, radians) */
     float           outer_angle;        /* spot: zero outside (half angle, radians) */
     bool            cast_shadows;
-    float           shadow_bias;        /* depth bias in shadow-map depth units */
-    float           shadow_normal_bias; /* offset along the normal, in shadow texels */
+    float           shadow_bias;        /* depth bias, world units along the light (default 0.05) */
+    float           shadow_normal_bias; /* receiver offset along its normal, world units (default 0.04) */
     uint32_t        cascade_count;      /* directional: 1..4 */
     float           shadow_distance;    /* directional: shadows end here (camera distance) */
     float           cascade_lambda;     /* 0 = uniform splits, 1 = logarithmic (default 0.75) */

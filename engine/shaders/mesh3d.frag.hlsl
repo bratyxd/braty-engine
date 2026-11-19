@@ -57,6 +57,18 @@ float4 unpremultiply(float4 t)
     return t.a > 0.0 ? float4(t.rgb / t.a, t.a) : t;
 }
 
+// One 2x2 bilinear depth comparison around uv (GatherRed: w = (0,0), z = (1,0), x = (0,1), y = (1,1)).
+float shadow_bilinear(float2 uv, float depth)
+{
+    float2 size = 1.0 / u_counts.zw;
+    float2 st = uv * size - 0.5;
+    float2 f = frac(st);
+    float4 g = u_shadow_tex.GatherRed(u_shadow_smp, (floor(st) + 1.0) / size);
+    float4 lit = float4(depth <= g.x ? 1.0 : 0.0, depth <= g.y ? 1.0 : 0.0, depth <= g.z ? 1.0 : 0.0, depth <= g.w ? 1.0 : 0.0);
+    return lerp(lerp(lit.w, lit.z, f.x), lerp(lit.x, lit.y, f.x), f.y);
+}
+
+// 3x3 bilinear PCF in one atlas tile. bias is in depth units, already slope-scaled.
 float shadow_tile(int tile, float3 p, float3 n, float bias, float normal_bias)
 {
     float4 c = mul(u_shadow_matrix[tile], float4(p + n * normal_bias, 1.0));
@@ -67,25 +79,27 @@ float shadow_tile(int tile, float3 p, float3 n, float bias, float normal_bias)
     float4 rect = u_shadow_rect[tile];
     float2 texel = u_counts.zw;
     float2 uv = rect.xy + (ndc.xy * float2(0.5, -0.5) + 0.5) * rect.zw;
-    uv = clamp(uv, rect.xy + texel * 1.5, rect.xy + rect.zw - texel * 1.5);
+    uv = clamp(uv, rect.xy + texel * 2.5, rect.xy + rect.zw - texel * 2.5);
     float depth = ndc.z - bias;
     float lit = 0.0;
     for (int y = -1; y <= 1; y++) {
         for (int x = -1; x <= 1; x++) {
-            float stored = u_shadow_tex.SampleLevel(u_shadow_smp, uv + float2(x, y) * texel, 0).r;
-            lit += depth <= stored ? 1.0 : 0.0;
+            lit += shadow_bilinear(uv + float2(x, y) * texel, depth);
         }
     }
     return lit / 9.0;
 }
 
-float light_shadow(int i, float3 p, float3 n)
+float light_shadow(int i, float3 p, float3 n, float3 l)
 {
     int tile = (int)u_light_color[i].w;
     if (tile < 0 || u_alpha.z < 0.5) {
         return 1.0;
     }
-    float bias = u_light_params[i].z;
+    // slope-scaled: surfaces at a grazing angle to the light need more bias
+    float n_dot_l = saturate(dot(n, l));
+    float slope = min(sqrt(1.0 - n_dot_l * n_dot_l) / max(n_dot_l, 1e-3), 4.0);
+    float bias = u_light_params[i].z * (1.0 + slope);
     float normal_bias = u_light_params[i].w;
     if (u_light_position[i].w == LIGHT3D_DIRECTIONAL) {
         float d = dot(p - u_camera_position.xyz, u_camera_forward.xyz);
@@ -192,7 +206,7 @@ float4 main(Mesh3dVaryings input) : SV_Target0
                           max(4.0 * n_dot_v * n_dot_l, 1e-4);
             // diffuse without 1/PI and specular times PI: a white light of intensity 1 lights a
             // white diffuse surface to 1 (glTF-viewer style units)
-            color += ((1.0 - f) * diffuse_color + spec * PI) * radiance * n_dot_l * light_shadow(i, p, n);
+            color += ((1.0 - f) * diffuse_color + spec * PI) * radiance * n_dot_l * light_shadow(i, p, n, l);
         }
         float3 r = reflect(-v, n);
         float gloss = 1.0 - roughness;
@@ -209,7 +223,7 @@ float4 main(Mesh3dVaryings input) : SV_Target0
             }
             float3 h = normalize(l + v);
             float spec = pow(max(dot(n, h), 0.0), max(u_specular.w, 1.0));
-            color += (base.rgb * n_dot_l + u_specular.rgb * spec) * radiance * light_shadow(i, p, n);
+            color += (base.rgb * n_dot_l + u_specular.rgb * spec) * radiance * light_shadow(i, p, n, l);
         }
         color += ambient * base.rgb * occlusion;
     } else {
@@ -218,7 +232,7 @@ float4 main(Mesh3dVaryings input) : SV_Target0
         for (int i = 0; i < count; i++) {
             float3 l;
             float3 radiance = light3d_radiance(i, p, l);
-            float lit = saturate(dot(n, l)) * light_shadow(i, p, n);
+            float lit = saturate(dot(n, l)) * light_shadow(i, p, n, l);
             float banded = ceil(lit * bands) / bands;
             float3 h = normalize(l + v);
             float spec = step(0.5, pow(max(dot(n, h), 0.0), max(u_specular.w, 1.0))) * step(0.001, lit);

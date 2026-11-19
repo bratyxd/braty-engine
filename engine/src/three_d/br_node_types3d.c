@@ -302,8 +302,8 @@ br_light3d br_light3d_default(br_light3d_kind kind)
     l.range = kind == BR_LIGHT3D_DIRECTIONAL ? 0.0f : 20.0f;
     l.inner_angle = 20.0f * BR_DEG_TO_RAD;
     l.outer_angle = 30.0f * BR_DEG_TO_RAD;
-    l.shadow_bias = kind == BR_LIGHT3D_DIRECTIONAL ? 0.002f : 0.0005f;
-    l.shadow_normal_bias = 0.03f;
+    l.shadow_bias = 0.05f;
+    l.shadow_normal_bias = 0.04f;
     l.cascade_count = 3;
     l.shadow_distance = 60.0f;
     l.cascade_lambda = 0.75f;

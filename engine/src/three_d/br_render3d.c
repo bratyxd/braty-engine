@@ -344,9 +344,13 @@ static void br_render3d_setup_lights(br_engine *e, br_view3d_state *v)
             float far_d = l->range > 0.0f ? l->range : 100.0f;
             br_vec3 up = SDL_fabsf(dir.y) > 0.99f ? br_vec3_make(0.0f, 0.0f, 1.0f) : br_vec3_make(0.0f, 1.0f, 0.0f);
             v->tile_view[t] = br_mat4_look_at(pos, br_vec3_add(pos, dir), up);
-            v->tile_projection[t] = br_mat4_perspective(SDL_min(l->outer_angle * 2.0f + 0.1f, 3.0f), 1.0f, 0.05f, far_d);
+            float near_d = 0.25f;
+            v->tile_projection[t] = br_mat4_perspective(SDL_min(l->outer_angle * 2.0f + 0.1f, 3.0f), 1.0f, near_d, far_d);
             br_render3d_tile_rect(v, t);
-            bias = l->shadow_bias / far_d; /* ponytail: linear conversion, perspective depth is not linear */
+            /* ponytail: perspective depth is not linear; the world bias is converted with the
+             * depth slope at half the range (too much close to the light, too little far away) */
+            float mid = far_d * 0.5f;
+            bias = l->shadow_bias * near_d * far_d / ((far_d - near_d) * mid * mid);
             tile = (float)t;
             spot_tiles++;
         }
