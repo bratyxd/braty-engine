@@ -16,7 +16,8 @@
  * (sRGB) and converted to linear. A gltf node's "animation" is a clip name or index. Shapes and their "size": cube [x, y, z], sphere [r],
  * plane [w, d], cylinder [r, h], cone [r, h], torus [R, r], capsule [r, length].
  *
- * glTF nodes: "source" may name one node of a kit ("models/kit.glb#Tree"); "batch": false keeps
+ * glTF nodes: "source" may name one node of a kit ("models/kit.glb#Tree"); "autoplay" a clip
+ * started at once ("" = none; default: the file's scene extras "autoplay"); "batch": false keeps
  * repeated static meshes as separate mesh3d nodes; "camera": true (the file's first camera, or a
  * framing camera if it has none) or "Name" makes a glTF camera the view's camera;
  * "default_light": true adds a sun when the file has no lights. Every 3D node may carry
@@ -236,6 +237,10 @@ static br_node3d br_json3d_gltf(br_engine *e, const cJSON *json)
     bool batch = true;
     br_data_get_bool(e, json, "batch", &batch);
     options.no_batching = !batch;
+    char autoplay[BR_DATA_NAME_SIZE];
+    if (br_data_get_string(e, json, "autoplay", autoplay, sizeof(autoplay))) {
+        options.autoplay = autoplay; /* "" = none (the file's scene extras otherwise) */
+    }
     /* the asset reference belongs to the load in progress (released with the scene / file root) */
     br_node3d n = br_gltf_instantiate(e, source, none, &options);
     if (!br_node3d_valid(e, n)) {

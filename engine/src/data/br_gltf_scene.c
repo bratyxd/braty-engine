@@ -11,6 +11,7 @@
  * to it, "size" included).
  */
 #include "data/br_gltf_scene_internal.h"
+#include "three_d/br_gltf_internal.h"
 
 bool br_data_is_model_path(const char *path)
 {
@@ -93,7 +94,18 @@ cJSON *br_data_model_scene_json(br_engine *e, const char *path, bool scene)
     }
     cJSON_AddStringToObject(content, "type", "gltf");
     cJSON_AddStringToObject(content, "source", path);
-    cJSON_AddBoolToObject(content, "camera", true);
+    const br_gltf_state *g = e->gltf; /* br_gltf_set_load_options */
+    if (g != NULL && g->load_camera[0] != '\0') {
+        cJSON_AddStringToObject(content, "camera", g->load_camera);
+    } else {
+        cJSON_AddBoolToObject(content, "camera", true);
+    }
+    if (g != NULL && g->load_autoplay_set) {
+        cJSON_AddStringToObject(content, "autoplay", g->load_autoplay);
+    }
+    if (g != NULL && g->load_no_batching) {
+        cJSON_AddBoolToObject(content, "batch", false);
+    }
     cJSON_AddBoolToObject(content, "default_light", true);
     cJSON_AddItemToArray(list, content);
     cJSON_AddItemToObject(view, "scene", list);

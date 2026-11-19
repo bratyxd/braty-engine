@@ -60,6 +60,11 @@ typedef struct br_gltf_state {
     br_array components3d;     /* br_component3d_set by component id - 1 (grown on first use) */
     br_array owned;            /* br_gltf_owned by 3D node index */
     uint32_t collider_id;      /* "gltf.collider" */
+    /* br_gltf_set_load_options (strings copied; "" = unset) */
+    char     load_camera[64];
+    char     load_autoplay[64];
+    bool     load_autoplay_set;
+    bool     load_no_batching;
 } br_gltf_state;
 
 /* br_anim3d.c: the animation system (registered by br_gltf_register). */

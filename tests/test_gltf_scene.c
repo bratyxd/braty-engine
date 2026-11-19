@@ -323,6 +323,29 @@ static void test_as_scene(br_engine *e)
     counts after = take_counts(e);
     BR_CHECK(same_counts(base, after));
     BR_CHECK(br_assets_get(e, "level.gltf") == NULL);
+
+    /* load options: another camera, no batching, no autoplay */
+    br_gltf_options options;
+    SDL_zero(options);
+    options.camera = "TopCam";
+    options.no_batching = true;
+    options.autoplay = "";
+    br_gltf_set_load_options(e, &options);
+    s = br_scene_load(e, "level.gltf", BR_SCENE_SINGLE);
+    br_gltf_set_load_options(e, NULL);
+    view = br_node_find_by_label(e, br_scene_root_2d(e, s), "level", true);
+    cd = br_camera3d_get(e, br_view3d_camera(e, view));
+    BR_CHECK(cd != NULL && cd->projection == BR_PROJECTION_ORTHOGRAPHIC);
+    br_node3d inst = br_node3d_first_child(e, br_scene_root_3d(e, s));
+    while (br_node3d_valid(e, inst) && br_model3d_model(e, inst) == NULL) {
+        inst = br_node3d_next_sibling(e, inst);
+    }
+    BR_CHECK(count_children(e, inst, br_batched_mesh3d_type(e), NULL) == 0);
+    BR_CHECK(br_animator3d_get(e, inst) != NULL && br_animator3d_get(e, inst)->clip == -1);
+    br_scene_unload(e, s);
+    br_engine_step(e, 1.0f / 60.0f);
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(same_counts(base, take_counts(e)));
 }
 
 static void test_as_prefab(br_engine *e)

@@ -109,6 +109,8 @@ typedef struct br_gltf_options {
     const char *autoplay;     /* clip started at once; NULL = the scene extras' "autoplay" (a clip
                                  name, or true = the first clip); "" = none */
     bool        no_batching;  /* keep one mesh3d per node even for repeated static meshes */
+    const char *camera;       /* scene loads / view3d JSON "camera": true: the glTF camera (by node
+                                 name) that becomes the view's camera; NULL = the first one */
 } br_gltf_options;
 
 /* Registers the module (model loader, model3d node type, animation system). Called by br_builtin.c. */
@@ -152,6 +154,10 @@ br_node3d br_model_instantiate_ex(br_engine *e, br_model *model, const br_gltf_o
  * it is destroyed (inside a scene / scene-file load, that load owns it). Zero handle on failure
  * (missing file or node name, logged). */
 br_node3d br_gltf_instantiate(br_engine *e, const char *path, br_node3d parent, const br_gltf_options *options);
+/* Options for every .glb / .gltf loaded as a scene (br_scene_load) or a 2D prefab: camera, autoplay
+ * and no_batching (node is ignored). Copied; NULL goes back to the defaults. The file's scene extras
+ * ("autoplay", "batch") apply when these leave them unset. */
+void br_gltf_set_load_options(br_engine *e, const br_gltf_options *options);
 /* The camera3d node made for a glTF camera of an instance: the camera on the node called `name`,
  * or the first camera (name NULL). Zero handle if none. */
 br_node3d br_model3d_camera(br_engine *e, br_node3d n, const char *name);

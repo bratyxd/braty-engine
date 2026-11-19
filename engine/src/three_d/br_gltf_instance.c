@@ -439,6 +439,25 @@ br_node3d br_model_instantiate_ex(br_engine *e, br_model *model, const br_gltf_o
     return self;
 }
 
+void br_gltf_set_load_options(br_engine *e, const br_gltf_options *options)
+{
+    br_gltf_state *s = e->gltf;
+    if (s == NULL) {
+        return;
+    }
+    s->load_camera[0] = '\0';
+    s->load_autoplay[0] = '\0';
+    s->load_autoplay_set = false;
+    s->load_no_batching = false;
+    if (options == NULL) {
+        return;
+    }
+    br_str_copy(s->load_camera, sizeof(s->load_camera), options->camera != NULL ? options->camera : "");
+    br_str_copy(s->load_autoplay, sizeof(s->load_autoplay), options->autoplay != NULL ? options->autoplay : "");
+    s->load_autoplay_set = options->autoplay != NULL;
+    s->load_no_batching = options->no_batching;
+}
+
 br_node3d br_model3d_camera(br_engine *e, br_node3d n, const char *name)
 {
     br_gltf_instance *inst = br_gltf_instance_get(e, n);
