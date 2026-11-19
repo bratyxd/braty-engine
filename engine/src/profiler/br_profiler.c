@@ -16,7 +16,8 @@ static const char *const br_profiler_counter_names[BR_PROFILER_COUNTER_COUNT] = 
     "break: texture",   "break: blend",     "break: state",    "break: shader",   "break: other",
     "pipeline switches", "target switches", "uploads",         "upload bytes",    "nodes",
     "nodes drawn",      "nodes culled",     "3D nodes",        "3D animators",    "audio voices",
-    "heap bytes",       "heap allocs",      "assets",          "assets loading",
+    "heap bytes",       "heap allocs",      "assets",          "assets loading",  "animators",
+    "tweens",           "particles drawn",  "3D items",        "3D items culled", "3D shadow casters",
 };
 
 static const char *const br_profiler_verdict_names[BR_PROFILER_VERDICT_COUNT] = {
@@ -340,6 +341,8 @@ static void br_profiler_gather_counters(br_engine *e, br_profiler_state *p)
     }
     c[BR_PROFILER_NODES_3D] += br_node3d_count(e);
     c[BR_PROFILER_ANIMATORS_3D] += br_animator3d_count(e);
+    c[BR_PROFILER_ANIMATORS] += br_animator_count(e);
+    c[BR_PROFILER_TWEENS] += br_tween_count(e);
     if (e->audio != NULL) {
         c[BR_PROFILER_AUDIO_VOICES] += br_audio_instance_count(e);
     }

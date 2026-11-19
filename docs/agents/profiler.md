@@ -8,7 +8,7 @@ Header: `engine/include/braty/br_profiler.h`. Source: `engine/src/profiler/` (UI
 
 Every frame is recorded into a ring of the last 300 frames (no per-frame allocation): one scope
 per engine system plus the frame steps (`update`, `render.prepare`, `gpu.acquire`, `render`,
-`gpu.present`, `pace`), the scopes your code adds, ~24 counters (draw calls, batch breaks by
+`gpu.present`, `pace`), the scopes your code adds, 30 counters (draw calls, batch breaks by
 reason, uploads, nodes, heap...), and a GPU frame time estimated from fences. From those it
 says each frame what limits the frame rate: `CPU bound (update)`, `CPU bound (render submit)`,
 `GPU bound`, `vsync limited` or `FPS cap limited`, with the three most expensive scopes.
@@ -53,5 +53,6 @@ Command line (any app): `--profiler` (panel open), `--profiler-hud`, `--profile 
 - `--deterministic` (play-tests, goldens): the panel and HUD show fixed placeholder times.
 - `-DBRATY_PROFILER_OFF` (CMake `BRATY_PROFILER=OFF`) makes scopes and counters empty inline
   functions; frame times, the GPU estimate and the HUD still work, the update/render split not.
-- Counters cover the 2D batcher; 3D draw items, culling and shadow casters, tween and particle
-  counts are not exposed by their modules yet (docs/PROFILING.md, "Not measured yet").
+- Counters cover the 2D batcher plus animators, tweens, particles drawn, 3D draw items, 3D items
+  culled and 3D shadow casters; 3D / particle pipeline binds and uploads outside `br_gpu` are not
+  counted (docs/PROFILING.md, "Not measured yet").

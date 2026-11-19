@@ -1,6 +1,7 @@
 /* br_render3d: per-view collect (camera, culling, draw items, sorting, lights, shadow tiles) in
  * PRE_RENDER, and the RENDER callback that runs the shadow pass, the main HDR pass and post. */
 #include "three_d/br_three_d_internal.h"
+#include "braty/br_profiler.h"
 
 #include "mesh3d.frag.h"
 #include "mesh3d.vert.h"
@@ -60,7 +61,11 @@ br_vec3 br_render3d_camera_position(br_render3d_ctx *ctx)
 
 bool br_render3d_visible(br_render3d_ctx *ctx, br_aabb world_bounds)
 {
-    return br_frustum_planes_aabb(ctx->frustum, world_bounds);
+    bool visible = br_frustum_planes_aabb(ctx->frustum, world_bounds);
+    if (!visible) {
+        br_profiler_count(ctx->e, BR_PROFILER_ITEMS_3D_CULLED, 1);
+    }
+    return visible;
 }
 
 br_node br_render3d_view(br_render3d_ctx *ctx)
@@ -86,6 +91,7 @@ void br_render3d_submit_with_parent(br_render3d_ctx *ctx, const br_draw3d *draw,
     uint32_t passes = mat->alpha_mode == BR_ALPHA_BLEND ? BR_PASS3D_TRANSPARENT : BR_PASS3D_OPAQUE;
     if (!br_frustum_planes_aabb(ctx->frustum, draw->world_bounds)) {
         passes = 0;
+        br_profiler_count(e, BR_PROFILER_ITEMS_3D_CULLED, 1);
     }
     if (draw->cast_shadows) {
         passes |= BR_PASS3D_SHADOW;
@@ -418,6 +424,8 @@ void br_render3d_collect(br_engine *e, br_view3d_state *v)
     v->stats.items_opaque = v->opaque.count;
     v->stats.items_transparent = v->transparent.count;
     v->stats.items_shadow = v->shadow.count;
+    br_profiler_count(e, BR_PROFILER_ITEMS_3D, v->opaque.count + v->transparent.count);
+    br_profiler_count(e, BR_PROFILER_SHADOW_CASTERS_3D, v->shadow.count);
     v->stats.lights = v->lights.count;
     for (uint32_t t = 0; t < BR_SHADOW3D_TILES; t++) {
         v->stats.shadow_tiles += (v->shadow_tiles >> t) & 1u;

@@ -39,7 +39,7 @@ API: `engine/include/braty/br_profiler.h`; agent guide: `docs/agents/profiler.md
 ## What is recorded
 
 Every frame goes into a ring of the last 300 frames (5 s at 60 FPS, ~2.5 MB allocated once).
-Each frame holds its scopes (start/end in ns, nesting), ~24 counters and the timings below.
+Each frame holds its scopes (start/end in ns, nesting), 30 counters and the timings below.
 
 The engine wraps every system in a scope named after the system, and the steps of
 `br_engine_step` in these **top-level scopes**:
@@ -182,11 +182,14 @@ Per frame; summed over the frame or sampled at its end.
 | heap bytes, heap allocs | `br_memory_get_stats`: live bytes, `br_alloc` calls this frame (whole process) |
 | assets, assets loading | `br_assets_count`, `br_assets_pending` |
 
-**Not measured yet** (need a public number from a module this task could not change): 3D draw
-items vs culled and shadow casters per frame (`br_view3d_get_stats` exists per view, but there is
-no way to list the views), pipeline binds outside the 2D batcher (3D, particles, filters), uploads
-that bypass `br_gpu` (`br_render3d.c` instance data, compressed textures), particles alive,
-tweens / animators sampled per frame (Task 17's animation module).
+Also counted (Phase 2 integration): `animators` and `tweens` alive (every animator and tween
+alive is advanced each frame), `particles drawn` (particles of every particle_container drawn),
+`3D items` (draw items in the main passes, every view), `3D items culled` (outside the camera
+frustum) and `3D shadow casters`. Headless runs draw nothing, so the particle and 3D counters stay
+0 there.
+
+**Not measured yet:** pipeline binds outside the 2D batcher (3D, particles, filters), uploads
+that bypass `br_gpu` (`br_render3d.c` instance data, compressed textures).
 
 ## Capture, summaries, budgets
 

@@ -7,6 +7,7 @@
  * The draw itself is an in-pass render callback with its own pipeline. */
 #include "app/br_engine_internal.h"
 #include "braty/br_particles.h"
+#include "braty/br_profiler.h"
 
 #include "particles.vert.h"
 #include "textured.frag.h"
@@ -289,6 +290,7 @@ static void br_particle_render(br_engine *e, br_node n, const void *data, br_ren
         store->color[i] = (float)bytes[i] / 255.0f;
     }
     store->draw_count = count;
+    br_profiler_count(e, BR_PROFILER_PARTICLES, count);
     br_render_push_callback(rc, br_particle_draw, store, false);
 }
 

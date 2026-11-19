@@ -492,6 +492,26 @@ static void test_overlay_input(void)
     br_engine_destroy(e);
 }
 
+/* Counters the animation module feeds: animators and tweens alive this frame. */
+static void test_animation_counters(void)
+{
+    br_engine *e = br_engine_create("test_profiler_counters", NULL);
+    br_node n = br_node_create_container(e);
+    br_node_add_child(e, br_scene_root(e), n);
+    br_animator a = br_animator_add(e, br_anim_target_2d(n));
+    BR_CHECK(br_animator_valid(e, a));
+    br_tween_to_f(e, br_anim_target_2d(n), "alpha", 0.0f, 10.0f, BR_EASE_LINEAR);
+    br_tween_to_f(e, br_anim_target_2d(n), "x", 5.0f, 10.0f, BR_EASE_LINEAR);
+    br_engine_step(e, 1.0f / 60.0f);
+    br_profiler_frame_info info;
+    BR_CHECK(br_profiler_get_frame(e, 0, &info));
+    BR_CHECK(info.counters[BR_PROFILER_ANIMATORS] == 1);
+    BR_CHECK(info.counters[BR_PROFILER_TWEENS] == 2);
+    BR_CHECK(info.counters[BR_PROFILER_ITEMS_3D] == 0 && info.counters[BR_PROFILER_PARTICLES] == 0);
+    BR_CHECK(SDL_strcmp(br_profiler_counter_name(BR_PROFILER_SHADOW_CASTERS_3D), "3D shadow casters") == 0);
+    br_engine_destroy(e);
+}
+
 int main(void)
 {
     SDL_Init(0);
@@ -503,6 +523,7 @@ int main(void)
     test_trace_and_summary();
     test_budget();
     test_overhead();
+    test_animation_counters();
 #endif
     test_overlay_input();
     SDL_Quit();

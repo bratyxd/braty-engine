@@ -74,6 +74,12 @@ typedef enum br_profiler_counter {
     BR_PROFILER_HEAP_ALLOCS,       /* br_alloc calls this frame (whole process) */
     BR_PROFILER_ASSETS,            /* cached assets */
     BR_PROFILER_ASSETS_LOADING,    /* asset loads in flight */
+    BR_PROFILER_ANIMATORS,         /* animators alive (2D and 3D, br_animator_count) */
+    BR_PROFILER_TWEENS,            /* tweens alive (br_tween_count) */
+    BR_PROFILER_PARTICLES,         /* particles drawn (every particle_container drawn this frame) */
+    BR_PROFILER_ITEMS_3D,          /* 3D draw items in the main passes (opaque + transparent, every view) */
+    BR_PROFILER_ITEMS_3D_CULLED,   /* 3D draw items outside the camera frustum */
+    BR_PROFILER_SHADOW_CASTERS_3D, /* 3D draw items in the shadow pass */
     BR_PROFILER_COUNTER_COUNT
 } br_profiler_counter;
 
