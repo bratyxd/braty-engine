@@ -596,6 +596,7 @@ void br_data_register(br_engine *e)
     br_node_json_mesh_register(e);
     br_node_json_particle_container_register(e);
     br_node_json_text_register(e);
+    br_node_json_view3d_register(e);
     br_data_reload_register(e);
     br_engine_on_shutdown(e, br_data_shutdown, NULL);
 }

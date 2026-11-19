@@ -136,6 +136,7 @@ void br_node_json_graphics_register(br_engine *e);
 void br_node_json_mesh_register(br_engine *e);
 void br_node_json_particle_container_register(br_engine *e);
 void br_node_json_text_register(br_engine *e);
+void br_node_json_view3d_register(br_engine *e);
 
 /* Container (all-node) fields: transform, appearance, mask, filters, events. */
 void br_node_json_container_read(br_engine *e, br_node n, const cJSON *json);

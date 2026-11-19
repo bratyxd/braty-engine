@@ -1,0 +1,23 @@
+{
+  "type": "view3d",
+  "label": "json_view",
+  "size": [420, 250],
+  "position": [845, 455],
+  "msaa": 4,
+  "background": "#1c2333",
+  "environment": { "sky": "#a8c0e8", "ground": "#4a3e30", "intensity": 0.5 },
+  "camera": { "position": [0, 2.2, 6.5], "target": [0, 0.8, 0], "fov": 40, "near": 0.1, "far": 100 },
+  "scene": [
+    { "type": "light", "kind": "directional", "color": "#fff2e0", "intensity": 2.2, "shadows": true,
+      "cascades": 2, "shadow_distance": 20, "position": [-3, 6, 4], "target": [0, 0, 0] },
+    { "type": "mesh", "label": "floor", "shape": "plane", "size": [20, 20], "cast_shadows": false,
+      "material": { "color": "#5c6470", "roughness": 0.95 } },
+    { "type": "gltf", "label": "json_fox", "source": "Fox/Fox.glb", "animation": "Run",
+      "position": [-0.8, 0, 0], "rotation": [0, 60, 0], "scale": 0.02 },
+    { "type": "group", "label": "props", "position": [1.8, 0, -0.5], "children": [
+      { "type": "gltf", "source": "BoxAnimated/BoxAnimated.glb", "animation": 0, "position": [0, 0, 0], "scale": 0.6 },
+      { "type": "mesh", "shape": "torus", "size": [0.45, 0.15], "position": [-0.4, 0.15, 1.6], "rotation": [90, 0, 0],
+        "material": { "model": "pbr", "color": "#e8b030", "metallic": 1, "roughness": 0.3 } }
+    ] }
+  ]
+}
