@@ -143,9 +143,11 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
 21. **friction - the debug frame graph is red at 60 Hz** (`engine/src/debug/br_debug_panels.c`,
     fixed `ms > 17.0f`). With vsync at 60 Hz, ordinary 16.6-17.2 ms frames show as red bars.
     **Fix:** compare against the display's refresh period (`SDL_GetCurrentDisplayMode`) + 10%.
-22. **friction - examples must run from the build directory** (`examples/data_demo.c` loads
-    `../../examples/data/game.json`). Fixed for the sample by the post-build copy (see 4);
-    examples could do the same in the root `CMakeLists.txt`.
+22. **friction - examples only work from the default build directory** (`examples/*_demo.c`
+    set `asset_root` / game.json to `../../examples...` relative to the executable). A build in
+    any other directory (`cmake -B out/x`) cannot find the data. Fixed for the sample by the
+    post-build copy (see 4); the root `CMakeLists.txt` could copy `examples/` data the same way
+    (or pass the source path as a compile definition).
 
 ## What worked well (keep it)
 

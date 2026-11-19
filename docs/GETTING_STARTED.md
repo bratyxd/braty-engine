@@ -54,8 +54,9 @@ add_custom_command(TARGET my_game POST_BUILD
 
 **Why the copy:** `game.json` is read from the executable's directory and `asset_root` is
 relative to it, so a game that ships with its data next to the binary finds it no matter where it
-is started from. The examples in the engine repository do not do this and must be run from
-`build/<preset>/`. The catch: hot reload (debug builds) watches the copies, so edit the files in
+is started from. The examples in the engine repository instead point `asset_root` at
+`../../examples` relative to the executable, so they only work from the default
+`build/<preset>/` directory. The catch: hot reload (debug builds) watches the copies, so edit the files in
 the build directory while iterating, or rebuild to copy your edits over.
 
 ## 3. `br_main`: a window
