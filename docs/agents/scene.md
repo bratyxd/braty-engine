@@ -101,5 +101,6 @@ component; strings/asset paths are inline `char[BR_FIELD_STRING_SIZE]`.
 - Outside a step (init, tests) destroy is immediate.
 - Render groups (`br_node_set_render_group`): descendants' cached world matrices are relative to
   the group. `br_node_world_transform`/`to_global` are always absolute.
-- Masks: the mask node is not drawn as content and does not count in its parent's bounds.
+- Masks: the mask node is not drawn as content and does not count in its parent's bounds. It is
+  drawn when it is the top node of `br_render_subtree_to_texture` (alpha/colour masks, render.md).
 - `br_node_child_count` includes children destroyed this frame until the flush.

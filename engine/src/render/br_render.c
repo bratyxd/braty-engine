@@ -394,6 +394,14 @@ void br_render_set_effects_hook(br_engine *e, br_render_effects_fn fn, void *use
     e->render->effects_user = user;
 }
 
+br_render_effects_fn br_render_effects_hook(br_engine *e, void **user)
+{
+    if (user != NULL) {
+        *user = e->render->effects_user;
+    }
+    return e->render->effects_fn;
+}
+
 void br_render_add_overlay(br_engine *e, br_render_overlay_fn fn, void *user)
 {
     br_overlay_entry entry = { fn, user };

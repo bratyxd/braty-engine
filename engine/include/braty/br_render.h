@@ -122,9 +122,10 @@ void br_render_pipeline_setup(const br_render_callback_info *info, br_pipeline_d
 /* SDL blend state for a built-in blend mode (premultiplied). */
 SDL_GPUColorTargetBlendState br_render_blend_state(br_blend_mode blend);
 
-/* Renders n's subtree (n included, ignoring n's own effects) into a render texture, mapping
- * the world rect `area` onto the whole texture; then continues where it was. Use from a node
- * render callback, an effects hook or an overlay. clear: clear to clear_color first. */
+/* Renders n's subtree (n included even if it is another node's mask; n's own effects ignored)
+ * into a render texture, mapping the world rect `area` onto the whole texture; then continues
+ * where it was. Use from a node render callback, an effects hook or an overlay.
+ * clear: clear to clear_color first. */
 void br_render_subtree_to_texture(br_render_ctx *rc, br_node n, br_texture target, br_rect area, bool clear,
                                   br_color clear_color);
 
@@ -134,8 +135,11 @@ void br_render_subtree_to_texture(br_render_ctx *rc, br_node n, br_texture targe
  * true. Return true if you drew the node (typically via br_render_subtree_to_texture + a
  * quad), false to let the engine draw it normally. One per engine (Task 8). */
 typedef bool (*br_render_effects_fn)(br_engine *e, br_node n, br_render_ctx *rc, void *user);
-/* Installs the effects hook (replaces any previous one). */
+/* Installs the effects hook (replaces any previous one, e.g. the filters module's). */
 void br_render_set_effects_hook(br_engine *e, br_render_effects_fn fn, void *user);
+/* The installed effects hook (NULL if none) and its user pointer. Read it before installing your
+ * own and call it for the nodes you do not handle, so the filters module keeps working. */
+br_render_effects_fn br_render_effects_hook(br_engine *e, void **user);
 
 /* Overlay: called every frame after the stage, in window space (debug UI, HUD tools). */
 typedef void (*br_render_overlay_fn)(br_engine *e, br_render_ctx *rc, void *user);

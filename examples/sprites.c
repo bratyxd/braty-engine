@@ -50,6 +50,9 @@ typedef struct demo_state {
     uint32_t   callback_type;
     br_texture callback_target;   /* cleared by an own-passes callback every frame */
     br_texture effect_target;     /* filled by the effects hook */
+    br_node    cached;            /* the node demo_effects draws */
+    br_render_effects_fn next_effects;  /* the hook installed before ours (filters) */
+    void      *next_effects_user;
     br_node    group;             /* render group moved every frame */
     br_node    culled;            /* cullable sprite parked off screen */
     uint32_t   triangle_offset;   /* this frame's triangle vertices (in-pass callback) */
@@ -451,12 +454,13 @@ static void callback_node_render(br_engine *e, br_node n, const void *data, br_r
     br_render_push_callback(rc, clear_target_draw, s, true);
 }
 
-/* Effects hook: draws cache_as_texture nodes through a render texture, tinted to show it. */
+/* Effects hook: draws one cache_as_texture node through a render texture, tinted to show it.
+ * Every other node goes to the hook installed before ours (the filters module's). */
 static bool demo_effects(br_engine *e, br_node n, br_render_ctx *rc, void *user)
 {
     demo_state *s = user;
-    if (!br_node_cache_as_texture(e, n)) {
-        return false; /* not ours: draw normally */
+    if (!br_node_equal(n, s->cached)) {
+        return s->next_effects != NULL && s->next_effects(e, n, rc, s->next_effects_user);
     }
     br_rect b = br_node_get_bounds(e, n);
     if (br_rect_is_empty(b) || !br_render_texture_resize(e, s->effect_target, b.width, b.height)) {
@@ -541,13 +545,14 @@ static void setup_extension_strip(br_engine *e, demo_state *s, br_node top_layer
 
     /* effects hook: a cache_as_texture group is drawn by demo_effects */
     s->effect_target = br_render_texture_create(e, 64.0f, 64.0f, 1.0f);
+    s->next_effects = br_render_effects_hook(e, &s->next_effects_user); /* chain, do not replace */
     br_render_set_effects_hook(e, demo_effects, s);
-    br_node cached = br_node_create_container(e);
-    br_node_set_position(e, cached, 660.0f, 15.0f);
-    br_node_add_child(e, strip, cached);
-    add_sprite(e, cached, s->checker, 0.0f, 0.0f);
-    add_sprite(e, cached, s->bunny_textures[2], 20.0f, 14.0f);
-    br_node_set_cache_as_texture(e, cached, true);
+    s->cached = br_node_create_container(e);
+    br_node_set_position(e, s->cached, 660.0f, 15.0f);
+    br_node_add_child(e, strip, s->cached);
+    add_sprite(e, s->cached, s->checker, 0.0f, 0.0f);
+    add_sprite(e, s->cached, s->bunny_textures[2], 20.0f, 14.0f);
+    br_node_set_cache_as_texture(e, s->cached, true);
 
     /* render layer: a big bunny that lives among the bunnies but draws above everything */
     br_node big = add_sprite(e, bunny_parent, s->bunny_textures[1], 800.0f, 245.0f);
