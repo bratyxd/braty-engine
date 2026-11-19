@@ -12,7 +12,7 @@ Writes into sample_projects/star_courier/data/assets/:
   sounds/music.wav                an 8-second seamless loop (bass, pad, arpeggio)
 
 All art is drawn from shapes (anti-aliased by 4x4 supersampling) in one palette; all sound is
-synthesised. Original work, same licence as the engine.
+synthesised. Original work made for this project (licensed like the engine code).
 """
 import json
 import math
