@@ -11,7 +11,7 @@ font:
 
 | Window | Shows |
 |---|---|
-| Stats | FPS, frame-time graph (red = over 17 ms), draw calls / batches / passes / vertices / nodes drawn (`br_render_get_stats`), node / texture / asset counts, render-target pool, asset cache list (`br_assets_list`) |
+| Stats | FPS, frame-time graph (red = over 17 ms), draw calls / batches / passes / vertices / nodes drawn (`br_render_get_stats`), node / texture / asset counts, render-target pool, heap (`br_memory_get_stats`: live KB, blocks, peak), Arenas header (every tracked arena: used / capacity / peak, see `docs/agents/arena.md`), asset cache list (`br_assets_list`) |
 | Systems | every system (`br_system_get_info`): enable checkbox, phase, last run time |
 | Scene | node tree under the stage; `+`/`-` opens a node, clicking a name selects it |
 | Inspector | live position, scale, rotation, alpha (slider), visible of the selected node, editable |
