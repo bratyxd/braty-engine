@@ -14,6 +14,7 @@ typedef struct br_debug_state {
     bool         open;
     SDL_Scancode toggle_key;
     br_node      selected;
+    br_array     expanded;   /* br_node: scene-tree rows the user opened */
 
     /* glyphs: a bitmap font installed from the text module's default font on first draw */
     br_font *font;

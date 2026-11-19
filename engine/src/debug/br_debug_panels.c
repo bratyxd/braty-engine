@@ -87,22 +87,51 @@ static void br_debug_node_name(br_engine *e, br_node n, char *out, size_t size)
     }
 }
 
+static bool br_debug_expanded(const br_debug_state *s, br_node n, uint32_t *slot)
+{
+    for (uint32_t i = 0; i < s->expanded.count; i++) {
+        br_node *x = br_array_at(&s->expanded, i);
+        if (br_node_equal(*x, n)) {
+            *slot = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* One row: [indent] [+/-] [name]; the name button selects. The stage is always open. */
 static void br_debug_tree_node(br_engine *e, br_debug_state *s, br_node n, int depth)
 {
     mu_Context *ui = s->ui;
     char name[160];
+    char text[176];
     br_debug_node_name(e, n, name, sizeof(name));
-    mu_push_id(ui, &n.index, sizeof(n.index));
-    static const int row[2] = { 22, -1 };
-    mu_layout_row(ui, 2, row, 0);
     bool selected = br_node_equal(n, s->selected);
-    if (mu_button_ex(ui, selected ? "*" : "o", 0, MU_OPT_ALIGNCENTER)) {
+    SDL_snprintf(text, sizeof(text), "%s%s", selected ? "> " : "", name);
+    uint32_t count = br_node_child_count(e, n);
+    uint32_t slot = 0;
+    bool open = depth == 0 || br_debug_expanded(s, n, &slot);
+
+    mu_push_id(ui, &n.index, sizeof(n.index));
+    int row[3] = { depth * 12 + 1, 20, -1 };
+    mu_layout_row(ui, 3, row, 0);
+    mu_layout_next(ui); /* indent cell */
+    if (count > 0 && depth > 0) {
+        if (mu_button_ex(ui, open ? "-" : "+", 0, MU_OPT_ALIGNCENTER)) {
+            if (open) {
+                br_array_remove_swap(&s->expanded, slot);
+            } else {
+                br_array_push(&s->expanded, &n);
+            }
+            open = !open;
+        }
+    } else {
+        mu_layout_next(ui);
+    }
+    if (mu_button_ex(ui, text, 0, 0)) {
         s->selected = n;
     }
-    uint32_t count = br_node_child_count(e, n);
-    if (count == 0 || depth > 32) {
-        mu_label(ui, name);
-    } else if (mu_begin_treenode_ex(ui, name, depth == 0 ? MU_OPT_EXPANDED : 0)) {
+    if (open && depth < 32) {
         uint32_t shown = 0;
         for (uint32_t i = 0; i < count && shown < BR_DEBUG_TREE_MAX_CHILDREN; i++) {
             br_node child = br_node_child_at(e, n, i);
@@ -115,7 +144,6 @@ static void br_debug_tree_node(br_engine *e, br_debug_state *s, br_node n, int d
             mu_layout_row(ui, 1, br_debug_full_row, 0);
             br_debug_labelf(ui, "... %u more children", count - shown);
         }
-        mu_end_treenode(ui);
     }
     mu_pop_id(ui);
 }
@@ -154,7 +182,7 @@ static void br_debug_inspector(br_engine *e, br_debug_state *s)
     br_node n = br_debug_selected(e);
     mu_layout_row(ui, 1, br_debug_full_row, 0);
     if (!br_node_valid(e, n)) {
-        mu_label(ui, "select a node in Scene (o)");
+        mu_label(ui, "click a node in Scene to inspect it");
         mu_end_window(ui);
         return;
     }
@@ -198,7 +226,11 @@ static void br_debug_systems(br_engine *e, br_debug_state *s)
         return;
     }
     static const char *phases[BR_PHASE_COUNT] = { "input", "update", "late", "pre-render", "render", "post" };
-    static const int row[3] = { 190, 60, -1 };
+    static const int row[3] = { 170, 72, -1 };
+    mu_layout_row(ui, 3, row, 0);
+    mu_label(ui, "system (on/off)");
+    mu_label(ui, "phase");
+    mu_label(ui, "last ms");
     uint32_t count = br_system_count(e);
     for (uint32_t i = 0; i < count; i++) {
         br_system_info info;
@@ -211,7 +243,7 @@ static void br_debug_systems(br_engine *e, br_debug_state *s)
             br_system_set_enabled(e, info.name, enabled != 0);
         }
         mu_label(ui, phases[info.phase]);
-        br_debug_labelf(ui, "%.3f ms", (double)info.last_time_ns / 1e6);
+        br_debug_labelf(ui, "%.3f", (double)info.last_time_ns / 1e6);
     }
     mu_end_window(ui);
 }

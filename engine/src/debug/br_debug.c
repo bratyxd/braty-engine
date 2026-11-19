@@ -202,7 +202,7 @@ static void br_debug_draw_icon(br_engine *e, br_render_ctx *rc, int id, mu_Rect 
 {
     if (id == MU_ICON_CHECK) {
         br_texture white = br_texture_white(e);
-        br_debug_quad(rc, white, (float)r.x + 4, (float)r.y + 4, (float)(r.x + r.w) - 4, (float)(r.y + r.h) - 4, 0, 0,
+        br_debug_quad(rc, white, (float)r.x + 6, (float)r.y + 6, (float)(r.x + r.w) - 6, (float)(r.y + r.h) - 6, 0, 0,
                       1, 1, clip, color);
         return;
     }
@@ -306,6 +306,7 @@ static void br_debug_shutdown(br_engine *e, void *user)
         SDL_SetLogOutputFunction(s->prev_log_fn, s->prev_log_user);
     }
     SDL_DestroyMutex(s->log_lock);
+    br_array_free(&s->expanded);
     br_free(s->ui);
     br_free(s);
     e->debug = NULL;
@@ -323,6 +324,7 @@ void br_debug_register(br_engine *e)
     e->debug = s;
     s->ui = ui;
     s->toggle_key = SDL_SCANCODE_F1;
+    br_array_init(&s->expanded, sizeof(br_node));
     s->log_lock = SDL_CreateMutex();
     mu_init(ui);
     ui->text_width = br_debug_text_width;
