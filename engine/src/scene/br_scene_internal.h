@@ -57,7 +57,7 @@ typedef struct br_node_record {
     br_rect  cull_area;
     uint32_t cull_slot;          /* position in br_scene_state.cullables while cullable */
     int      z_index;
-    uint32_t layer_bits;         /* camera layers (br_node_set_layer_bits), default 1 */
+    uint32_t layer_bits;         /* camera layers (br_node_set_layer_bits), 0 = the parent's */
 
     br_event_mode event_mode;
     bool          interactive_children;

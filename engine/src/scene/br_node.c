@@ -240,7 +240,6 @@ br_node br_node_create(br_engine *e, uint32_t type_id)
     rec->color_dirty = true;
     rec->visible = true;
     rec->renderable = true;
-    rec->layer_bits = 1u;
     rec->cullable_children = true;
     rec->alpha = 1.0f;
     rec->tint = br_color_make(1.0f, 1.0f, 1.0f, 1.0f);

@@ -241,10 +241,11 @@ br_node br_node_layer(br_engine *e, br_node n);
 
 /* ---- camera layers (br_camera.h): which cameras draw a node */
 
-/* Layer bits (default 1). A camera draws n and its subtree only if (bits & culling_mask) != 0;
- * a node whose bits miss the mask is skipped together with its children. */
+/* Layer bits. 0 (the default) = inherit the parent's; the stage counts as layer 1. A camera
+ * draws a node only if (its bits & culling_mask) != 0; children are still visited, so a UI
+ * container with bits 2 puts its whole subtree on layer 2. */
 void br_node_set_layer_bits(br_engine *e, br_node n, uint32_t bits);
-/* The layer bits (0 for a stale handle). */
+/* The node's own layer bits (0 = inherited, also for a stale handle). */
 uint32_t br_node_layer_bits(br_engine *e, br_node n);
 
 /* ---- masks (scissor and stencil here; alpha and colour masks are drawn by Task 8) */

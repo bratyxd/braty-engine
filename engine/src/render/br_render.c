@@ -302,9 +302,6 @@ static void br_render_walk(br_render_ctx *rc, uint32_t index, br_blend_mode inhe
     if (!as_mask && (!rec->visible || !rec->renderable || hidden_mask)) {
         return;
     }
-    if (!as_mask && (rec->layer_bits & rc->culling_mask) == 0) {
-        return; /* not on a layer the camera draws */
-    }
     if ((flags & BR_WALK_FROM_LAYER) == 0 && rec->layer.generation != 0 && br_scene_record(e, rec->layer) != NULL) {
         return; /* its render layer draws it */
     }
@@ -313,9 +310,16 @@ static void br_render_walk(br_render_ctx *rc, uint32_t index, br_blend_mode inhe
     if (rec->blend_mode != BR_BLEND_INHERIT && rec->blend_mode < BR_BLEND_BUILTIN_COUNT) {
         blend = (br_blend_mode)rec->blend_mode;
     }
-    if ((flags & BR_WALK_SKIP_EFFECTS) == 0 && r->effects_fn != NULL && br_render_record_needs_effects(e, rec)) {
+    uint32_t saved_bits = rc->layer_bits;
+    if (rec->layer_bits != 0) {
+        rc->layer_bits = rec->layer_bits;
+    }
+    /* a node on a layer this camera does not draw: skip its own drawing, keep walking children */
+    bool drawn = as_mask || (rc->layer_bits & rc->culling_mask) != 0;
+    if (drawn && (flags & BR_WALK_SKIP_EFFECTS) == 0 && r->effects_fn != NULL && br_render_record_needs_effects(e, rec)) {
         rc->blend = blend;
         if (r->effects_fn(e, n, rc, r->effects_user)) {
+            rc->layer_bits = saved_bits;
             return;
         }
         rec = br_scene_record_at(s, index);
@@ -324,11 +328,12 @@ static void br_render_walk(br_render_ctx *rc, uint32_t index, br_blend_mode inhe
     br_mask_saved mask;
     mask.kind = BR_MASK_NONE;
     if (!as_mask && rec->mask.generation != 0 && !br_render_push_mask(rc, index, &mask)) {
+        rc->layer_bits = saved_bits;
         return;
     }
     rec = br_scene_record_at(s, index);
     br_node_type_entry *type = br_scene_type_entry(s, rec->type_id);
-    if (type->desc.render != NULL) {
+    if (drawn && type->desc.render != NULL) {
         rc->blend = blend;
         type->desc.render(e, n, br_scene_type_data(s, index), rc);
         r->building.nodes_drawn += 1;
@@ -358,6 +363,7 @@ static void br_render_walk(br_render_ctx *rc, uint32_t index, br_blend_mode inhe
         rec = br_scene_record_at(s, index);
     }
     br_render_pop_mask(rc, &mask);
+    rc->layer_bits = saved_bits;
 }
 
 /* ---- targets */
@@ -434,6 +440,7 @@ bool br_render_capture_subtree(br_engine *e, br_node n, br_mat4 projection, br_r
     rc.open_batch = -1;
     rc.blend = BR_BLEND_NORMAL;
     rc.culling_mask = 0xFFFFFFFFu;
+    rc.layer_bits = 1u;
     br_texture none = { 0, 0 };
     float ratio = pixel_ratio > 0.0f ? pixel_ratio : 1.0f;
     br_render_ctx_set_target(&rc, none, area, area.width * ratio, area.height * ratio, false);
@@ -494,6 +501,20 @@ void br_render_get_stats(br_engine *e, br_render_stats *out)
 }
 
 /* ---- systems */
+
+/* Layer bits a node inherits from its ancestors (1 = the stage's). */
+static uint32_t br_render_inherited_bits(br_scene_state *s, uint32_t index)
+{
+    uint32_t parent = br_scene_record_at(s, index)->parent;
+    while (parent != BR_NO_NODE) {
+        const br_node_record *rec = br_scene_record_at(s, parent);
+        if (rec->layer_bits != 0) {
+            return rec->layer_bits;
+        }
+        parent = rec->parent;
+    }
+    return 1u;
+}
 
 /* Draws every view of br_render_set_views (cameras), in order. */
 static void br_render_draw_views(br_render_ctx *rc, float window_w, float window_h, float pixel_w, float pixel_h)
@@ -569,6 +590,7 @@ static void br_render_draw_views(br_render_ctx *rc, float window_w, float window
             br_scene_refresh_subtree(s, root.index);
         }
         br_render_set_space(rc, br_scene_group_space(s, root.index)); /* also applies the projection */
+        rc->layer_bits = br_render_inherited_bits(s, root.index);
         br_render_walk(rc, root.index, BR_BLEND_NORMAL, 0);
         rc->culling_mask = 0xFFFFFFFFu;
     }
@@ -596,6 +618,7 @@ static void br_render_collect_system(br_engine *e, float dt, void *user)
     rc.open_batch = -1;
     rc.blend = BR_BLEND_NORMAL;
     rc.culling_mask = 0xFFFFFFFFu;
+    rc.layer_bits = 1u;
     br_rect window_area = br_rect_make(0.0f, 0.0f, (float)w, (float)h);
     br_render_ctx_set_target(&rc, frame, window_area, (float)pw, (float)ph, true);
 

@@ -116,6 +116,7 @@ struct br_render_ctx {
     float      target_width;      /* target size in pixels (scissor maths of views) */
     float      target_height;
     uint32_t   culling_mask;      /* layer bits a node needs to be drawn */
+    uint32_t   layer_bits;        /* effective layer bits of the node being walked (inherited) */
     uint32_t   serial;            /* changes whenever state that splits batches changes */
     int        open_batch;        /* index of the batch accepting quads, -1 if none */
     /* per-pass caches (textures do not change while the stage is walked) */
