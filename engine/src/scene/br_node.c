@@ -1052,6 +1052,20 @@ br_node br_node_layer(br_engine *e, br_node n)
     return rec->layer;
 }
 
+void br_node_set_layer_bits(br_engine *e, br_node n, uint32_t bits)
+{
+    br_node_record *rec = br_scene_record(e, n);
+    if (rec != NULL) {
+        rec->layer_bits = bits;
+    }
+}
+
+uint32_t br_node_layer_bits(br_engine *e, br_node n)
+{
+    br_node_record *rec = br_scene_record(e, n);
+    return rec != NULL ? rec->layer_bits : 0u;
+}
+
 /* ---- masks and effects */
 
 void br_node_set_mask(br_engine *e, br_node n, br_node mask, br_mask_kind kind, bool inverse)

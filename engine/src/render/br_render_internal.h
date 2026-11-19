@@ -110,7 +110,13 @@ struct br_render_ctx {
     uint8_t    stencil_depth;     /* nested stencil masks active */
     bool       scissor_on;
     SDL_Rect   scissor;
-    br_mat4    transform;         /* ortho(area) * space */
+    br_mat4    transform;         /* projection * space */
+    bool       has_projection;    /* a view (camera): `projection` instead of ortho(area) */
+    br_mat4    projection;        /* world -> clip of the whole target */
+    float      target_width;      /* target size in pixels (scissor maths of views) */
+    float      target_height;
+    uint32_t   culling_mask;      /* layer bits a node needs to be drawn */
+    uint32_t   layer_bits;        /* effective layer bits of the node being walked (inherited) */
     uint32_t   serial;            /* changes whenever state that splits batches changes */
     int        open_batch;        /* index of the batch accepting quads, -1 if none */
     /* per-pass caches (textures do not change while the stage is walked) */
@@ -141,6 +147,7 @@ typedef struct br_render_state {
     br_array   uniforms;          /* uint8_t */
     br_array   rtt_jobs;          /* br_rtt_job */
     br_array   overlays;          /* br_overlay_entry */
+    br_array   views;             /* br_render_view (br_render_set_views); empty = default stage */
     uint32_t   index_base;        /* byte offset of `indices` in the transient index buffer */
     uint32_t   serial_counter;
     bool       collected;         /* the draw list belongs to this frame */
@@ -172,6 +179,15 @@ bool br_texture_binding(br_engine *e, br_texture source, SDL_GPUTextureSamplerBi
 void br_render_register(br_engine *e);
 /* Starts a new state serial: following pushes do not join the open batch. */
 void br_render_ctx_changed(br_render_ctx *rc);
+
+/* Records n's subtree (n's own effects skipped, like br_render_subtree_to_texture) with
+ * `projection` mapping n's root space to "clip" space, but instead of drawing it, moves the
+ * commands into `out` (br_draw_cmd). Batches keep pointing at this frame's transient vertices
+ * and at br_render_state.indices / customs / uniforms, which stay valid until RENDER ends.
+ * pixel_ratio = pixels per root unit the content is rasterised for (text resolution).
+ * Call only during PRE_RENDER collect (e.g. from a 3D node's collect). False if nothing to do. */
+bool br_render_capture_subtree(br_engine *e, br_node n, br_mat4 projection, br_rect area, float pixel_ratio,
+                               br_array *out);
 
 /* ---- br_batch.c */
 

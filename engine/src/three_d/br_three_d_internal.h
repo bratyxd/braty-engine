@@ -133,6 +133,7 @@ typedef struct br_light3d_entry {
 typedef struct br_view3d_state {
     br_node   node;
     br_node3d root;
+    br_node3d own_root;            /* created with the view, destroyed with it (root may be another) */
     br_node3d camera;
     float     width;
     float     height;

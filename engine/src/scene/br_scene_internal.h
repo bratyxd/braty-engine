@@ -57,6 +57,7 @@ typedef struct br_node_record {
     br_rect  cull_area;
     uint32_t cull_slot;          /* position in br_scene_state.cullables while cullable */
     int      z_index;
+    uint32_t layer_bits;         /* camera layers (br_node_set_layer_bits), 0 = the parent's */
 
     br_event_mode event_mode;
     bool          interactive_children;
@@ -111,6 +112,8 @@ typedef struct br_scene_state {
     br_array cullables;          /* uint32_t indices of nodes with `cullable` set (record.cull_slot = position) */
     uint64_t cull_frame;         /* bumped by every cull pass */
     uint32_t sprite_type;        /* type id of "sprite" */
+    bool     has_cull_view;      /* cameras are active: cull against cull_view, not the window */
+    br_rect  cull_view;          /* stage rect the cameras show (union) */
 } br_scene_state;
 
 /* ---- br_node.c */
@@ -151,6 +154,9 @@ br_mat3 br_scene_group_space(br_scene_state *s, uint32_t index);
 /* Recomputes cached world transform/alpha/tint of a subtree from its ancestors (used for
  * nodes drawn outside the stage walk: render-to-texture roots, masks). */
 void br_scene_refresh_subtree(br_scene_state *s, uint32_t index);
+/* Cull against this stage rect instead of the window (NULL = the window again). Set by the
+ * camera module every frame while cameras exist. */
+void br_scene_set_cull_view(br_scene_state *s, const br_rect *view);
 /* True if the culler skipped the node in the last cull pass. */
 bool br_scene_is_culled(br_scene_state *s, uint32_t index);
 /* Adds a node index to / removes it from the cullable list (keeps cull_slot right). */
