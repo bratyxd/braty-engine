@@ -18,6 +18,31 @@ static bool near(float a, float b)
     return br_nearly_equal(a, b, 1e-3f);
 }
 
+/* API_REVIEW 11: the latch priority is a public constant, and input injected by a system that
+ * runs before it counts in the same frame. */
+static void inject_before_latch(br_engine *e, float dt, void *user)
+{
+    (void)dt;
+    int *calls = user;
+    if (++*calls == 2) {
+        br_input_inject_key(e, SDL_SCANCODE_K, true);
+    }
+}
+
+static void test_latch_priority(br_engine *e)
+{
+    static int calls = 0;
+    BR_CHECK(BR_INPUT_PRIORITY_LATCH == -2000000);
+    br_system_add(e, "test.inject", BR_PHASE_INPUT, BR_INPUT_PRIORITY_LATCH - 1000, inject_before_latch, &calls);
+    step(e);
+    BR_CHECK(!br_input_key_pressed(e, SDL_SCANCODE_K));
+    step(e);   /* injected before the latch -> pressed in this same frame */
+    BR_CHECK(br_input_key_pressed(e, SDL_SCANCODE_K));
+    br_system_set_enabled(e, "test.inject", false);
+    br_input_inject_key(e, SDL_SCANCODE_K, false);
+    step(e);
+}
+
 static void test_keyboard_mouse_text(br_engine *e)
 {
     br_input_inject_key(e, SDL_SCANCODE_LSHIFT, true);
@@ -509,6 +534,7 @@ int main(void)
         BR_CHECK(false);
         return br_test_finish();
     }
+    test_latch_priority(e);
     test_keyboard_mouse_text(e);
     test_injected_gamepad(e);
     test_actions(e);

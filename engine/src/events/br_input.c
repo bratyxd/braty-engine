@@ -209,7 +209,7 @@ void br_input_register(br_engine *e)
     s->last_gamepad = -1;
     br_random_seed(&s->rng, 0x853c49e6748fea9bULL, 0xda3e39cb94b95bdbULL);
     br_engine_add_event_handler(e, br_input_event, NULL);
-    br_system_add(e, "input.begin_frame", BR_PHASE_INPUT, -2000000, br_input_begin_frame, NULL);
+    br_system_add(e, "input.begin_frame", BR_PHASE_INPUT, BR_INPUT_PRIORITY_LATCH, br_input_begin_frame, NULL);
     br_engine_on_shutdown(e, br_input_shutdown, NULL);
 }
 

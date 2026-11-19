@@ -7,7 +7,7 @@
  *
  * The state is fed from SDL events (br_engine_add_event_handler). "down" is live; "pressed" and
  * "released" are edges latched at the start of each frame (system "input.begin_frame", INPUT
- * phase, priority -2000000), so a key tapped between two frames still reads as
+ * phase, priority BR_INPUT_PRIORITY_LATCH), so a key tapped between two frames still reads as
  * pressed once. Input injected before the latch counts for the same frame.
  *
  * Actions map a name to keys, mouse buttons, gamepad buttons and gamepad axes, so games bind
@@ -39,6 +39,9 @@
 
 #define BR_INPUT_MAX_TOUCHES  16
 #define BR_INPUT_MAX_GAMEPADS 8
+/* Priority of the "input.begin_frame" system (INPUT phase). Systems that inject input for the
+ * current frame run before it (a lower number, e.g. BR_INPUT_PRIORITY_LATCH - 1000). */
+#define BR_INPUT_PRIORITY_LATCH (-2000000)
 
 /* Registers the module (state, event handler, begin-frame system). Called once by br_builtin.c. */
 void br_input_register(br_engine *e);

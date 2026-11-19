@@ -441,7 +441,7 @@ static bool demo_init(br_engine *e)
     bind_actions(e);
     br_system_add(e, "demo.view", BR_PHASE_UPDATE, 0, view_system, s);
     if (g_scripted) {
-        br_system_add(e, "demo.script", BR_PHASE_INPUT, -2001000, script_system, s);
+        br_system_add(e, "demo.script", BR_PHASE_INPUT, BR_INPUT_PRIORITY_LATCH - 1000, script_system, s);
     }
     return true;
 }
