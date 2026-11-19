@@ -240,6 +240,7 @@ br_node br_node_create(br_engine *e, uint32_t type_id)
     rec->color_dirty = true;
     rec->visible = true;
     rec->renderable = true;
+    rec->layer_bits = 1u;
     rec->cullable_children = true;
     rec->alpha = 1.0f;
     rec->tint = br_color_make(1.0f, 1.0f, 1.0f, 1.0f);
@@ -1049,6 +1050,20 @@ br_node br_node_layer(br_engine *e, br_node n)
         return br_node_zero();
     }
     return rec->layer;
+}
+
+void br_node_set_layer_bits(br_engine *e, br_node n, uint32_t bits)
+{
+    br_node_record *rec = br_scene_record(e, n);
+    if (rec != NULL) {
+        rec->layer_bits = bits;
+    }
+}
+
+uint32_t br_node_layer_bits(br_engine *e, br_node n)
+{
+    br_node_record *rec = br_scene_record(e, n);
+    return rec != NULL ? rec->layer_bits : 0u;
 }
 
 /* ---- masks and effects */

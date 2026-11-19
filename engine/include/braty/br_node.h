@@ -239,6 +239,14 @@ void br_node_layer_detach(br_engine *e, br_node n);
 /* The render layer n is attached to (zero handle if none). */
 br_node br_node_layer(br_engine *e, br_node n);
 
+/* ---- camera layers (br_camera.h): which cameras draw a node */
+
+/* Layer bits (default 1). A camera draws n and its subtree only if (bits & culling_mask) != 0;
+ * a node whose bits miss the mask is skipped together with its children. */
+void br_node_set_layer_bits(br_engine *e, br_node n, uint32_t bits);
+/* The layer bits (0 for a stale handle). */
+uint32_t br_node_layer_bits(br_engine *e, br_node n);
+
 /* ---- masks (scissor and stencil here; alpha and colour masks are drawn by Task 8) */
 
 typedef enum br_mask_kind {

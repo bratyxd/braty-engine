@@ -225,6 +225,14 @@ void br_scene_bounds(br_scene_state *s, br_engine *e, uint32_t index, br_mat3 m,
     }
 }
 
+void br_scene_set_cull_view(br_scene_state *s, const br_rect *view)
+{
+    s->has_cull_view = view != NULL;
+    if (view != NULL) {
+        s->cull_view = *view;
+    }
+}
+
 bool br_scene_is_culled(br_scene_state *s, uint32_t index)
 {
     return s->cull_frame != 0 && br_scene_record_at(s, index)->culled_frame == s->cull_frame;
@@ -289,7 +297,7 @@ static void br_cull_system(br_engine *e, float dt, void *user)
     if (w <= 0 || h <= 0) {
         return;
     }
-    br_rect screen = br_rect_make(0.0f, 0.0f, (float)w, (float)h);
+    br_rect screen = s->has_cull_view ? s->cull_view : br_rect_make(0.0f, 0.0f, (float)w, (float)h);
     /* only the cullable nodes are visited (not the whole tree). A cullable node inside a culled
      * one is tested on its own bounds; it is not drawn either way. */
     for (uint32_t i = 0; i < s->cullables.count; i++) {
