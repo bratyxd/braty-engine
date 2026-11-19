@@ -17,7 +17,7 @@
  *   PRE_RENDER systems : fill CPU data, br_gpu_transient_alloc_* for vertices/indices
  *   [app]              : acquire command buffer + swapchain texture. If there is none
  *                        (minimised, zero-size), RENDER and POST_RENDER are skipped.
- *   RENDER systems     : cmd = br_gpu_frame_cmd(g); br_gpu_transient_upload(g, cmd) once;
+ *   RENDER systems     : cmd = br_gpu_frame_cmd(g); br_gpu_transient_upload(g, cmd) (first call uploads);
  *                        pass = br_gpu_frame_begin_pass(g); bind, draw; SDL_EndGPURenderPass(pass)
  *   POST_RENDER systems: overlays (debug UI) on the same frame target
  *   [app]              : blit frame target -> swapchain, submit, optional screenshot
@@ -160,7 +160,8 @@ void br_gpu_buffer_destroy(br_gpu *g, SDL_GPUBuffer *buffer);
 void *br_gpu_transient_alloc_vertices(br_gpu *g, uint32_t size, uint32_t *offset);
 /* Reserves `size` bytes of index data for this frame. Returns a CPU pointer to fill. */
 void *br_gpu_transient_alloc_indices(br_gpu *g, uint32_t size, uint32_t *offset);
-/* Uploads this frame's transient data in one copy pass. Call once in RENDER, before render passes. */
+/* Uploads this frame's transient data in one copy pass. Call in RENDER before any render pass;
+ * the first call of a frame uploads, later calls do nothing (allocate everything in PRE_RENDER). */
 bool br_gpu_transient_upload(br_gpu *g, SDL_GPUCommandBuffer *cmd);
 /* GPU buffer holding this frame's transient vertices (valid after br_gpu_transient_upload). */
 SDL_GPUBuffer *br_gpu_transient_vertex_buffer(br_gpu *g);

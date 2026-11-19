@@ -18,7 +18,7 @@ readback, and the frame target.
 | `br_gpu_sampler_get(g, &style)` | Cached sampler (filter, address mode, mips, anisotropy). |
 | `br_gpu_texture_create_rgba8(g, w, h, pixels, mipmaps)` | Upload an image. |
 | `br_gpu_transient_alloc_vertices/indices(g, size, &offset)` | Per-frame geometry (PRE_RENDER). |
-| `br_gpu_transient_upload(g, cmd)` | One copy pass, once per frame, before render passes. |
+| `br_gpu_transient_upload(g, cmd)` | One copy pass before render passes (first call per frame uploads, later calls no-op). |
 | `br_gpu_frame_cmd(g)`, `br_gpu_frame_target(g)`, `br_gpu_frame_begin_pass(g)` | Draw the frame (RENDER). |
 | `br_gpu_render_target_create/begin` | Offscreen targets (render textures, filters, 3D). |
 | `br_gpu_texture_read(g, tex, &rgba)` | Blocking readback (extract, screenshots). |
@@ -66,7 +66,7 @@ SDL_EndGPURenderPass(pass);
 
 - The frame target has depth+stencil: pipelines drawing into it must set
   `depth_stencil_format = br_gpu_render_target_depth_format(target)`.
-- Call `br_gpu_transient_upload` once per frame in RENDER, before any render pass (copy passes
+- Call `br_gpu_transient_upload` in RENDER before any render pass; only the first call of a frame uploads, so allocate everything in PRE_RENDER (copy passes
   cannot run inside render passes). Transient pointers die at the next alloc; write at once.
 - `br_gpu_frame_*` return NULL outside RENDER/POST_RENDER, and RENDER does not run at all when
   the window is minimised. Never cache the command buffer or the frame target across frames

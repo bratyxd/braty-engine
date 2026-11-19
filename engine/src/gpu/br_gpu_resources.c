@@ -156,6 +156,11 @@ static bool br_transient_upload_stream(br_gpu *g, br_transient_stream *s, SDL_GP
 
 bool br_gpu_transient_upload(br_gpu *g, SDL_GPUCommandBuffer *cmd)
 {
+    /* several RENDER systems may call this (the 2D renderer does too): only the first uploads */
+    if (g->transient_uploaded) {
+        return true;
+    }
+    g->transient_uploaded = true;
     if (g->vertices.cpu.count == 0 && g->indices.cpu.count == 0) {
         return true;
     }
@@ -178,6 +183,7 @@ SDL_GPUBuffer *br_gpu_transient_index_buffer(br_gpu *g)
 
 void br_gpu_transient_reset(br_gpu *g)
 {
+    g->transient_uploaded = false;
     br_array_clear(&g->vertices.cpu);
     br_array_clear(&g->indices.cpu);
 }
