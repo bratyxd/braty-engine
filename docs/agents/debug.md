@@ -1,7 +1,9 @@
 # debug - in-game debug overlay (microui)
 
 Header: `engine/include/braty/br_debug.h`. Source: `engine/src/debug/`.
-Example: `examples/data_demo.c --debug`. Test: `tests/test_scene_file.c` (log capture, toggle).
+Example: `examples/data_demo.c --debug`, `examples/profiler_demo.c` (F2 panel). Tests:
+`tests/test_scene_file.c` (log capture, toggle), `tests/test_profiler.c` (input taken by the
+overlay).
 
 ## What it does
 
@@ -17,7 +19,13 @@ font:
 | Inspector | live position, scale, rotation, alpha (slider), visible of the selected node, editable |
 | Log | the last 256 lines logged through `br_log_*` / `SDL_Log` |
 
-Input comes from the input module (mouse, wheel, Shift/Ctrl/Alt/Backspace/Return, text).
+F2 toggles the **profiler panel** and `--profiler-hud` shows its corner readout
+(`br_debug_profiler.c`, numbers from `docs/agents/profiler.md`).
+
+Input comes from the input module (mouse, wheel, Shift/Ctrl/Alt/Backspace/Return, text). The
+overlay installs an SDL event filter: a click or wheel on one of its windows (and the release of
+such a click), and typing into a field being edited, are fed to microui and **never reach the
+game** (input module, pointer events, systems). The profiler corner readout lets clicks through.
 
 ## Functions you actually need
 
@@ -25,6 +33,7 @@ Input comes from the input module (mouse, wheel, Shift/Ctrl/Alt/Backspace/Return
 |---|---|
 | `br_debug_set_open(e, true)`, `br_debug_is_open` | Open/close from code. |
 | `br_debug_set_toggle_key(e, SDL_SCANCODE_F12)` | Another toggle key (game.json `debug.toggle_key`). |
+| `br_debug_wants_event(e, &ev)` | Would the overlay take this event (it then never reaches the game)? |
 | `br_debug_select(e, n)`, `br_debug_selected` | Point the inspector at a node. |
 | `br_debug_log_count`, `br_debug_log_line` | Read the captured log. |
 
@@ -42,9 +51,10 @@ br_game_config_args(&config, argc, argv);                             /* --debug
 
 - Log capture hooks SDL's process-wide log output (chained to the previous one); with several
   engines in one process the last one created captures.
-- Headless engines never draw (the overlay runs in render.collect), but the toggle key, log and
-  selection work.
+- The UI is built in PRE_RENDER (`debug.ui`, also headless, so hit tests work in tests) and
+  drawn in render.collect; headless engines never draw it.
 - Stats are those of the previous frame (the overlay is collected inside the current one).
-- The overlay does not swallow input: a click on a window also reaches pointer events and
-  game systems underneath.
+- The event filter is process-wide (chained to any previous filter), like the log hook. Input
+  injected with `br_input_inject_*` (play-tests) skips SDL's queue and therefore the filter: an
+  injected click on a window reaches microui and the game.
 - Glyphs are rasterised at 1 pixel per unit (soft on HiDPI; `ponytail:` in br_debug.c).
