@@ -1,7 +1,7 @@
 """Writes the glTF level fixtures (stdlib only; the outputs are committed):
 
-    tests/data/level.gltf            the test level (JSON + base64 buffer), with a "BadValues" node
-    examples/gltf_scene/level.glb    the same level as a binary .glb, without the bad node (demo)
+    tests/data/level.gltf            the test level (JSON + base64), plus nodes with every field type and bad values
+    examples/gltf_scene/level.glb    the same level as a binary .glb without those test nodes (demo)
     examples/gltf_scene/kit.glb      a prop kit: one root node per prop (Tree, Rock, Crate, Lamp_Post)
 
 Run from the repository root: python tests/data/make_level_gltf.py
@@ -194,15 +194,25 @@ class Doc:
                 struct.pack("<I4s", len(blob), b"BIN\0") + blob)
 
 
-def build_level(with_bad_node):
+def add_field_nodes(doc):
+    """Every component field type, nested and flat (the test level only)."""
+    doc.node("Props", translation=[1, 0, 1], extras={"components": {"all": {
+        "b": True, "i": 7, "f": 1.5, "v2": [1, 2], "v3": [1, 2, 3], "c": "#ff0000", "s": "hello",
+        "a": "tiny.gltf", "n": "Tree_03"}}})
+    doc.node("FlatProps", extras={"all.b": 1, "all.i": 3, "all.f": 0.25, "all.v2": [5, 6], "all.v3": [7, 8, 9],
+                                  "all.c": [0, 1, 0], "all.s": "flat", "all.a": "level.gltf", "all.n": "Windmill",
+                                  "blender_only_prop": "ignored"})
+
+
+def build_level(test_nodes):
     doc = Doc()
-    grass = doc.material("Grass", [0.25, 0.55, 0.2, 1])
-    bark = doc.material("Bark", [0.35, 0.2, 0.1, 1])
-    leaves = doc.material("Leaves", [0.1, 0.45, 0.15, 1])
-    stone = doc.material("Stone", [0.5, 0.5, 0.52, 1], roughness=0.95)
+    grass = doc.material("Grass", [0.1, 0.3, 0.06, 1])
+    bark = doc.material("Bark", [0.15, 0.07, 0.03, 1])
+    leaves = doc.material("Leaves", [0.03, 0.2, 0.05, 1])
+    stone = doc.material("Stone", [0.22, 0.22, 0.24, 1], roughness=0.95)
     gold = doc.material("Gold", [1.0, 0.75, 0.2, 1], roughness=0.3, emissiveFactor=[1.0, 0.6, 0.1],
                         extensions={"KHR_materials_emissive_strength": {"emissiveStrength": 0.6}})
-    wood = doc.material("Wood", [0.75, 0.6, 0.4, 1])
+    wood = doc.material("Wood", [0.4, 0.25, 0.12, 1])
     sail = doc.material("Sail", [0.95, 0.95, 0.9, 1], extensions={"KHR_materials_unlit": {}})
     glass = doc.material("Glass", [0.6, 0.85, 1.0, 1], roughness=0.1,
                          extensions={"KHR_materials_transmission": {"transmissionFactor": 0.8}})
@@ -213,15 +223,15 @@ def build_level(with_bad_node):
     ground_mesh = doc.mesh("GroundMesh", [(box(24, 0.4, 24, -0.2), grass)])
     tree_mesh = doc.mesh("TreeMesh", [(cylinder(0.18, 0.14, 1.0), bark), (cylinder(0.8, 0.0, 2.0, 12, 0.8), leaves)])
     rock_mesh = doc.mesh("RockMesh", [(box(0.8, 0.5, 0.7, 0.25), stone)])
-    coin_mesh = doc.mesh("CoinMesh", [(cylinder(0.35, 0.35, 0.08, 16, -0.04), gold)])
+    coin_mesh = doc.mesh("CoinMesh", [(cylinder(0.5, 0.5, 0.1, 20, -0.05), gold)])
     tower_mesh = doc.mesh("TowerMesh", [(cylinder(0.9, 0.5, 4.0), wood)])
     blade_mesh = doc.mesh("BladeMesh", [(box(0.3, 3.6, 0.05), sail), (box(3.6, 0.3, 0.05), sail)])
     gate_mesh = doc.mesh("GateMesh", [(box(2, 2, 0.2, 1), glass)])
     window_mesh = doc.mesh("WindowMesh", [(box(1.2, 1.2, 0.05, 0.6), glass)])
 
     doc.d["extensions"] = {"KHR_lights_punctual": {"lights": [
-        {"name": "Sun", "type": "directional", "color": [1.0, 0.95, 0.85], "intensity": 2.2},
-        {"name": "Lamp", "type": "point", "color": [1.0, 0.7, 0.4], "intensity": 4.0, "range": 8.0}]}}
+        {"name": "Sun", "type": "directional", "color": [1.0, 0.95, 0.85], "intensity": 1.6},
+        {"name": "Lamp", "type": "point", "color": [1.0, 0.7, 0.4], "intensity": 2.0, "range": 8.0}]}}
     doc.d["cameras"] = [
         {"name": "MainCam", "type": "perspective", "perspective": {"yfov": 0.75, "znear": 0.1, "zfar": 200, "aspectRatio": 1.7778}},
         {"name": "TopCam", "type": "orthographic", "orthographic": {"xmag": 16, "ymag": 9, "znear": 0.1, "zfar": 100}}]
@@ -252,19 +262,15 @@ def build_level(with_bad_node):
     doc.node("Window", parent=windmill, mesh=window_mesh, translation=[0, 1.2, 0.72])
 
     doc.node("SpawnPoint", translation=[0, 0, 4], extras={"spawn_point": True})
-    doc.node("Props", translation=[1, 0, 1], extras={"components": {"all": {
-        "b": True, "i": 7, "f": 1.5, "v2": [1, 2], "v3": [1, 2, 3], "c": "#ff0000", "s": "hello",
-        "a": "tiny.gltf", "n": "Tree_03"}}})
-    doc.node("FlatProps", extras={"all.b": 1, "all.i": 3, "all.f": 0.25, "all.v2": [5, 6], "all.v3": [7, 8, 9],
-                                  "all.c": [0, 1, 0], "all.s": "flat", "all.a": "level.gltf", "all.n": "Windmill",
-                                  "blender_only_prop": "ignored"})
+    if test_nodes:
+        add_field_nodes(doc)
     doc.node("Gate-trigger", mesh=gate_mesh, translation=[0, 0, 6])
     doc.node("Helper-norender", mesh=rock_mesh, translation=[0, 0, 10])
     doc.node("Layered", mesh=rock_mesh, translation=[6, 0, 0], extras={"layer": 2, "cast_shadows": False})
     doc.node("Hidden", mesh=rock_mesh, translation=[-6, 0, 0], extras={"visible": False})
     doc.node("Loose_01", mesh=rock_mesh, translation=[-7, 0, -1], extras={"batch": False})
     doc.node("Loose_02", mesh=rock_mesh, translation=[-7.5, 0, 0.5], extras={"batch": False})
-    if with_bad_node:
+    if test_nodes:
         doc.node("BadValues", extras={"all.i": "seven", "all.v3": [1, 2], "all.n": "NoSuchNode", "all.nosuch": 1,
                                       "spin": 5, "components": {"not_registered": {"x": 1}}})
 
@@ -282,16 +288,17 @@ def build_level(with_bad_node):
     doc.d["animations"] = [{"name": "Spin", "channels": [{"sampler": 0, "target": {"node": blades, "path": "rotation"}}],
                             "samplers": [{"input": doc.accessor(times, "SCALAR", 1),
                                           "output": doc.accessor(keys, "VEC4", 4), "interpolation": "LINEAR"}]}]
-    doc.d["scenes"][0]["extras"] = {"autoplay": "Spin", "background": "#8fb8e0", "msaa": 4}
+    doc.d["scenes"][0]["extras"] = {"autoplay": "Spin", "background": "#8fb8e0", "msaa": 4,
+                                    "sky": "#a8c4ec", "ground": "#5a4a3a", "ambient": 0.45}
     return doc
 
 
 def build_kit():
     doc = Doc()
-    bark = doc.material("Bark", [0.35, 0.2, 0.1, 1])
-    leaves = doc.material("Leaves", [0.2, 0.55, 0.15, 1])
-    stone = doc.material("Stone", [0.55, 0.53, 0.5, 1], roughness=0.95)
-    crate = doc.material("Crate", [0.8, 0.55, 0.25, 1])
+    bark = doc.material("Bark", [0.15, 0.07, 0.03, 1])
+    leaves = doc.material("Leaves", [0.05, 0.25, 0.04, 1])
+    stone = doc.material("Stone", [0.25, 0.24, 0.22, 1], roughness=0.95)
+    crate = doc.material("Crate", [0.45, 0.25, 0.08, 1])
     metal = doc.material("Metal", [0.2, 0.2, 0.22, 1], roughness=0.4)
     light = doc.material("Bulb", [1, 0.9, 0.6, 1], emissiveFactor=[1, 0.8, 0.4])
     tree = doc.mesh("Tree", [(cylinder(0.15, 0.1, 0.8), bark), (cylinder(0.6, 0.0, 1.6, 10, 0.6), leaves),
