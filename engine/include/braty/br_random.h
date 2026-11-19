@@ -5,9 +5,10 @@
  *   float x = br_random_range(&rng, -1.0f, 1.0f);
  *   int pick = br_random_weighted(&rng, weights, 3);
  *
- * There is no hidden global generator. br_random_engine(e) is the engine's own instance, seeded
- * with a fixed value at startup so --frames runs repeat. Same seed + stream = same sequence on
- * every platform. See docs/agents/math.md.
+ * There is no hidden global generator. br_random_engine(e) is the engine's own instance, the
+ * same one br_engine_random(e) draws from: seeded from the clock, or with --seed N (default 1)
+ * under --deterministic / --playtest. Same seed + stream = same sequence on every platform.
+ * See docs/agents/math.md.
  */
 #ifndef BR_RANDOM_H
 #define BR_RANDOM_H
@@ -21,7 +22,7 @@ typedef struct br_random {
     uint64_t inc;   /* stream selector, always odd */
 } br_random;
 
-/* The engine's own generator (seeded with a fixed value at startup, so --frames runs repeat). */
+/* The engine's own generator, shared with br_engine_random (br_engine_set_seed reseeds both). */
 br_random *br_random_engine(br_engine *e);
 
 /* Seeds a generator. Different streams give independent sequences for the same seed. */

@@ -3,6 +3,7 @@
  * hand-computed come from tests/tools/math_reference.py. */
 #include "br_test.h"
 
+#include "braty/br_app.h"
 #include "braty/br_ease.h"
 #include "braty/br_math.h"
 #include "braty/br_noise.h"
@@ -907,6 +908,45 @@ static void test_splines(void)
     BR_CHECK(br_spline_arc_table_build(&table, single, lengths, 8) && br_spline_arc_param(&table, 1.0f) == 0.0f);
 }
 
+/* ---- one engine RNG behind br_engine_random and br_random_engine, seeded by --seed */
+
+static uint32_t s_first_draw;
+
+static bool record_first_draw(br_engine *e)
+{
+    s_first_draw = br_random_u32(br_random_engine(e)); /* games may draw in init: --seed is applied before */
+    return true;
+}
+
+static void test_engine_random(void)
+{
+    br_engine *e = br_engine_create("test_math", NULL);
+    br_random ref;
+    br_random_seed(&ref, 5, 0);
+    br_app_set_deterministic(e, true, 5);
+    bool same = true;
+    for (int i = 0; i < 16; i++) {
+        /* both entry points draw from the one generator, interleaved */
+        uint32_t v = (i % 2 == 0) ? br_engine_random(e) : br_random_u32(br_random_engine(e));
+        same = same && v == br_random_u32(&ref);
+    }
+    BR_CHECK(same);
+    br_engine_set_seed(e, 5);
+    uint32_t a = br_engine_random(e);
+    br_engine_set_seed(e, 5);
+    BR_CHECK(br_random_u32(br_random_engine(e)) == a);
+    br_engine_destroy(e);
+
+    char *argv[] = { "test_math", "--headless", "--deterministic", "--seed", "5", "--frames", "1" };
+    br_app_desc desc;
+    SDL_zero(desc);
+    desc.init = record_first_draw;
+    void *state = NULL;
+    SDL_AppResult r = br_app_init(&state, &desc, 7, argv);
+    BR_CHECK(r == SDL_APP_CONTINUE && s_first_draw == a);
+    br_app_quit(state, r);
+}
+
 int main(int argc, char **argv)
 {
     (void)argc;
@@ -926,6 +966,7 @@ int main(int argc, char **argv)
     test_color_spaces();
     test_ease();
     test_random();
+    test_engine_random();
     test_noise();
     test_splines();
     return br_test_finish();

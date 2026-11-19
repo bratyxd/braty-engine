@@ -78,8 +78,11 @@ and 1 at the ends; `back` and `elastic` overshoot in between.
 
 PCG32 (O'Neill, XSH RR): 16 bytes of state, `br_random_seed(&r, seed, stream)`; the same seed and
 stream give the same numbers on every platform (verified against the pcg32 reference sequence).
-No hidden global: pass a `br_random *` around, or use `br_random_engine(e)` (seeded with a fixed
-value at startup, so `--frames` runs repeat). `br_random_bounded` is unbiased;
+No hidden global: pass a `br_random *` around, or use `br_random_engine(e)`: the engine's one
+generator, the same state `br_engine_random(e)` draws from (`br_engine_set_seed` reseeds both).
+It is seeded from the clock, or with `--seed N` (default 1) under `--deterministic` and the
+play-test flags, so recorded and golden runs repeat. `tests/test_math.c` (`test_engine_random`)
+checks that both entry points give the same sequence for the same seed. `br_random_bounded` is unbiased;
 `br_random_weighted` returns -1 when no weight is positive.
 
 ## Noise
