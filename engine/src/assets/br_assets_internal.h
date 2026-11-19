@@ -3,6 +3,7 @@
 #define BR_ASSETS_INTERNAL_H
 
 #include "app/br_engine_internal.h"
+#include "braty/br_asset_group.h"
 #include "braty/br_assets.h"
 
 #define BR_ASSET_MAX_CANDIDATES 8   /* loaders tried for one file (same extension) */
@@ -63,8 +64,39 @@ typedef struct br_bundle_asset {
 
 typedef struct br_bundle {
     char    *name;
+    char    *owner;   /* "bundle:<name>", how br_assets_owners names it */
     br_array assets;  /* br_bundle_asset */
+    bool     loaded;  /* br_assets_load_bundle holds references (until br_assets_unload_bundle) */
 } br_bundle;
+
+/* ---- asset groups (br_asset_group.c) */
+
+typedef enum br_group_state {
+    BR_GROUP_IDLE,     /* no reference held */
+    BR_GROUP_LOADING,  /* reference held, the cache entry is still loading */
+    BR_GROUP_LOADED,   /* reference held */
+    BR_GROUP_FAILED    /* the last load failed; no reference held */
+} br_group_state;
+
+typedef struct br_group_entry {
+    char          *path;    /* resolved */
+    char          *type;    /* forced loader type (manifest "type") or NULL */
+    bool           lazy;
+    br_group_state state;
+} br_group_entry;
+
+struct br_asset_group {
+    br_engine                 *engine;
+    char                      *name;
+    br_array                   entries;     /* br_group_entry */
+    bool                       async;       /* a load_async is running */
+    bool                       dead;        /* destroyed while callbacks ran: freed after them */
+    uint32_t                   issue_next;  /* deterministic mode: next entry to request */
+    uint32_t                   reported;    /* finished entries already reported to on_progress */
+    br_asset_group_progress_fn on_progress;
+    br_asset_group_done_fn     on_done;
+    void                      *user;
+};
 
 /* Progress of one br_assets_load_bundle call (heap, freed when done). */
 typedef struct br_bundle_load {
@@ -88,6 +120,12 @@ typedef struct br_assets_state {
     char      *pref_formats; /* NULL = none */
     uint64_t   frame_budget_ns;
     uint32_t   sheet_nesting; /* > 0 while a spritesheet loads its linked packs (they list each other) */
+    br_array   groups;        /* br_asset_group *, every live group */
+    bool       polling;       /* groups are being polled: destroy defers the free */
+    /* capture (br_assets_capture_begin): references taken outside loaders are recorded */
+    br_array   captured;      /* char * resolved paths, one per reference */
+    uint32_t   capture_depth;
+    uint32_t   loader_depth;  /* > 0 while a loader runs (its own loads belong to its asset) */
 
     /* worker threads: everything below `mutex` is protected by it */
     SDL_Thread    *workers[BR_ASSET_MAX_WORKERS];
@@ -110,6 +148,30 @@ void br_assets_load_async_resolved(br_engine *e, const char *path, const br_asse
 void br_assets_unload_resolved(br_engine *e, const char *path);
 /* Frees bundles and resolver strings (shutdown). */
 void br_assets_bundles_free(br_assets_state *a);
+/* Group polling, run by assets.update after the waiters (br_asset_group.c). */
+void br_asset_groups_poll(br_engine *e);
+/* Destroys every group (shutdown). */
+void br_asset_groups_free(br_engine *e);
+/* Owner names of a cached path (groups and loaded bundles), as br_assets_owners. */
+uint32_t br_asset_groups_owners(br_engine *e, const char *path, const char **out, uint32_t max);
+
+/* ---- capture: who took which reference (scene files use it to own what they load)
+ *
+ *   uint32_t mark = br_assets_capture_begin(e);
+ *   ... loads ...
+ *   br_assets_capture_end(e, mark, group);   (group NULL = release them)
+ *
+ * Every reference taken by br_assets_load* while a capture is open (not by loaders for their
+ * own sub-assets) is recorded; an unload removes the latest matching record. Captures nest. */
+uint32_t br_assets_capture_begin(br_engine *e);
+/* References recorded since `mark`. */
+uint32_t br_assets_capture_count(br_engine *e, uint32_t mark);
+/* Closes a capture: the recorded references move into `owner` (it keeps one per path, extra
+ * ones are dropped), or are released when owner is NULL. */
+void br_assets_capture_end(br_engine *e, uint32_t mark, br_asset_group *owner);
+/* Hands a reference already taken on a resolved path to a group (drops it if the group holds one). */
+void br_asset_group_adopt(br_asset_group *g, const char *path);
+
 /* Registers json/text/binary loaders (br_assets_loaders.c). */
 void br_assets_register_basic_loaders(br_engine *e);
 /* Registers the dds/ktx texture loader (br_assets_compressed.c). */

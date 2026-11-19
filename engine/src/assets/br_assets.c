@@ -148,14 +148,41 @@ static void br_assets_free_entry(br_engine *e, const char *path)
 static void *br_assets_run_loader(br_engine *e, const br_loader_entry *l, const char *path, const void *bytes,
                                   size_t size)
 {
+    void *asset = NULL;
+    e->assets->loader_depth++; /* references the loader takes belong to its asset, not to a capture */
     if (l->load != NULL) {
-        return l->load(e, path, bytes, size);
+        asset = l->load(e, path, bytes, size);
+    } else {
+        void *decoded = l->decode(e, path, bytes, size);
+        asset = decoded != NULL ? l->finish(e, path, decoded) : NULL;
     }
-    void *decoded = l->decode(e, path, bytes, size);
-    if (decoded == NULL) {
-        return NULL;
+    e->assets->loader_depth--;
+    return asset;
+}
+
+/* Records a reference taken outside any loader while a capture is open. */
+static void br_assets_capture_ref(br_assets_state *a, const char *path)
+{
+    if (a->capture_depth > 0 && a->loader_depth == 0) {
+        char *copy = br_strdup(path);
+        br_array_push(&a->captured, &copy);
     }
-    return l->finish(e, path, decoded);
+}
+
+/* An unload while a capture is open cancels the latest matching record. */
+static void br_assets_capture_unref(br_assets_state *a, const char *path)
+{
+    if (a->capture_depth == 0 || a->loader_depth > 0) {
+        return;
+    }
+    for (uint32_t i = a->captured.count; i > 0; i--) {
+        char *recorded = *(char **)br_array_at(&a->captured, i - 1);
+        if (SDL_strcmp(recorded, path) == 0) {
+            br_free(recorded);
+            br_array_remove_ordered(&a->captured, i - 1);
+            return;
+        }
+    }
 }
 
 /* ---- synchronous loading */
@@ -166,6 +193,7 @@ void *br_assets_load_resolved(br_engine *e, const char *path, const br_asset_opt
     br_asset_entry *entry = br_assets_entry(a, path);
     if (entry != NULL && !entry->loading) {
         entry->refs++;
+        br_assets_capture_ref(a, path);
         return entry->asset;
     }
     /* Not cached, or still loading in the background: load now (the async result is dropped). */
@@ -212,6 +240,7 @@ void *br_assets_load_resolved(br_engine *e, const char *path, const br_asset_opt
     entry->resolution = resolution;
     entry->loading = false;
     entry->refs++;
+    br_assets_capture_ref(a, path);
     return asset;
 }
 
@@ -269,6 +298,7 @@ void br_assets_unload_resolved(br_engine *e, const char *path)
     if (entry == NULL) {
         return;
     }
+    br_assets_capture_unref(e->assets, path);
     if (entry->refs > 1) {
         entry->refs--;
         return;
@@ -344,6 +374,48 @@ uint32_t br_assets_list(br_engine *e, br_asset_info *out, uint32_t max)
         n++;
     }
     return n;
+}
+
+uint32_t br_assets_owners(br_engine *e, const char *name, const char **out, uint32_t max)
+{
+    char path[BR_ASSET_PATH_MAX];
+    if (name == NULL || !br_assets_resolve_internal(e->assets, name, path, sizeof(path))) {
+        return 0;
+    }
+    return br_asset_groups_owners(e, path, out, max);
+}
+
+void br_assets_report(br_engine *e)
+{
+    uint32_t count = br_assets_count(e);
+    br_asset_info *list = count > 0 ? br_alloc(sizeof(br_asset_info) * count) : NULL;
+    count = list != NULL ? br_assets_list(e, list, count) : 0;
+    size_t total = 0;
+    for (uint32_t i = 0; i < count; i++) {
+        total += list[i].byte_size;
+    }
+    br_log_info("assets: %u live, %u KB, %u loading", count, (unsigned)(total / 1024), br_assets_pending(e));
+    for (uint32_t i = 0; i < count; i++) {
+        const br_asset_info *info = &list[i];
+        const char *owners[8];
+        uint32_t owner_count = br_asset_groups_owners(e, info->path, owners, BR_ARRAY_COUNT(owners));
+        char text[512];
+        text[0] = '\0';
+        for (uint32_t k = 0; k < owner_count && k < BR_ARRAY_COUNT(owners); k++) {
+            SDL_strlcat(text, k > 0 ? ", " : "", sizeof(text));
+            SDL_strlcat(text, owners[k], sizeof(text));
+        }
+        /* references nobody above accounts for: direct br_assets_load calls, loaders (a sheet's image) */
+        uint32_t other = info->ref_count > owner_count ? info->ref_count - owner_count : 0;
+        if (other > 0) {
+            char more[32];
+            SDL_snprintf(more, sizeof(more), "%s%u other", owner_count > 0 ? ", " : "", other);
+            SDL_strlcat(text, more, sizeof(text));
+        }
+        br_log_info("  %-11s %3u ref %7u KB  %s%s  [%s]", info->type != NULL ? info->type : "?", info->ref_count,
+                    (unsigned)(info->byte_size / 1024), info->path, info->loading ? " (loading)" : "", text);
+    }
+    br_free(list);
 }
 
 /* ---- background loading: worker side (no engine state touched except the asset root) */
@@ -471,6 +543,7 @@ void br_assets_load_async_resolved(br_engine *e, const char *path, const br_asse
     br_asset_entry *entry = br_assets_entry(a, path);
     if (entry != NULL) {
         entry->refs++;
+        br_assets_capture_ref(a, path);
     } else if (!br_assets_start_workers(a)) {
         br_assets_load_resolved(e, path, options); /* no threads: load now, still report from the next step */
     } else {
@@ -481,6 +554,7 @@ void br_assets_load_async_resolved(br_engine *e, const char *path, const br_asse
         fresh.resolution = br_assets_option_resolution(path, options);
         if (br_map_set(&a->cache, path, &fresh) != NULL) {
             br_assets_enqueue(a, path, options != NULL ? options->type : NULL, false);
+            br_assets_capture_ref(a, path);
         }
     }
     br_assets_add_waiter(a, path, fn, user);
@@ -554,11 +628,13 @@ static void br_assets_finish_result(br_engine *e, br_asset_result *r)
     bool wanted = entry != NULL && entry->loading;
     void *asset = NULL;
     const br_loader_entry *l = r->loader;
+    a->loader_depth++;
     if (l != NULL && l->decode != NULL) {
         asset = l->finish(e, r->path, r->decoded); /* always: it frees the decoded data */
     } else if (l != NULL && wanted) {
         asset = l->load(e, r->path, r->bytes, r->size);
     }
+    a->loader_depth--;
     br_free(r->bytes);
     if (l != NULL && asset == NULL && wanted) {
         br_log_error("asset '%s': the %s loader failed", r->path, l->type_name);
@@ -630,6 +706,7 @@ static void br_assets_update(br_engine *e, float dt, void *user)
         }
     }
     br_assets_fire_waiters(e);
+    br_asset_groups_poll(e);
 }
 
 /* ---- lifetime */
@@ -671,6 +748,11 @@ static void br_assets_shutdown(br_engine *e, void *user)
         br_asset_waiter *w = br_array_at(&a->waiters, i);
         br_free(w->path);
     }
+    br_asset_groups_free(e);
+    for (uint32_t i = 0; i < a->captured.count; i++) {
+        br_free(*(char **)br_array_at(&a->captured, i));
+    }
+    br_array_free(&a->captured);
     br_assets_unload_all(e);
     for (uint32_t i = 0; i < a->loaders.count; i++) {
         br_loader_entry *l = *(br_loader_entry **)br_array_at(&a->loaders, i);
@@ -715,6 +797,8 @@ void br_assets_register(br_engine *e)
     br_array_init(&a->bundle_loads, sizeof(br_bundle_load *));
     br_array_init(&a->jobs, sizeof(br_asset_job));
     br_array_init(&a->results, sizeof(br_asset_result));
+    br_array_init(&a->groups, sizeof(br_asset_group *));
+    br_array_init(&a->captured, sizeof(char *));
     a->mutex = SDL_CreateMutex();
     a->wake = SDL_CreateCondition();
     if (a->mutex == NULL || a->wake == NULL) {

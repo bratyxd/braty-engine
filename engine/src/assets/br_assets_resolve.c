@@ -204,7 +204,11 @@ static br_bundle *br_bundle_get_or_add(br_assets_state *a, const char *name)
         return b;
     }
     br_bundle fresh;
+    SDL_zero(fresh);
     fresh.name = br_strdup(name);
+    char owner[256];
+    SDL_snprintf(owner, sizeof(owner), "bundle:%s", name);
+    fresh.owner = br_strdup(owner);
     br_array_init(&fresh.assets, sizeof(br_bundle_asset));
     return br_array_push(&a->bundles, &fresh);
 }
@@ -365,6 +369,7 @@ bool br_assets_load_bundle(br_engine *e, const char *name, br_asset_progress_fn 
     if (load == NULL) {
         return false;
     }
+    bundle->loaded = true;
     load->name = br_strdup(name);
     load->total = bundle->assets.count;
     load->fn = fn;
@@ -387,10 +392,24 @@ void br_assets_unload_bundle(br_engine *e, const char *name)
     if (bundle == NULL) {
         return;
     }
+    bundle->loaded = false;
     for (uint32_t i = 0; i < bundle->assets.count; i++) {
         br_bundle_asset *asset = br_array_at(&bundle->assets, i);
         br_assets_unload_resolved(e, asset->path);
     }
+}
+
+uint32_t br_assets_bundle_failed(br_engine *e, const char *name)
+{
+    br_bundle *bundle = name != NULL ? br_bundle_find(e->assets, name) : NULL;
+    uint32_t failed = 0;
+    for (uint32_t i = 0; bundle != NULL && i < bundle->assets.count; i++) {
+        br_bundle_asset *asset = br_array_at(&bundle->assets, i);
+        if (br_assets_ref_count(e, asset->path) == 0) {
+            failed++; /* a failed load is not cached */
+        }
+    }
+    return failed;
 }
 
 uint32_t br_assets_bundle_size(br_engine *e, const char *name)
@@ -417,6 +436,7 @@ void br_assets_bundles_free(br_assets_state *a)
         }
         br_array_free(&b->assets);
         br_free(b->name);
+        br_free(b->owner);
     }
     br_array_free(&a->bundles);
     for (uint32_t i = 0; i < a->bundle_loads.count; i++) {
