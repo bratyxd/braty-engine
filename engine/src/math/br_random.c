@@ -1,7 +1,14 @@
 /* br_random: PCG32 (Melissa O'Neill, pcg-random.org), the 64-bit-state XSH RR variant. */
 #include "braty/br_random.h"
 
+#include "app/br_engine_internal.h"
+
 #include <SDL3/SDL_stdinc.h>
+
+br_random *br_random_engine(br_engine *e)
+{
+    return &e->rng; /* one generator per engine, also behind br_engine_random */
+}
 
 void br_random_seed(br_random *r, uint64_t seed, uint64_t stream)
 {

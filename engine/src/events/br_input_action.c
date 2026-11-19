@@ -519,15 +519,16 @@ br_vec2 br_input_action_vec2(br_engine *e, const char *left, const char *right, 
 
 /* ---- injection */
 
-void br_input_inject_action(br_engine *e, const char *action, float value, uint32_t frames)
+bool br_input_inject_action(br_engine *e, const char *action, float value, uint32_t frames)
 {
     br_action *a = br_input_find_action(e->input, action);
     if (a == NULL) {
         br_log_error("input: inject: unknown action '%s'", action != NULL ? action : "(null)");
-        return;
+        return false;
     }
     a->inject_value = br_clampf(value, 0.0f, 1.0f);
     a->inject_frames = frames;
+    return true;
 }
 
 /* ---- contexts */

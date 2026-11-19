@@ -452,7 +452,9 @@ static bool demo_init(br_engine *e)
         return false;
     }
     br_engine_on_shutdown(e, demo_shutdown, s);
-    br_gpu_set_clear_color(br_engine_gpu(e), br_color_from_hex(0x181C28, 1.0f));
+    if (br_engine_gpu(e) != NULL) { /* NULL under --headless: nodes still update, nothing is drawn */
+        br_gpu_set_clear_color(br_engine_gpu(e), br_color_from_hex(0x181C28, 1.0f));
+    }
     static uint8_t panel[PANEL * PANEL * 4];
     panel_pixels(panel);
     s->panel = br_texture_create_rgba8(e, PANEL, PANEL, panel, NULL);

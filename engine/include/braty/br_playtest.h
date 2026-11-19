@@ -14,17 +14,24 @@
  *   { "cmd": "step", "frames": 60 }                      advance (also "wait"; "seconds" too)
  *   { "cmd": "key", "key": "Space" }                     tap (down now, up next frame);
  *                                                        "action": "down"/"up", "frames": hold
- *   { "cmd": "action", "name": "start" }                 press a game.json input action
+ *   { "cmd": "action", "name": "start" }                 tap an input action (any binding);
+ *                                                        "action": "down"/"up", "value": 0..1
+ *   { "cmd": "gamepad", "action": "connect", "type": "ps5" }  a virtual pad ("slot" in the reply);
+ *                                                        "tap"/"down"/"up" + "button": "a",
+ *                                                        "axis" + "axis": "leftx", "value": 1
  *   { "cmd": "click", "label": "play_button" }           click the centre of a node
  *   { "cmd": "get", "path": "ship:position" }            node property / component field
  *   { "cmd": "set", "path": "game:lives", "value": 1 }   force a state
  *   { "cmd": "expect", "path": "game:score", "op": ">=", "value": 100 }
  *   { "cmd": "screenshot", "file": "out.png" }  { "cmd": "dump", "file": "state.json" }
+ *   { "cmd": "help" }                                    every command with its arguments
  *
  * Paths: "label:property" (position, x, y, scale, rotation, alpha, visible, tint, z_index,
  * world_position, bounds, type, children, exists, or any key the node's scene-file form has,
  * e.g. "text"), "label:component.field", a trailing ".x"/".y"/".z"/".w" or ".0", ".1"... picks
- * one element, and "name:field" for structs a game exposes with br_playtest_expose.
+ * one element, "name:field" for structs a game exposes with br_playtest_expose, and
+ * "view/node:property" for a 3D node inside the view3d labelled `view` ("*" = any view; position,
+ * scale, rotation, euler, visible, world_position, screen_position...).
  */
 #ifndef BR_PLAYTEST_H
 #define BR_PLAYTEST_H
@@ -76,7 +83,7 @@ void br_playtest_expose(br_engine *e, const char *name, const br_field_desc *fie
 
 /* ---- record and replay */
 
-/* Starts recording real input (keyboard, mouse, text, touch) frame by frame. */
+/* Starts recording real input (keyboard, mouse, text, touch, gamepads) frame by frame. */
 bool br_playtest_record_start(br_engine *e, const char *path);
 /* Writes the recording as a script (waits + input commands + a final wait and quit). */
 bool br_playtest_record_stop(br_engine *e);

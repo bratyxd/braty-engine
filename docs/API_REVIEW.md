@@ -4,7 +4,8 @@ Star Courier (`sample_projects/star_courier/`) is the first program that uses th
 the intended way: game.json, a manifest with a bundle, three scene files, nine prefabs, a
 spritesheet, sound sprites, input actions, ten components with field lists, eight systems.
 Everything below was hit while writing it. Each item names where it lives, what happened, what
-the game does instead, and a concrete fix. Nothing here was fixed in the engine except item 0.
+the game does instead, and a concrete fix. Items fixed later say **Resolved** with the task,
+the functions and the test.
 
 Severity: **bug** = behaves differently from its documentation; **gap** = something a game
 needs that is missing; **friction** = works, but awkward or easy to get wrong.
@@ -94,13 +95,26 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
     send key-up next frame (`main.c`, `sc_bot_tap`), and there is no way to inject a gamepad
     button or axis. **Fix:** `br_input_inject_action(e, "start", value, frames)` and
     `br_input_inject_gamepad_button/axis`; Phase 2 Task 14 (playtest) builds on them.
+    **Resolved (Task 14c):** `br_input_inject_action(e, action, value, frames)` holds any action
+    whatever it is bound to (respects contexts); `br_input_inject_gamepad_button`,
+    `br_input_inject_gamepad_axis` and `br_input_inject_gamepad_disconnect` drive pads (an empty
+    slot gets an injected pad); `br_input_gamepad_attach_virtual(e, type)` adds an SDL virtual pad
+    of a chosen family. Test: `tests/test_input.c`. The play-test `action` and `gamepad` commands
+    use them (Task 14d; `tests/test_playtest.c`, `test_action`, `test_gamepad`).
 11. **friction - "run before input latches" is a magic number.** Injected events must arrive
     before `input.begin_frame` (INPUT, priority -2000000) to count this frame; the sample uses
     -3000000. **Fix:** public constants (`BR_PRIORITY_INPUT_LATCH`, `BR_PRIORITY_TRANSFORM`, ...)
     in `br_app.h` for every engine system that games order against.
+    **Resolved (Task 14c):** `BR_INPUT_PRIORITY_LATCH` in `br_input.h` (the priority of
+    `input.begin_frame`); inject from a system at `BR_INPUT_PRIORITY_LATCH - 1000`. Test:
+    `tests/test_input.c`. The other engine priorities are still plain numbers (listed per module
+    in `docs/agents/`).
 12. **gap - rumble needs a slot, actions are slot-less** (`br_input_gamepad_rumble`). Actions
     read every pad, so the game cannot tell which pad to rumble; the sample rumbles slot 0.
     **Fix:** `br_input_action_last_gamepad(e, action)` or `br_input_gamepad_rumble_all`.
+    **Resolved (Task 14c):** `br_input_action_last_gamepad(e, action)` returns the slot that last
+    drove the action (-1 if none), so `br_input_gamepad_rumble(e, slot, ...)` rumbles the right
+    pad. Test: `tests/test_input.c`.
 
 ## 4. Systems and game flow
 

@@ -5,7 +5,6 @@
 #include "app/br_engine_internal.h"
 #include "braty/br_app.h"
 #include "braty/br_input.h"
-#include "braty/br_random.h"
 
 #define BR_INPUT_MOUSE_BUTTONS  8
 #define BR_INPUT_TEXT_SIZE      256
@@ -91,9 +90,6 @@ typedef struct br_input_state {
     bool             capture_done;
     br_input_binding capture_result;
 
-    // ponytail: the engine RNG lives here because math has no engine slot; move it to its own
-    // module state when br_engine_internal.h gains one.
-    br_random rng;
 } br_input_state;
 
 /* ---- br_input.c */

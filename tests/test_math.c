@@ -3,6 +3,7 @@
  * hand-computed come from tests/tools/math_reference.py. */
 #include "br_test.h"
 
+#include "braty/br_app.h"
 #include "braty/br_ease.h"
 #include "braty/br_math.h"
 #include "braty/br_noise.h"
@@ -907,6 +908,77 @@ static void test_splines(void)
     BR_CHECK(br_spline_arc_table_build(&table, single, lengths, 8) && br_spline_arc_param(&table, 1.0f) == 0.0f);
 }
 
+/* ---- br_aabb / br_ray3d forms give the same answers as the loose-vector forms */
+
+static void test_geometry3d_types(void)
+{
+    br_ray3d ray = { br_vec3_make(0, 0, 10), br_vec3_make(0, 0, -1) };
+    br_aabb box = { br_vec3_make(-1, -1, -1), br_vec3_make(1, 1, 1) };
+    float t = -1.0f;
+    BR_CHECK(br_ray3d_box(ray, box, &t) && br_nearly_equal(t, 9.0f, EPS));
+    BR_CHECK(br_ray3d_plane(ray, br_plane_from_point_normal(br_vec3_make(0, 0, 2), br_vec3_make(0, 0, 1)), &t) &&
+             br_nearly_equal(t, 8.0f, EPS));
+    br_sphere ball = { br_vec3_make(0, 0, 0), 2.0f };
+    BR_CHECK(br_ray3d_sphere(ray, ball, &t) && br_nearly_equal(t, 8.0f, EPS));
+    br_obb turned = { br_vec3_make(0, 0, 0), br_vec3_make(1, 1, 1), br_quat_from_axis_angle(br_vec3_make(0, 1, 0), 0.5f) };
+    float t2 = -1.0f;
+    BR_CHECK(br_ray3d_obb(ray, turned, &t) && br_ray_obb(ray.origin, ray.direction, turned, &t2) && t == t2);
+    br_ray3d away = { br_vec3_make(0, 0, 10), br_vec3_make(0, 0, 1) };
+    BR_CHECK(!br_ray3d_box(away, box, &t) && !br_ray3d_sphere(away, ball, &t));
+
+    br_aabb far_box = { br_vec3_make(5, 5, 5), br_vec3_make(6, 6, 6) };
+    BR_CHECK(br_aabb_aabb(box, box) && !br_aabb_aabb(box, far_box));
+    BR_CHECK(br_sphere_aabb(ball, box) && !br_sphere_aabb(ball, far_box));
+    BR_CHECK(vec3_near(br_closest_point_aabb(br_vec3_make(3, 0, 0), box), 1, 0, 0));
+    BR_CHECK(vec3_near(br_closest_point_ray3d(br_vec3_make(2, 0, 5), ray), 0, 0, 5));
+
+    br_plane planes[6];
+    br_mat4 vp = br_mat4_mul(br_mat4_perspective(1.0f, 1.0f, 0.1f, 100.0f),
+                             br_mat4_look_at(br_vec3_make(0, 0, 10), br_vec3_make(0, 0, 0), br_vec3_make(0, 1, 0)));
+    br_frustum_planes(vp, planes);
+    br_aabb behind = { br_vec3_make(-1, -1, 20), br_vec3_make(1, 1, 22) };
+    BR_CHECK(br_frustum_planes_aabb(planes, box) && !br_frustum_planes_aabb(planes, behind));
+}
+
+/* ---- one engine RNG behind br_engine_random and br_random_engine, seeded by --seed */
+
+static uint32_t s_first_draw;
+
+static bool record_first_draw(br_engine *e)
+{
+    s_first_draw = br_random_u32(br_random_engine(e)); /* games may draw in init: --seed is applied before */
+    return true;
+}
+
+static void test_engine_random(void)
+{
+    br_engine *e = br_engine_create("test_math", NULL);
+    br_random ref;
+    br_random_seed(&ref, 5, 0);
+    br_app_set_deterministic(e, true, 5);
+    bool same = true;
+    for (int i = 0; i < 16; i++) {
+        /* both entry points draw from the one generator, interleaved */
+        uint32_t v = (i % 2 == 0) ? br_engine_random(e) : br_random_u32(br_random_engine(e));
+        same = same && v == br_random_u32(&ref);
+    }
+    BR_CHECK(same);
+    br_engine_set_seed(e, 5);
+    uint32_t a = br_engine_random(e);
+    br_engine_set_seed(e, 5);
+    BR_CHECK(br_random_u32(br_random_engine(e)) == a);
+    br_engine_destroy(e);
+
+    char *argv[] = { "test_math", "--headless", "--deterministic", "--seed", "5", "--frames", "1" };
+    br_app_desc desc;
+    SDL_zero(desc);
+    desc.init = record_first_draw;
+    void *state = NULL;
+    SDL_AppResult r = br_app_init(&state, &desc, 7, argv);
+    BR_CHECK(r == SDL_APP_CONTINUE && s_first_draw == a);
+    br_app_quit(state, r);
+}
+
 int main(int argc, char **argv)
 {
     (void)argc;
@@ -923,9 +995,11 @@ int main(int argc, char **argv)
     test_springs();
     test_sat2d();
     test_geometry3d();
+    test_geometry3d_types();
     test_color_spaces();
     test_ease();
     test_random();
+    test_engine_random();
     test_noise();
     test_splines();
     return br_test_finish();

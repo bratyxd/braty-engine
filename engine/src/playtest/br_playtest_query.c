@@ -320,11 +320,222 @@ static cJSON *br_pt_node_property(br_engine *e, br_node n, const char *name, con
     return item;
 }
 
+static cJSON *br_pt_with_element(br_engine *e, const char *path, const char *element, const cJSON *value);
+
+/* ---- 3D nodes inside a view3d: "view_label/node_label:property" ("*" = any view) */
+
+/* Every view3d node under n, depth-first. */
+static void br_pt_collect_views(br_engine *e, br_node n, br_array *views)
+{
+    if (br_node_type_of(e, n) == br_view3d_type(e)) {
+        br_array_push(views, &n);
+    }
+    uint32_t count = br_node_child_count(e, n);
+    for (uint32_t i = 0; i < count; i++) {
+        br_node child = br_node_child_at(e, n, i);
+        if (br_node_valid(e, child)) {
+            br_pt_collect_views(e, child, views);
+        }
+    }
+}
+
+/* Splits "view/node" and finds the 3D node. False (+ error when `report`) if the view or the
+ * node is missing. */
+static bool br_pt_find_node3d(br_engine *e, const char *target, const char *path, bool report, br_node *view,
+                              br_node3d *node)
+{
+    const char *slash = SDL_strchr(target, '/');
+    char view_label[BR_PLAYTEST_NAME_SIZE];
+    br_str_copy(view_label, sizeof(view_label), target);
+    view_label[slash - target] = '\0';
+    const char *label = slash + 1;
+    br_array views;
+    br_array_init(&views, sizeof(br_node));
+    br_pt_collect_views(e, br_scene_root(e), &views);
+    bool view_found = false;
+    for (uint32_t i = 0; i < views.count; i++) {
+        br_node v = *(br_node *)br_array_at(&views, i);
+        if (SDL_strcmp(view_label, "*") != 0 && SDL_strcmp(br_node_label(e, v), view_label) != 0) {
+            continue;
+        }
+        view_found = true;
+        br_node3d n = br_node3d_find_by_label(e, br_view3d_root(e, v), label);
+        if (br_node3d_valid(e, n)) {
+            *view = v;
+            *node = n;
+            br_array_free(&views);
+            return true;
+        }
+    }
+    br_array_free(&views);
+    if (!report) {
+        return false;
+    }
+    if (!view_found) {
+        return br_playtest_fail(e, "path '%s': no view3d labelled '%s' (\"*\" = any view)", path, view_label);
+    }
+    return br_playtest_fail(e, "path '%s': no 3D node labelled '%s' in view '%s'", path, label, view_label);
+}
+
+static cJSON *br_pt_floats(const float *v, int count)
+{
+    cJSON *a = cJSON_CreateArray();
+    for (int i = 0; i < count; i++) {
+        cJSON_AddItemToArray(a, br_data_number(v[i]));
+    }
+    return a;
+}
+
+static cJSON *br_pt_vec3_json(br_vec3 v)
+{
+    float f[3] = { v.x, v.y, v.z };
+    return br_pt_floats(f, 3);
+}
+
+static const char *br_pt_type3d_name(br_engine *e, br_node3d n)
+{
+    const br_node3d_type_desc *desc = br_node3d_type_get(e, br_node3d_type_of(e, n));
+    return desc != NULL ? desc->name : "?";
+}
+
+/* A 3D node property; NULL + error if unknown. */
+static cJSON *br_pt_node3d_property(br_engine *e, br_node view, br_node3d n, const char *name, const char *path)
+{
+    if (SDL_strcmp(name, "position") == 0) {
+        return br_pt_vec3_json(br_node3d_position(e, n));
+    }
+    if (SDL_strcmp(name, "scale") == 0) {
+        return br_pt_vec3_json(br_node3d_scale(e, n));
+    }
+    if (SDL_strcmp(name, "rotation") == 0) {
+        br_quat q = br_node3d_rotation(e, n);
+        float f[4] = { q.x, q.y, q.z, q.w };
+        return br_pt_floats(f, 4);
+    }
+    if (SDL_strcmp(name, "euler") == 0) {
+        float f[3];
+        br_quat_to_euler(br_node3d_rotation(e, n), &f[0], &f[1], &f[2]);
+        return br_pt_floats(f, 3);
+    }
+    if (SDL_strcmp(name, "visible") == 0) {
+        return cJSON_CreateBool(br_node3d_visible(e, n));
+    }
+    if (SDL_strcmp(name, "world_position") == 0) {
+        return br_pt_vec3_json(br_node3d_world_position(e, n));
+    }
+    if (SDL_strcmp(name, "screen_position") == 0) {
+        br_vec2 p;
+        if (!br_view3d_world_to_screen(e, view, br_node3d_world_position(e, n), &p)) {
+            return cJSON_CreateNull(); /* behind the camera */
+        }
+        return br_data_vec2_json(p);
+    }
+    if (SDL_strcmp(name, "label") == 0) {
+        return cJSON_CreateString(br_node3d_label(e, n));
+    }
+    if (SDL_strcmp(name, "type") == 0) {
+        return cJSON_CreateString(br_pt_type3d_name(e, n));
+    }
+    if (SDL_strcmp(name, "children") == 0) {
+        return cJSON_CreateNumber(br_node3d_child_count(e, n));
+    }
+    br_playtest_fail(e, "path '%s': unknown 3D property '%s' (position scale rotation euler visible world_position "
+                        "screen_position label type children exists)",
+                     path, name);
+    return NULL;
+}
+
+static cJSON *br_pt_get3d(br_engine *e, const br_pt_path *p, const char *path)
+{
+    br_node view;
+    br_node3d n;
+    if (SDL_strcmp(p->parts[0], "exists") == 0) {
+        return cJSON_CreateBool(br_pt_find_node3d(e, p->target, path, false, &view, &n)); /* no error: an answer */
+    }
+    if (p->part_count > 2) {
+        br_playtest_fail(e, "path '%s': too many parts", path);
+        return NULL;
+    }
+    if (!br_pt_find_node3d(e, p->target, path, true, &view, &n)) {
+        return NULL;
+    }
+    cJSON *value = br_pt_node3d_property(e, view, n, p->parts[0], path);
+    return br_pt_pick_element(e, value, p->part_count == 2 ? p->parts[1] : NULL, path);
+}
+
+/* Writes position / scale / rotation (quaternion) / euler (radians) / visible, or one element. */
+static bool br_pt_set3d(br_engine *e, const br_pt_path *p, const char *path, const cJSON *value)
+{
+    br_node view;
+    br_node3d n;
+    if (p->part_count > 2 || !br_pt_find_node3d(e, p->target, path, true, &view, &n)) {
+        return p->part_count > 2 ? br_playtest_fail(e, "path '%s': too many parts", path) : false;
+    }
+    const char *name = p->parts[0];
+    if (SDL_strcmp(name, "visible") == 0 && p->part_count == 1) {
+        if (!cJSON_IsBool(value)) {
+            return br_playtest_fail(e, "path '%s': visible takes true or false", path);
+        }
+        br_node3d_set_visible(e, n, cJSON_IsTrue(value));
+        return true;
+    }
+    int size = 0;
+    if (SDL_strcmp(name, "position") == 0 || SDL_strcmp(name, "scale") == 0 || SDL_strcmp(name, "euler") == 0) {
+        size = 3;
+    } else if (SDL_strcmp(name, "rotation") == 0) {
+        size = 4;
+    } else {
+        return br_playtest_fail(e, "path '%s': 3D nodes can set position, scale, rotation, euler, visible", path);
+    }
+    /* the whole vector: given, or the current one with one element replaced */
+    float f[4];
+    cJSON *whole = p->part_count == 2 ? br_pt_with_element(e, path, p->parts[1], value) : NULL;
+    bool ok = br_pt_numbers(whole != NULL ? whole : value, f, size);
+    cJSON_Delete(whole);
+    if (!ok) {
+        return br_playtest_fail(e, "path '%s': expected %d numbers%s", path, size, p->part_count == 2 ? " (element)" : "");
+    }
+    if (name[0] == 'p') {
+        br_node3d_set_position(e, n, br_vec3_make(f[0], f[1], f[2]));
+    } else if (name[0] == 's') {
+        br_node3d_set_scale(e, n, br_vec3_make(f[0], f[1], f[2]));
+    } else if (name[0] == 'e') {
+        br_node3d_set_euler(e, n, f[0], f[1], f[2]);
+    } else {
+        br_quat q = { f[0], f[1], f[2], f[3] };
+        br_node3d_set_rotation(e, n, q);
+    }
+    return true;
+}
+
+static cJSON *br_pt_dump3d(br_engine *e, br_node3d n)
+{
+    cJSON *out = cJSON_CreateObject();
+    cJSON_AddStringToObject(out, "label", br_node3d_label(e, n));
+    cJSON_AddStringToObject(out, "type", br_pt_type3d_name(e, n));
+    cJSON_AddItemToObject(out, "position", br_pt_vec3_json(br_node3d_position(e, n)));
+    br_quat q = br_node3d_rotation(e, n);
+    float r[4] = { q.x, q.y, q.z, q.w };
+    cJSON_AddItemToObject(out, "rotation", br_pt_floats(r, 4));
+    cJSON_AddItemToObject(out, "scale", br_pt_vec3_json(br_node3d_scale(e, n)));
+    cJSON_AddBoolToObject(out, "visible", br_node3d_visible(e, n));
+    if (br_node3d_child_count(e, n) > 0) {
+        cJSON *children = cJSON_AddArrayToObject(out, "children");
+        for (br_node3d c = br_node3d_first_child(e, n); br_node3d_valid(e, c); c = br_node3d_next_sibling(e, c)) {
+            cJSON_AddItemToArray(children, br_pt_dump3d(e, c));
+        }
+    }
+    return out;
+}
+
 cJSON *br_playtest_query_get(br_engine *e, const char *path)
 {
     br_pt_path p;
     if (!br_pt_parse_path(e, path, &p)) {
         return NULL;
+    }
+    if (SDL_strchr(p.target, '/') != NULL) {
+        return br_pt_get3d(e, &p, path);
     }
     const br_field_desc *field = NULL;
     void *base = NULL;
@@ -387,6 +598,9 @@ bool br_playtest_query_set(br_engine *e, const char *path, const cJSON *value)
     }
     if (!br_pt_parse_path(e, path, &p)) {
         return false;
+    }
+    if (SDL_strchr(p.target, '/') != NULL) {
+        return br_pt_set3d(e, &p, path, value);
     }
     const br_field_desc *field = NULL;
     void *base = NULL;
@@ -464,6 +678,19 @@ cJSON *br_playtest_query_dump(br_engine *e)
     cJSON_AddItemToObject(dump, "state", state);
     cJSON *scene = br_scene_file_to_json(e, br_scene_root(e));
     cJSON_AddItemToObject(dump, "scene", scene != NULL ? scene : cJSON_CreateNull());
+    /* the 3D subtree of every view3d (the scene above has only its 2D side) */
+    cJSON *views3d = cJSON_AddArrayToObject(dump, "views3d");
+    br_array views;
+    br_array_init(&views, sizeof(br_node));
+    br_pt_collect_views(e, br_scene_root(e), &views);
+    for (uint32_t i = 0; i < views.count; i++) {
+        br_node v = *(br_node *)br_array_at(&views, i);
+        cJSON *item = cJSON_CreateObject();
+        cJSON_AddStringToObject(item, "view", br_node_label(e, v));
+        cJSON_AddItemToObject(item, "root", br_pt_dump3d(e, br_view3d_root(e, v)));
+        cJSON_AddItemToArray(views3d, item);
+    }
+    br_array_free(&views);
     return dump;
 }
 
@@ -590,6 +817,21 @@ bool br_playtest_query_condition(br_engine *e, const cJSON *cmd, bool *ok, char 
 
 bool br_playtest_query_click_point(br_engine *e, const char *label, float *x, float *y)
 {
+    if (label != NULL && SDL_strchr(label, '/') != NULL) {
+        /* a 3D node: its origin projected by the view's camera */
+        br_node view;
+        br_node3d n3;
+        br_vec2 p;
+        if (!br_pt_find_node3d(e, label, label, true, &view, &n3)) {
+            return false;
+        }
+        if (!br_view3d_world_to_screen(e, view, br_node3d_world_position(e, n3), &p)) {
+            return br_playtest_fail(e, "click: 3D node '%s' is behind the camera", label);
+        }
+        *x = p.x;
+        *y = p.y;
+        return true;
+    }
     br_node n = br_node_find_by_label(e, br_scene_root(e), label, true);
     if (!br_node_valid(e, n)) {
         return br_playtest_fail(e, "click: no node labelled '%s'", label);

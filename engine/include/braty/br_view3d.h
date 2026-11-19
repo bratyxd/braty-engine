@@ -34,10 +34,7 @@ typedef struct br_node3d     { uint32_t index; uint32_t generation; } br_node3d;
 typedef struct br_geometry3d { uint32_t index; uint32_t generation; } br_geometry3d;
 typedef struct br_material3d { uint32_t index; uint32_t generation; } br_material3d;
 
-/* Axis-aligned box. An empty box has min > max. */
-typedef struct br_aabb { br_vec3 min; br_vec3 max; } br_aabb;
-/* A ray: origin + t * direction. */
-typedef struct br_ray3d { br_vec3 origin; br_vec3 direction; } br_ray3d;
+/* br_aabb and br_ray3d are in br_math.h (with their intersection tests). */
 
 /* Opaque context handed to 3D node types' collect callbacks. */
 typedef struct br_render3d_ctx br_render3d_ctx;

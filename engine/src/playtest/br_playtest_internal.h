@@ -18,12 +18,20 @@ typedef struct br_playtest_exposed {
     void                *base;
 } br_playtest_exposed;
 
-/* Input to release later (the second half of a tap / hold / click). */
+typedef enum br_playtest_release_kind {
+    BR_PLAYTEST_RELEASE_KEY,
+    BR_PLAYTEST_RELEASE_MOUSE,
+    BR_PLAYTEST_RELEASE_GAMEPAD,
+    BR_PLAYTEST_PRESS_MOUSE      /* the delayed press of a click (the move came a frame before) */
+} br_playtest_release_kind;
+
+/* Input to send later (the second half of a tap / hold, the press and release of a click). */
 typedef struct br_playtest_release {
     uint64_t     frame;    /* released at the start of this frame */
-    bool         is_key;
+    br_playtest_release_kind kind;
     SDL_Scancode key;
-    int          button;
+    int          button;   /* mouse button or SDL_GamepadButton */
+    int          slot;     /* gamepad slot */
     float        x, y;
 } br_playtest_release;
 
@@ -64,6 +72,7 @@ typedef struct br_playtest_state {
     bool     recording;
     char     record_path[512];
     br_array recorded;          /* br_playtest_recorded */
+    SDL_JoystickID pad_ids[BR_INPUT_MAX_GAMEPADS]; /* pad in each slot as seen by the recorder */
 
     /* --playtest-stdin */
     bool     interactive;

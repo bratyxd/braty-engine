@@ -108,17 +108,35 @@ static void br_pt_button(br_engine *e, float x, float y, int button, bool down)
     e->playtest->injecting = false;
 }
 
-static void br_pt_schedule_release(br_engine *e, uint64_t frame, bool is_key, SDL_Scancode key, int button, float x,
-                                   float y)
+static void br_pt_schedule_release(br_engine *e, uint64_t frame, br_playtest_release_kind kind, SDL_Scancode key,
+                                   int button, float x, float y)
 {
     br_playtest_release r;
     SDL_zero(r);
     r.frame = frame;
-    r.is_key = is_key;
+    r.kind = kind;
     r.key = key;
     r.button = button;
     r.x = x;
     r.y = y;
+    br_array_push(&e->playtest->releases, &r);
+}
+
+static void br_pt_pad_button(br_engine *e, int slot, SDL_GamepadButton button, bool down)
+{
+    e->playtest->injecting = true;
+    br_input_inject_gamepad_button(e, slot, button, down);
+    e->playtest->injecting = false;
+}
+
+static void br_pt_schedule_pad_release(br_engine *e, uint64_t frame, int slot, SDL_GamepadButton button)
+{
+    br_playtest_release r;
+    SDL_zero(r);
+    r.frame = frame;
+    r.kind = BR_PLAYTEST_RELEASE_GAMEPAD;
+    r.slot = slot;
+    r.button = (int)button;
     br_array_push(&e->playtest->releases, &r);
 }
 
@@ -133,10 +151,12 @@ static void br_pt_run_releases(br_engine *e)
             continue;
         }
         br_array_remove_ordered(&s->releases, i);
-        if (r.is_key) {
+        if (r.kind == BR_PLAYTEST_RELEASE_KEY) {
             br_pt_key(e, r.key, false);
+        } else if (r.kind == BR_PLAYTEST_RELEASE_MOUSE || r.kind == BR_PLAYTEST_PRESS_MOUSE) {
+            br_pt_button(e, r.x, r.y, r.button, r.kind == BR_PLAYTEST_PRESS_MOUSE);
         } else {
-            br_pt_button(e, r.x, r.y, r.button, false);
+            br_pt_pad_button(e, r.slot, (SDL_GamepadButton)r.button, false);
         }
     }
 }
@@ -148,7 +168,8 @@ static bool br_pt_cmd_key(br_engine *e, const cJSON *cmd, SDL_Scancode key)
     if (action == NULL || SDL_strcmp(action, "tap") == 0) {
         uint64_t frames = (uint64_t)br_pt_clamped(cmd, "frames", 1.0, 1.0, 1e9);
         br_pt_key(e, key, true);
-        br_pt_schedule_release(e, br_pt_input_frame(e) + (frames > 0 ? frames : 1), true, key, 0, 0.0f, 0.0f);
+        br_pt_schedule_release(e, br_pt_input_frame(e) + (frames > 0 ? frames : 1), BR_PLAYTEST_RELEASE_KEY, key, 0,
+                               0.0f, 0.0f);
     } else if (SDL_strcmp(action, "down") == 0 || SDL_strcmp(action, "up") == 0) {
         br_pt_key(e, key, action[0] == 'd');
     } else {
@@ -157,29 +178,28 @@ static bool br_pt_cmd_key(br_engine *e, const cJSON *cmd, SDL_Scancode key)
     return true;
 }
 
-/* An action from game.json "input": its first key, else its first mouse button. */
+/* A named input action, whatever it is bound to (game.json or code): tap (default, "frames"
+ * long), down / press (held until up), up / release. "value" 0..1 drives analogue actions. */
 static bool br_pt_cmd_action(br_engine *e, const cJSON *cmd)
 {
     const char *name = br_pt_string(cmd, "name");
-    // ponytail: reads game.json bindings (code-bound actions are invisible); switch to br_input_inject_action once Task 14c adds it.
-    const cJSON *action = cJSON_GetObjectItemCaseSensitive(
-        cJSON_GetObjectItemCaseSensitive(br_game_config_json(e), "input"), name);
-    const cJSON *key = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(action, "keys"), 0);
-    if (cJSON_IsString(key)) {
-        SDL_Scancode code = SDL_GetScancodeFromName(key->valuestring);
-        if (code == SDL_SCANCODE_UNKNOWN) {
-            return br_playtest_fail(e, "action '%s': game.json key '%s' is unknown", name, key->valuestring);
-        }
-        return br_pt_cmd_key(e, cmd, code);
+    const char *action = br_pt_string(cmd, "action");
+    float value = (float)br_pt_clamped(cmd, "value", 1.0, 0.0, 1.0);
+    uint32_t frames = (uint32_t)br_pt_clamped(cmd, "frames", 1.0, 1.0, 1e9);
+    if (action == NULL || SDL_strcmp(action, "tap") == 0) {
+        /* frames as given */
+    } else if (SDL_strcmp(action, "down") == 0 || SDL_strcmp(action, "press") == 0) {
+        frames = UINT32_MAX; /* held until "up" */
+    } else if (SDL_strcmp(action, "up") == 0 || SDL_strcmp(action, "release") == 0) {
+        frames = 0;
+        value = 0.0f;
+    } else {
+        return br_playtest_fail(e, "action: action must be tap, down (press) or up (release), got '%s'", action);
     }
-    const cJSON *button = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(action, "mouse"), 0);
-    if (cJSON_IsNumber(button)) {
-        br_vec2 p = br_input_mouse_position(e);
-        br_pt_button(e, p.x, p.y, button->valueint, true);
-        br_pt_schedule_release(e, br_pt_input_frame(e) + 1, false, SDL_SCANCODE_UNKNOWN, button->valueint, p.x, p.y);
-        return true;
+    if (!br_input_inject_action(e, name, value, frames)) {
+        return br_playtest_fail(e, "action: unknown input action '%s'", name);
     }
-    return br_playtest_fail(e, "action '%s': no key or mouse binding in game.json \"input\"", name);
+    return true;
 }
 
 static bool br_pt_cmd_mouse(br_engine *e, const cJSON *cmd)
@@ -197,7 +217,7 @@ static bool br_pt_cmd_mouse(br_engine *e, const cJSON *cmd)
         br_pt_button(e, x, y, button, action[0] == 'd');
     } else if (SDL_strcmp(action, "tap") == 0) {
         br_pt_button(e, x, y, button, true);
-        br_pt_schedule_release(e, br_pt_input_frame(e) + 1, false, SDL_SCANCODE_UNKNOWN, button, x, y);
+        br_pt_schedule_release(e, br_pt_input_frame(e) + 1, BR_PLAYTEST_RELEASE_MOUSE, SDL_SCANCODE_UNKNOWN, button, x, y);
     } else if (SDL_strcmp(action, "wheel") == 0) {
         e->playtest->injecting = true;
         br_input_inject_wheel(e, (float)br_pt_number(cmd, "dx", 0.0), (float)br_pt_number(cmd, "dy", 0.0));
@@ -248,11 +268,122 @@ static bool br_pt_cmd_click(br_engine *e, const cJSON *cmd)
         return false;
     }
     int button = (int)br_pt_clamped(cmd, "button", SDL_BUTTON_LEFT, 1.0, 8.0);
+    /* move now, press next frame, release the frame after: like a hand, and the press frame
+     * sees no pointer jump (a game that drags a camera while the button is down stays put) */
     e->playtest->injecting = true;
     br_input_inject_pointer_move(e, x, y);
     e->playtest->injecting = false;
-    br_pt_button(e, x, y, button, true);
-    br_pt_schedule_release(e, br_pt_input_frame(e) + 1, false, SDL_SCANCODE_UNKNOWN, button, x, y);
+    uint64_t frame = br_pt_input_frame(e);
+    br_pt_schedule_release(e, frame + 1, BR_PLAYTEST_PRESS_MOUSE, SDL_SCANCODE_UNKNOWN, button, x, y);
+    br_pt_schedule_release(e, frame + 2, BR_PLAYTEST_RELEASE_MOUSE, SDL_SCANCODE_UNKNOWN, button, x, y);
+    return true;
+}
+
+/* ---- gamepads (virtual SDL pads of a chosen family, or injected pads with no device) */
+
+/* Names of br_gamepad_type values in commands and recordings (SDL's type names, plus steam). */
+static const char *const br_pt_pad_type_names[BR_GAMEPAD_TYPE_COUNT] = {
+    "generic",   "xbox360",     "xboxone",    "ps3",      "ps4",   "ps5", "switchpro",
+    "joyconleft", "joyconright", "joyconpair", "gamecube", "steam",
+};
+
+/* A type name, or a family shorthand ("xbox", "playstation", "switch"). -1 if unknown. */
+static int br_pt_pad_type(const char *name)
+{
+    if (SDL_strcmp(name, "xbox") == 0) {
+        return BR_GAMEPAD_TYPE_XBOXONE;
+    }
+    if (SDL_strcmp(name, "playstation") == 0) {
+        return BR_GAMEPAD_TYPE_PS5;
+    }
+    if (SDL_strcmp(name, "switch") == 0) {
+        return BR_GAMEPAD_TYPE_SWITCH_PRO;
+    }
+    for (int i = 0; i < BR_GAMEPAD_TYPE_COUNT; i++) {
+        if (SDL_strcmp(name, br_pt_pad_type_names[i]) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static bool br_pt_gamepad_connect(br_engine *e, const cJSON *cmd, cJSON *reply)
+{
+    const char *name = br_pt_string(cmd, "type");
+    int type = br_pt_pad_type(name != NULL ? name : "generic");
+    if (type < 0) {
+        return br_playtest_fail(e, "gamepad: unknown type '%s' (xbox, playstation, switch, generic, xbox360, xboxone, "
+                                   "ps3, ps4, ps5, switchpro, joyconleft, joyconright, joyconpair, gamecube, steam)",
+                                name);
+    }
+    e->playtest->injecting = true;
+    int slot = br_input_gamepad_attach_virtual(e, (br_gamepad_type)type);
+    e->playtest->injecting = false;
+    if (slot < 0) {
+        return br_playtest_fail(e, "gamepad: cannot attach a virtual %s pad (see the log)", br_pt_pad_type_names[type]);
+    }
+    /* a recording names the slot the pad had */
+    int want = (int)br_pt_clamped(cmd, "slot", slot, 0.0, BR_INPUT_MAX_GAMEPADS - 1);
+    if (want != slot && br_input_gamepad_assign(e, slot, want)) {
+        slot = want;
+    }
+    if (reply != NULL) {
+        cJSON_AddNumberToObject(reply, "slot", slot);
+    }
+    return true;
+}
+
+/* connect / disconnect, down / up / tap a button, axis. "slot" defaults to 0. */
+static bool br_pt_cmd_gamepad(br_engine *e, const cJSON *cmd, cJSON *reply)
+{
+    const char *action = br_pt_string(cmd, "action");
+    if (SDL_strcmp(action, "connect") == 0) {
+        return br_pt_gamepad_connect(e, cmd, reply);
+    }
+    int slot = (int)br_pt_clamped(cmd, "slot", 0.0, 0.0, BR_INPUT_MAX_GAMEPADS - 1);
+    if (SDL_strcmp(action, "disconnect") == 0) {
+        br_gamepad_info info;
+        if (!br_input_gamepad_info(e, slot, &info)) {
+            return br_playtest_fail(e, "gamepad: no pad in slot %d", slot);
+        }
+        e->playtest->injecting = true;
+        if (info.virtual_device) {
+            br_input_gamepad_detach_virtual(e, slot);
+        } else {
+            br_input_inject_gamepad_disconnect(e, slot);
+        }
+        e->playtest->injecting = false;
+        return true;
+    }
+    if (SDL_strcmp(action, "axis") == 0) {
+        const char *name = br_pt_string(cmd, "axis");
+        SDL_GamepadAxis axis = SDL_GetGamepadAxisFromString(name);
+        if (axis == SDL_GAMEPAD_AXIS_INVALID || !cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(cmd, "value"))) {
+            return br_playtest_fail(e, "gamepad axis: needs \"axis\" (leftx lefty rightx righty lefttrigger "
+                                       "righttrigger) and a number \"value\" (-1..1, triggers 0..1)");
+        }
+        e->playtest->injecting = true;
+        br_input_inject_gamepad_axis(e, slot, axis, (float)br_pt_clamped(cmd, "value", 0.0, -1.0, 1.0));
+        e->playtest->injecting = false;
+        return true;
+    }
+    bool tap = SDL_strcmp(action, "tap") == 0;
+    if (!tap && SDL_strcmp(action, "down") != 0 && SDL_strcmp(action, "up") != 0) {
+        return br_playtest_fail(e, "gamepad: action must be connect, disconnect, down, up, tap or axis, got '%s'",
+                                action);
+    }
+    const char *name = br_pt_string(cmd, "button");
+    SDL_GamepadButton button = SDL_GetGamepadButtonFromString(name);
+    if (button == SDL_GAMEPAD_BUTTON_INVALID) {
+        return br_playtest_fail(e, "gamepad %s: needs \"button\" (SDL names: a b x y back guide start leftstick "
+                                   "rightstick leftshoulder rightshoulder dpup dpdown dpleft dpright misc1 touchpad...)",
+                                action);
+    }
+    br_pt_pad_button(e, slot, button, action[0] != 'u');
+    if (tap) {
+        uint64_t frames = (uint64_t)br_pt_clamped(cmd, "frames", 1.0, 1.0, 1e9);
+        br_pt_schedule_pad_release(e, br_pt_input_frame(e) + frames, slot, button);
+    }
     return true;
 }
 
@@ -260,24 +391,61 @@ static bool br_pt_cmd_click(br_engine *e, const cJSON *cmd)
 
 typedef struct br_pt_command_info {
     const char *name;
-    const char *required;   /* keys that must be present, space separated */
+    /* arguments as "name:type", optional ones "name?:type"; type = string, number, bool or any.
+     * The validator checks them and "help" sends them to the agent. */
+    const char *args;
+    const char *doc;
 } br_pt_command_info;
 
 static const br_pt_command_info br_pt_commands[] = {
-    { "wait", "" },          { "step", "" },          { "key", "key" },     { "action", "name" },
-    { "mouse", "" },         { "touch", "action" },   { "text", "text" },   { "click", "label" },
-    { "gamepad", "" },       { "screenshot", "file" }, { "dump", "" },      { "find", "label" },
-    { "get", "path" },       { "set", "path value" }, { "list", "" },       { "logs", "" },
-    { "stats", "" },         { "expect", "" },        { "wait_until", "" }, { "log", "message" },
-    { "quit", "" },
+    { "step", "frames?:number seconds?:number", "advance N frames of 1/60 s (default 1)" },
+    { "wait", "frames?:number seconds?:number", "same as step" },
+    { "wait_until", "path?:string op?:string value?:any log?:string timeout_frames?:number timeout?:number",
+      "step until path op value holds (or a log line contains log); fails after the timeout" },
+    { "key", "key:string action?:string frames?:number", "SDL key name; action tap (default), down or up" },
+    { "action", "name:string action?:string value?:number frames?:number",
+      "input action; action tap (default), down/press, up/release; value 0..1" },
+    { "mouse", "action?:string x?:number y?:number button?:number dx?:number dy?:number",
+      "action move (default), down, up, tap or wheel; window coordinates" },
+    { "touch", "action:string finger?:number x?:number y?:number", "action down, move or up" },
+    { "text", "text:string", "type text" },
+    { "click", "label:string button?:number", "click a node by label (\"view/node\" for a 3D node)" },
+    { "gamepad", "action:string type?:string slot?:number button?:string axis?:string value?:number frames?:number",
+      "action connect (type: xbox, playstation, switch, ps5...), disconnect, tap, down, up (button), axis (axis, value)" },
+    { "screenshot", "file:string downsample?:number", "write the last rendered frame as PNG" },
+    { "dump", "file?:string", "scene tree, components, exposed state, 3D views" },
+    { "find", "label:string", "type, position, bounds... of a node" },
+    { "get", "path:string", "read label:property, label:component.field, name:field, view/node:property" },
+    { "set", "path:string value:any", "write a path" },
+    { "list", "type?:string component?:string", "nodes by type and/or component" },
+    { "logs", "count?:number", "the last log lines" },
+    { "stats", "", "frame, fps, nodes, draw calls, memory..." },
+    { "expect", "path?:string op?:string value?:any log?:string", "check path op value (== != < <= > >= contains) or a log line" },
+    { "log", "message:string", "write a line to the log" },
+    { "help", "", "this list" },
+    { "quit", "", "exit after this frame" },
 };
+
+static bool br_pt_has_type(const cJSON *v, const char *type)
+{
+    if (SDL_strcmp(type, "string") == 0) {
+        return cJSON_IsString(v);
+    }
+    if (SDL_strcmp(type, "number") == 0) {
+        return cJSON_IsNumber(v);
+    }
+    if (SDL_strcmp(type, "bool") == 0) {
+        return cJSON_IsBool(v);
+    }
+    return true; /* any */
+}
 
 /* Checks one command before anything runs. False with the reason in why. */
 static bool br_pt_validate(const cJSON *cmd, char *why, size_t why_size)
 {
     const char *name = br_pt_string(cmd, "cmd");
     if (!cJSON_IsObject(cmd) || name == NULL) {
-        SDL_snprintf(why, why_size, "expected an object with a \"cmd\" string");
+        SDL_snprintf(why, why_size, "expected an object with a \"cmd\" string (send {\"cmd\":\"help\"} for the list)");
         return false;
     }
     const br_pt_command_info *info = NULL;
@@ -287,20 +455,28 @@ static bool br_pt_validate(const cJSON *cmd, char *why, size_t why_size)
         }
     }
     if (info == NULL) {
-        SDL_snprintf(why, why_size, "unknown command '%s'", name);
+        SDL_snprintf(why, why_size, "unknown command '%s' (send {\"cmd\":\"help\"} for the list)", name);
         return false;
     }
-    char keys[64];
-    br_str_copy(keys, sizeof(keys), info->required);
+    char args[160];
+    br_str_copy(args, sizeof(args), info->args);
     char *save = NULL;
-    for (char *key = SDL_strtok_r(keys, " ", &save); key != NULL; key = SDL_strtok_r(NULL, " ", &save)) {
-        const cJSON *v = cJSON_GetObjectItemCaseSensitive(cmd, key);
-        if (v == NULL) {
-            SDL_snprintf(why, why_size, "%s: missing \"%s\"", name, key);
+    for (char *arg = SDL_strtok_r(args, " ", &save); arg != NULL; arg = SDL_strtok_r(NULL, " ", &save)) {
+        char *type = SDL_strchr(arg, ':');
+        *type = '\0'; /* arg = the name, type = what follows the colon */
+        type++;
+        size_t len = SDL_strlen(arg);
+        bool optional = arg[len - 1] == '?';
+        if (optional) {
+            arg[len - 1] = '\0';
+        }
+        const cJSON *v = cJSON_GetObjectItemCaseSensitive(cmd, arg);
+        if (v == NULL && !optional) {
+            SDL_snprintf(why, why_size, "%s: missing \"%s\"", name, arg);
             return false;
         }
-        if (SDL_strcmp(key, "value") != 0 && !cJSON_IsString(v)) {
-            SDL_snprintf(why, why_size, "%s: \"%s\" must be a string", name, key);
+        if (v != NULL && !br_pt_has_type(v, type)) {
+            SDL_snprintf(why, why_size, "%s: \"%s\" must be a %s", name, arg, type);
             return false;
         }
     }
@@ -311,11 +487,6 @@ static bool br_pt_validate(const cJSON *cmd, char *why, size_t why_size)
     if ((SDL_strcmp(name, "expect") == 0 || SDL_strcmp(name, "wait_until") == 0) &&
         br_pt_string(cmd, "path") == NULL && br_pt_string(cmd, "log") == NULL) {
         SDL_snprintf(why, why_size, "%s: needs \"path\" (with \"value\", optional \"op\") or \"log\"", name);
-        return false;
-    }
-    if (SDL_strcmp(name, "gamepad") == 0) {
-        // ponytail: br_input has no gamepad injection yet; Task 14c adds br_input_inject_gamepad_*.
-        SDL_snprintf(why, why_size, "gamepad: not supported yet (br_input has no gamepad injection)");
         return false;
     }
     return true;
@@ -450,14 +621,16 @@ static void br_pt_reply_add(cJSON *reply, const char *key, cJSON *value)
 static br_pt_result br_pt_exec_find(br_engine *e, const cJSON *cmd, cJSON *reply)
 {
     const char *label = br_pt_string(cmd, "label");
-    const char *props[] = { "type", "position", "world_position", "bounds", "visible" };
+    const char *props2d[] = { "type", "position", "world_position", "bounds", "visible" };
+    const char *props3d[] = { "type", "position", "world_position", "screen_position", "visible" };
+    const char **props = SDL_strchr(label, '/') != NULL ? props3d : props2d; /* "view/node": a 3D node */
     char path[256];
     SDL_snprintf(path, sizeof(path), "%s:exists", label);
     cJSON *exists = br_playtest_query_get(e, path);
     bool found = cJSON_IsTrue(exists);
     cJSON_Delete(exists);
     br_pt_reply_add(reply, "found", cJSON_CreateBool(found));
-    for (uint32_t i = 0; found && i < BR_ARRAY_COUNT(props); i++) {
+    for (uint32_t i = 0; found && i < BR_ARRAY_COUNT(props2d); i++) {
         SDL_snprintf(path, sizeof(path), "%s:%s", label, props[i]);
         cJSON *v = br_playtest_query_get(e, path);
         if (v != NULL) {
@@ -540,6 +713,9 @@ static br_pt_result br_pt_exec(br_engine *e, const cJSON *cmd, cJSON *reply)
     if (SDL_strcmp(name, "click") == 0) {
         return br_pt_ok(br_pt_cmd_click(e, cmd));
     }
+    if (SDL_strcmp(name, "gamepad") == 0) {
+        return br_pt_ok(br_pt_cmd_gamepad(e, cmd, reply));
+    }
     if (SDL_strcmp(name, "screenshot") == 0) {
         const char *file = br_pt_string(cmd, "file");
         uint32_t downsample = (uint32_t)br_pt_clamped(cmd, "downsample", 1.0, 1.0, 64.0);
@@ -599,6 +775,18 @@ static br_pt_result br_pt_exec(br_engine *e, const cJSON *cmd, cJSON *reply)
     }
     if (SDL_strcmp(name, "log") == 0) {
         br_log_info("playtest: %s", br_pt_string(cmd, "message"));
+        return BR_PT_DONE;
+    }
+    if (SDL_strcmp(name, "help") == 0) {
+        cJSON *list = cJSON_CreateArray();
+        for (uint32_t i = 0; i < BR_ARRAY_COUNT(br_pt_commands); i++) {
+            cJSON *item = cJSON_CreateObject();
+            cJSON_AddStringToObject(item, "cmd", br_pt_commands[i].name);
+            cJSON_AddStringToObject(item, "args", br_pt_commands[i].args);
+            cJSON_AddStringToObject(item, "doc", br_pt_commands[i].doc);
+            cJSON_AddItemToArray(list, item);
+        }
+        br_pt_reply_add(reply, "commands", list);
         return BR_PT_DONE;
     }
     if (SDL_strcmp(name, "quit") == 0) {
@@ -892,14 +1080,62 @@ static cJSON *br_pt_event_cmd(br_engine *e, const SDL_Event *ev)
     }
 }
 
+/* Slot of a pad in the recorder's map (as of the previous gamepad event), -1 if unknown. */
+static int br_pt_known_pad(const br_playtest_state *s, SDL_JoystickID id)
+{
+    for (int i = 0; i < BR_INPUT_MAX_GAMEPADS; i++) {
+        if (s->pad_ids[i] == id && id != 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* A gamepad event as a command. br_input saw the event first (it registered its handler
+ * earlier), so a removed pad is gone from its slot: the recorder's own map remembers it. */
+static cJSON *br_pt_gamepad_event_cmd(br_engine *e, const SDL_Event *ev)
+{
+    br_playtest_state *s = e->playtest;
+    int known = br_pt_known_pad(s, ev->gdevice.which); /* which is first in every gamepad event */
+    for (int i = 0; i < BR_INPUT_MAX_GAMEPADS; i++) {
+        br_gamepad_info info;
+        s->pad_ids[i] = br_input_gamepad_info(e, i, &info) ? info.id : 0;
+    }
+    int slot = ev->type == SDL_EVENT_GAMEPAD_REMOVED ? known : br_pt_known_pad(s, ev->gdevice.which);
+    bool record = s->recording && !s->injecting && slot >= 0;
+    if (!record || (ev->type == SDL_EVENT_GAMEPAD_ADDED && known >= 0)) {
+        return NULL; /* not ours, or SDL's late duplicate ADDED for a virtual pad */
+    }
+    cJSON *cmd = NULL;
+    if (ev->type == SDL_EVENT_GAMEPAD_ADDED) {
+        cmd = br_pt_new_cmd("gamepad", "connect");
+        cJSON_AddStringToObject(cmd, "type", br_pt_pad_type_names[br_input_gamepad_type(e, slot)]);
+    } else if (ev->type == SDL_EVENT_GAMEPAD_REMOVED) {
+        cmd = br_pt_new_cmd("gamepad", "disconnect");
+    } else if (ev->type == SDL_EVENT_GAMEPAD_AXIS_MOTION) {
+        cmd = br_pt_new_cmd("gamepad", "axis");
+        cJSON_AddStringToObject(cmd, "axis", SDL_GetGamepadStringForAxis((SDL_GamepadAxis)ev->gaxis.axis));
+        /* br_input reads value / 32767 clamped; injection rounds back to the same Sint16 */
+        cJSON_AddNumberToObject(cmd, "value", br_clampf((float)ev->gaxis.value / 32767.0f, -1.0f, 1.0f));
+    } else {
+        cmd = br_pt_new_cmd("gamepad", ev->gbutton.down ? "down" : "up");
+        cJSON_AddStringToObject(cmd, "button", SDL_GetGamepadStringForButton((SDL_GamepadButton)ev->gbutton.button));
+    }
+    cJSON_AddNumberToObject(cmd, "slot", slot);
+    return cmd;
+}
+
 static void br_pt_record_event(br_engine *e, const SDL_Event *ev, void *user)
 {
     (void)user;
     br_playtest_state *s = e->playtest;
-    if (!s->recording || s->injecting) {
+    bool pad_event = ev->type == SDL_EVENT_GAMEPAD_ADDED || ev->type == SDL_EVENT_GAMEPAD_REMOVED ||
+                     ev->type == SDL_EVENT_GAMEPAD_AXIS_MOTION || ev->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ||
+                     ev->type == SDL_EVENT_GAMEPAD_BUTTON_UP;
+    if (!pad_event && (!s->recording || s->injecting)) {
         return;
     }
-    cJSON *cmd = br_pt_event_cmd(e, ev);
+    cJSON *cmd = pad_event ? br_pt_gamepad_event_cmd(e, ev) : br_pt_event_cmd(e, ev);
     if (cmd != NULL) {
         br_playtest_recorded r;
         /* real events arrive between frames (the next frame sees them); input injected by a

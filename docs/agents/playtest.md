@@ -12,6 +12,10 @@ or `--record FILE` is given (or the C API is called).
 - One system, `playtest.frame` (BR_PHASE_INPUT, priority -3000000, before `input.begin_frame`
   latches input): releases taps that are due, then runs script steps until one has to wait.
   Input is injected with `br_input_inject_*`, so it is indistinguishable from a device.
+- Commands are JSON objects described by one table (`br_pt_commands`: name, typed arguments
+  `"key:string action?:string"`, one-line doc). `br_pt_validate` checks a command against it
+  before anything runs (scripts: at load, with the step number; stdin: one `ok:false` reply),
+  and `{"cmd":"help"}` returns it. A new command = a table row + a branch in `br_pt_exec`.
 - Commands are JSON objects; `br_pt_exec` runs one. `wait` / `wait_until` set a wait that the
   script resumes from in a later frame; `br_playtest_command` (interactive, C API) instead steps
   the engine in place until the wait is over, then replies.
@@ -21,6 +25,11 @@ or `--record FILE` is given (or the C API is called).
   `br_data_apply_node`, so every scene-file key can be set.
 - Recording is an event handler: every real input event becomes a command stamped with the
   frame that consumes it (`e->stepping ? frame : frame + 1`), written as waits + commands.
+  Gamepads: br_input handles an event before the recorder (registered earlier), so the
+  recorder keeps its own slot map (`pad_ids`) to name the slot of a removed pad and to skip
+  SDL's late duplicate ADDED of a virtual pad. Pads replay as `connect` (virtual pad of the
+  recorded type, moved to the recorded slot) + injected buttons/axes; axis values round-trip
+  exactly because injection rounds (`SDL_lroundf`).
 - `--playtest-stdin` is `br_playtest_stdin.c`: the only engine file with C stdio, compiled only
   with `BRATY_PLAYTEST_STDIN`. `br_app_iterate` calls it instead of stepping: read a line
   (blocking), run it, print the reply.
@@ -53,12 +62,17 @@ br_engine_destroy(e);
 
 ## Gotchas
 
+- `click` moves the pointer now, presses in the next frame and releases in the one after (a
+  press in the move frame looks like a drag to camera controls): step 3 frames before checking.
+
 - Scripts start running in frame 1; a screenshot taken in frame N shows frame N-1 (the last
   rendered one). `{"cmd":"wait","frames":N}` then `screenshot` shows frame N.
 - `--playtest*` imply `--deterministic` and default to `--vsync off`. A game that reads save data
   should skip it when `br_app_deterministic(e)`.
 - The log capture replaces SDL's log output function (process-wide) while play-testing; two
   engines in one process must shut down in reverse order (see the `ponytail:`).
-- No gamepad injection and no named-action injection for code-bound actions yet (Task 14c adds
-  `br_input_inject_gamepad_*` / an action injector; switch `br_pt_cmd_action` to it).
-- 3D nodes (inside `view3d`) are not addressable by path yet.
+- `action` injects the action (`br_input_inject_action`), not a key: systems polling keys
+  directly do not see it.
+- 3D nodes are addressed as `view/node:property` through the three_d public API
+  (`br_node3d_find_by_label` under `br_view3d_root`, `br_view3d_world_to_screen` for `click` and
+  `screen_position`); labels must not contain `/` or `:`.

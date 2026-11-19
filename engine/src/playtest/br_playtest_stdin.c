@@ -26,6 +26,18 @@ SDL_AppResult br_playtest_stdin_iterate(br_engine *e)
         return e->playtest->failed ? SDL_APP_FAILURE : SDL_APP_SUCCESS;
     }
     size_t len = SDL_strlen(line);
+    if (len == sizeof(line) - 1 && line[len - 1] != '\n') {
+        /* longer than the buffer: drop the rest so the line still gets exactly one reply */
+        int c = fgetc(stdin);
+        while (c != EOF && c != '\n') {
+            c = fgetc(stdin);
+        }
+        fprintf(stdout, "{\"ok\":false,\"frame\":%llu,\"error\":\"command line longer than 64 KB\"}\n",
+                (unsigned long long)e->ticker.frame);
+        fflush(stdout);
+        e->playtest->failed = true;
+        return SDL_APP_CONTINUE;
+    }
     while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) {
         line[--len] = '\0';
     }

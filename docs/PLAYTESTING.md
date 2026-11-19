@@ -36,7 +36,7 @@ from playtest import Playtest
 
 with Playtest("build/windows-gcc/sample_projects/star_courier/star_courier.exe") as game:
     game.step(60)                       # the title screen
-    game.action("start")                # the "start" action from game.json (Return)
+    game.action("start")                # the "start" input action (game.json binds it to Return)
     game.step(30)
     game.key("Right", frames=20)        # hold Right for 20 frames...
     game.step(20)                       # ...while 20 frames pass
@@ -53,7 +53,7 @@ are the game's own; `dump` shows all of them.
 |---|---|
 | `--playtest script.json` | Runs a script (a JSON array of commands), then exits: code 0 if every step passed, 1 if one failed (the reason and step number are logged). |
 | `--playtest-stdin` | Interactive: one JSON command per line on stdin, one JSON reply per line on stdout. The game advances only on `step` / `wait`. `tools/playtest.py` speaks this. |
-| `--record session.json` | Plays normally and writes the real keyboard / mouse / text / touch input as a script at exit. |
+| `--record session.json` | Plays normally and writes the real keyboard / mouse / text / touch / gamepad input as a script at exit. |
 
 `--playtest` and `--playtest-stdin` imply `--deterministic` (every frame is exactly 1/60 s, the
 engine RNG is seeded, asset loads complete in order) and `--vsync off` unless `--vsync` is given,
@@ -62,7 +62,18 @@ window or GPU (no screenshots); `ctest` runs Star Courier's round that way. Path
 (screenshots, dumps, scripts) are relative to the working directory.
 
 Replies always start with `"ok"` and `"frame"`; a failed command adds `"error"` and the game
-keeps running. Engine logs go to stderr, replies to stdout.
+keeps running. Every line gets exactly one reply: a line that is not JSON, not an object, an
+unknown command, a missing argument or an argument of the wrong type (`{"cmd": "step",
+"frames": "ten"}` -> `step: "frames" must be a number`) each answer `{"ok": false, ...,
+"error": "..."}`. Closing stdin ends the game (exit code 0, or 1 if any command failed).
+`{"cmd": "help"}` lists every command with its arguments (`"key:string action?:string
+frames?:number"`; `?` = optional) and a one-line description. Engine logs go to stderr, replies
+to stdout.
+
+`tools/playtest.py` raises `PlaytestError` (message = the engine's `"error"`, `.reply` = the
+whole reply) for a failed command, a game that exited, or a reply that is not JSON. The game
+process is ended when the `with` block exits (killed at once if it exits with an exception, or
+after 30 s if `quit` hangs) and, failing that, when Python exits.
 
 ## Commands
 
@@ -80,12 +91,27 @@ One JSON object each, the same in scripts and on stdin.
 | Command | Example | Notes |
 |---|---|---|
 | `key` | `{"cmd": "key", "key": "Space"}` | `"action"`: `tap` (default: down now, up after `"frames"`, default 1), `down`, `up`. SDL key names: `Space`, `Return`, `Escape`, `Left`, `A`, `F1`... |
-| `action` | `{"cmd": "action", "name": "start"}` | Taps the first key (or mouse button) bound to the action in game.json `"input"`. `"action"` / `"frames"` as for `key`. |
+| `action` | `{"cmd": "action", "name": "start"}` | Drives the input action itself (`br_input_inject_action`), whatever it is bound to (game.json or code). `"action"`: `tap` (default, `"frames"` long), `down` / `press` (held until `up`), `up` / `release`. `"value"` 0..1 (default 1) for analogue actions: `{"cmd": "action", "name": "throttle", "action": "down", "value": 0.4}`. Games that read keys directly (`br_input_key_down`) do not see it: use `key`. |
 | `mouse` | `{"cmd": "mouse", "action": "tap", "x": 640, "y": 360}` | `move`, `down`, `up`, `tap`, `wheel` (`"dx"`, `"dy"`); `"button"`: 1 left, 2 middle, 3 right. Window coordinates. |
-| `click` | `{"cmd": "click", "label": "play_button"}` | Moves the mouse to the centre of the node's bounds and taps the left button. |
+| `click` | `{"cmd": "click", "label": "play_button"}` | Moves the mouse to the centre of the node's bounds now, presses the left button (`"button"`) in the next frame and releases it in the frame after: step 3 frames to see the result. |
 | `text` | `{"cmd": "text", "text": "PLAYER 1"}` | One text-input event, as an IME would send. |
 | `touch` | `{"cmd": "touch", "action": "down", "finger": 0, "x": 100, "y": 200}` | `down`, `move`, `up`; window coordinates. |
-| `gamepad` | | Not available yet: `br_input` has no gamepad injection (Task 14c adds it). |
+| `gamepad` | see below | Virtual pads, buttons, sticks and triggers. |
+
+`gamepad` commands (`"slot"` is the player slot 0..7, default 0; one example each):
+
+| Action | Example | Notes |
+|---|---|---|
+| `connect` | `{"cmd": "gamepad", "action": "connect", "type": "ps5"}` | Attaches an SDL virtual pad of that family (also headless); the reply has its `"slot"`. Types: `xbox`, `playstation`, `switch`, `generic`, or exactly `xbox360`, `xboxone`, `ps3`, `ps4`, `ps5`, `switchpro`, `joyconleft`, `joyconright`, `joyconpair`, `gamecube`, `steam`. `"slot"` moves it to that slot. Glyphs and prompts follow the family. |
+| `disconnect` | `{"cmd": "gamepad", "action": "disconnect", "slot": 0}` | Removes the pad (virtual or injected). |
+| `tap` | `{"cmd": "gamepad", "action": "tap", "button": "a", "frames": 2}` | Down now, up after `"frames"` (default 1). SDL button names: `a` (south face button: Cross, Switch B), `b`, `x`, `y`, `back`, `guide`, `start`, `leftstick`, `rightstick`, `leftshoulder`, `rightshoulder`, `dpup`, `dpdown`, `dpleft`, `dpright`, `misc1`, `touchpad`... |
+| `down` | `{"cmd": "gamepad", "action": "down", "button": "rightshoulder"}` | Held until `up`. |
+| `up` | `{"cmd": "gamepad", "action": "up", "button": "rightshoulder"}` | |
+| `axis` | `{"cmd": "gamepad", "action": "axis", "axis": "leftx", "value": 1}` | Holds the axis at `"value"` until the next `axis`: `leftx`, `lefty` (y > 0 = down), `rightx`, `righty` -1..1, `lefttrigger`, `righttrigger` 0..1. Dead zones apply as for a real pad. |
+
+Buttons and axes on an empty slot create an "injected" pad there (no SDL device, generic family),
+so `connect` is only needed for a specific family. A pad of a recorded session comes back as
+`connect` with its type and slot, so a real controller session replays on a virtual pad.
 
 ### Looking at the game
 
@@ -108,6 +134,7 @@ One JSON object each, the same in scripts and on stdin.
 | `expect` (log) | `{"cmd": "expect", "log": "round 1 over"}` | Some kept log line contains the text. Also for `wait_until`. |
 | `log` | `{"cmd": "log", "message": "boss fight starts"}` | Writes `playtest: boss fight starts` to the log. |
 | `quit` | `{"cmd": "quit"}` | Exits after this frame (a script also exits at its end). |
+| `help` | `{"cmd": "help"}` | `"commands"`: `[{"cmd", "args", "doc"}...]`, the protocol for an agent. |
 
 ### Paths
 
@@ -118,9 +145,13 @@ One JSON object each, the same in scripts and on stdin.
 | `ship:pilot.carrying` | Component `pilot` of node `ship`, field `carrying` (fields listed in the game's `br_field_desc`). |
 | `ship:position.x` | One element: `.x .y .z .w` (or `.0 .1 ...`). Works for `get` and `set`. |
 | `game:score` | A struct the game exposed with `br_playtest_expose(e, "game", fields, count, &state)`. |
+| `json_view/json_fox:position` | 3D node `json_fox` inside the `view3d` labelled `json_view` (`*/json_fox` = any view; an unlabelled view is `/json_fox`). Properties: `position`, `scale`, `rotation` (quaternion [x, y, z, w]), `euler` (radians, X then Y then Z), `visible`, `world_position`, `screen_position` (window coordinates, `null` behind the camera), `label`, `type`, `children`, `exists`; `.x` elements as above. |
 
-`type`, `children`, `world_position`, `bounds` and `exists` are read-only. 3D nodes inside a
-`view3d` are not addressable yet.
+`type`, `children`, `world_position`, `bounds`, `screen_position` and `exists` are read-only.
+3D nodes work with `get`, `set`, `expect`, `wait_until`, `find` and `click` (`{"cmd": "click",
+"label": "/cube"}` clicks where the node's origin is on screen, so the view's 3D pointer events
+fire; a node whose origin is not on its surface, such as a torus, is missed); `dump` lists the
+3D subtree of every view under `"views3d"`.
 
 ## A game's side: exposing state
 
@@ -186,8 +217,7 @@ Also `br_playtest_set`, `br_playtest_screenshot`, `br_playtest_record_start/stop
 - While `--playtest-stdin` waits for the next command the read blocks (the game is paused on
   purpose), so the window does not process events and Windows may label it "not responding";
   frames and screenshots are unaffected.
-- `action` uses the bindings in game.json's `"input"`; actions bound only in code cannot be
-  pressed by name yet (use `key`).
-- Recording does not capture gamepads (they cannot be injected yet), and records every mouse
-  motion event (large files for long mouse-heavy sessions).
+- Recording captures gamepad connect / disconnect, buttons and axes, not their touchpads,
+  gyros or accelerometers. It records every mouse motion and stick event (large files for
+  long sessions).
 - The current scene name is not reported: scenes become objects in Task 16.

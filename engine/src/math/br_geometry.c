@@ -420,3 +420,50 @@ bool br_barycentric(br_vec3 p, br_vec3 a, br_vec3 b, br_vec3 c, br_vec3 *out)
     *out = br_vec3_make(1.0f - v - w, v, w);
     return true;
 }
+
+/* ---- the same on br_aabb / br_ray3d */
+
+bool br_ray3d_plane(br_ray3d ray, br_plane plane, float *t)
+{
+    return br_ray_plane(ray.origin, ray.direction, plane, t);
+}
+
+bool br_ray3d_sphere(br_ray3d ray, br_sphere sphere, float *t)
+{
+    return br_ray_sphere(ray.origin, ray.direction, sphere, t);
+}
+
+bool br_ray3d_box(br_ray3d ray, br_aabb box, float *t)
+{
+    return br_ray_box(ray.origin, ray.direction, box.min, box.max, t);
+}
+
+bool br_ray3d_obb(br_ray3d ray, br_obb box, float *t)
+{
+    return br_ray_obb(ray.origin, ray.direction, box, t);
+}
+
+bool br_sphere_aabb(br_sphere s, br_aabb box)
+{
+    return br_sphere_box(s, box.min, box.max);
+}
+
+bool br_aabb_aabb(br_aabb a, br_aabb b)
+{
+    return br_box_box(a.min, a.max, b.min, b.max);
+}
+
+bool br_frustum_planes_aabb(const br_plane planes[6], br_aabb box)
+{
+    return br_frustum_planes_box(planes, box.min, box.max);
+}
+
+br_vec3 br_closest_point_aabb(br_vec3 p, br_aabb box)
+{
+    return br_closest_point_box(p, box.min, box.max);
+}
+
+br_vec3 br_closest_point_ray3d(br_vec3 p, br_ray3d ray)
+{
+    return br_closest_point_ray(p, ray.origin, ray.direction);
+}
