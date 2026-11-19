@@ -52,6 +52,11 @@ target_include_directories(braty
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/engine/src)
 target_compile_options(braty PRIVATE ${BR_WARNINGS})
 target_link_libraries(braty PUBLIC SDL3::SDL3 braty_third_party)
+option(BRATY_PROFILER "Profiler scopes and counters (turn OFF for release builds)" ON)
+if(NOT BRATY_PROFILER)
+    target_compile_definitions(braty PUBLIC BRATY_PROFILER_OFF)
+endif()
+
 if(BRATY_PLAYTEST_STDIN)
     target_compile_definitions(braty PRIVATE BRATY_PLAYTEST_STDIN)
 endif()
