@@ -104,4 +104,16 @@ struct, `SV_Position` included, or Direct3D 12 rejects the pipeline.
 
 - `--frames N` runs N frames with a fixed 1/60 s step (reproducible), then exits 0.
 - `--screenshot out.png` writes the last frame as PNG (window size in pixels).
-- Before each commit: zero warnings in engine code (`-Wall -Wextra -Wpedantic`), `ctest` green.
+- `--deterministic` makes any run reproducible (constant steps, seeded RNG, in-order asset
+  loads); `--playtest` scripts and `tools/golden.py` use it. `docs/TESTING.md`, `docs/PLAYTESTING.md`.
+- Before each commit: zero warnings in engine code (`-Wall -Wextra -Wpedantic`), `ctest` green
+  (it includes the golden images: they need a GPU and open windows; `ctest -LE golden` skips them).
+
+## CMake options
+
+| Option | Default | What |
+|---|---|---|
+| `BRATY_BUILD_TESTS` | ON | `tests/test_*.c`, the play-test script and the golden-image test (needs Python 3) |
+| `BRATY_BUILD_EXAMPLES` | ON | `examples/*.c` (they read their data from the source tree: `BRATY_EXAMPLES_DIR`) |
+| `BRATY_BUILD_SAMPLES` | ON | `sample_projects/*` |
+| `BRATY_PLAYTEST_STDIN` | ON on desktop, OFF on Android / iOS / Emscripten | `--playtest-stdin`: the one engine file that uses C stdio (`engine/src/playtest/br_playtest_stdin.c`) |
