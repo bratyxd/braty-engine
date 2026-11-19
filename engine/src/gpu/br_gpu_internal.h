@@ -30,6 +30,14 @@ typedef struct br_transient_stream {
     SDL_GPUBufferUsageFlags usage;
 } br_transient_stream;
 
+/* Per-frame numbers for the profiler (read and zeroed by br_profiler_frame_end). */
+typedef struct br_gpu_frame_stats {
+    uint64_t submit_ns;        /* SDL_GetTicksNS just before the frame's submit, 0 = none */
+    uint32_t uploads;          /* copy-pass uploads (textures, buffers, transient geometry) */
+    uint64_t upload_bytes;
+    uint32_t target_switches;  /* render passes begun */
+} br_gpu_frame_stats;
+
 struct br_gpu {
     SDL_GPUDevice       *device;
     SDL_Window          *window;
@@ -52,6 +60,11 @@ struct br_gpu {
     bool                  frame_cleared;
     br_color              clear_color;
     uint64_t              frames_presented;
+
+    /* profiler */
+    br_gpu_frame_stats stats;
+    bool               want_fence;   /* submit frames with a fence (the profiler's GPU estimate) */
+    SDL_GPUFence      *frame_fence;  /* the last frame's fence until the profiler takes it */
 };
 
 /* Clears the transient streams. Called by the engine before any system of a frame runs. */

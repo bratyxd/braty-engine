@@ -57,6 +57,9 @@ void br_gpu_destroy(br_gpu *g)
         return;
     }
     SDL_WaitForGPUIdle(g->device);
+    if (g->frame_fence != NULL) {
+        SDL_ReleaseGPUFence(g->device, g->frame_fence);
+    }
     br_gpu_render_target_destroy(g, g->frame_target);
     br_gpu_release_transient(g);
     br_gpu_release_caches(g);
@@ -177,7 +180,19 @@ void br_gpu_frame_end(br_gpu *g)
     blit.load_op = SDL_GPU_LOADOP_DONT_CARE;
     blit.filter = SDL_GPU_FILTER_NEAREST;
     SDL_BlitGPUTexture(g->cmd, &blit);
-    if (!SDL_SubmitGPUCommandBuffer(g->cmd)) {
+    g->stats.submit_ns = SDL_GetTicksNS();
+    bool submitted;
+    if (g->want_fence) {
+        /* the profiler polls this fence to estimate GPU time (nobody else waits on it) */
+        if (g->frame_fence != NULL) {
+            SDL_ReleaseGPUFence(g->device, g->frame_fence);
+        }
+        g->frame_fence = SDL_SubmitGPUCommandBufferAndAcquireFence(g->cmd);
+        submitted = g->frame_fence != NULL;
+    } else {
+        submitted = SDL_SubmitGPUCommandBuffer(g->cmd);
+    }
+    if (!submitted) {
         br_log_error("cannot submit frame: %s", SDL_GetError());
     }
     g->cmd = NULL;
