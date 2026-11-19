@@ -1,0 +1,13 @@
+{
+  "type": "container",
+  "label": "ship",
+  "components": {
+    "body": { "drag": 1.4 },
+    "pilot": { "thrust": 1500, "max_speed": 430, "radius": 17, "turn_rate": 10, "cargo_icon": "cargo_icon" }
+  },
+  "children": [
+    { "type": "sprite", "label": "cargo_icon", "texture": "sprites/atlas.json#cargo.png", "position": [0, 30],
+      "visible": false },
+    { "type": "sprite", "label": "hull", "texture": "sprites/atlas.json#ship.png" }
+  ]
+}

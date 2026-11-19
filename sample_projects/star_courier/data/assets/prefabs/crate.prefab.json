@@ -1,0 +1,13 @@
+{
+  "type": "container",
+  "label": "crate",
+  "components": {
+    "crate": { "radius": 20, "value": 100 },
+    "pulse": { "wave": 0.08, "speed": 4, "kick": 0 }
+  },
+  "children": [
+    { "type": "sprite", "texture": "sprites/atlas.json#spark.png", "scale": 4.2, "tint": "#ffb547", "alpha": 0.45,
+      "blend": "add" },
+    { "type": "sprite", "texture": "sprites/atlas.json#crate.png", "components": { "body": { "spin": 0.7 } } }
+  ]
+}

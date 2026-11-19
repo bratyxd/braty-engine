@@ -1,0 +1,10 @@
+{
+  "type": "container",
+  "label": "starfield",
+  "children": [
+    { "type": "tiling_sprite", "label": "stars_far", "texture": "bg/stars_far.png", "width": 1280, "height": 720,
+      "tile_scale": [1.5, 1.5], "alpha": 0.8, "components": { "scroll": { "velocity": [-8, 4] } } },
+    { "type": "tiling_sprite", "label": "stars_near", "texture": "bg/stars_near.png", "width": 1280, "height": 720,
+      "components": { "scroll": { "velocity": [-22, 10] } } }
+  ]
+}
