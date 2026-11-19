@@ -13,7 +13,7 @@
  *
  * 3D nodes take "label", "position", "rotation" (Euler degrees X, Y, Z), "scale" (number or
  * [x, y, z]), "visible" and "children". Colours are written as a colour picker shows them
- * (sRGB) and converted to linear. Shapes and their "size": cube [x, y, z], sphere [r],
+ * (sRGB) and converted to linear. A gltf node's "animation" is a clip name or index. Shapes and their "size": cube [x, y, z], sphere [r],
  * plane [w, d], cylinder [r, h], cone [r, h], torus [R, r], capsule [r, length].
  */
 #include "data/br_data_internal.h"
@@ -183,8 +183,14 @@ static br_node3d br_json3d_gltf(br_engine *e, const cJSON *json)
         return none;
     }
     br_node3d n = br_model_instantiate(e, model);
+    /* "animation": a clip name, or a clip index for unnamed clips */
+    const cJSON *anim = cJSON_GetObjectItemCaseSensitive(json, "animation");
     char clip[BR_DATA_NAME_SIZE];
-    if (br_data_get_string(e, json, "animation", clip, sizeof(clip)) && !br_animator3d_play(e, n, clip)) {
+    if (cJSON_IsNumber(anim)) {
+        if (anim->valueint < 0 || !br_animator3d_play_index(e, n, (uint32_t)anim->valueint)) {
+            br_data_error(e, "animation", "clip index out of range");
+        }
+    } else if (br_data_get_string(e, json, "animation", clip, sizeof(clip)) && !br_animator3d_play(e, n, clip)) {
         br_data_error(e, "animation", "no clip with that name in the model");
     }
     br_animator3d *a = br_animator3d_get(e, n);

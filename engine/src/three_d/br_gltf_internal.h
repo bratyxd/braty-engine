@@ -43,7 +43,6 @@ typedef struct br_gltf_state {
     uint32_t model3d_type;
     br_array anims;            /* br_gltf_anim, dense (swap-remove) */
     br_array logged_ext;       /* char[64]: unknown extensions already logged */
-    uint64_t animate_ns;       /* time spent in the last gltf.animate run (stats) */
 } br_gltf_state;
 
 /* br_anim3d.c: the animation system (registered by br_gltf_register). */

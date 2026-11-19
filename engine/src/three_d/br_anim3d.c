@@ -1,7 +1,6 @@
 /* br_anim3d: keyframe sampling, skinning maths, the animator API and the animation system. */
 #include "three_d/br_gltf_internal.h"
 
-#include <SDL3/SDL_timer.h>
 
 /* ---- pure maths */
 
@@ -363,7 +362,6 @@ void br_anim3d_system(br_engine *e, float dt, void *user)
 {
     (void)user;
     br_gltf_state *s = e->gltf;
-    uint64_t start = SDL_GetTicksNS();
     for (uint32_t idx = 0; idx < s->anims.count; idx++) {
         br_gltf_anim *slot = br_array_at(&s->anims, idx);
         br_gltf_instance *inst = slot->instance;
@@ -408,5 +406,4 @@ void br_anim3d_system(br_engine *e, float dt, void *user)
             a->on_event(e, inst->self, (uint32_t)event_clip, event, a->event_user);
         }
     }
-    s->animate_ns = SDL_GetTicksNS() - start;
 }
