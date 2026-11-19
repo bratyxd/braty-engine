@@ -50,11 +50,11 @@ typedef struct br_draw_cmd {
     br_texture    target;          /* zero = the frame target */
     bool          clear;
     br_color      clear_color;
-    /* batch */
+    /* batch: vertices live in the GPU transient vertex stream, indices in br_render_state.indices */
     uint32_t      first_index;
     uint32_t      index_count;
-    uint32_t      first_vertex;
-    uint32_t      vertex_count;
+    uint32_t      vertex_offset;   /* bytes into the transient vertex buffer */
+    uint32_t      vertex_count;    /* indices are relative to vertex_offset */
     uint32_t      texture_count;
     br_texture    textures[BR_RENDER_MAX_TEXTURES];  /* source textures */
     /* custom */
@@ -137,12 +137,10 @@ typedef struct br_render_state {
 
     br_array   cmds;              /* br_draw_cmd */
     br_array   customs;           /* br_custom_cmd */
-    br_array   vertices;          /* br_batch_vertex */
-    br_array   indices;           /* uint16_t */
+    br_array   indices;           /* uint16_t, copied to the transient index buffer at the end of collect */
     br_array   uniforms;          /* uint8_t */
     br_array   rtt_jobs;          /* br_rtt_job */
     br_array   overlays;          /* br_overlay_entry */
-    uint32_t   vertex_base;       /* byte offset of `vertices` in the transient vertex buffer */
     uint32_t   index_base;        /* byte offset of `indices` in the transient index buffer */
     uint32_t   serial_counter;
     bool       collected;         /* the draw list belongs to this frame */
@@ -177,6 +175,10 @@ void br_render_ctx_changed(br_render_ctx *rc);
 
 /* ---- br_batch.c */
 
+/* Reserves a quad (4 vertices + its 6 indices) of `texture` in the current batch: fill the
+ * returned vertices in place (they are already in the GPU transient buffer), with .texture =
+ * *slot. NULL on failure. */
+br_batch_vertex *br_batch_quad(br_render_ctx *rc, br_texture texture, uint32_t *slot);
 /* Appends a pass command and opens no batch. */
 void br_batch_push_pass(br_render_ctx *rc, br_texture target, bool clear, br_color clear_color);
 /* Writes this frame's batched vertices/indices into the GPU transient buffers. */

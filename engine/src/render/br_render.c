@@ -47,7 +47,7 @@ uint32_t br_render_node_color(br_render_ctx *rc, br_node n)
     if (rec == NULL) {
         return 0;
     }
-    return br_render_pack_color(rec->world_tint, rec->world_alpha);
+    return rec->world_color; /* packed by the transform system whenever world tint/alpha change */
 }
 
 const br_texture_info *br_render_texture_info(br_render_ctx *rc, br_texture t)
@@ -154,8 +154,7 @@ static bool br_render_push_mask(br_render_ctx *rc, uint32_t index, br_mask_saved
     br_scene_state *s = e->scene;
     br_node_record *rec = br_scene_record_at(s, index);
     saved->kind = BR_MASK_NONE;
-    br_node_record *mrec = br_scene_record(e, rec->mask);
-    if (mrec == NULL || (rec->mask_kind != BR_MASK_SCISSOR && rec->mask_kind != BR_MASK_STENCIL)) {
+    if ((rec->mask_kind != BR_MASK_SCISSOR && rec->mask_kind != BR_MASK_STENCIL) || br_scene_record(e, rec->mask) == NULL) {
         return true;
     }
     saved->kind = rec->mask_kind;
@@ -260,8 +259,8 @@ static void br_render_walk(br_render_ctx *rc, uint32_t index, br_blend_mode inhe
     br_scene_state *s = e->scene;
     br_render_state *r = e->render;
     br_node_record *rec = br_scene_record_at(s, index);
-    if (rec->destroyed || br_scene_is_culled(s, index)) {
-        return;
+    if (rec->destroyed || (s->cull_frame != 0 && rec->culled_frame == s->cull_frame)) {
+        return; /* destroyed, or culled (br_scene_is_culled) */
     }
     bool as_mask = (flags & BR_WALK_AS_MASK) != 0;
     /* a mask node is not drawn as content, but an explicit offscreen render of it (the top node
@@ -270,7 +269,7 @@ static void br_render_walk(br_render_ctx *rc, uint32_t index, br_blend_mode inhe
     if (!as_mask && (!rec->visible || !rec->renderable || hidden_mask)) {
         return;
     }
-    if ((flags & BR_WALK_FROM_LAYER) == 0 && br_scene_record(e, rec->layer) != NULL) {
+    if ((flags & BR_WALK_FROM_LAYER) == 0 && rec->layer.generation != 0 && br_scene_record(e, rec->layer) != NULL) {
         return; /* its render layer draws it */
     }
     br_node n = br_scene_handle(s, index);
@@ -287,11 +286,9 @@ static void br_render_walk(br_render_ctx *rc, uint32_t index, br_blend_mode inhe
     }
 
     br_mask_saved mask;
-    if (!as_mask && !br_render_push_mask(rc, index, &mask)) {
+    mask.kind = BR_MASK_NONE;
+    if (!as_mask && rec->mask.generation != 0 && !br_render_push_mask(rc, index, &mask)) {
         return;
-    }
-    if (as_mask) {
-        mask.kind = BR_MASK_NONE;
     }
     rec = br_scene_record_at(s, index);
     br_node_type_entry *type = br_scene_type_entry(s, rec->type_id);
@@ -307,9 +304,9 @@ static void br_render_walk(br_render_ctx *rc, uint32_t index, br_blend_mode inhe
         br_render_set_space(rc, br_mat3_mul(rc->space, br_scene_transform_at(s, index)->world));
     }
     for (uint32_t i = 0; i < rec->children.count; i++) {
-        uint32_t child = *(uint32_t *)br_array_at(&rec->children, i);
+        uint32_t child = ((const uint32_t *)rec->children.data)[i];
         br_render_walk(rc, child, blend, 0);
-        rec = br_scene_record_at(s, index);
+        rec = br_scene_record_at(s, index); /* a render callback may have created nodes */
     }
     if (rec->render_group) {
         br_render_set_space(rc, saved_space);
@@ -479,7 +476,6 @@ static void br_render_shutdown(br_engine *e, void *user)
     br_texture_shutdown(e);
     br_array_free(&r->cmds);
     br_array_free(&r->customs);
-    br_array_free(&r->vertices);
     br_array_free(&r->indices);
     br_array_free(&r->uniforms);
     br_array_free(&r->rtt_jobs);
@@ -498,7 +494,6 @@ void br_render_register(br_engine *e)
     br_texture_init(e);
     br_array_init(&r->cmds, sizeof(br_draw_cmd));
     br_array_init(&r->customs, sizeof(br_custom_cmd));
-    br_array_init(&r->vertices, sizeof(br_batch_vertex));
     br_array_init(&r->indices, sizeof(uint16_t));
     br_array_init(&r->uniforms, 1);
     br_array_init(&r->rtt_jobs, sizeof(br_rtt_job));
