@@ -1,0 +1,11 @@
+{ "props": [
+  { "source": "gltf_scene/kit.glb#Tree", "position": [-10, 0, 3], "yaw": 10, "scale": 1.3 },
+  { "source": "gltf_scene/kit.glb#Tree", "position": [-10.5, 0, -3], "yaw": 70, "scale": 1.1 },
+  { "source": "gltf_scene/kit.glb#Tree", "position": [10.5, 0, 1.5], "yaw": 140, "scale": 1.4 },
+  { "source": "gltf_scene/kit.glb#Rock", "position": [-4.5, 0, 1.5], "yaw": 30, "scale": 0.8 },
+  { "source": "gltf_scene/kit.glb#Crate", "position": [3.5, 0, -1], "yaw": 20 },
+  { "source": "gltf_scene/kit.glb#Crate", "position": [4.3, 0, -0.6], "yaw": 55 },
+  { "source": "gltf_scene/kit.glb#Crate", "position": [3.9, 0.8, -0.8], "yaw": 5 },
+  { "source": "gltf_scene/kit.glb#Lamp_Post", "position": [-1.5, 0, 5.5] },
+  { "source": "gltf_scene/kit.glb#Lamp_Post", "position": [1.5, 0, 5.5] },
+  { "source": "models/Fox/Fox.glb", "position": [-3, 0, 1], "yaw": 60, "scale": 0.02, "animation": "Run" } ] }
