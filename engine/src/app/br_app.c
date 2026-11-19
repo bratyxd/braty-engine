@@ -1,6 +1,7 @@
 /* SDL main-callback glue: command line, the per-frame tick, --frames / --screenshot. */
 #include "app/br_engine_internal.h"
 #include "data/br_data_internal.h"
+#include "playtest/br_playtest_internal.h"
 
 #include "stb/stb_image_write.h"
 
@@ -14,6 +15,9 @@ typedef struct br_app_args {
     const char *max_fps;  /* --max-fps N, NULL = game.json / default */
     bool        deterministic;
     uint64_t    seed;     /* --seed N, 1 by default */
+    const char *playtest; /* --playtest FILE */
+    bool        playtest_stdin;
+    const char *record;   /* --record FILE */
 } br_app_args;
 
 static void br_app_parse_args(int argc, char **argv, br_app_args *out)
@@ -41,8 +45,17 @@ static void br_app_parse_args(int argc, char **argv, br_app_args *out)
             out->deterministic = true;
         } else if (SDL_strcmp(argv[i], "--seed") == 0 && has_value) {
             out->seed = SDL_strtoull(argv[++i], NULL, 10);
+        } else if (SDL_strcmp(argv[i], "--playtest") == 0 && has_value) {
+            out->playtest = argv[++i];
+        } else if (SDL_strcmp(argv[i], "--playtest-stdin") == 0) {
+            out->playtest_stdin = true;
+        } else if (SDL_strcmp(argv[i], "--record") == 0 && has_value) {
+            out->record = argv[++i];
         }
         /* anything else belongs to the game (it sees argv in br_main) */
+    }
+    if (out->playtest != NULL || out->playtest_stdin) {
+        out->deterministic = true; /* play-tests run on deterministic frames */
     }
     if (out->screenshot != NULL && out->frames == 0) {
         out->frames = 1;
@@ -55,8 +68,12 @@ static void br_png_write_callback(void *context, void *data, int size)
     SDL_WriteIO(io, data, (size_t)size);
 }
 
-static bool br_app_write_screenshot(br_engine *e, const char *path)
+bool br_engine_screenshot(br_engine *e, const char *path)
 {
+    if (e->gpu == NULL) {
+        br_log_error("screenshot: headless, nothing is rendered");
+        return false;
+    }
     br_render_target *rt = br_gpu_frame_target(e->gpu);
     if (rt == NULL) {
         br_log_error("screenshot: no frame was rendered");
@@ -117,6 +134,17 @@ static bool br_app_start(br_engine *e, const br_app_desc *desc, const br_app_arg
     if (args->max_fps != NULL) {
         br_app_set_max_fps(e, (float)SDL_atof(args->max_fps));
     }
+    bool playtest = args->playtest != NULL || args->playtest_stdin;
+    if (playtest && args->vsync == NULL) {
+        br_app_set_vsync(e, BR_VSYNC_OFF); /* deterministic frames: no reason to wait for the display */
+    }
+    if (args->record != NULL && !br_playtest_record_start(e, args->record)) {
+        return false;
+    }
+    if (args->playtest != NULL && !br_playtest_load_script(e, args->playtest)) {
+        return false; /* the reason (file, step number) is logged */
+    }
+    e->playtest_stdin = args->playtest_stdin;
     if (desc->config != NULL && desc->config->start_scene[0] != '\0') {
         /* after init: the scene may use components the game registers there */
         if (!br_node_valid(e, br_game_config_load_start_scene(e, desc->config))) {
@@ -171,6 +199,9 @@ SDL_AppResult br_app_init(void **appstate, const br_app_desc *desc, int argc, ch
 SDL_AppResult br_app_iterate(void *appstate)
 {
     br_engine *e = appstate;
+    if (e->playtest_stdin) {
+        return br_playtest_stdin_iterate(e); /* frames advance only on "step" commands */
+    }
     br_app_pace_frame(e);
     uint64_t now = SDL_GetTicksNS();
     float raw = 1.0f / 60.0f;
@@ -211,13 +242,16 @@ SDL_AppResult br_app_iterate(void *appstate)
                 br_log_error("screenshot: the last frame was not rendered (window minimised?)");
                 return SDL_APP_FAILURE;
             }
-            if (!br_app_write_screenshot(e, e->screenshot_path)) {
+            if (!br_engine_screenshot(e, e->screenshot_path)) {
                 return SDL_APP_FAILURE;
             }
         }
-        return SDL_APP_SUCCESS;
+        return e->exit_failure ? SDL_APP_FAILURE : SDL_APP_SUCCESS;
     }
-    return e->quit_requested ? SDL_APP_SUCCESS : SDL_APP_CONTINUE;
+    if (e->quit_requested) {
+        return e->exit_failure ? SDL_APP_FAILURE : SDL_APP_SUCCESS;
+    }
+    return SDL_APP_CONTINUE;
 }
 
 SDL_AppResult br_app_event(void *appstate, SDL_Event *event)

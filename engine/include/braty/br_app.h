@@ -22,6 +22,9 @@
  *   --deterministic       every frame steps exactly 1/60 s whatever the wall clock says, the
  *                         engine RNG is seeded (--seed N, default 1) and asset loads complete
  *                         synchronously: the same input gives the same frames, bit for bit
+ *   --playtest FILE       run a play-test script, then exit (br_playtest.h, docs/PLAYTESTING.md)
+ *   --playtest-stdin      interactive play-test: JSON commands on stdin, replies on stdout
+ *   --record FILE         write this run's real input as a play-test script at exit
  * --frames runs log the measured frame interval (avg / max) at exit.
  * The game reads the whole command line with br_engine_args (or in br_main).
  */
@@ -142,6 +145,9 @@ float br_engine_random_float(br_engine *e);
 /* Restarts the generator from `seed`. Unseeded engines start from the clock. */
 void br_engine_set_seed(br_engine *e, uint64_t seed);
 
+/* Writes the last rendered frame as PNG (path relative to the working directory). False (logged)
+ * when nothing was rendered (headless, minimised, first frame). */
+bool br_engine_screenshot(br_engine *e, const char *path);
 /* br_app_desc.user of the running app (NULL for engines made with br_engine_create). */
 void *br_engine_app_user(br_engine *e);
 /* The app's command line, argv[0] included (NULL / 0 for br_engine_create). argc may be NULL. */

@@ -76,6 +76,8 @@ struct br_engine {
     bool     deterministic;         /* --deterministic: constant dt, seeded RNG, sync asset loads */
     uint64_t rng_state;             /* xorshift64* state, never 0 */
     bool     quit_requested;
+    bool     exit_failure;          /* the app exits with a failure code (a play-test step failed) */
+    bool     playtest_stdin;        /* --playtest-stdin: br_app_iterate reads commands instead */
     uint64_t skipped_frames;        /* frames where no swapchain texture was available */
 
     SDL_Storage *save_storage;      /* opened on first save access */
@@ -105,6 +107,7 @@ struct br_engine {
     struct br_gltf_state      *gltf;      /* glTF + 3D animation (Task 11) */
     struct br_data_state      *data;
     struct br_debug_state     *debug;
+    struct br_playtest_state  *playtest;  /* play-test scripts, interactive mode, record (Task 14) */
     struct br_arena_state     *arena;     /* frame arena + tracked arenas (Task 14) */
 };
 

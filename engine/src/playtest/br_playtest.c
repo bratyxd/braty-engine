@@ -1,0 +1,983 @@
+/* br_playtest: script runner, command execution, input injection, record and replay.
+ * Queries (paths, get/set, dump, conditions) are in br_playtest_query.c, stdin in
+ * br_playtest_stdin.c. */
+#include "playtest/br_playtest_internal.h"
+
+#include "data/br_data_internal.h"
+
+#include <stdarg.h>
+
+/* Runs before input.begin_frame (-2000000), so injected input counts in the same frame. */
+#define BR_PLAYTEST_PRIORITY (-3000000)
+/* wait_until gives up after this many frames unless the command says otherwise. */
+#define BR_PLAYTEST_DEFAULT_TIMEOUT 600
+
+typedef enum br_pt_result {
+    BR_PT_DONE,
+    BR_PT_FAILED,
+    BR_PT_WAIT
+} br_pt_result;
+
+/* ---- small helpers */
+
+bool br_playtest_fail(br_engine *e, const char *fmt, ...)
+{
+    br_playtest_state *s = e->playtest;
+    va_list args;
+    va_start(args, fmt);
+    SDL_vsnprintf(s->error, sizeof(s->error), fmt, args);
+    va_end(args);
+    br_log_error("playtest: %s", s->error);
+    return false;
+}
+
+float br_playtest_frame_dt(br_engine *e)
+{
+    return br_ticker_compute_delta(1.0f / 60.0f, e->ticker.min_fps, e->ticker.speed);
+}
+
+static const char *br_pt_string(const cJSON *cmd, const char *key)
+{
+    const cJSON *v = cJSON_GetObjectItemCaseSensitive(cmd, key);
+    return cJSON_IsString(v) ? v->valuestring : NULL;
+}
+
+static double br_pt_number(const cJSON *cmd, const char *key, double fallback)
+{
+    const cJSON *v = cJSON_GetObjectItemCaseSensitive(cmd, key);
+    return cJSON_IsNumber(v) ? v->valuedouble : fallback;
+}
+
+/* The frame that will see input sent now: this one inside the playtest system, else the next. */
+static uint64_t br_pt_input_frame(br_engine *e)
+{
+    return e->playtest->in_frame ? e->ticker.frame : e->ticker.frame + 1;
+}
+
+/* ---- log capture */
+
+static void SDLCALL br_pt_log_output(void *user, int category, SDL_LogPriority priority, const char *message)
+{
+    br_playtest_state *s = user;
+    br_str_copy(s->log_lines[s->log_count % BR_PLAYTEST_LOG_LINES], BR_PLAYTEST_LOG_SIZE, message);
+    s->log_count++;
+    if (s->log_prev != NULL) {
+        s->log_prev(s->log_prev_user, category, priority, message);
+    }
+}
+
+void br_playtest_hook_log(br_engine *e)
+{
+    br_playtest_state *s = e->playtest;
+    if (s->log_hooked) {
+        return;
+    }
+    // ponytail: SDL has one process-wide log function; two engines hooking it must shut down in reverse order.
+    SDL_GetLogOutputFunction(&s->log_prev, &s->log_prev_user);
+    SDL_SetLogOutputFunction(br_pt_log_output, s);
+    s->log_hooked = true;
+}
+
+/* ---- input */
+
+static void br_pt_key(br_engine *e, SDL_Scancode key, bool down)
+{
+    e->playtest->injecting = true;
+    br_input_inject_key(e, key, down);
+    e->playtest->injecting = false;
+}
+
+static void br_pt_button(br_engine *e, float x, float y, int button, bool down)
+{
+    e->playtest->injecting = true;
+    if (down) {
+        br_input_inject_pointer_down(e, x, y, button);
+    } else {
+        br_input_inject_pointer_up(e, x, y, button);
+    }
+    e->playtest->injecting = false;
+}
+
+static void br_pt_schedule_release(br_engine *e, uint64_t frame, bool is_key, SDL_Scancode key, int button, float x,
+                                   float y)
+{
+    br_playtest_release r;
+    SDL_zero(r);
+    r.frame = frame;
+    r.is_key = is_key;
+    r.key = key;
+    r.button = button;
+    r.x = x;
+    r.y = y;
+    br_array_push(&e->playtest->releases, &r);
+}
+
+static void br_pt_run_releases(br_engine *e)
+{
+    br_playtest_state *s = e->playtest;
+    uint32_t i = 0;
+    while (i < s->releases.count) {
+        br_playtest_release r = *(br_playtest_release *)br_array_at(&s->releases, i);
+        if (r.frame > e->ticker.frame) {
+            i++;
+            continue;
+        }
+        br_array_remove_ordered(&s->releases, i);
+        if (r.is_key) {
+            br_pt_key(e, r.key, false);
+        } else {
+            br_pt_button(e, r.x, r.y, r.button, false);
+        }
+    }
+}
+
+/* down / up / tap ("frames" = how long a tap holds, default 1) */
+static bool br_pt_cmd_key(br_engine *e, const cJSON *cmd, SDL_Scancode key)
+{
+    const char *action = br_pt_string(cmd, "action");
+    if (action == NULL || SDL_strcmp(action, "tap") == 0) {
+        uint64_t frames = (uint64_t)br_pt_number(cmd, "frames", 1.0);
+        br_pt_key(e, key, true);
+        br_pt_schedule_release(e, br_pt_input_frame(e) + (frames > 0 ? frames : 1), true, key, 0, 0.0f, 0.0f);
+    } else if (SDL_strcmp(action, "down") == 0 || SDL_strcmp(action, "up") == 0) {
+        br_pt_key(e, key, action[0] == 'd');
+    } else {
+        return br_playtest_fail(e, "key: action must be tap, down or up, got '%s'", action);
+    }
+    return true;
+}
+
+/* An action from game.json "input": its first key, else its first mouse button. */
+static bool br_pt_cmd_action(br_engine *e, const cJSON *cmd)
+{
+    const char *name = br_pt_string(cmd, "name");
+    // ponytail: reads game.json bindings (code-bound actions are invisible); switch to br_input_inject_action once Task 14c adds it.
+    const cJSON *action = cJSON_GetObjectItemCaseSensitive(
+        cJSON_GetObjectItemCaseSensitive(br_game_config_json(e), "input"), name);
+    const cJSON *key = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(action, "keys"), 0);
+    if (cJSON_IsString(key)) {
+        SDL_Scancode code = SDL_GetScancodeFromName(key->valuestring);
+        if (code == SDL_SCANCODE_UNKNOWN) {
+            return br_playtest_fail(e, "action '%s': game.json key '%s' is unknown", name, key->valuestring);
+        }
+        return br_pt_cmd_key(e, cmd, code);
+    }
+    const cJSON *button = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(action, "mouse"), 0);
+    if (cJSON_IsNumber(button)) {
+        br_vec2 p = br_input_mouse_position(e);
+        br_pt_button(e, p.x, p.y, button->valueint, true);
+        br_pt_schedule_release(e, br_pt_input_frame(e) + 1, false, SDL_SCANCODE_UNKNOWN, button->valueint, p.x, p.y);
+        return true;
+    }
+    return br_playtest_fail(e, "action '%s': no key or mouse binding in game.json \"input\"", name);
+}
+
+static bool br_pt_cmd_mouse(br_engine *e, const cJSON *cmd)
+{
+    const char *action = br_pt_string(cmd, "action");
+    br_vec2 at = br_input_mouse_position(e);
+    float x = (float)br_pt_number(cmd, "x", at.x);
+    float y = (float)br_pt_number(cmd, "y", at.y);
+    int button = (int)br_pt_number(cmd, "button", SDL_BUTTON_LEFT);
+    if (action == NULL || SDL_strcmp(action, "move") == 0) {
+        e->playtest->injecting = true;
+        br_input_inject_pointer_move(e, x, y);
+        e->playtest->injecting = false;
+    } else if (SDL_strcmp(action, "down") == 0 || SDL_strcmp(action, "up") == 0) {
+        br_pt_button(e, x, y, button, action[0] == 'd');
+    } else if (SDL_strcmp(action, "tap") == 0) {
+        br_pt_button(e, x, y, button, true);
+        br_pt_schedule_release(e, br_pt_input_frame(e) + 1, false, SDL_SCANCODE_UNKNOWN, button, x, y);
+    } else if (SDL_strcmp(action, "wheel") == 0) {
+        e->playtest->injecting = true;
+        br_input_inject_wheel(e, (float)br_pt_number(cmd, "dx", 0.0), (float)br_pt_number(cmd, "dy", 0.0));
+        e->playtest->injecting = false;
+    } else {
+        return br_playtest_fail(e, "mouse: action must be move, down, up, tap or wheel, got '%s'", action);
+    }
+    return true;
+}
+
+static bool br_pt_cmd_touch(br_engine *e, const cJSON *cmd)
+{
+    const char *action = br_pt_string(cmd, "action");
+    SDL_EventType type = SDL_EVENT_FINGER_MOTION;
+    if (SDL_strcmp(action, "down") == 0) {
+        type = SDL_EVENT_FINGER_DOWN;
+    } else if (SDL_strcmp(action, "up") == 0) {
+        type = SDL_EVENT_FINGER_UP;
+    } else if (SDL_strcmp(action, "move") != 0) {
+        return br_playtest_fail(e, "touch: action must be down, move or up, got '%s'", action);
+    }
+    e->playtest->injecting = true;
+    br_input_inject_touch(e, type, (uint64_t)br_pt_number(cmd, "finger", 0.0), (float)br_pt_number(cmd, "x", 0.0),
+                          (float)br_pt_number(cmd, "y", 0.0));
+    e->playtest->injecting = false;
+    return true;
+}
+
+/* Typed text arrives as one SDL_EVENT_TEXT_INPUT, like an IME commit. */
+static void br_pt_cmd_text(br_engine *e, const char *text)
+{
+    SDL_Event ev;
+    SDL_zero(ev);
+    ev.type = SDL_EVENT_TEXT_INPUT;
+    ev.text.timestamp = SDL_GetTicksNS();
+    ev.text.windowID = e->window != NULL ? SDL_GetWindowID(e->window) : 0;
+    ev.text.text = text;
+    e->playtest->injecting = true;
+    br_app_event(e, &ev);
+    e->playtest->injecting = false;
+}
+
+static bool br_pt_cmd_click(br_engine *e, const cJSON *cmd)
+{
+    float x = 0.0f;
+    float y = 0.0f;
+    if (!br_playtest_query_click_point(e, br_pt_string(cmd, "label"), &x, &y)) {
+        return false;
+    }
+    int button = (int)br_pt_number(cmd, "button", SDL_BUTTON_LEFT);
+    e->playtest->injecting = true;
+    br_input_inject_pointer_move(e, x, y);
+    e->playtest->injecting = false;
+    br_pt_button(e, x, y, button, true);
+    br_pt_schedule_release(e, br_pt_input_frame(e) + 1, false, SDL_SCANCODE_UNKNOWN, button, x, y);
+    return true;
+}
+
+/* ---- command table and validation */
+
+typedef struct br_pt_command_info {
+    const char *name;
+    const char *required;   /* keys that must be present, space separated */
+} br_pt_command_info;
+
+static const br_pt_command_info br_pt_commands[] = {
+    { "wait", "" },          { "step", "" },          { "key", "key" },     { "action", "name" },
+    { "mouse", "" },         { "touch", "action" },   { "text", "text" },   { "click", "label" },
+    { "gamepad", "" },       { "screenshot", "file" }, { "dump", "" },      { "find", "label" },
+    { "get", "path" },       { "set", "path value" }, { "list", "" },       { "logs", "" },
+    { "stats", "" },         { "expect", "" },        { "wait_until", "" }, { "log", "message" },
+    { "quit", "" },
+};
+
+/* Checks one command before anything runs. False with the reason in why. */
+static bool br_pt_validate(const cJSON *cmd, char *why, size_t why_size)
+{
+    const char *name = br_pt_string(cmd, "cmd");
+    if (!cJSON_IsObject(cmd) || name == NULL) {
+        SDL_snprintf(why, why_size, "expected an object with a \"cmd\" string");
+        return false;
+    }
+    const br_pt_command_info *info = NULL;
+    for (uint32_t i = 0; i < BR_ARRAY_COUNT(br_pt_commands); i++) {
+        if (SDL_strcmp(br_pt_commands[i].name, name) == 0) {
+            info = &br_pt_commands[i];
+        }
+    }
+    if (info == NULL) {
+        SDL_snprintf(why, why_size, "unknown command '%s'", name);
+        return false;
+    }
+    char keys[64];
+    br_str_copy(keys, sizeof(keys), info->required);
+    char *save = NULL;
+    for (char *key = SDL_strtok_r(keys, " ", &save); key != NULL; key = SDL_strtok_r(NULL, " ", &save)) {
+        if (cJSON_GetObjectItemCaseSensitive(cmd, key) == NULL) {
+            SDL_snprintf(why, why_size, "%s: missing \"%s\"", name, key);
+            return false;
+        }
+    }
+    if (SDL_strcmp(name, "key") == 0 && SDL_GetScancodeFromName(br_pt_string(cmd, "key")) == SDL_SCANCODE_UNKNOWN) {
+        SDL_snprintf(why, why_size, "key: unknown key name (SDL names: \"Space\", \"Return\", \"Left\", \"A\"...)");
+        return false;
+    }
+    if ((SDL_strcmp(name, "expect") == 0 || SDL_strcmp(name, "wait_until") == 0) &&
+        br_pt_string(cmd, "path") == NULL && br_pt_string(cmd, "log") == NULL) {
+        SDL_snprintf(why, why_size, "%s: needs \"path\" (with \"value\", optional \"op\") or \"log\"", name);
+        return false;
+    }
+    if (SDL_strcmp(name, "gamepad") == 0) {
+        // ponytail: br_input has no gamepad injection yet; Task 14c adds br_input_inject_gamepad_*.
+        SDL_snprintf(why, why_size, "gamepad: not supported yet (br_input has no gamepad injection)");
+        return false;
+    }
+    return true;
+}
+
+/* ---- execution */
+
+static void br_pt_finish_script(br_engine *e, bool failed)
+{
+    br_playtest_state *s = e->playtest;
+    s->running = false;
+    s->waiting = false;
+    s->failed = s->failed || failed;
+    if (failed) {
+        br_log_error("playtest: script '%s' FAILED at step %d (frame %llu): %s", s->script_path, s->step_index,
+                     (unsigned long long)e->ticker.frame, s->error);
+    } else {
+        br_log_info("playtest: script '%s' passed (%d steps, frame %llu)", s->script_path, s->step_index,
+                    (unsigned long long)e->ticker.frame);
+    }
+    e->exit_failure = e->exit_failure || failed;
+    br_engine_quit(e);
+}
+
+static bool br_pt_save_text(br_engine *e, const char *path, const char *text)
+{
+    if (text == NULL || !SDL_SaveFile(path, text, SDL_strlen(text))) {
+        return br_playtest_fail(e, "cannot write '%s': %s", path, SDL_GetError());
+    }
+    return true;
+}
+
+static bool br_pt_save_json(br_engine *e, const char *path, const cJSON *json)
+{
+    char *text = cJSON_Print(json);
+    bool ok = br_pt_save_text(e, path, text);
+    cJSON_free(text);
+    return ok;
+}
+
+/* A script with one command per line: diffs and hand edits stay readable. */
+static bool br_pt_save_script(br_engine *e, const char *path, const cJSON *script)
+{
+    br_array text;
+    br_array_init(&text, 1);
+    br_array_push_n(&text, "[\n", 2);
+    const cJSON *cmd = NULL;
+    cJSON_ArrayForEach(cmd, script)
+    {
+        char *line = cJSON_PrintUnformatted(cmd);
+        br_array_push_n(&text, "  ", 2);
+        br_array_push_n(&text, line, (uint32_t)SDL_strlen(line));
+        if (cmd->next != NULL) {
+            br_array_push_n(&text, ",", 1);
+        }
+        br_array_push_n(&text, "\n", 1);
+        cJSON_free(line);
+    }
+    br_array_push_n(&text, "]\n", 3); /* the third byte is the terminating NUL */
+    bool ok = br_pt_save_text(e, path, text.data);
+    br_array_free(&text);
+    return ok;
+}
+
+static void br_pt_add_stats(br_engine *e, cJSON *out)
+{
+    br_render_stats rs;
+    SDL_zero(rs);
+    br_render_get_stats(e, &rs);
+    br_memory_stats ms;
+    br_memory_get_stats(&ms);
+    cJSON_AddNumberToObject(out, "frame", (double)e->ticker.frame);
+    cJSON_AddNumberToObject(out, "time", e->ticker.elapsed);
+    cJSON_AddNumberToObject(out, "fps", e->ticker.fps);
+    cJSON_AddNumberToObject(out, "nodes", br_scene_node_count(e));
+    cJSON_AddNumberToObject(out, "draw_calls", rs.draw_calls);
+    cJSON_AddNumberToObject(out, "textures", br_texture_count(e));
+    cJSON_AddNumberToObject(out, "skipped_frames", (double)e->skipped_frames);
+    cJSON_AddNumberToObject(out, "heap_bytes", (double)ms.live_bytes);
+    cJSON_AddStringToObject(out, "vsync", br_vsync_name(e->vsync));
+    cJSON_AddNumberToObject(out, "max_fps", e->ticker.max_fps);
+    cJSON_AddBoolToObject(out, "deterministic", e->deterministic);
+}
+
+/* A wait / wait_until in progress: DONE when over, WAIT to keep waiting, FAILED on timeout. */
+static br_pt_result br_pt_wait_check(br_engine *e)
+{
+    br_playtest_state *s = e->playtest;
+    if (!s->waiting) {
+        return BR_PT_DONE;
+    }
+    if (s->until == NULL) {
+        if (e->ticker.frame < s->resume_frame) {
+            return BR_PT_WAIT;
+        }
+        s->waiting = false;
+        return BR_PT_DONE;
+    }
+    bool ok = false;
+    char detail[256] = "";
+    bool evaluated = br_playtest_query_condition(e, s->until, &ok, detail, sizeof(detail));
+    if (evaluated && ok) {
+        s->waiting = false;
+        return BR_PT_DONE;
+    }
+    if (e->ticker.frame >= s->until_deadline) {
+        s->waiting = false;
+        /* an unresolvable path counts as "not yet" until the timeout, then it is the reason */
+        char reason[BR_PLAYTEST_ERROR_SIZE];
+        br_str_copy(reason, sizeof(reason), evaluated ? detail : s->error);
+        br_playtest_fail(e, "wait_until timed out: %s", reason);
+        return BR_PT_FAILED;
+    }
+    return BR_PT_WAIT;
+}
+
+static br_pt_result br_pt_ok(bool ok)
+{
+    return ok ? BR_PT_DONE : BR_PT_FAILED;
+}
+
+/* Puts value into reply under key, or frees it when there is no reply (script mode). */
+static void br_pt_reply_add(cJSON *reply, const char *key, cJSON *value)
+{
+    if (reply != NULL) {
+        cJSON_AddItemToObject(reply, key, value);
+    } else {
+        cJSON_Delete(value);
+    }
+}
+
+static br_pt_result br_pt_exec_find(br_engine *e, const cJSON *cmd, cJSON *reply)
+{
+    const char *label = br_pt_string(cmd, "label");
+    const char *props[] = { "type", "position", "world_position", "bounds", "visible" };
+    char path[256];
+    SDL_snprintf(path, sizeof(path), "%s:exists", label);
+    cJSON *exists = br_playtest_query_get(e, path);
+    bool found = cJSON_IsTrue(exists);
+    cJSON_Delete(exists);
+    br_pt_reply_add(reply, "found", cJSON_CreateBool(found));
+    for (uint32_t i = 0; found && i < BR_ARRAY_COUNT(props); i++) {
+        SDL_snprintf(path, sizeof(path), "%s:%s", label, props[i]);
+        cJSON *v = br_playtest_query_get(e, path);
+        if (v != NULL) {
+            br_pt_reply_add(reply, props[i], v);
+        }
+    }
+    return BR_PT_DONE;
+}
+
+static br_pt_result br_pt_exec_logs(br_engine *e, const cJSON *cmd, cJSON *reply)
+{
+    br_playtest_state *s = e->playtest;
+    uint32_t want = (uint32_t)br_pt_number(cmd, "count", 20.0);
+    uint32_t have = s->log_count < BR_PLAYTEST_LOG_LINES ? s->log_count : BR_PLAYTEST_LOG_LINES;
+    uint32_t n = want < have ? want : have;
+    cJSON *lines = cJSON_CreateArray();
+    for (uint32_t i = s->log_count - n; i < s->log_count; i++) {
+        cJSON_AddItemToArray(lines, cJSON_CreateString(s->log_lines[i % BR_PLAYTEST_LOG_LINES]));
+    }
+    br_pt_reply_add(reply, "lines", lines);
+    return BR_PT_DONE;
+}
+
+/* wait / step: "frames" (default 1) or "seconds" (60 frames per second). */
+static br_pt_result br_pt_exec_wait(br_engine *e, const cJSON *cmd)
+{
+    br_playtest_state *s = e->playtest;
+    double frames = br_pt_number(cmd, "frames", 1.0);
+    if (cJSON_GetObjectItemCaseSensitive(cmd, "seconds") != NULL) {
+        frames = SDL_ceil(br_pt_number(cmd, "seconds", 0.0) * 60.0);
+    }
+    if (frames < 1.0) {
+        return BR_PT_DONE;
+    }
+    s->waiting = true;
+    s->until = NULL;
+    s->resume_frame = e->ticker.frame + (uint64_t)frames;
+    return BR_PT_WAIT;
+}
+
+static br_pt_result br_pt_exec_wait_until(br_engine *e, const cJSON *cmd)
+{
+    br_playtest_state *s = e->playtest;
+    double timeout = br_pt_number(cmd, "timeout_frames", BR_PLAYTEST_DEFAULT_TIMEOUT);
+    if (cJSON_GetObjectItemCaseSensitive(cmd, "timeout") != NULL) {
+        timeout = SDL_ceil(br_pt_number(cmd, "timeout", 10.0) * 60.0);
+    }
+    s->waiting = true;
+    s->until = cmd;
+    s->until_deadline = e->ticker.frame + (uint64_t)(timeout > 0.0 ? timeout : 0.0);
+    return br_pt_wait_check(e);
+}
+
+/* Runs one validated command. Results go into reply (NULL in scripts). */
+static br_pt_result br_pt_exec(br_engine *e, const cJSON *cmd, cJSON *reply)
+{
+    const char *name = br_pt_string(cmd, "cmd");
+    if (SDL_strcmp(name, "wait") == 0 || SDL_strcmp(name, "step") == 0) {
+        return br_pt_exec_wait(e, cmd);
+    }
+    if (SDL_strcmp(name, "wait_until") == 0) {
+        return br_pt_exec_wait_until(e, cmd);
+    }
+    if (SDL_strcmp(name, "key") == 0) {
+        return br_pt_ok(br_pt_cmd_key(e, cmd, SDL_GetScancodeFromName(br_pt_string(cmd, "key"))));
+    }
+    if (SDL_strcmp(name, "action") == 0) {
+        return br_pt_ok(br_pt_cmd_action(e, cmd));
+    }
+    if (SDL_strcmp(name, "mouse") == 0) {
+        return br_pt_ok(br_pt_cmd_mouse(e, cmd));
+    }
+    if (SDL_strcmp(name, "touch") == 0) {
+        return br_pt_ok(br_pt_cmd_touch(e, cmd));
+    }
+    if (SDL_strcmp(name, "text") == 0) {
+        br_pt_cmd_text(e, br_pt_string(cmd, "text"));
+        return BR_PT_DONE;
+    }
+    if (SDL_strcmp(name, "click") == 0) {
+        return br_pt_ok(br_pt_cmd_click(e, cmd));
+    }
+    if (SDL_strcmp(name, "screenshot") == 0) {
+        const char *file = br_pt_string(cmd, "file");
+        if (!br_engine_screenshot(e, file)) {
+            return br_pt_ok(br_playtest_fail(e, "screenshot '%s' failed (headless, or nothing rendered yet?)", file));
+        }
+        br_pt_reply_add(reply, "file", cJSON_CreateString(file));
+        return BR_PT_DONE;
+    }
+    if (SDL_strcmp(name, "dump") == 0) {
+        cJSON *dump = br_playtest_query_dump(e);
+        const char *file = br_pt_string(cmd, "file");
+        if (file != NULL) {
+            bool ok = br_pt_save_json(e, file, dump);
+            cJSON_Delete(dump);
+            return br_pt_ok(ok);
+        }
+        br_pt_reply_add(reply, "dump", dump);
+        return BR_PT_DONE;
+    }
+    if (SDL_strcmp(name, "find") == 0) {
+        return br_pt_exec_find(e, cmd, reply);
+    }
+    if (SDL_strcmp(name, "get") == 0) {
+        cJSON *v = br_playtest_query_get(e, br_pt_string(cmd, "path"));
+        if (v == NULL) {
+            return BR_PT_FAILED;
+        }
+        br_pt_reply_add(reply, "value", v);
+        return BR_PT_DONE;
+    }
+    if (SDL_strcmp(name, "set") == 0) {
+        return br_pt_ok(br_playtest_query_set(e, br_pt_string(cmd, "path"),
+                                              cJSON_GetObjectItemCaseSensitive(cmd, "value")));
+    }
+    if (SDL_strcmp(name, "list") == 0) {
+        br_pt_reply_add(reply, "nodes",
+                        br_playtest_query_list(e, br_pt_string(cmd, "type"), br_pt_string(cmd, "component")));
+        return BR_PT_DONE;
+    }
+    if (SDL_strcmp(name, "logs") == 0) {
+        return br_pt_exec_logs(e, cmd, reply);
+    }
+    if (SDL_strcmp(name, "stats") == 0) {
+        cJSON *stats = cJSON_CreateObject();
+        br_pt_add_stats(e, stats);
+        br_pt_reply_add(reply, "stats", stats);
+        return BR_PT_DONE;
+    }
+    if (SDL_strcmp(name, "expect") == 0) {
+        bool ok = false;
+        char detail[256] = "";
+        if (!br_playtest_query_condition(e, cmd, &ok, detail, sizeof(detail))) {
+            return BR_PT_FAILED;
+        }
+        return br_pt_ok(ok || br_playtest_fail(e, "expect failed: %s", detail));
+    }
+    if (SDL_strcmp(name, "log") == 0) {
+        br_log_info("playtest: %s", br_pt_string(cmd, "message"));
+        return BR_PT_DONE;
+    }
+    if (SDL_strcmp(name, "quit") == 0) {
+        e->exit_failure = e->exit_failure || e->playtest->failed;
+        br_engine_quit(e);
+        return BR_PT_DONE;
+    }
+    return br_pt_ok(br_playtest_fail(e, "unknown command '%s'", name));
+}
+
+/* ---- script mode */
+
+static void br_pt_script_advance(br_engine *e)
+{
+    br_playtest_state *s = e->playtest;
+    int count = cJSON_GetArraySize(s->script);
+    while (s->running) {
+        br_pt_result r = br_pt_wait_check(e);
+        if (r == BR_PT_WAIT) {
+            return;
+        }
+        if (r == BR_PT_FAILED) {
+            br_pt_finish_script(e, true);
+            return;
+        }
+        if (s->step_index >= count) {
+            br_pt_finish_script(e, false);
+            return;
+        }
+        const cJSON *cmd = cJSON_GetArrayItem(s->script, s->step_index);
+        s->step_index++;
+        s->error[0] = '\0';
+        if (br_pt_exec(e, cmd, NULL) == BR_PT_FAILED) {
+            br_pt_finish_script(e, true);
+            return;
+        }
+        if (SDL_strcmp(br_pt_string(cmd, "cmd"), "quit") == 0) {
+            br_pt_finish_script(e, false);
+            return;
+        }
+    }
+}
+
+/* System: releases due input, then runs the script until it has to wait for a frame. */
+static void br_pt_system(br_engine *e, float dt, void *user)
+{
+    (void)dt;
+    (void)user;
+    br_playtest_state *s = e->playtest;
+    s->in_frame = true;
+    br_pt_run_releases(e);
+    if (s->running) {
+        br_pt_script_advance(e);
+    }
+    s->in_frame = false;
+}
+
+/* Marks the play-test failed with the reason already in s->error. */
+static bool br_pt_load_failed(br_engine *e, cJSON *script)
+{
+    cJSON_Delete(script);
+    e->playtest->failed = true;
+    e->exit_failure = true;
+    return false;
+}
+
+bool br_playtest_load_script(br_engine *e, const char *path)
+{
+    br_playtest_state *s = e->playtest;
+    br_playtest_hook_log(e);
+    size_t size = 0;
+    char *text = SDL_LoadFile(path, &size);
+    if (text == NULL) {
+        br_playtest_fail(e, "%s: cannot read the script: %s", path, SDL_GetError());
+        return br_pt_load_failed(e, NULL);
+    }
+    cJSON *script = br_data_parse(e, path, text, size); /* logs "path: JSON syntax error at line L, column C" */
+    SDL_free(text);
+    if (script == NULL) {
+        br_str_copy(s->error, sizeof(s->error), e->data != NULL ? e->data->last_error : "JSON syntax error");
+        return br_pt_load_failed(e, NULL);
+    }
+    if (!cJSON_IsArray(script)) {
+        br_playtest_fail(e, "%s: a script is a JSON array of commands", path);
+        return br_pt_load_failed(e, script);
+    }
+    int index = 0;
+    const cJSON *cmd = NULL;
+    cJSON_ArrayForEach(cmd, script)
+    {
+        index++;
+        char why[256];
+        if (!br_pt_validate(cmd, why, sizeof(why))) {
+            br_playtest_fail(e, "%s: step %d: %s", path, index, why);
+            return br_pt_load_failed(e, script);
+        }
+    }
+    cJSON_Delete(s->script);
+    s->script = script;
+    br_str_copy(s->script_path, sizeof(s->script_path), path);
+    s->step_index = 0;
+    s->running = true;
+    s->waiting = false;
+    br_log_info("playtest: running '%s' (%d steps)", path, index);
+    return true;
+}
+
+bool br_playtest_run_script(br_engine *e, const char *path)
+{
+    if (!br_playtest_load_script(e, path)) {
+        return false;
+    }
+    float dt = br_playtest_frame_dt(e);
+    while (e->playtest->running) {
+        br_engine_step(e, dt);
+    }
+    return !e->playtest->failed;
+}
+
+bool br_playtest_running(br_engine *e)
+{
+    return e->playtest->running;
+}
+
+bool br_playtest_failed(br_engine *e)
+{
+    return e->playtest->failed;
+}
+
+const char *br_playtest_last_error(br_engine *e)
+{
+    return e->playtest->error;
+}
+
+/* ---- interactive */
+
+char *br_playtest_command(br_engine *e, const char *json_line)
+{
+    br_playtest_state *s = e->playtest;
+    br_playtest_hook_log(e);
+    s->error[0] = '\0';
+    /* "ok" and "frame" lead the reply; results follow */
+    cJSON *results = cJSON_CreateObject();
+    cJSON *cmd = cJSON_Parse(json_line);
+    char why[256];
+    br_pt_result r = BR_PT_FAILED;
+    if (!br_pt_validate(cmd, why, sizeof(why))) {
+        br_playtest_fail(e, "%s", cmd == NULL ? "not JSON (send one command object per line)" : why);
+    } else {
+        r = br_pt_exec(e, cmd, results);
+        float dt = br_playtest_frame_dt(e);
+        while (r == BR_PT_WAIT) {
+            br_engine_step(e, dt);
+            r = br_pt_wait_check(e);
+        }
+    }
+    s->failed = s->failed || r == BR_PT_FAILED;
+    cJSON *reply = cJSON_CreateObject();
+    cJSON_AddBoolToObject(reply, "ok", r == BR_PT_DONE);
+    cJSON_AddNumberToObject(reply, "frame", (double)e->ticker.frame);
+    if (r == BR_PT_FAILED) {
+        cJSON_AddStringToObject(reply, "error", s->error);
+    }
+    while (results->child != NULL) {
+        cJSON *item = results->child;
+        cJSON_AddItemToObject(reply, item->string, cJSON_DetachItemViaPointer(results, item));
+    }
+    char *text = cJSON_PrintUnformatted(reply);
+    char *copy = br_strdup(text != NULL ? text : "{\"ok\":false,\"error\":\"out of memory\"}");
+    cJSON_free(text);
+    cJSON_Delete(reply);
+    cJSON_Delete(results);
+    cJSON_Delete(cmd);
+    return copy;
+}
+
+/* ---- C API */
+
+void br_playtest_step(br_engine *e, uint32_t frames)
+{
+    float dt = br_playtest_frame_dt(e);
+    for (uint32_t i = 0; i < frames; i++) {
+        br_engine_step(e, dt);
+    }
+}
+
+bool br_playtest_screenshot(br_engine *e, const char *path)
+{
+    return br_engine_screenshot(e, path);
+}
+
+char *br_playtest_dump_json(br_engine *e)
+{
+    cJSON *dump = br_playtest_query_dump(e);
+    char *text = cJSON_Print(dump);
+    char *copy = br_strdup(text);
+    cJSON_free(text);
+    cJSON_Delete(dump);
+    return copy;
+}
+
+cJSON *br_playtest_get(br_engine *e, const char *path)
+{
+    return br_playtest_query_get(e, path);
+}
+
+bool br_playtest_set(br_engine *e, const char *path, const cJSON *value)
+{
+    return br_playtest_query_set(e, path, value);
+}
+
+void br_playtest_expose(br_engine *e, const char *name, const br_field_desc *fields, uint32_t count, void *base)
+{
+    br_playtest_exposed x;
+    SDL_zero(x);
+    br_str_copy(x.name, sizeof(x.name), name);
+    x.fields = fields;
+    x.field_count = count;
+    x.base = base;
+    br_array_push(&e->playtest->exposed, &x);
+}
+
+/* ---- record */
+
+static cJSON *br_pt_new_cmd(const char *name, const char *action)
+{
+    cJSON *cmd = cJSON_CreateObject();
+    cJSON_AddStringToObject(cmd, "cmd", name);
+    if (action != NULL) {
+        cJSON_AddStringToObject(cmd, "action", action);
+    }
+    return cmd;
+}
+
+/* A real input event as a command, NULL for events that are not recorded. */
+static cJSON *br_pt_event_cmd(br_engine *e, const SDL_Event *ev)
+{
+    cJSON *cmd = NULL;
+    switch (ev->type) {
+    case SDL_EVENT_KEY_DOWN:
+    case SDL_EVENT_KEY_UP:
+        if (ev->key.repeat || SDL_GetScancodeName(ev->key.scancode)[0] == '\0') {
+            return NULL;
+        }
+        cmd = br_pt_new_cmd("key", ev->key.down ? "down" : "up");
+        cJSON_AddStringToObject(cmd, "key", SDL_GetScancodeName(ev->key.scancode));
+        return cmd;
+    case SDL_EVENT_MOUSE_MOTION:
+        // ponytail: every motion event is a command; coalesce per frame if recordings get big.
+        cmd = br_pt_new_cmd("mouse", "move");
+        cJSON_AddNumberToObject(cmd, "x", ev->motion.x);
+        cJSON_AddNumberToObject(cmd, "y", ev->motion.y);
+        return cmd;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+        cmd = br_pt_new_cmd("mouse", ev->button.down ? "down" : "up");
+        cJSON_AddNumberToObject(cmd, "x", ev->button.x);
+        cJSON_AddNumberToObject(cmd, "y", ev->button.y);
+        cJSON_AddNumberToObject(cmd, "button", ev->button.button);
+        return cmd;
+    case SDL_EVENT_MOUSE_WHEEL:
+        cmd = br_pt_new_cmd("mouse", "wheel");
+        cJSON_AddNumberToObject(cmd, "dx", ev->wheel.x);
+        cJSON_AddNumberToObject(cmd, "dy", ev->wheel.y);
+        return cmd;
+    case SDL_EVENT_TEXT_INPUT:
+        cmd = br_pt_new_cmd("text", NULL);
+        cJSON_AddStringToObject(cmd, "text", ev->text.text);
+        return cmd;
+    case SDL_EVENT_FINGER_DOWN:
+    case SDL_EVENT_FINGER_MOTION:
+    case SDL_EVENT_FINGER_UP: {
+        /* SDL fingers are normalised; injection takes window coordinates */
+        int w = 0;
+        int h = 0;
+        br_engine_window_size(e, &w, &h);
+        const char *action = "move";
+        if (ev->type == SDL_EVENT_FINGER_DOWN) {
+            action = "down";
+        } else if (ev->type == SDL_EVENT_FINGER_UP) {
+            action = "up";
+        }
+        cmd = br_pt_new_cmd("touch", action);
+        cJSON_AddNumberToObject(cmd, "finger", (double)ev->tfinger.fingerID);
+        cJSON_AddNumberToObject(cmd, "x", ev->tfinger.x * (float)w);
+        cJSON_AddNumberToObject(cmd, "y", ev->tfinger.y * (float)h);
+        return cmd;
+    }
+    default:
+        return NULL;
+    }
+}
+
+static void br_pt_record_event(br_engine *e, const SDL_Event *ev, void *user)
+{
+    (void)user;
+    br_playtest_state *s = e->playtest;
+    if (!s->recording || s->injecting) {
+        return;
+    }
+    cJSON *cmd = br_pt_event_cmd(e, ev);
+    if (cmd != NULL) {
+        br_playtest_recorded r;
+        /* real events arrive between frames (the next frame sees them); input injected by a
+         * system inside a frame, before input latches, counts in that frame */
+        r.frame = e->stepping ? e->ticker.frame : e->ticker.frame + 1;
+        r.cmd = cmd;
+        br_array_push(&s->recorded, &r);
+    }
+}
+
+bool br_playtest_record_start(br_engine *e, const char *path)
+{
+    br_playtest_state *s = e->playtest;
+    if (path == NULL || !br_str_copy(s->record_path, sizeof(s->record_path), path)) {
+        return br_playtest_fail(e, "record: bad output path");
+    }
+    s->recording = true;
+    br_log_info("playtest: recording input to '%s'", path);
+    return true;
+}
+
+static void br_pt_add_wait(cJSON *script, uint64_t frames)
+{
+    if (frames > 0) {
+        cJSON *wait = br_pt_new_cmd("wait", NULL);
+        cJSON_AddNumberToObject(wait, "frames", (double)frames);
+        cJSON_AddItemToArray(script, wait);
+    }
+}
+
+bool br_playtest_record_stop(br_engine *e)
+{
+    br_playtest_state *s = e->playtest;
+    if (!s->recording) {
+        return false;
+    }
+    s->recording = false;
+    /* a script starts in frame 1; each command runs in the frame that saw the event */
+    cJSON *script = cJSON_CreateArray();
+    uint64_t cursor = 1;
+    for (uint32_t i = 0; i < s->recorded.count; i++) {
+        br_playtest_recorded *r = br_array_at(&s->recorded, i);
+        if (r->frame > cursor) {
+            br_pt_add_wait(script, r->frame - cursor);
+            cursor = r->frame;
+        }
+        cJSON_AddItemToArray(script, r->cmd);
+    }
+    br_array_clear(&s->recorded);
+    /* the replay ends in the frame the session ended */
+    if (e->ticker.frame > cursor) {
+        br_pt_add_wait(script, e->ticker.frame - cursor);
+    }
+    cJSON_AddItemToArray(script, br_pt_new_cmd("quit", NULL));
+    bool ok = br_pt_save_script(e, s->record_path, script);
+    cJSON_Delete(script);
+    if (ok) {
+        br_log_info("playtest: recorded %llu frames of input to '%s'", (unsigned long long)e->ticker.frame,
+                    s->record_path);
+    }
+    return ok;
+}
+
+/* ---- lifetime */
+
+static void br_pt_shutdown(br_engine *e, void *user)
+{
+    (void)user;
+    br_playtest_state *s = e->playtest;
+    if (s->recording) {
+        br_playtest_record_stop(e);
+    }
+    if (s->log_hooked) {
+        SDL_SetLogOutputFunction(s->log_prev, s->log_prev_user);
+    }
+    cJSON_Delete(s->script);
+    br_array_free(&s->releases);
+    br_array_free(&s->exposed);
+    br_array_free(&s->recorded);
+    br_free(s);
+    e->playtest = NULL;
+}
+
+void br_playtest_register(br_engine *e)
+{
+    br_playtest_state *s = br_alloc(sizeof(br_playtest_state));
+    if (s == NULL) {
+        return;
+    }
+    e->playtest = s;
+    br_array_init(&s->releases, sizeof(br_playtest_release));
+    br_array_init(&s->exposed, sizeof(br_playtest_exposed));
+    br_array_init(&s->recorded, sizeof(br_playtest_recorded));
+    br_engine_on_shutdown(e, br_pt_shutdown, NULL);
+    br_engine_add_event_handler(e, br_pt_record_event, NULL);
+    br_system_add(e, "playtest.frame", BR_PHASE_INPUT, BR_PLAYTEST_PRIORITY, br_pt_system, NULL);
+}

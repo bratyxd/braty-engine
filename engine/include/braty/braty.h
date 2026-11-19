@@ -66,4 +66,7 @@
 #include "braty/br_gltf.h"
 #include "braty/br_anim3d.h"
 
+/* play-testing (Phase 2 Task 14) */
+#include "braty/br_playtest.h"
+
 #endif
