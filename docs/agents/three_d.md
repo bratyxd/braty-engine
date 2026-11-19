@@ -40,6 +40,10 @@ Test: `tests/test_three_d.c`. Example: `examples/view3d_demo.c` (`--camera 0|1`,
   writes sRGB. HDR target: RGBA16F with depth (optional MSAA, resolved before post).
 - Screen points for `br_view3d_pick` / `screen_to_ray` / `world_to_screen` are stage (global 2D)
   coordinates; the view node's 2D transform is applied.
+- Camera hooks: a 3D camera (`br_camera_create_3d`) owns a View3D that is not on the stage and
+  points it at your scene with `br_view3d_set_root(e, view, root)` / `br_view3d_set_camera`;
+  `br_view3d_set_culling_mask` + `br_node3d_set_layer` choose what it draws. Such views get no
+  pointer events (`docs/agents/camera.md`).
 
 ## Functions you actually need
 

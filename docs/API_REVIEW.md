@@ -47,7 +47,8 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
    **Resolved (Task 16):** top-level `"scenes": { "title": "scenes/title.scene.json" }` in
    game.json; `br_scene_load(e, "title", BR_SCENE_SINGLE)` / `br_scene_switch(e, "play", ...)`
    load by name; `start_scene` may be a name and loads as a `br_scene`. Test: `tests/test_scene.c`,
-   `test_game_config_keys`.
+   `test_game_config_keys`. Star Courier now lists its screens there and switches with
+   `br_scene_load(e, "play", BR_SCENE_SINGLE)` (Phase 2 integration).
 4. **gap - assets cannot be pointed at the source tree.** game.json and `asset_root` resolve
    against the executable directory (`br_game_config_load`, `br_engine_create`). The sample
    copies `data/` next to the executable after each build (its `CMakeLists.txt`), which makes
@@ -86,7 +87,8 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
    a spawner wants "this prefab, here, with this velocity". The sample instantiates, then sets
    the position, then fetches the component (`systems.c`, `sc_spawn_debris`). **Fix:**
    `br_prefab_instantiate_at(e, path, parent, br_vec2 position)`; the rest stays code.
-   **Resolved (Task 16):** `br_prefab_instantiate_at`. Test: `tests/test_scene.c`.
+   **Resolved (Task 16):** `br_prefab_instantiate_at`. Test: `tests/test_scene.c`. Star Courier's
+   crates and debris use it.
 8. **friction - component pointers die on any add** (`br_component_get/at`). In a system that
    holds a `sc_pilot *` and then calls something that may instantiate a prefab (scene switch,
    spawn), the pointer silently dangles. The sample was audited by hand (`sc_rules_system`
@@ -166,6 +168,13 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
     hard-codes 1280x720 for spawn edges and wrapping (headless `br_engine_window_size` is 0x0).
     **Fix:** `window.logical_size` in game.json: the stage gets a letterbox scale + offset and
     `br_engine_logical_size(e)` returns the design size (also for input mapping).
+    **Resolved (Task 15 + Phase 2 integration):** `br_camera_create_logical(e, w, h)` is a
+    letterbox camera (the stage is always w x h units); game.json `"window": {"logical_size":
+    [w, h]}` creates it, and pointer events and play-test `click` map through cameras
+    (`br_camera_screen_to_stage` / `_stage_to_screen`). No `br_engine_logical_size`: with the
+    camera the stage *is* the design size. Tests: `tests/test_scene.c`
+    (`test_game_config_profiler_logical`), `tests/test_camera.c` (`test_pointer_events`),
+    `tests/test_playtest.c` (`test_click_with_camera`). Star Courier keeps its fixed window.
 18. **friction - scaled text blurs and JSON cannot ask for SDF.** UI pulses scale text up to
     1.5x; coverage glyphs blur (known text gotcha). SDF fonts are code-only
     (`br_font_options.sdf`), there is no `style` key for it. **Fix:** `"sdf": true` in the JSON

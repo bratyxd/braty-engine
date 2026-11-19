@@ -105,5 +105,8 @@ average error at 60 / 144.
   with `br_app_fixed_alpha` to interpolate between the last two simulation states.
 - `--deterministic` steps 1/60 s per frame and loads assets synchronously; wall-clock values on
   screen (timings, FPS) must be hidden then, or golden images differ (see `gltf_demo`).
-- `--headless` runs games built from engine nodes; examples that call the GPU directly
-  (`hello_quad`, `sprites_demo`, `text_demo`) need a window.
+- `--headless` runs every system with no window and no GPU (RENDER / POST_RENDER skipped, no
+  screenshots). Every example runs under it; the ones that talk to the GPU directly
+  (`hello_quad`, parts of `sprites_demo` and `text_demo`) log that they skip drawing. Audio opens
+  no device: under `--deterministic` sounds advance by game time (`docs/agents/audio.md`).
+  Cameras need a screen size: `br_camera_set_headless_screen(e, w, h)`.

@@ -96,7 +96,10 @@ component; strings/asset paths are inline `char[BR_FIELD_STRING_SIZE]`.
 | `scene.flush_destroyed` | INPUT -1000000 | frees nodes destroyed last frame |
 | `scene.transform` | PRE_RENDER -1000 | local/world matrices, world alpha/tint, dirty subtrees only |
 | `scene.sort` | PRE_RENDER -900 | stable z-index sort of queued parents (and render layers) |
-| `scene.cull` | PRE_RENDER -800 | culls `cullable` nodes outside the window (visits only those nodes) |
+| `scene.cull` | PRE_RENDER -800 | culls `cullable` nodes outside the window, or outside the stage rect the cameras show when cameras are active (visits only those nodes) |
+
+Camera hooks on nodes: `br_node_set_layer_bits(e, n, bits)` (0 = inherit the parent's, the stage
+is layer 1) picks which cameras draw a node (`culling_mask`, `docs/agents/camera.md`).
 
 ## For other engine modules (extension points)
 

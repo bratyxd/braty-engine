@@ -161,6 +161,11 @@ window coordinates, same push functions. Overlays added later draw on top.
   alpha ignored) clips; nested and `inverse` supported (up to 255 levels).
 - Render layer: `br_node_layer_attach(e, layer, n)` draws n where `layer` is in the order.
 - Render group: children drawn with the group matrix on the GPU.
+- Views (the camera hook): `br_render_set_views(e, views, count)` replaces the default "stage in
+  window coordinates" with a list of `br_render_view` (root, target texture, projection, visible
+  area, viewport, culling mask, clear). The camera module calls it every frame from
+  `camera.views`; nodes are skipped with their subtree when `br_node_set_layer_bits` & the view's
+  `culling_mask` is 0. Count 0 goes back to the default.
 
 ## Gotchas
 

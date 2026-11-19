@@ -50,8 +50,9 @@ Everything, with the Python class: `docs/PLAYTESTING.md`.
 Read `docs/GETTING_STARTED.md` (a new game in eleven compiling steps), then copy the shape of
 `sample_projects/star_courier/`:
 
-- `data/game.json` - window, asset root, manifest, input actions, audio buses and sound
-  sprites; game-specific settings under `"game"`. Unknown keys are warned about.
+- `data/game.json` - window, asset root, manifest, scene names (`"scenes"`), input actions,
+  audio buses and sound sprites; game-specific settings under `"game"`. Unknown keys are warned
+  about.
 - `data/assets/` - scene files (one per screen), prefabs (spawned things), a TexturePacker
   spritesheet, a manifest with a bundle, and `tuning.json` (every gameplay number, loaded as a
   component so errors carry JSON paths and edits hot-reload).
@@ -144,28 +145,36 @@ Read the guide, then the module's public header (headers are the API reference).
 |---|---|---|
 | core | `docs/agents/core.md` | done (Task 1) |
 | arena | `docs/agents/arena.md` | done (Phase 2 Task 14) |
-| math | `docs/agents/math.md` | done (Task 1) |
+| math | `docs/agents/math.md` | done (Task 1; audit, geometry, easing, random, noise, splines: Phase 2 Task 14c) |
 | gpu | `docs/agents/gpu.md` | done (Task 1) |
 | app | `docs/agents/app.md` | done (Task 1; pacing, `--deterministic`, groups: Phase 2 Task 14) |
-| scene | `docs/agents/scene.md` | done (Task 2) |
+| scene | `docs/agents/scene.md` | done (Task 2; component queries: Phase 2 Task 14c) |
 | render | `docs/agents/render.md` | done (Task 2) |
-| assets | `docs/agents/assets.md` | done (Tasks 2, 5) |
+| assets | `docs/agents/assets.md` | done (Tasks 2, 5, 16) |
 | graphics | `docs/agents/graphics.md` | done (Task 3) |
 | text | `docs/agents/text.md` | done (Task 4) |
 | sprites | `docs/agents/sprites.md` | done (Task 6) |
 | mesh | `docs/agents/mesh.md` | done (Task 6) |
 | particles | `docs/agents/particles.md` | done (Task 6) |
-| events | `docs/agents/events.md` | done (Task 7) |
+| events | `docs/agents/events.md` | done (Task 7; pointer positions through cameras: Phase 2 integration) |
+| input | `docs/agents/input.md` | done (Task 7; gamepads, actions, contexts, rebinding, glyphs: Phase 2 Task 14c) |
 | audio | `docs/agents/audio.md` | done (Task 7) |
 | filters | `docs/agents/filters.md` | done (Task 8) |
 | three_d | `docs/agents/three_d.md` | done (Task 9) |
-| gltf | `docs/agents/gltf.md` | done (Task 11) |
+| gltf | `docs/agents/gltf.md` | done (Task 11; glTF as scene content: Phase 2 Task 18, in progress) |
 | data | `docs/agents/data.md` | done (Task 10) |
 | debug | `docs/agents/debug.md` | done (Task 10) |
-| playtest | `docs/agents/playtest.md` | done (Phase 2 Task 14) |
+| playtest | `docs/agents/playtest.md` | done (Phase 2 Task 14; actions, gamepads, 3D paths: 14c/14d; `profile`, `engine:scene`: integration) |
+| camera | `docs/agents/camera.md` | done (Phase 2 Task 15) |
+| canvas3d | `docs/agents/canvas3d.md` | done (Phase 2 Task 15) |
+| scenes | `docs/agents/scenes.md` | done (Phase 2 Task 16) |
+| animation | `docs/agents/animation.md` | done (Phase 2 Task 17) |
+| profiler | `docs/agents/profiler.md` | done (Phase 2 Task 18b) |
 
-Phase 2 (cameras, scenes and asset groups, animation, profiler, a second sample game; arenas,
-pacing and play-testing are done): `docs/plans/2026-11-19-braty-engine-phase2.md`.
+Phase 2: `docs/plans/2026-11-19-braty-engine-phase2.md`. Done: Tasks 14 (arenas, pacing,
+play-testing), 14c (input, math, queries), 15 (cameras, canvas3d), 16 (scenes, asset groups), 17
+(animation, tweens), 18b (profiler). In progress: Task 18 (glTF scene content). Open: Tasks 19
+(second sample game) and 20 (integration review).
 
 ## Layout
 
