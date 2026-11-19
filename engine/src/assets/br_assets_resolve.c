@@ -159,8 +159,26 @@ static bool br_assets_resolve_srcs(br_assets_state *a, const char *const *srcs, 
     return ok;
 }
 
+/* "models/kit.glb#Tree" names one node of a glTF file: the asset is the file. Copies the part
+ * before '#' into out and returns it, or returns name unchanged. */
+static const char *br_assets_model_file(const char *name, char *out, size_t out_size)
+{
+    const char *hash = SDL_strchr(name, '#');
+    size_t len = hash != NULL ? (size_t)(hash - name) : 0;
+    bool model = (len > 4 && SDL_strncasecmp(name + len - 4, ".glb", 4) == 0) ||
+                 (len > 5 && SDL_strncasecmp(name + len - 5, ".gltf", 5) == 0);
+    if (!model || len >= out_size) {
+        return name;
+    }
+    SDL_memcpy(out, name, len);
+    out[len] = '\0';
+    return out;
+}
+
 bool br_assets_resolve_internal(br_assets_state *a, const char *name, char *out, size_t out_size)
 {
+    char file[BR_RESOLVE_PATH];
+    name = br_assets_model_file(name, file, sizeof(file));
     char **target = br_map_get(&a->aliases, name);
     if (target != NULL) {
         name = *target; /* alias targets are used as given */

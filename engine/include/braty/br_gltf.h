@@ -15,7 +15,8 @@
  * animations (linear / step / cubic spline), PBR metallic-roughness materials with samplers,
  * uv sets, alpha modes, double sided, cameras, KHR_lights_punctual,
  * KHR_materials_emissive_strength, KHR_materials_unlit, KHR_texture_transform,
- * KHR_mesh_quantization. Compressed glTF (KHR_draco_mesh_compression, EXT_meshopt_compression,
+ * KHR_materials_transmission (approximated with alpha blending), KHR_mesh_quantization,
+ * EXT_mesh_gpu_instancing (one batched_mesh3d per primitive). Compressed glTF (KHR_draco_mesh_compression, EXT_meshopt_compression,
  * KHR_texture_basisu) fails with an error naming the extension. Other unknown extensions load
  * and are logged once per engine (unknown *required* ones fail).
  *
@@ -45,6 +46,8 @@ typedef struct br_model_node {
     int32_t  light;           /* index into lights (KHR_lights_punctual) */
     float    weights[BR_MESH3D_MAX_MORPH_WEIGHTS]; /* rest morph weights (node, else mesh) */
     uint32_t weight_count;
+    br_mat4 *instances;       /* EXT_mesh_gpu_instancing: per-instance matrices in the node's space */
+    uint32_t instance_count;  /* 0 = an ordinary node */
 } br_model_node;
 
 /* One drawable part of a mesh (glTF primitive). */
@@ -95,7 +98,20 @@ typedef struct br_model {
     uint32_t            clip_count;
     br_aabb             bounds;         /* rest pose, model space */
     uint32_t            refs;           /* asset reference + one per live instance */
+    char               *path;           /* the file it was parsed from (error messages) */
+    char               *scene_extras;   /* the glTF scene's "extras" as JSON text, NULL if none */
 } br_model;
+
+/* How an instance is built (all fields optional; zero = defaults). */
+typedef struct br_gltf_options {
+    const char *node;         /* only this glTF node and its subtree, its translation reset to 0
+                                 (a kit part, "kit.glb#Tree"); NULL = the whole scene */
+    const char *autoplay;     /* clip started at once; NULL = the scene extras' "autoplay" (a clip
+                                 name, or true = the first clip); "" = none */
+    bool        no_batching;  /* keep one mesh3d per node even for repeated static meshes */
+    const char *camera;       /* scene loads / view3d JSON "camera": true: the glTF camera (by node
+                                 name) that becomes the view's camera; NULL = the first one */
+} br_gltf_options;
 
 /* Registers the module (model loader, model3d node type, animation system). Called by br_builtin.c. */
 void br_gltf_register(br_engine *e);
@@ -121,8 +137,30 @@ int32_t br_model_find_node(const br_model *model, const char *name);
 uint32_t br_model3d_type(br_engine *e);
 /* Builds an instance: a detached "model3d" node holding the model's scene (group nodes named
  * like the glTF nodes; mesh3d / camera3d / light3d children for their content) and an
- * animator. The instance keeps the model alive. Zero handle on failure. */
+ * animator. The instance keeps the model alive. Zero handle on failure.
+ * Same as br_model_instantiate_ex(e, model, NULL): repeated static meshes are batched and node
+ * extras become components (see br_model_instantiate_ex). */
 br_node3d br_model_instantiate(br_engine *e, br_model *model);
+/* Builds an instance with options (NULL = defaults). Static nodes (not animated, no skin or
+ * morph targets, no extras, no convention name suffix) that share a mesh are drawn as ONE
+ * batched_mesh3d per primitive (child of the instance root); their group nodes still exist but
+ * moving them moves nothing. Node extras are applied: components (registered with
+ * br_component_register) go on the node's group node as 3D components, and the convention keys
+ * of docs/agents/gltf.md (collider, trigger, no_render, visible, layer, cast_shadows, batch).
+ * Errors name the file, node and field; bad values are skipped. Zero handle on failure. */
+br_node3d br_model_instantiate_ex(br_engine *e, br_model *model, const br_gltf_options *options);
+/* Loads (cached) and instantiates "models/kit.glb" or "models/kit.glb#Tree" (one node and its
+ * subtree) under parent (zero = detached). The instance owns the asset reference, released when
+ * it is destroyed (inside a scene / scene-file load, that load owns it). Zero handle on failure
+ * (missing file or node name, logged). */
+br_node3d br_gltf_instantiate(br_engine *e, const char *path, br_node3d parent, const br_gltf_options *options);
+/* Options for every .glb / .gltf loaded as a scene (br_scene_load) or a 2D prefab: camera, autoplay
+ * and no_batching (node is ignored). Copied; NULL goes back to the defaults. The file's scene extras
+ * ("autoplay", "batch") apply when these leave them unset. */
+void br_gltf_set_load_options(br_engine *e, const br_gltf_options *options);
+/* The camera3d node made for a glTF camera of an instance: the camera on the node called `name`,
+ * or the first camera (name NULL). Zero handle if none. */
+br_node3d br_model3d_camera(br_engine *e, br_node3d n, const char *name);
 /* The model of an instance, NULL if n is not a model3d node. */
 br_model *br_model3d_model(br_engine *e, br_node3d n);
 /* The 3D node built for model node `index` of an instance (zero handle if out of range). */
@@ -130,5 +168,43 @@ br_node3d br_model3d_node(br_engine *e, br_node3d n, uint32_t index);
 /* PixiJS View3D.from: a view of width x height with the model instantiated under its root, a
  * sun with shadows, and the camera framing the model's bounds. Returns the 2D view node. */
 br_node br_view3d_from_model(br_engine *e, br_model *model, float width, float height);
+
+/* ---- 3D components
+ *
+ * The component registry is shared with 2D nodes (br_component_register ids, br_field_desc
+ * lists); each component kind has a second dense array for 3D nodes. Iterate it in a system:
+ *
+ *   uint32_t n = br_component3d_count(e, spin_id);
+ *   for (uint32_t i = 0; i < n; i++) {
+ *       spin *s = br_component3d_at(e, spin_id, i);
+ *       br_node3d node = br_component3d_owner_at(e, spin_id, i);   (check br_node3d_valid)
+ *   }
+ *
+ * A BR_FIELD_NODE field of a 3D component holds a br_node3d (same layout as br_node), resolved
+ * by glTF node name inside the instance. Rows go away when their node is freed. Pointers die when
+ * that component's 3D array grows or shrinks. */
+
+/* Adds a zeroed component to a 3D node (returns the existing one if present). NULL on failure. */
+void *br_component3d_add(br_engine *e, br_node3d n, uint32_t component_id);
+/* The component of a 3D node, NULL if absent. */
+void *br_component3d_get(br_engine *e, br_node3d n, uint32_t component_id);
+/* Removes it (swap-remove: the last row moves into its slot). */
+void br_component3d_remove(br_engine *e, br_node3d n, uint32_t component_id);
+/* Number of 3D rows of a component. */
+uint32_t br_component3d_count(br_engine *e, uint32_t component_id);
+/* The i-th row's data. */
+void *br_component3d_at(br_engine *e, uint32_t component_id, uint32_t i);
+/* The 3D node owning the i-th row (invalid if destroyed this frame). */
+br_node3d br_component3d_owner_at(br_engine *e, uint32_t component_id, uint32_t i);
+
+/* "gltf.collider": added for nodes named "*-col", "*-colonly", "*-trigger" or with extras
+ * "collider" / "trigger". A box in the node's space (from its mesh bounds, else a unit cube). */
+typedef struct br_gltf_collider {
+    br_vec3 center;
+    br_vec3 size;        /* full extents */
+    bool    trigger;     /* "*-trigger" / extras "trigger": true */
+} br_gltf_collider;
+/* Component id of "gltf.collider". */
+uint32_t br_gltf_collider_component(br_engine *e);
 
 #endif

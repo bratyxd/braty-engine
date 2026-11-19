@@ -1,5 +1,6 @@
 /* br_prefab: prefab files (cached parsed JSON) expanded with overrides into node JSON. */
 #include "data/br_data_internal.h"
+#include "data/br_gltf_scene_internal.h" /* a .glb / .gltf path is a prefab too */
 
 /* Prefabs may use prefabs; this caps the chain so a cycle is an error, not a hang. */
 #define BR_PREFAB_MAX_DEPTH 16
@@ -10,6 +11,13 @@ static const cJSON *br_data_prefab_doc(br_engine *e, const char *path)
     cJSON **cached = br_map_get(&s->prefabs, path);
     if (cached != NULL) {
         return *cached;
+    }
+    if (br_data_is_model_path(path)) {
+        cJSON *view = br_data_model_scene_json(e, path, false); /* a view3d wrapping the model */
+        if (view != NULL) {
+            br_map_set(&s->prefabs, path, &view);
+        }
+        return view;
     }
     void *bytes = NULL;
     size_t size = 0;

@@ -31,6 +31,7 @@ typedef struct br_gltf_instance {
     br_gltf_pose  pose;            /* the playing clip */
     br_gltf_pose  fade_pose;       /* the clip fading out */
     uint32_t      anim_index;      /* slot in the animator pool */
+    int32_t       sub_root;        /* model node of a sub-asset instance ("kit.glb#Tree"), -1 = whole scene */
 } br_gltf_instance;
 
 /* One entry of the dense animator pool. */
@@ -39,10 +40,31 @@ typedef struct br_gltf_anim {
     br_gltf_instance *instance;
 } br_gltf_anim;
 
+/* The 3D rows of one component kind (sparse set: 3D node index -> dense row + 1). */
+typedef struct br_component3d_set {
+    br_array data;     /* rows of desc->size bytes */
+    br_array owners;   /* br_node3d */
+    br_array sparse;   /* uint32_t by 3D node index */
+} br_component3d_set;
+
+/* An asset group owned by a 3D node (br_gltf_instantiate outside a load). */
+typedef struct br_gltf_owned {
+    uint32_t        generation;   /* of the 3D node; 0 = unused */
+    br_asset_group *group;
+} br_gltf_owned;
+
 typedef struct br_gltf_state {
     uint32_t model3d_type;
     br_array anims;            /* br_gltf_anim, dense (swap-remove) */
     br_array logged_ext;       /* char[64]: unknown extensions already logged */
+    br_array components3d;     /* br_component3d_set by component id - 1 (grown on first use) */
+    br_array owned;            /* br_gltf_owned by 3D node index */
+    uint32_t collider_id;      /* "gltf.collider" */
+    /* br_gltf_set_load_options (strings copied; "" = unset) */
+    char     load_camera[64];
+    char     load_autoplay[64];
+    bool     load_autoplay_set;
+    bool     load_no_batching;
 } br_gltf_state;
 
 /* br_anim3d.c: the animation system (registered by br_gltf_register). */
@@ -51,5 +73,17 @@ void br_anim3d_system(br_engine *e, float dt, void *user);
 void br_gltf_instance_register(br_engine *e);
 /* The instance of a model3d node, NULL if n is not one. */
 br_gltf_instance *br_gltf_instance_get(br_engine *e, br_node3d n);
+/* Frames `bounds` (NULL = the world bounds of the visible meshes under content) with the view's
+ * camera (camera) and/or adds a sun with shadows sized to it under the view root (sun): what
+ * br_view3d_from_model does. */
+void br_gltf_frame_view(br_engine *e, br_node view, br_node3d content, const br_aabb *bounds, bool camera, bool sun);
+/* br_gltf_components.c: registers gltf.collider and the 3D-node destroy listener. */
+void br_gltf_components_register(br_engine *e);
+/* Frees the 3D component arrays and the owned groups' table (shutdown). */
+void br_gltf_components_free(br_engine *e);
+/* True if a node name ends with a convention suffix (-col, -colonly, -trigger, -norender). */
+bool br_gltf_name_has_convention(const char *name);
+/* data/br_gltf_extras.c: applies node extras and name conventions of a fresh instance. */
+void br_data_gltf_apply_extras(br_engine *e, br_gltf_instance *inst);
 
 #endif

@@ -1,10 +1,19 @@
-# gltf - glTF models, skinning, morph targets, 3D animation
+# gltf - glTF models, skinning, morph targets, 3D animation, glTF as scene content
 
-Headers: `engine/include/braty/br_gltf.h` (models, instances), `br_anim3d.h` (clips, sampling,
-animator). Source: `engine/src/three_d/br_gltf*.c`, `br_anim3d.c`; scene JSON for views:
-`engine/src/data/br_node_json_view3d.c`. Test: `tests/test_gltf.c` (+ `tests/data/tiny.gltf`,
-regenerate with `python tests/data/make_tiny_gltf.py`). Example: `examples/gltf_demo.c`
-(`--foxes N`, `--novsync`, `--focus 0..6`), models and their licences in `examples/models/`.
+glTF is the engine's main 3D format: a `.glb` exported from Blender is a scene, a prefab, a node
+in a scene file, or a kit of parts, with gameplay data in node extras - no editor, no hand-written
+scene JSON.
+
+Headers: `engine/include/braty/br_gltf.h` (models, instances, options, 3D components),
+`br_anim3d.h` (clips, sampling, animator). Source: `engine/src/three_d/br_gltf*.c` (loader,
+instances, batching, 3D components), `br_anim3d.c`; data side: `engine/src/data/br_gltf_extras.c`
+(extras -> components, conventions), `br_gltf_scene.c` (a model path as a scene / prefab),
+`br_node_json_view3d.c` (view3d JSON). Tests: `tests/test_gltf.c` (+ `tests/data/tiny.gltf`,
+`python tests/data/make_tiny_gltf.py`), `tests/test_gltf_scene.c` (+ `tests/data/level.gltf`,
+`python tests/data/make_level_gltf.py`, which also writes the demo's `examples/gltf_scene/*.glb`).
+Examples: `examples/gltf_demo.c` (`--foxes N`, `--novsync`, `--focus 0..6`; models and licences in
+`examples/models/`), `examples/gltf_scene_demo.c` (`--no-batch`, `--top`; golden
+`tests/golden/gltf_scene_demo.png`).
 
 ## The model
 
@@ -30,6 +39,76 @@ regenerate with `python tests/data/make_tiny_gltf.py`). Example: `examples/gltf_
   clips; `finish` (main thread) only creates textures (mip chain generated), materials and
   geometries.
 
+## glTF as scene content
+
+| Use | How |
+|---|---|
+| A level | `br_scene_load(e, "levels/island.glb", BR_SCENE_SINGLE)`: a full-window View3D with the file's nodes, cameras, lights; the first camera (or `br_gltf_set_load_options` `.camera`) is the view's camera; a sun is added if the file has no lights. The model is in the scene's asset group and released on unload. |
+| A 2D prefab | `br_prefab_instantiate(e, "props/tree.glb", parent, overrides)`: a 640 x 360 `view3d` holding the model, framed, with a sun if the file has none (overrides apply to the view: `"size"`, `"position"`, ...). |
+| A 3D child | `br_gltf_instantiate(e, "models/kit.glb#Tree", parent3d, &options)`: the instance owns its asset reference (inside a scene load, the scene does). |
+| A scene-file node | `{ "type": "gltf", "source": "models/kit.glb#Tree", "camera": "TopCam", "default_light": true, "batch": false, "autoplay": "Spin", "components": { "spin": { "speed": 2 } } }` inside a `view3d` `scene` array. |
+| Any asset call | `"kit.glb#Tree"` resolves to `kit.glb` (`br_assets_load`, groups, ref counts): the kit is parsed once and shared. |
+
+- **Sub-assets** (`#Name`): one glTF node and its subtree; its translation is reset to 0 so the
+  part lands where you put the instance (rotation and scale are kept). The scene extras'
+  autoplay does not run on a part. A missing name logs an error and returns a zero handle.
+- **Batching:** in each instance, static nodes (no animated ancestor, no skin, morph targets,
+  extras or convention suffix) that share a mesh are drawn as one `batched_mesh3d` per primitive
+  (labelled `batch:<mesh name>`, child of the instance root). Their group nodes stay (labels,
+  positions) but moving them moves nothing: give such a node `"batch": false` (or any extras).
+  Opt out per file (scene extras `"batch": false`), per load (`br_gltf_options.no_batching`,
+  `br_gltf_set_load_options`) or per JSON node (`"batch": false`).
+- **EXT_mesh_gpu_instancing** nodes become one `batched_mesh3d` per primitive under the node.
+- **Scene extras** (Blender: Scene Properties > Custom Properties): `autoplay` (clip name, or
+  true = the first clip), `batch`, and for `br_scene_load`: `background`, `msaa`, `sky`,
+  `ground`, `ambient` (the view's environment).
+
+## Extras -> components
+
+Register the component (a struct + `br_field_desc` list, `br_component_register`) before loading.
+A glTF node's extras then fill it on that node's group node, in either form:
+
+```json
+"extras": { "components": { "health": { "max": 5 }, "spin": { "speed": 3 } } }
+"extras": { "health.max": 5, "spin.speed": 1.5, "spawn_point": true }
+```
+
+Flat keys are what Blender custom properties export: `"comp.field": value` (the last dot splits,
+so dotted component names work) or `"comp": true` / `{ fields }`. Flat keys naming no registered
+component are someone else's data and are skipped silently; an unknown component in a
+`"components"` object is a warning. Bad values are errors with file, node and field, and are
+skipped: `level.glb: node 'Coin_02'.extras.spin.speed: expected a number`. Values: bool (also 1
+/ 0), int, float, `[x, y]`, `[x, y, z]`, colour (`"#rrggbb"`, `[r, g, b(, a)]`), string, asset path,
+node (a glTF node name in the same instance -> a `br_node3d`).
+
+**3D components** (`br_component3d_add/get/remove/count/at/owner_at`) use the same registry ids
+and descriptors as 2D components, with their own dense rows per kind keyed by 3D node, so a
+system walks only the nodes that have the component. Scene-JSON 3D nodes take `"components"` too
+(node fields name labels in the view, forward references work).
+
+## Naming conventions (Blender object names and custom properties)
+
+| Need | Object name suffix | Or extras | Result |
+|---|---|---|---|
+| Collider | `-col` (drawn), `-colonly` (not drawn) | `"collider": true` | `gltf.collider` component: box from the mesh bounds (`center`, `size`), unit cube for empties |
+| Trigger volume | `-trigger` | `"trigger": true` | `gltf.collider` with `trigger = true`, mesh not drawn |
+| Helper object (not drawn) | `-norender` | `"no_render": true` | meshes hidden and not pickable; node and components stay |
+| Spawn point, pickup, ... | - | `"spawn_point": true`, `"pickup.value": 10` | your registered components |
+| Hidden at start | - | `"visible": false` | group node hidden |
+| Camera / render layer | - | `"layer": 2` | `br_node3d_set_layer` on the node and its content |
+| No shadow | - | `"cast_shadows": false` | meshes / lights (lights: `true` turns shadows on) |
+| Movable static mesh | - | `"batch": false` | kept out of automatic batching |
+
+`br_gltf_collider_component(e)` is the id; iterate with `br_component3d_count/at/owner_at`.
+
+**Blender how-to:** select the object > Object Properties > Custom Properties > New; set the name
+(`spin.speed`) and type/value (Float 2.0; Boolean for flags). Name helper objects with the
+suffixes above. For level-wide settings use Scene Properties > Custom Properties. Export with
+File > Export > glTF 2.0: Format *glTF Binary (.glb)*; Include: *Custom Properties*, *Cameras*,
+*Punctual Lights*; Transform: *+Y Up*; Data > Mesh: *Apply Modifiers*; Animation on (each action
+becomes a clip). Draco compression must stay off (it is rejected). *Use GPU Instances* (Scene
+Graph) writes EXT_mesh_gpu_instancing for linked duplicates.
+
 ## Functions you actually need
 
 | Function | What for |
@@ -43,6 +122,39 @@ regenerate with `python tests/data/make_tiny_gltf.py`). Example: `examples/gltf_
 | `br_model_find_clip`, `br_model_find_node`, `model->nodes[i].extras` | Inspect the parsed data (names, extras for gameplay). |
 | `br_anim3d_sample`, `br_anim3d_joint_matrices`, `br_anim3d_decompose` | Pure maths (tests, tools, your own animation code). |
 | `br_model_parse(e, path, bytes, size)` / `br_model_release` | Parse from memory without the cache. |
+| `br_scene_load(e, "level.glb", mode)`, `br_gltf_set_load_options` | A glTF file as a scene (camera, autoplay, batching). |
+| `br_gltf_instantiate(e, "kit.glb#Tree", parent, &opts)`, `br_model_instantiate_ex` | Place a model or one kit part (options: node, autoplay, no_batching). |
+| `br_model3d_camera(e, inst, "TopCam")` + `br_view3d_set_camera` | Use an imported camera. |
+| `br_component3d_count/at/owner_at`, `_get`, `_add` | Components on 3D nodes (from extras or code). |
+
+## Snippet (from examples/gltf_scene_demo.c)
+
+```c
+br_gltf_options load;
+SDL_zero(load);
+load.no_batching = g_no_batch;
+load.camera = g_top ? "TopCam" : NULL;
+br_gltf_set_load_options(e, &load);
+d->level = br_scene_load(e, "gltf_scene/level.glb", BR_SCENE_SINGLE);
+```
+
+A system over a component that came from glTF extras (`spin_system`):
+
+```c
+uint32_t count = br_component3d_count(e, d->spin_id);
+for (uint32_t i = 0; i < count; i++) {
+    const spin *s = br_component3d_at(e, d->spin_id, i);
+    br_node3d n = br_component3d_owner_at(e, d->spin_id, i);
+    if (!br_node3d_valid(e, n)) {
+        continue;
+    }
+    br_quat turn = br_quat_from_axis_angle(br_vec3_make(0.0f, 1.0f, 0.0f), s->speed * dt);
+    br_node3d_set_rotation(e, n, br_quat_mul(turn, br_node3d_rotation(e, n)));
+}
+```
+
+Kit parts from `gltf_scene/props.json` (`place_props`):
+`br_node3d n = br_gltf_instantiate(e, source->valuestring, root, NULL); /* kit parsed once, shared */`
 
 ## Snippet (from examples/gltf_demo.c, `on_fox_loaded`)
 
@@ -76,7 +188,8 @@ A `view3d` node takes `size`, `auto_resize`, `msaa`, `background`, `environment`
 ```
 
 `"animation"` is a clip name or an index (unnamed clips); `"speed"`, `"loop"`, `"time"` set the
-animator.
+animator. Task 18 keys: `"source": "kit.glb#Node"`, `"camera"` (true / node name), `"default_light"`,
+`"batch"`, `"autoplay"`, and `"components"` on every 3D node.
 
 ## Gotchas
 
@@ -84,8 +197,17 @@ animator.
   left of the image. Verified with OrientationTest, TextureCoordinateTest (text reads
   correctly), NormalTangentMirrorTest and TextureTransformTest on D3D12 and Vulkan.
 - Compressed glTF (`KHR_draco_mesh_compression`, `EXT_meshopt_compression`,
-  `KHR_texture_basisu`) fails with an error naming the extension. Unknown optional extensions
-  load and are logged once per engine; unknown required ones fail.
+  `KHR_texture_basisu`) fails with an error naming the extension (no C decoders; deferred by
+  design). Unknown optional extensions (e.g. `KHR_materials_clearcoat`, `_ior`, `_volume`) load
+  and are logged once per engine by name; unknown required ones fail.
+- Material extensions: emissive strength, unlit (FLAT model), texture transform, transmission
+  (alpha blending with alpha = 1 - 0.7 * factor; no refraction).
+- Cameras are imported as `camera3d` nodes (the View3D's camera), not as `br_camera` nodes: a
+  `br_camera` 3D camera owns its own off-stage View3D, which would render the level a second time.
+  Put follow / shake on a `br_camera_create_3d` over `br_scene_root_3d` if you need them.
+- Batching merges repeated meshes inside one instance; kit parts placed as separate instances
+  are separate draws (`ponytail:` limit; a cross-instance merge pass would remove it).
+- A 3D component's `BR_FIELD_NODE` field holds a `br_node3d`; extras are parsed per instance.
 - Base colour / emissive textures are decoded from sRGB in the shader; textures are
   premultiplied on upload (the 3D core undoes it for colour slots), so non-colour maps with
   alpha < 1 would lose RGB precision.
@@ -98,10 +220,14 @@ animator.
 - A cross-fade blends nodes the new clip does not animate towards their rest pose.
 - Skinned meshes are culled with the core's bind-pose box grown 2x.
 - `br_animator3d_get` returns a pointer into the dense pool: do not keep it across frames.
-- Scene-JSON meshes create their own geometry/material and scene loads keep their model asset
-  references (freed at shutdown; Phase 2 asset groups).
+- Scene-JSON meshes create their own geometry/material; model references belong to the scene /
+  scene-file root / instance that loaded them and are released with it.
 
 ## Numbers (RTX 3060 Ti, Release, 1280x720, MSAA 4, vsync off)
+
+`gltf_scene_demo` (level.glb: 8 repeated two-primitive trees, 6 GPU-instanced rocks, plus 9 kit
+parts and the Fox; 3 shadow cascades): batching on 32 opaque items / 129 draw calls (main +
+shadow passes), `--no-batch` 46 items / 185 draw calls, identical on D3D12 and Vulkan.
 
 `gltf_demo --foxes 200 --novsync` (201 skinned Fox instances with 24 joints each, desynchronised
 clips, plus the demo scene and inset view; 209 animators): 1.28 ms/frame on D3D12, 1.44 ms on
