@@ -475,16 +475,18 @@ br_rect br_camera_safe_area(br_engine *e)
 
 /* ---- pointer mapping */
 
-/* True if n and every ancestor have a layer bit in mask (the render walk prunes subtrees). */
+/* True if a camera with this mask draws n (bits inherited from the nearest ancestor that has
+ * some; the stage is layer 1). */
 static bool br_camera_draws(br_engine *e, br_node n, uint32_t mask)
 {
     while (br_node_valid(e, n)) {
-        if ((br_node_layer_bits(e, n) & mask) == 0) {
-            return false;
+        uint32_t bits = br_node_layer_bits(e, n);
+        if (bits != 0) {
+            return (bits & mask) != 0;
         }
         n = br_node_parent(e, n);
     }
-    return true;
+    return (mask & 1u) != 0;
 }
 
 br_vec2 br_camera_screen_to_stage(br_engine *e, br_vec2 screen)

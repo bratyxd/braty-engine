@@ -215,7 +215,7 @@ static void test_engine(void)
     br_node_set_layer_bits(e, button, 2u);
     br_node_set_event_mode(e, button, BR_EVENT_MODE_STATIC);
     br_node_add_child(e, root, button);
-    BR_CHECK(br_node_layer_bits(e, br_node_create_container(e)) == 1u);
+    BR_CHECK(br_node_layer_bits(e, br_node_create_container(e)) == 0u); /* inherits */
     br_engine_step(e, 1.0f / 60.0f);
 
     /* a point on the UI button maps through the UI camera (identity) */
