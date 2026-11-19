@@ -37,34 +37,25 @@ static void br_texture_set_whole_frame(br_texture_record *rec, uint32_t width, u
     rec->frame.orig = rec->frame.frame;
 }
 
-br_texture br_texture_create_rgba8(br_engine *e, uint32_t width, uint32_t height, const void *pixels,
-                                   const br_texture_style *style)
+/* Premultiplies straight-alpha RGBA8 pixels in place (textures are stored premultiplied). */
+static void br_texture_premultiply(uint8_t *pixels, size_t pixel_count)
 {
-    if (width == 0 || height == 0) {
-        br_log_error("br_texture_create_rgba8: zero size");
-        return br_texture_zero();
+    for (size_t i = 0; i < pixel_count; i++) {
+        uint32_t a = pixels[i * 4 + 3];
+        pixels[i * 4 + 0] = (uint8_t)((pixels[i * 4 + 0] * a + 127) / 255);
+        pixels[i * 4 + 1] = (uint8_t)((pixels[i * 4 + 1] * a + 127) / 255);
+        pixels[i * 4 + 2] = (uint8_t)((pixels[i * 4 + 2] * a + 127) / 255);
     }
+}
+
+/* br_texture_create_rgba8 for pixels that are already premultiplied (or NULL). */
+static br_texture br_texture_create_premultiplied(br_engine *e, uint32_t width, uint32_t height,
+                                                  const void *pixels, const br_texture_style *style)
+{
     br_gpu *g = br_engine_gpu(e);
     br_gpu_texture *gpu = NULL;
-    bool mipmaps = style != NULL && style->mipmaps;
     if (g != NULL) {
-        uint8_t *premultiplied = NULL;
-        if (pixels != NULL) {
-            premultiplied = br_alloc((size_t)width * height * 4);
-            if (premultiplied == NULL) {
-                return br_texture_zero();
-            }
-            const uint8_t *src = pixels;
-            for (size_t i = 0; i < (size_t)width * height; i++) {
-                uint32_t a = src[i * 4 + 3];
-                premultiplied[i * 4 + 0] = (uint8_t)((src[i * 4 + 0] * a + 127) / 255);
-                premultiplied[i * 4 + 1] = (uint8_t)((src[i * 4 + 1] * a + 127) / 255);
-                premultiplied[i * 4 + 2] = (uint8_t)((src[i * 4 + 2] * a + 127) / 255);
-                premultiplied[i * 4 + 3] = (uint8_t)a;
-            }
-        }
-        gpu = br_gpu_texture_create_rgba8(g, width, height, premultiplied, mipmaps);
-        br_free(premultiplied);
+        gpu = br_gpu_texture_create_rgba8(g, width, height, pixels, style != NULL && style->mipmaps);
         if (gpu == NULL) {
             return br_texture_zero();
         }
@@ -82,6 +73,28 @@ br_texture br_texture_create_rgba8(br_engine *e, uint32_t width, uint32_t height
     if (style != NULL) {
         rec->style = *style;
     }
+    return t;
+}
+
+br_texture br_texture_create_rgba8(br_engine *e, uint32_t width, uint32_t height, const void *pixels,
+                                   const br_texture_style *style)
+{
+    if (width == 0 || height == 0) {
+        br_log_error("br_texture_create_rgba8: zero size");
+        return br_texture_zero();
+    }
+    uint8_t *premultiplied = NULL;
+    if (br_engine_gpu(e) != NULL && pixels != NULL) {
+        size_t bytes = (size_t)width * height * 4;
+        premultiplied = br_alloc(bytes);
+        if (premultiplied == NULL) {
+            return br_texture_zero();
+        }
+        SDL_memcpy(premultiplied, pixels, bytes);
+        br_texture_premultiply(premultiplied, (size_t)width * height);
+    }
+    br_texture t = br_texture_create_premultiplied(e, width, height, premultiplied, style);
+    br_free(premultiplied);
     return t;
 }
 
@@ -354,22 +367,46 @@ void br_texture_shutdown(br_engine *e)
 
 /* ---- loader */
 
-static void *br_texture_asset_load(br_engine *e, const char *path, const void *bytes, size_t size)
+/* An image decoded on a worker thread, waiting for its GPU upload on the main thread. */
+typedef struct br_texture_decoded {
+    int      width;
+    int      height;
+    stbi_uc *pixels;   /* premultiplied RGBA8, from stbi_load_from_memory */
+} br_texture_decoded;
+
+/* Worker thread: decode + premultiply. Touches no engine state. */
+static void *br_texture_asset_decode(br_engine *e, const char *path, const void *bytes, size_t size)
 {
+    (void)e;
     if (size > 0x7fffffff) {
         br_log_error("texture '%s': file too large", path);
         return NULL;
     }
-    int w = 0;
-    int h = 0;
-    int channels = 0;
-    stbi_uc *pixels = stbi_load_from_memory(bytes, (int)size, &w, &h, &channels, 4);
-    if (pixels == NULL) {
-        br_log_error("texture '%s': cannot decode: %s", path, stbi_failure_reason());
+    br_texture_decoded *d = br_alloc(sizeof(br_texture_decoded));
+    if (d == NULL) {
         return NULL;
     }
-    br_texture t = br_texture_create_rgba8(e, (uint32_t)w, (uint32_t)h, pixels, NULL);
-    stbi_image_free(pixels);
+    int channels = 0;
+    d->pixels = stbi_load_from_memory(bytes, (int)size, &d->width, &d->height, &channels, 4);
+    if (d->pixels == NULL) {
+        /* stb_image keeps the failure reason in a thread-local (STBI_THREAD_LOCAL: C11 _Thread_local,
+         * __declspec(thread) or __thread for every compiler we build with), so this is our decode's reason */
+        br_log_error("texture '%s': cannot decode: %s", path, stbi_failure_reason());
+        br_free(d);
+        return NULL;
+    }
+    br_texture_premultiply(d->pixels, (size_t)d->width * (size_t)d->height);
+    return d;
+}
+
+/* Main thread: create the texture (GPU upload) and free the decoded pixels. */
+static void *br_texture_asset_finish(br_engine *e, const char *path, void *decoded)
+{
+    (void)path;
+    br_texture_decoded *d = decoded;
+    br_texture t = br_texture_create_premultiplied(e, (uint32_t)d->width, (uint32_t)d->height, d->pixels, NULL);
+    stbi_image_free(d->pixels);
+    br_free(d);
     br_texture *asset = br_alloc(sizeof(br_texture));
     if (t.generation == 0 || asset == NULL) {
         br_texture_destroy(e, t);
@@ -393,7 +430,8 @@ void br_texture_register_loader(br_engine *e)
     SDL_zero(desc);
     desc.type_name = "texture";
     desc.extensions = "png,jpg,jpeg,bmp,tga,gif,psd,hdr";
-    desc.load = br_texture_asset_load;
+    desc.decode = br_texture_asset_decode;  /* worker thread on async loads */
+    desc.finish = br_texture_asset_finish;  /* main thread: GPU upload */
     desc.unload = br_texture_asset_unload;
     br_assets_register_loader(e, &desc);
 }
