@@ -428,7 +428,8 @@ br_node br_scene_root(br_engine *e)
 
 uint32_t br_scene_node_count(br_engine *e)
 {
-    return e->scene->nodes.alive_count;
+    /* nodes destroyed this frame stay allocated until the flush; they are not live */
+    return e->scene->nodes.alive_count - e->scene->pending_destroy.count;
 }
 
 void br_scene_on_node_destroy(br_engine *e, br_node_destroy_fn fn, void *user)
