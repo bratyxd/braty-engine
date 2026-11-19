@@ -264,7 +264,10 @@ static void br_render_walk(br_render_ctx *rc, uint32_t index, br_blend_mode inhe
         return;
     }
     bool as_mask = (flags & BR_WALK_AS_MASK) != 0;
-    if (!as_mask && (!rec->visible || !rec->renderable || rec->mask_users > 0)) {
+    /* a mask node is not drawn as content, but an explicit offscreen render of it (the top node
+     * of br_render_subtree_to_texture) is allowed: alpha/colour masks render their mask that way */
+    bool hidden_mask = rec->mask_users > 0 && (flags & BR_WALK_SKIP_EFFECTS) == 0;
+    if (!as_mask && (!rec->visible || !rec->renderable || hidden_mask)) {
         return;
     }
     if ((flags & BR_WALK_FROM_LAYER) == 0 && br_scene_record(e, rec->layer) != NULL) {
