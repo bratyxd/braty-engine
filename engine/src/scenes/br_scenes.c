@@ -8,6 +8,7 @@
  * (data.release_assets), because dying nodes may still point at a font. */
 #include "app/br_engine_internal.h"
 #include "data/br_data_internal.h"
+#include "data/br_gltf_scene_internal.h" /* a .glb / .gltf path is a scene too */
 
 #define BR_SCENE_NAME_SIZE 64
 #define BR_SCENE_PATH_SIZE 512
@@ -300,12 +301,16 @@ static bool br_scenes_collect_assets(br_engine *e, br_scene_rec *rec)
 {
     void *bytes = NULL;
     size_t size = 0;
-    if (!br_file_read_all(e, rec->path, &bytes, &size)) {
+    cJSON *doc = NULL;
+    if (br_data_is_model_path(rec->path)) {
+        doc = br_data_model_scene_json(e, rec->path, true); /* the view3d node the file stands for */
+    } else if (!br_file_read_all(e, rec->path, &bytes, &size)) {
         br_log_error("scene '%s': cannot read '%s'", rec->name, rec->path);
         return false;
+    } else {
+        doc = br_data_parse(e, rec->path, bytes, size);
+        br_free(bytes);
     }
-    cJSON *doc = br_data_parse(e, rec->path, bytes, size);
-    br_free(bytes);
     if (!cJSON_IsObject(doc)) {
         if (doc != NULL) {
             br_log_error("scene '%s': '%s' must be one node object", rec->name, rec->path);
@@ -381,7 +386,12 @@ static void br_scenes_build(br_engine *e, br_scene scene)
     br_str_copy(path, sizeof(path), rec->path);
     br_asset_group *group = rec->group;
     br_scene_mode mode = rec->mode;
-    br_data_load_owned(e, path, root, group); /* rec may move: nodes made by the file may load scenes */
+    /* rec may move: nodes made by the file may load scenes */
+    if (br_data_is_model_path(path)) {
+        br_data_load_model_owned(e, path, root, group);
+    } else {
+        br_data_load_owned(e, path, root, group);
+    }
     br_scenes_raise_persistent(e);
     br_log_info("scene '%s': loaded", br_scene_name(e, scene));
     br_scenes_emit(e, scene, BR_SCENE_EVENT_LOADED);
