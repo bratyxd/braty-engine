@@ -243,6 +243,7 @@ static void br_gltf_pick_batched(const br_gltf_instance *inst, const uint8_t *bu
 
 /* One batched_mesh3d per primitive of every mesh shared by batched nodes, under the instance
  * root, holding each node's rest matrix relative to the instance. */
+// ponytail: merges repeats inside one instance only; kit parts placed as separate instances stay separate draws (a per-view merge pass over static instances would fix that).
 static void br_gltf_build_batches(br_engine *e, br_gltf_instance *inst, const uint8_t *built, const uint8_t *batched,
                                   const uint32_t *uses)
 {

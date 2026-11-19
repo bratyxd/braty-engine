@@ -343,7 +343,8 @@ static void br_gltf_apply_node(br_engine *e, br_gltf_instance *inst, uint32_t i)
         bool flag = false;
         const cJSON *col = cJSON_GetObjectItemCaseSensitive(extras, "collider");
         if (col != NULL && !cJSON_IsFalse(col) && !(cJSON_IsNumber(col) && col->valuedouble == 0.0)) {
-            collider = true; /* true, 1 or a shape name ("box"): box colliders only for now */
+            // ponytail: every collider is a box from the mesh bounds; read "sphere" / "capsule" shape names when physics needs them.
+            collider = true;
         }
         if (br_gltf_flag(e, extras, "trigger", &flag) && flag) {
             trigger = true;
