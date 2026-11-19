@@ -21,10 +21,13 @@ Short commands: step [N], key NAME [down|up|tap], action NAME [tap|down|up [VALU
 gamepad connect TYPE [SLOT] | disconnect [SLOT] | tap|down|up BUTTON [SLOT] |
 axis AXIS VALUE [SLOT], click LABEL,
 text "...", screenshot FILE, get PATH, set PATH JSON, find LABEL, dump [FILE],
-stats, logs [N], quit. Anything starting with "{" is sent as raw JSON.
+stats, logs [N], help, quit. Anything starting with "{" is sent as raw JSON.
+A failed command raises PlaytestError with the engine's message; the game process is ended when
+the with-block exits, on an exception, and at interpreter exit.
 Full reference: docs/PLAYTESTING.md.
 """
 import argparse
+import atexit
 import json
 import os
 import shlex
@@ -33,7 +36,8 @@ import sys
 
 
 class PlaytestError(Exception):
-    """A command replied {"ok": false, ...}; .reply holds the whole reply."""
+    """A command replied {"ok": false, ...} (the message is the engine's "error"), or the game
+    went away; .reply holds the whole reply."""
 
     def __init__(self, reply):
         super().__init__(reply.get("error", "command failed"))
@@ -55,12 +59,16 @@ class Playtest:
             text=True,
             bufsize=1,
         )
+        atexit.register(self.kill)  # no orphan game, whatever happens to this script
 
     def send(self, cmd):
         """Sends one command (dict or JSON text) and returns its reply."""
         line = cmd if isinstance(cmd, str) else json.dumps(cmd)
-        self.proc.stdin.write(line + "\n")
-        self.proc.stdin.flush()
+        try:
+            self.proc.stdin.write(line.replace("\n", " ") + "\n")  # one command = one line
+            self.proc.stdin.flush()
+        except OSError:
+            raise PlaytestError({"ok": False, "error": "the game exited (exit code %s)" % self.proc.poll()}) from None
         while True:
             out = self.proc.stdout.readline()
             if out == "":
@@ -68,10 +76,17 @@ class Playtest:
             out = out.strip()
             if out.startswith("{"):
                 break  # anything else on stdout is not ours (a game printing directly)
-        reply = json.loads(out)
+        try:
+            reply = json.loads(out)
+        except ValueError:
+            raise PlaytestError({"ok": False, "error": "not a JSON reply: %r" % out}) from None
         if self.check and not reply.get("ok"):
             raise PlaytestError(reply)
         return reply
+
+    def help(self):
+        """The command list: [{"cmd", "args" ("name:type", optional "name?:type"), "doc"}]."""
+        return self.send({"cmd": "help"})["commands"]
 
     # ---- input and time
     def step(self, frames=1):
@@ -159,27 +174,40 @@ class Playtest:
         return self.send({"cmd": "wait_until", "path": path, "op": op, "value": value,
                           "timeout_frames": timeout_frames})
 
-    def quit(self):
-        """Ends the game; returns its exit code (1 if any command failed)."""
+    def quit(self, timeout=30):
+        """Ends the game; returns its exit code (1 if any command failed). A game that does not
+        exit within `timeout` seconds is killed."""
         if self.proc.poll() is None:
             try:
                 self.send({"cmd": "quit"})
             except (PlaytestError, OSError):
                 pass  # it already quit (a "quit" sent before), or it crashed: the exit code says which
         try:
-            self.proc.stdin.close()
+            self.proc.stdin.close()  # a closed stdin also ends the game
         except OSError:
             pass
-        code = self.proc.wait(timeout=30)
+        try:
+            code = self.proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            code = self.kill()
         if self._log is not subprocess.DEVNULL:
             self._log.close()
         return code
 
+    def kill(self):
+        """Stops the game process now (no-op if it already exited); returns its exit code."""
+        if self.proc.poll() is None:
+            self.proc.kill()
+        return self.proc.wait()
+
     def __enter__(self):
         return self
 
-    def __exit__(self, *exc):
-        self.quit()
+    def __exit__(self, exc_type, *exc):
+        if exc_type is None:
+            self.quit()
+        else:
+            self.kill()  # an exception: do not wait for a game that may be stuck
 
 
 def parse_gamepad(rest):
@@ -229,7 +257,7 @@ def parse_short(text):
         return {"cmd": "dump", "file": rest[0]} if rest else {"cmd": "dump"}
     if name == "logs":
         return {"cmd": "logs", "count": int(rest[0]) if rest else 20}
-    if name in ("stats", "quit"):
+    if name in ("stats", "quit", "help"):
         return {"cmd": name}
     raise SystemExit("unknown short command %r (use raw JSON for the others)" % text)
 
@@ -241,15 +269,16 @@ def main():
     parser.add_argument("--arg", action="append", default=[], help="extra game argument (repeatable)")
     parser.add_argument("--log", help="write the game's log (stderr) to this file")
     args = parser.parse_args()
-    game = Playtest(args.exe, args.arg, log=args.log, check=False)
-    failed = False
-    for text in args.commands:
-        reply = game.send(parse_short(text))
-        print(json.dumps(reply))
-        failed = failed or not reply.get("ok")
-        if reply.get("ok") and parse_short(text)["cmd"] == "quit":
-            break
-    code = game.quit()
+    commands = [parse_short(text) for text in args.commands]  # bad short commands fail before the game starts
+    with Playtest(args.exe, args.arg, log=args.log, check=False) as game:
+        failed = False
+        for cmd in commands:
+            reply = game.send(cmd)
+            print(json.dumps(reply))
+            failed = failed or not reply.get("ok")
+            if reply.get("ok") and cmd["cmd"] == "quit":
+                break
+        code = game.quit()
     return 1 if failed or code != 0 else 0
 
 

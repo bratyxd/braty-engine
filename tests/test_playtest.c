@@ -420,17 +420,26 @@ static void test_action(void)
 /* ---- examples that talk to the GPU directly still run (and exit 0) under --headless, the mode
  * play-test scripts run in on CI */
 
+/* Path of an example built next to this test; false (skipped) if it is not there. */
+static bool example_path(const char *name, char *path, size_t size)
+{
+    SDL_snprintf(path, size, "%s%s.exe", SDL_GetBasePath(), name);
+    if (!SDL_GetPathInfo(path, NULL)) {
+        SDL_snprintf(path, size, "%s%s", SDL_GetBasePath(), name); /* no .exe outside Windows */
+    }
+    if (!SDL_GetPathInfo(path, NULL)) {
+        printf("skipped %s: not built next to the test\n", name);
+        return false;
+    }
+    return true;
+}
+
 static void test_examples_headless(void)
 {
     const char *names[] = { "hello_quad", "sprites_demo", "text_demo" };
     for (uint32_t i = 0; i < BR_ARRAY_COUNT(names); i++) {
         char path[1024];
-        SDL_snprintf(path, sizeof(path), "%s%s.exe", SDL_GetBasePath(), names[i]);
-        if (!SDL_GetPathInfo(path, NULL)) {
-            SDL_snprintf(path, sizeof(path), "%s%s", SDL_GetBasePath(), names[i]); /* no .exe outside Windows */
-        }
-        if (!SDL_GetPathInfo(path, NULL)) {
-            printf("skipped %s: not built next to the test\n", names[i]);
+        if (!example_path(names[i], path, sizeof(path))) {
             continue;
         }
         const char *args[] = { path, "--headless", "--frames", "3", NULL };
@@ -445,9 +454,76 @@ static void test_examples_headless(void)
     }
 }
 
+/* ---- --playtest-stdin over real pipes: every bad line gets exactly one {"ok":false} reply, the
+ * session goes on, and closing stdin ends the process */
+
+static void test_stdin_session(void)
+{
+    char path[1024];
+    if (!example_path("hello_quad", path, sizeof(path))) {
+        return;
+    }
+    const char *args[] = { path, "--headless", "--playtest-stdin", NULL };
+    SDL_Process *process = SDL_CreateProcess(args, true);
+    BR_CHECK(process != NULL);
+    if (process == NULL) {
+        return;
+    }
+    SDL_IOStream *in = SDL_GetProcessInput(process);
+    const char *lines = "not json\n"
+                        "[1, 2]\n"
+                        "{\"cmd\":\"fly\"}\n"
+                        "{\"cmd\":\"step\",\"frames\":\"ten\"}\n"
+                        "{\"cmd\":\"get\",\"path\":5}\n";
+    SDL_WriteIO(in, lines, SDL_strlen(lines));
+    static char huge[70000]; /* longer than the 64 KB line buffer */
+    SDL_memset(huge, 'x', sizeof(huge) - 1);
+    huge[sizeof(huge) - 2] = '\n';
+    size_t sent = 0;
+    while (sent < sizeof(huge) - 1) { /* a pipe may take it in parts */
+        size_t n = SDL_WriteIO(in, huge + sent, sizeof(huge) - 1 - sent);
+        if (n == 0 && SDL_GetIOStatus(in) != SDL_IO_STATUS_NOT_READY) {
+            break;
+        }
+        if (n == 0) {
+            SDL_Delay(1); /* the pipe is full until the game reads */
+        }
+        sent += n;
+    }
+    BR_CHECK(sent == sizeof(huge) - 1);
+    const char *last = "{\"cmd\":\"step\",\"frames\":2}\n{\"cmd\":\"help\"}\n";
+    SDL_WriteIO(in, last, SDL_strlen(last));
+    SDL_CloseIO(in); /* closed stdin: the game quits */
+    size_t size = 0;
+    int code = -1;
+    char *out = SDL_ReadProcess(process, &size, &code);
+    BR_CHECK(out != NULL);
+    int replies = 0;
+    int failed = 0;
+    for (char *line = out; line != NULL && *line != '\0'; replies++) {
+        failed += SDL_strncmp(line, "{\"ok\":false", 11) == 0 ? 1 : 0;
+        char *next = SDL_strchr(line, '\n');
+        line = next != NULL ? next + 1 : NULL;
+    }
+    BR_CHECK(replies == 8 && failed == 6);
+    BR_CHECK(out != NULL && SDL_strstr(out, "unknown command 'fly'") != NULL);
+    BR_CHECK(out != NULL && SDL_strstr(out, "step: \\\"frames\\\" must be a number") != NULL);
+    BR_CHECK(out != NULL && SDL_strstr(out, "get: \\\"path\\\" must be a string") != NULL);
+    BR_CHECK(out != NULL && SDL_strstr(out, "longer than 64 KB") != NULL);
+    BR_CHECK(out != NULL && SDL_strstr(out, "{\"ok\":true,\"frame\":2}") != NULL);
+    BR_CHECK(out != NULL && SDL_strstr(out, "{\"cmd\":\"gamepad\",\"args\":\"action:string") != NULL);
+    BR_CHECK(code == 1); /* exits on its own; 1 because commands failed */
+    if (replies != 8) {
+        printf("stdin session output:\n%s\n", out != NULL ? out : "(none)");
+    }
+    SDL_free(out);
+    SDL_DestroyProcess(process);
+}
+
 int main(void)
 {
     test_parse_errors();
+    test_stdin_session();
     test_action();
     test_gamepad();
     test_3d_paths();

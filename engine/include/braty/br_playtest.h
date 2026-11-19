@@ -24,6 +24,7 @@
  *   { "cmd": "set", "path": "game:lives", "value": 1 }   force a state
  *   { "cmd": "expect", "path": "game:score", "op": ">=", "value": 100 }
  *   { "cmd": "screenshot", "file": "out.png" }  { "cmd": "dump", "file": "state.json" }
+ *   { "cmd": "help" }                                    every command with its arguments
  *
  * Paths: "label:property" (position, x, y, scale, rotation, alpha, visible, tint, z_index,
  * world_position, bounds, type, children, exists, or any key the node's scene-file form has,

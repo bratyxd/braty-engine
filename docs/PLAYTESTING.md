@@ -62,7 +62,18 @@ window or GPU (no screenshots); `ctest` runs Star Courier's round that way. Path
 (screenshots, dumps, scripts) are relative to the working directory.
 
 Replies always start with `"ok"` and `"frame"`; a failed command adds `"error"` and the game
-keeps running. Engine logs go to stderr, replies to stdout.
+keeps running. Every line gets exactly one reply: a line that is not JSON, not an object, an
+unknown command, a missing argument or an argument of the wrong type (`{"cmd": "step",
+"frames": "ten"}` -> `step: "frames" must be a number`) each answer `{"ok": false, ...,
+"error": "..."}`. Closing stdin ends the game (exit code 0, or 1 if any command failed).
+`{"cmd": "help"}` lists every command with its arguments (`"key:string action?:string
+frames?:number"`; `?` = optional) and a one-line description. Engine logs go to stderr, replies
+to stdout.
+
+`tools/playtest.py` raises `PlaytestError` (message = the engine's `"error"`, `.reply` = the
+whole reply) for a failed command, a game that exited, or a reply that is not JSON. The game
+process is ended when the `with` block exits (killed at once if it exits with an exception, or
+after 30 s if `quit` hangs) and, failing that, when Python exits.
 
 ## Commands
 
@@ -123,6 +134,7 @@ so `connect` is only needed for a specific family. A pad of a recorded session c
 | `expect` (log) | `{"cmd": "expect", "log": "round 1 over"}` | Some kept log line contains the text. Also for `wait_until`. |
 | `log` | `{"cmd": "log", "message": "boss fight starts"}` | Writes `playtest: boss fight starts` to the log. |
 | `quit` | `{"cmd": "quit"}` | Exits after this frame (a script also exits at its end). |
+| `help` | `{"cmd": "help"}` | `"commands"`: `[{"cmd", "args", "doc"}...]`, the protocol for an agent. |
 
 ### Paths
 

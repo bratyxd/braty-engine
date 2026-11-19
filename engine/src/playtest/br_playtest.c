@@ -388,24 +388,61 @@ static bool br_pt_cmd_gamepad(br_engine *e, const cJSON *cmd, cJSON *reply)
 
 typedef struct br_pt_command_info {
     const char *name;
-    const char *required;   /* keys that must be present, space separated */
+    /* arguments as "name:type", optional ones "name?:type"; type = string, number, bool or any.
+     * The validator checks them and "help" sends them to the agent. */
+    const char *args;
+    const char *doc;
 } br_pt_command_info;
 
 static const br_pt_command_info br_pt_commands[] = {
-    { "wait", "" },          { "step", "" },          { "key", "key" },     { "action", "name" },
-    { "mouse", "" },         { "touch", "action" },   { "text", "text" },   { "click", "label" },
-    { "gamepad", "action" },     { "screenshot", "file" }, { "dump", "" },      { "find", "label" },
-    { "get", "path" },       { "set", "path value" }, { "list", "" },       { "logs", "" },
-    { "stats", "" },         { "expect", "" },        { "wait_until", "" }, { "log", "message" },
-    { "quit", "" },
+    { "step", "frames?:number seconds?:number", "advance N frames of 1/60 s (default 1)" },
+    { "wait", "frames?:number seconds?:number", "same as step" },
+    { "wait_until", "path?:string op?:string value?:any log?:string timeout_frames?:number timeout?:number",
+      "step until path op value holds (or a log line contains log); fails after the timeout" },
+    { "key", "key:string action?:string frames?:number", "SDL key name; action tap (default), down or up" },
+    { "action", "name:string action?:string value?:number frames?:number",
+      "input action; action tap (default), down/press, up/release; value 0..1" },
+    { "mouse", "action?:string x?:number y?:number button?:number dx?:number dy?:number",
+      "action move (default), down, up, tap or wheel; window coordinates" },
+    { "touch", "action:string finger?:number x?:number y?:number", "action down, move or up" },
+    { "text", "text:string", "type text" },
+    { "click", "label:string button?:number", "click a node by label (\"view/node\" for a 3D node)" },
+    { "gamepad", "action:string type?:string slot?:number button?:string axis?:string value?:number frames?:number",
+      "action connect (type: xbox, playstation, switch, ps5...), disconnect, tap, down, up (button), axis (axis, value)" },
+    { "screenshot", "file:string downsample?:number", "write the last rendered frame as PNG" },
+    { "dump", "file?:string", "scene tree, components, exposed state, 3D views" },
+    { "find", "label:string", "type, position, bounds... of a node" },
+    { "get", "path:string", "read label:property, label:component.field, name:field, view/node:property" },
+    { "set", "path:string value:any", "write a path" },
+    { "list", "type?:string component?:string", "nodes by type and/or component" },
+    { "logs", "count?:number", "the last log lines" },
+    { "stats", "", "frame, fps, nodes, draw calls, memory..." },
+    { "expect", "path?:string op?:string value?:any log?:string", "check path op value (== != < <= > >= contains) or a log line" },
+    { "log", "message:string", "write a line to the log" },
+    { "help", "", "this list" },
+    { "quit", "", "exit after this frame" },
 };
+
+static bool br_pt_has_type(const cJSON *v, const char *type)
+{
+    if (SDL_strcmp(type, "string") == 0) {
+        return cJSON_IsString(v);
+    }
+    if (SDL_strcmp(type, "number") == 0) {
+        return cJSON_IsNumber(v);
+    }
+    if (SDL_strcmp(type, "bool") == 0) {
+        return cJSON_IsBool(v);
+    }
+    return true; /* any */
+}
 
 /* Checks one command before anything runs. False with the reason in why. */
 static bool br_pt_validate(const cJSON *cmd, char *why, size_t why_size)
 {
     const char *name = br_pt_string(cmd, "cmd");
     if (!cJSON_IsObject(cmd) || name == NULL) {
-        SDL_snprintf(why, why_size, "expected an object with a \"cmd\" string");
+        SDL_snprintf(why, why_size, "expected an object with a \"cmd\" string (send {\"cmd\":\"help\"} for the list)");
         return false;
     }
     const br_pt_command_info *info = NULL;
@@ -415,20 +452,28 @@ static bool br_pt_validate(const cJSON *cmd, char *why, size_t why_size)
         }
     }
     if (info == NULL) {
-        SDL_snprintf(why, why_size, "unknown command '%s'", name);
+        SDL_snprintf(why, why_size, "unknown command '%s' (send {\"cmd\":\"help\"} for the list)", name);
         return false;
     }
-    char keys[64];
-    br_str_copy(keys, sizeof(keys), info->required);
+    char args[160];
+    br_str_copy(args, sizeof(args), info->args);
     char *save = NULL;
-    for (char *key = SDL_strtok_r(keys, " ", &save); key != NULL; key = SDL_strtok_r(NULL, " ", &save)) {
-        const cJSON *v = cJSON_GetObjectItemCaseSensitive(cmd, key);
-        if (v == NULL) {
-            SDL_snprintf(why, why_size, "%s: missing \"%s\"", name, key);
+    for (char *arg = SDL_strtok_r(args, " ", &save); arg != NULL; arg = SDL_strtok_r(NULL, " ", &save)) {
+        char *type = SDL_strchr(arg, ':');
+        *type = '\0'; /* arg = the name, type = what follows the colon */
+        type++;
+        size_t len = SDL_strlen(arg);
+        bool optional = arg[len - 1] == '?';
+        if (optional) {
+            arg[len - 1] = '\0';
+        }
+        const cJSON *v = cJSON_GetObjectItemCaseSensitive(cmd, arg);
+        if (v == NULL && !optional) {
+            SDL_snprintf(why, why_size, "%s: missing \"%s\"", name, arg);
             return false;
         }
-        if (SDL_strcmp(key, "value") != 0 && !cJSON_IsString(v)) {
-            SDL_snprintf(why, why_size, "%s: \"%s\" must be a string", name, key);
+        if (v != NULL && !br_pt_has_type(v, type)) {
+            SDL_snprintf(why, why_size, "%s: \"%s\" must be a %s", name, arg, type);
             return false;
         }
     }
@@ -727,6 +772,18 @@ static br_pt_result br_pt_exec(br_engine *e, const cJSON *cmd, cJSON *reply)
     }
     if (SDL_strcmp(name, "log") == 0) {
         br_log_info("playtest: %s", br_pt_string(cmd, "message"));
+        return BR_PT_DONE;
+    }
+    if (SDL_strcmp(name, "help") == 0) {
+        cJSON *list = cJSON_CreateArray();
+        for (uint32_t i = 0; i < BR_ARRAY_COUNT(br_pt_commands); i++) {
+            cJSON *item = cJSON_CreateObject();
+            cJSON_AddStringToObject(item, "cmd", br_pt_commands[i].name);
+            cJSON_AddStringToObject(item, "args", br_pt_commands[i].args);
+            cJSON_AddStringToObject(item, "doc", br_pt_commands[i].doc);
+            cJSON_AddItemToArray(list, item);
+        }
+        br_pt_reply_add(reply, "commands", list);
         return BR_PT_DONE;
     }
     if (SDL_strcmp(name, "quit") == 0) {
