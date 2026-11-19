@@ -143,13 +143,18 @@ void br_batch_push_pass(br_render_ctx *rc, br_texture target, bool clear, br_col
     br_render_ctx_changed(rc);
 }
 
-/* Returns the batch that takes `vertex_count` more vertices of `source`, opening one if needed. */
-static br_draw_cmd *br_batch_for(br_render_ctx *rc, br_texture source, uint32_t vertex_count, uint32_t *slot)
+/* Returns the batch that takes `vertex_count` more vertices of `source` written at byte
+ * `vertex_offset` of the transient vertex buffer, opening one if needed. */
+static br_draw_cmd *br_batch_for(br_render_ctx *rc, br_texture source, uint32_t vertex_count, uint32_t vertex_offset,
+                                 uint32_t *slot)
 {
     br_render_state *r = rc->e->render;
-    br_draw_cmd *b = rc->open_batch >= 0 ? br_array_at(&r->cmds, (uint32_t)rc->open_batch) : NULL;
+    br_draw_cmd *b = rc->open_batch >= 0 ? (br_draw_cmd *)r->cmds.data + rc->open_batch : NULL;
+    /* the vertices must directly follow the batch's: anything else allocating transient vertices
+     * in between (custom draws, callbacks) starts a new batch */
     if (b != NULL && (b->serial != rc->serial || b->state.blend != rc->blend ||
-                      b->vertex_count + vertex_count > BR_RENDER_MAX_BATCH_VERTICES)) {
+                      b->vertex_count + vertex_count > BR_RENDER_MAX_BATCH_VERTICES ||
+                      b->vertex_offset + b->vertex_count * (uint32_t)sizeof(br_batch_vertex) != vertex_offset)) {
         b = NULL;
     }
     if (b != NULL) {
@@ -171,7 +176,7 @@ static br_draw_cmd *br_batch_for(br_render_ctx *rc, br_texture source, uint32_t 
         return NULL;
     }
     b->first_index = r->indices.count;
-    b->first_vertex = r->vertices.count;
+    b->vertex_offset = vertex_offset;
     b->textures[0] = source;
     b->texture_count = 1;
     *slot = 0;
@@ -192,19 +197,60 @@ static br_texture br_batch_source(br_render_ctx *rc, br_texture texture)
     return rc->last_source;
 }
 
-void br_render_push_quad(br_render_ctx *rc, br_texture texture, const br_vertex2d v[4])
+/* Reserves vertex_count vertices (straight in the transient vertex buffer, no copy later) and
+ * index_count indices in a batch. *base = the first vertex's index within the batch. */
+static br_batch_vertex *br_batch_alloc(br_render_ctx *rc, br_texture texture, uint32_t vertex_count,
+                                       uint32_t index_count, uint32_t *slot, uint32_t *base, uint16_t **indices)
 {
     br_render_state *r = rc->e->render;
-    uint32_t slot;
-    br_draw_cmd *b = br_batch_for(rc, br_batch_source(rc, texture), 4, &slot);
-    if (b == NULL) {
-        return;
+    br_gpu *g = br_engine_gpu(rc->e);
+    if (g == NULL) {
+        return NULL;
     }
-    uint32_t base = b->vertex_count;
-    br_batch_vertex *out = br_array_push_n(&r->vertices, NULL, 4);
-    uint16_t *idx = br_array_push_n(&r->indices, NULL, 6);
-    b = br_array_at(&r->cmds, (uint32_t)rc->open_batch);
-    if (out == NULL || idx == NULL) {
+    /* an even count makes every allocation a multiple of 48 bytes, so the transient buffer's
+     * 16-byte alignment adds no gap and the next push stays contiguous with this batch */
+    uint32_t padded = vertex_count + (vertex_count & 1u);
+    uint32_t offset;
+    br_batch_vertex *v = br_gpu_transient_alloc_vertices(g, padded * (uint32_t)sizeof(br_batch_vertex), &offset);
+    if (v == NULL) {
+        return NULL;
+    }
+    br_draw_cmd *b = br_batch_for(rc, br_batch_source(rc, texture), padded, offset, slot);
+    if (b == NULL || !br_array_reserve(&r->indices, r->indices.count + index_count)) {
+        return NULL;
+    }
+    uint16_t *idx = (uint16_t *)r->indices.data + r->indices.count; /* filled by the caller: no zeroing */
+    r->indices.count += index_count;
+    *base = b->vertex_count;
+    *indices = idx;
+    b->vertex_count += padded;
+    b->index_count += index_count;
+    r->building.vertices += vertex_count;
+    return v;
+}
+
+br_batch_vertex *br_batch_quad(br_render_ctx *rc, br_texture texture, uint32_t *slot)
+{
+    uint32_t base;
+    uint16_t *idx;
+    br_batch_vertex *v = br_batch_alloc(rc, texture, 4, 6, slot, &base, &idx);
+    if (v == NULL) {
+        return NULL;
+    }
+    idx[0] = (uint16_t)base;
+    idx[1] = (uint16_t)(base + 1);
+    idx[2] = (uint16_t)(base + 2);
+    idx[3] = (uint16_t)base;
+    idx[4] = (uint16_t)(base + 2);
+    idx[5] = (uint16_t)(base + 3);
+    return v;
+}
+
+void br_render_push_quad(br_render_ctx *rc, br_texture texture, const br_vertex2d v[4])
+{
+    uint32_t slot;
+    br_batch_vertex *out = br_batch_quad(rc, texture, &slot);
+    if (out == NULL) {
         return;
     }
     for (uint32_t i = 0; i < 4; i++) {
@@ -215,21 +261,11 @@ void br_render_push_quad(br_render_ctx *rc, br_texture texture, const br_vertex2
         out[i].color = v[i].color;
         out[i].texture = slot;
     }
-    idx[0] = (uint16_t)base;
-    idx[1] = (uint16_t)(base + 1);
-    idx[2] = (uint16_t)(base + 2);
-    idx[3] = (uint16_t)base;
-    idx[4] = (uint16_t)(base + 2);
-    idx[5] = (uint16_t)(base + 3);
-    b->vertex_count += 4;
-    b->index_count += 6;
-    r->building.vertices += 4;
 }
 
 void br_render_push_triangles(br_render_ctx *rc, br_texture texture, const br_vertex2d *vertices,
                               uint32_t vertex_count, const uint16_t *indices, uint32_t index_count)
 {
-    br_render_state *r = rc->e->render;
     if (vertex_count == 0 || index_count == 0) {
         return;
     }
@@ -245,15 +281,10 @@ void br_render_push_triangles(br_render_ctx *rc, br_texture texture, const br_ve
         }
     }
     uint32_t slot;
-    br_draw_cmd *b = br_batch_for(rc, br_batch_source(rc, texture), vertex_count, &slot);
-    if (b == NULL) {
-        return;
-    }
-    uint32_t base = b->vertex_count;
-    br_batch_vertex *out = br_array_push_n(&r->vertices, NULL, vertex_count);
-    uint16_t *idx = br_array_push_n(&r->indices, NULL, index_count);
-    b = br_array_at(&r->cmds, (uint32_t)rc->open_batch);
-    if (out == NULL || idx == NULL) {
+    uint32_t base;
+    uint16_t *idx;
+    br_batch_vertex *out = br_batch_alloc(rc, texture, vertex_count, index_count, &slot, &base, &idx);
+    if (out == NULL) {
         return;
     }
     for (uint32_t i = 0; i < vertex_count; i++) {
@@ -267,9 +298,6 @@ void br_render_push_triangles(br_render_ctx *rc, br_texture texture, const br_ve
     for (uint32_t i = 0; i < index_count; i++) {
         idx[i] = (uint16_t)(base + indices[i]);
     }
-    b->vertex_count += vertex_count;
-    b->index_count += index_count;
-    r->building.vertices += vertex_count;
 }
 
 /* Copies bytes into this frame's transient vertex/index memory. */
@@ -366,7 +394,6 @@ void br_batch_reset(br_engine *e)
     br_render_state *r = e->render;
     br_array_clear(&r->cmds);
     br_array_clear(&r->customs);
-    br_array_clear(&r->vertices);
     br_array_clear(&r->indices);
     br_array_clear(&r->uniforms);
     SDL_zero(r->building);
@@ -377,9 +404,7 @@ void br_batch_finish(br_engine *e)
 {
     br_render_state *r = e->render;
     br_gpu *g = br_engine_gpu(e);
-    if (r->vertices.count > 0) {
-        br_batch_copy_transient(g, false, r->vertices.data, r->vertices.count * (uint32_t)sizeof(br_batch_vertex),
-                                &r->vertex_base);
+    if (r->indices.count > 0) {
         br_batch_copy_transient(g, true, r->indices.data, r->indices.count * (uint32_t)sizeof(uint16_t),
                                 &r->index_base);
     }
@@ -474,12 +499,12 @@ static void br_replay_batch(br_replay *rp, const br_draw_cmd *c)
     if (!br_replay_prepare(rp, &desc, &c->state)) {
         return;
     }
-    SDL_GPUBufferBinding vb = { br_gpu_transient_vertex_buffer(rp->g), r->vertex_base };
+    SDL_GPUBufferBinding vb = { br_gpu_transient_vertex_buffer(rp->g), c->vertex_offset };
     SDL_BindGPUVertexBuffers(rp->pass, 0, &vb, 1);
     SDL_GPUBufferBinding ib = { br_gpu_transient_index_buffer(rp->g), r->index_base };
     SDL_BindGPUIndexBuffer(rp->pass, &ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
     SDL_BindGPUFragmentSamplers(rp->pass, 0, bindings, BR_RENDER_MAX_TEXTURES);
-    SDL_DrawGPUIndexedPrimitives(rp->pass, c->index_count, 1, c->first_index, (Sint32)c->first_vertex, 0);
+    SDL_DrawGPUIndexedPrimitives(rp->pass, c->index_count, 1, c->first_index, 0, 0);
 }
 
 static void br_replay_custom(br_replay *rp, const br_draw_cmd *c)
@@ -536,6 +561,18 @@ static void br_replay_callback(br_replay *rp, const br_draw_cmd *c)
     info.blend = c->state.blend;
     info.stencil_test = c->state.stencil == BR_STENCIL_TEST;
     info.stencil_ref = c->state.stencil_ref;
+    SDL_Rect full = { 0, 0, (int)rp->rt->width, (int)rp->rt->height };
+    info.scissor = full;
+    if (c->state.scissor_on) {
+        /* clamp like batches do; an empty clip leaves nothing for an in-pass callback to draw */
+        info.scissor_on = true;
+        if (!SDL_GetRectIntersection(&c->state.scissor, &full, &info.scissor)) {
+            SDL_zero(info.scissor);
+            if (!c->own_passes) {
+                return;
+            }
+        }
+    }
     if (c->own_passes) {
         if (rp->pass != NULL) {
             SDL_EndGPURenderPass(rp->pass);
@@ -545,6 +582,7 @@ static void br_replay_callback(br_replay *rp, const br_draw_cmd *c)
         br_replay_begin(rp, rp->target, false, br_color_make(0, 0, 0, 0)); /* reopen, keeping contents */
     } else {
         info.pass = rp->pass;
+        SDL_SetGPUScissor(rp->pass, &info.scissor);
         c->fn(rp->e, &info, c->user);
         rp->bound = NULL; /* the callback may have bound its own pipeline */
     }

@@ -72,7 +72,7 @@ component; strings/asset paths are inline `char[BR_FIELD_STRING_SIZE]`.
 | `scene.flush_destroyed` | INPUT -1000000 | frees nodes destroyed last frame |
 | `scene.transform` | PRE_RENDER -1000 | local/world matrices, world alpha/tint, dirty subtrees only |
 | `scene.sort` | PRE_RENDER -900 | stable z-index sort of queued parents (and render layers) |
-| `scene.cull` | PRE_RENDER -800 | culls `cullable` nodes outside the window (skipped if none) |
+| `scene.cull` | PRE_RENDER -800 | culls `cullable` nodes outside the window (visits only those nodes) |
 
 ## For other engine modules (extension points)
 
@@ -101,5 +101,10 @@ component; strings/asset paths are inline `char[BR_FIELD_STRING_SIZE]`.
 - Outside a step (init, tests) destroy is immediate.
 - Render groups (`br_node_set_render_group`): descendants' cached world matrices are relative to
   the group. `br_node_world_transform`/`to_global` are always absolute.
-- Masks: the mask node is not drawn as content and does not count in its parent's bounds.
+- Masks: the mask node is not drawn as content and does not count in its parent's bounds. It is
+  drawn when it is the top node of `br_render_subtree_to_texture` (alpha/colour masks, render.md).
 - `br_node_child_count` includes children destroyed this frame until the flush.
+- Hot paths read the tables directly: transform internals cache cos/sin of the rotation
+  (`br_scene_set_rotation` is the only writer) and the packed world colour (`world_color`, updated
+  with world tint/alpha). Engine code that writes `rotation` or tint/alpha fields directly would
+  leave them stale: use the setters.

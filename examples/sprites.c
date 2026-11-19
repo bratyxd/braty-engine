@@ -1,6 +1,7 @@
 /* sprites - bunnymark plus a tour of the 2D render core.
  *
- *   sprites [--count N] [--novsync] [--frames N --screenshot out.png] [--gpu-driver vulkan|direct3d12]
+ *   sprites [--count N] [--novsync] [--static] [--profile] [--frames N --screenshot out.png]
+ *           [--gpu-driver vulkan|direct3d12]
  *
  * Bottom layer: N bouncing sprites (default 5000) with several textures, tint, alpha, rotation,
  * driven by a component + system. Top row, left to right:
@@ -12,6 +13,7 @@
  *   custom-shader node type, in-pass and own-passes callbacks, effects hook (cache_as_texture),
  *   render layer (big bunny above everything), culling, and an overlay (frame-rate bar).
  * At shutdown it logs the average frame time and the last frame's batch count.
+ * --static: the bunnies do not move or rotate. --profile: average time per system at shutdown.
  */
 #include "braty/braty_main.h"
 
@@ -24,8 +26,10 @@
 /* Command-line options: br_main runs before the engine exists, so they go through a file static. */
 static int g_bunny_count = 5000;
 static bool g_no_vsync = false;
+static bool g_static = false;
+static bool g_profile = false;
 
-enum { BUNNY_TEXTURES = 4, PANEL_W = 290, PANEL_H = 210, BUNNY_TOP = 360 };
+enum { BUNNY_TEXTURES = 4, PANEL_W = 290, PANEL_H = 210, BUNNY_TOP = 360, PROFILE_MAX_SYSTEMS = 64 };
 
 typedef struct bunny {
     br_vec2 velocity;
@@ -50,6 +54,9 @@ typedef struct demo_state {
     uint32_t   callback_type;
     br_texture callback_target;   /* cleared by an own-passes callback every frame */
     br_texture effect_target;     /* filled by the effects hook */
+    br_node    cached;            /* the node demo_effects draws */
+    br_render_effects_fn next_effects;  /* the hook installed before ours (filters) */
+    void      *next_effects_user;
     br_node    group;             /* render group moved every frame */
     br_node    culled;            /* cullable sprite parked off screen */
     uint32_t   triangle_offset;   /* this frame's triangle vertices (in-pass callback) */
@@ -57,6 +64,8 @@ typedef struct demo_state {
     uint64_t   frame_ns_sum;
     uint64_t   frame_ns_count;
     uint64_t   last_ns;
+    uint64_t   system_ns[PROFILE_MAX_SYSTEMS];  /* --profile: summed time per system */
+    uint64_t   profile_frames;
 } demo_state;
 
 /* ---- tiny helpers */
@@ -451,12 +460,13 @@ static void callback_node_render(br_engine *e, br_node n, const void *data, br_r
     br_render_push_callback(rc, clear_target_draw, s, true);
 }
 
-/* Effects hook: draws cache_as_texture nodes through a render texture, tinted to show it. */
+/* Effects hook: draws one cache_as_texture node through a render texture, tinted to show it.
+ * Every other node goes to the hook installed before ours (the filters module's). */
 static bool demo_effects(br_engine *e, br_node n, br_render_ctx *rc, void *user)
 {
     demo_state *s = user;
-    if (!br_node_cache_as_texture(e, n)) {
-        return false; /* not ours: draw normally */
+    if (!br_node_equal(n, s->cached)) {
+        return s->next_effects != NULL && s->next_effects(e, n, rc, s->next_effects_user);
     }
     br_rect b = br_node_get_bounds(e, n);
     if (br_rect_is_empty(b) || !br_render_texture_resize(e, s->effect_target, b.width, b.height)) {
@@ -541,13 +551,14 @@ static void setup_extension_strip(br_engine *e, demo_state *s, br_node top_layer
 
     /* effects hook: a cache_as_texture group is drawn by demo_effects */
     s->effect_target = br_render_texture_create(e, 64.0f, 64.0f, 1.0f);
+    s->next_effects = br_render_effects_hook(e, &s->next_effects_user); /* chain, do not replace */
     br_render_set_effects_hook(e, demo_effects, s);
-    br_node cached = br_node_create_container(e);
-    br_node_set_position(e, cached, 660.0f, 15.0f);
-    br_node_add_child(e, strip, cached);
-    add_sprite(e, cached, s->checker, 0.0f, 0.0f);
-    add_sprite(e, cached, s->bunny_textures[2], 20.0f, 14.0f);
-    br_node_set_cache_as_texture(e, cached, true);
+    s->cached = br_node_create_container(e);
+    br_node_set_position(e, s->cached, 660.0f, 15.0f);
+    br_node_add_child(e, strip, s->cached);
+    add_sprite(e, s->cached, s->checker, 0.0f, 0.0f);
+    add_sprite(e, s->cached, s->bunny_textures[2], 20.0f, 14.0f);
+    br_node_set_cache_as_texture(e, s->cached, true);
 
     /* render layer: a big bunny that lives among the bunnies but draws above everything */
     br_node big = add_sprite(e, bunny_parent, s->bunny_textures[1], 800.0f, 245.0f);
@@ -614,6 +625,21 @@ static void animate_system(br_engine *e, float dt, void *user)
     (void)dt;
 }
 
+/* --profile: sums every system's time of this frame (after warm-up). */
+static void profile_system(br_engine *e, float dt, void *user)
+{
+    demo_state *s = user;
+    (void)dt;
+    if (br_ticker_frame(e) <= 10) {
+        return;
+    }
+    br_system_info info;
+    for (uint32_t i = 0; i < PROFILE_MAX_SYSTEMS && br_system_get_info(e, i, &info); i++) {
+        s->system_ns[i] += info.last_time_ns;
+    }
+    s->profile_frames += 1;
+}
+
 static void demo_shutdown(br_engine *e, void *user)
 {
     demo_state *s = user;
@@ -628,7 +654,12 @@ static void demo_shutdown(br_engine *e, void *user)
     br_log_info("sprites: off-screen cullable sprite culled = %s", br_node_is_culled(e, s->culled) ? "yes" : "no");
     br_system_info info;
     for (uint32_t i = 0; br_system_get_info(e, i, &info); i++) {
-        br_log_info("  system %-24s %.2f ms", info.name, (double)info.last_time_ns / 1e6);
+        if (g_profile && i < PROFILE_MAX_SYSTEMS && s->profile_frames > 0) {
+            double avg = (double)s->system_ns[i] / (double)s->profile_frames / 1e6;
+            br_log_info("  system %-24s avg %.3f ms", info.name, avg);
+        } else {
+            br_log_info("  system %-24s %.2f ms", info.name, (double)info.last_time_ns / 1e6);
+        }
     }
     br_node_destroy(e, s->rt_scene); /* off-stage nodes are ours to free (the engine would too) */
     br_free(s);
@@ -663,7 +694,12 @@ static bool demo_init(br_engine *e)
     br_node top_layer = br_node_create_container(e);
     setup_extension_strip(e, s, top_layer, bunny_parent);
     br_node_add_child(e, br_scene_root(e), top_layer); /* last child of the stage: drawn last */
-    br_system_add(e, "sprites.bunnies", BR_PHASE_UPDATE, 0, bunny_system, s);
+    if (!g_static) {
+        br_system_add(e, "sprites.bunnies", BR_PHASE_UPDATE, 0, bunny_system, s);
+    }
+    if (g_profile) {
+        br_system_add(e, "sprites.profile", BR_PHASE_POST_RENDER, 1000000, profile_system, s);
+    }
     br_system_add(e, "sprites.animate", BR_PHASE_UPDATE, 1, animate_system, s);
     return true;
 }
@@ -675,6 +711,10 @@ br_app_desc br_main(int argc, char **argv)
             g_bunny_count = SDL_atoi(argv[++i]);
         } else if (SDL_strcmp(argv[i], "--novsync") == 0) {
             g_no_vsync = true;
+        } else if (SDL_strcmp(argv[i], "--static") == 0) {
+            g_static = true;
+        } else if (SDL_strcmp(argv[i], "--profile") == 0) {
+            g_profile = true;
         }
     }
     br_app_desc desc;

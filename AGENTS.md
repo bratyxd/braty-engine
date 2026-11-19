@@ -92,15 +92,15 @@ Read the guide, then the module's public header (headers are the API reference).
 | app | `docs/agents/app.md` | done (Task 1) |
 | scene | `docs/agents/scene.md` | done (Task 2) |
 | render | `docs/agents/render.md` | done (Task 2) |
-| assets | `docs/agents/assets.md` | core done (Task 2), Task 5 |
-| graphics | `docs/agents/graphics.md` | Task 3 |
-| text | `docs/agents/text.md` | Task 4 |
-| sprites | `docs/agents/sprites.md` | Task 6 |
-| mesh | `docs/agents/mesh.md` | Task 6 |
-| particles | `docs/agents/particles.md` | Task 6 |
-| events | `docs/agents/events.md` | Task 7 |
-| audio | `docs/agents/audio.md` | Task 7 |
-| filters | `docs/agents/filters.md` | Task 8 |
+| assets | `docs/agents/assets.md` | done (Tasks 2, 5) |
+| graphics | `docs/agents/graphics.md` | done (Task 3) |
+| text | `docs/agents/text.md` | done (Task 4) |
+| sprites | `docs/agents/sprites.md` | done (Task 6) |
+| mesh | `docs/agents/mesh.md` | done (Task 6) |
+| particles | `docs/agents/particles.md` | done (Task 6) |
+| events | `docs/agents/events.md` | done (Task 7) |
+| audio | `docs/agents/audio.md` | done (Task 7) |
+| filters | `docs/agents/filters.md` | done (Task 8) |
 | three_d | `docs/agents/three_d.md` | Task 9 |
 | gltf | `docs/agents/gltf.md` | Task 11 |
 | data | `docs/agents/data.md` | Task 10 |

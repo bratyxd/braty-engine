@@ -1,6 +1,6 @@
 /* br_sprite: the sprite node type (textured quad with anchor, trim and rotated frames). */
-#include "braty/br_render.h"
 #include "braty/br_sprite.h"
+#include "render/br_render_internal.h"
 #include "scene/br_scene_internal.h"
 
 /* Local corners of the drawn quad (top-left, top-right, bottom-right, bottom-left). */
@@ -29,20 +29,25 @@ static void br_sprite_corners(const br_sprite *sp, const br_texture_info *info, 
 static void br_sprite_render(br_engine *e, br_node n, const void *data, br_render_ctx *rc)
 {
     const br_sprite *sp = data;
-    uint32_t color = br_render_node_color(rc, n);
+    /* the walk only calls render for live nodes: read the tables directly */
+    uint32_t color = br_scene_record_at(e->scene, n.index)->world_color;
     if (color == 0) {
         return; /* premultiplied and fully transparent: all four bytes are zero */
     }
-    (void)e;
     const br_texture_info *info = br_render_texture_info(rc, sp->texture);
     br_vec2 corners[4];
     br_sprite_corners(sp, info, corners);
-    br_mat3 m = br_render_node_transform(rc, n);
-    float ratio = br_render_pixel_ratio(rc);
-    br_vertex2d v[4];
+    br_mat3 m = br_scene_transform_at(e->scene, n.index)->world;
+    uint32_t slot;
+    br_batch_vertex *v = br_batch_quad(rc, sp->texture, &slot); /* written in place, no copies */
+    if (v == NULL) {
+        return;
+    }
     for (int i = 0; i < 4; i++) {
-        br_vec2 p = br_mat3_apply(m, corners[i]);
+        br_vec2 c = corners[i];
+        br_vec2 p = { m.a * c.x + m.c * c.y + m.tx, m.b * c.x + m.d * c.y + m.ty }; /* br_mat3_apply, inlined */
         if (sp->round_pixels) {
+            float ratio = br_render_pixel_ratio(rc);
             p.x = SDL_roundf(p.x * ratio) / ratio;
             p.y = SDL_roundf(p.y * ratio) / ratio;
         }
@@ -51,8 +56,8 @@ static void br_sprite_render(br_engine *e, br_node n, const void *data, br_rende
         v[i].u = info->uvs[i].x;
         v[i].v = info->uvs[i].y;
         v[i].color = color;
+        v[i].texture = slot;
     }
-    br_render_push_quad(rc, sp->texture, v);
 }
 
 static bool br_sprite_local_bounds(br_engine *e, br_node n, const void *data, br_rect *out)

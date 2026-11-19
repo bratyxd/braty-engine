@@ -1,17 +1,9 @@
 /* br_node: node table, node types, lifetime (deferred destroy), hierarchy, node fields. */
 #include "scene/br_scene_internal.h"
 
+#include <math.h>
+
 /* ---- table access */
-
-br_node_record *br_scene_record_at(br_scene_state *s, uint32_t index)
-{
-    return br_pool_slot_data(&s->nodes, index);
-}
-
-br_node_transform *br_scene_transform_at(br_scene_state *s, uint32_t index)
-{
-    return br_array_at(&s->transforms, index);
-}
 
 br_node br_scene_handle(br_scene_state *s, uint32_t index)
 {
@@ -26,19 +18,26 @@ br_node_record *br_scene_record(br_engine *e, br_node n)
     if (e->scene == NULL) {
         return NULL;
     }
-    br_node_record *rec = br_pool_get(&e->scene->nodes, n.index, n.generation);
-    if (rec == NULL || rec->destroyed) {
+    /* br_pool_get without the function calls: every node API call goes through here */
+    const br_pool *p = &e->scene->nodes;
+    if (n.generation == 0 || n.index >= p->items.count) {
         return NULL;
     }
-    return rec;
+    const uint8_t *alive = p->alive.data;
+    const uint32_t *generations = p->generations.data;
+    if (alive[n.index] == 0 || generations[n.index] != n.generation) {
+        return NULL;
+    }
+    br_node_record *rec = br_scene_record_at(e->scene, n.index);
+    return rec->destroyed ? NULL : rec;
 }
 
 br_node_type_entry *br_scene_type_entry(br_scene_state *s, uint32_t type_id)
 {
-    if (type_id == 0) {
+    if (type_id == 0 || type_id > s->types.count) {
         return NULL;
     }
-    return br_array_at(&s->types, type_id - 1);
+    return (br_node_type_entry *)s->types.data + (type_id - 1);
 }
 
 void *br_scene_type_data(br_scene_state *s, uint32_t index)
@@ -48,7 +47,7 @@ void *br_scene_type_data(br_scene_state *s, uint32_t index)
     if (type == NULL || type->desc.data_size == 0) {
         return NULL;
     }
-    return br_array_at(&type->data, rec->data_index);
+    return (uint8_t *)type->data.data + (size_t)rec->data_index * type->data.elem_size;
 }
 
 static br_node br_node_zero(void)
@@ -92,13 +91,23 @@ static void br_scene_queue_sort(br_scene_state *s, uint32_t index)
 
 /* ---- transforms */
 
+void br_scene_set_rotation(br_node_transform *t, float radians)
+{
+    if (radians != t->rotation) {
+        /* C's cosf/sinf: same results as SDL_cosf/SDL_sinf here, about twice as fast (MinGW) */
+        t->rotation_cos = cosf(radians);
+        t->rotation_sin = sinf(radians);
+    }
+    t->rotation = radians;
+}
+
 br_mat3 br_scene_compute_local(const br_node_transform *t)
 {
     br_mat3 m;
     if (t->skew.x == 0.0f && t->skew.y == 0.0f) {
-        /* common case: two trig calls instead of four */
-        float cr = SDL_cosf(t->rotation);
-        float sr = SDL_sinf(t->rotation);
+        /* common case: no trig at all, cos/sin are cached with the rotation */
+        float cr = t->rotation_cos;
+        float sr = t->rotation_sin;
         m.a = cr * t->scale.x;
         m.b = sr * t->scale.x;
         m.c = -sr * t->scale.y;
@@ -236,6 +245,7 @@ br_node br_node_create(br_engine *e, uint32_t type_id)
     rec->tint = br_color_make(1.0f, 1.0f, 1.0f, 1.0f);
     rec->world_alpha = 1.0f;
     rec->world_tint = rec->tint;
+    rec->world_color = 0xFFFFFFFFu;
     rec->interactive_children = true;
     rec->cursor = -1;
 
@@ -244,6 +254,7 @@ br_node br_node_create(br_engine *e, uint32_t type_id)
     t->scale = br_vec2_make(1.0f, 1.0f);
     t->local = br_mat3_identity();
     t->world = br_mat3_identity();
+    t->rotation_cos = 1.0f;
 
     void *data = NULL;
     if (type->desc.data_size > 0) {
@@ -389,8 +400,8 @@ static void br_scene_free_node(br_engine *e, uint32_t index)
             member->layer = br_node_zero();
         }
     }
-    if (rec->cullable && s->cullable_count > 0) {
-        s->cullable_count -= 1;
+    if (rec->cullable) {
+        br_scene_cullable_remove(s, n.index);
     }
     br_free(rec->label);
     br_free((void *)rec->hit_area.points);
@@ -527,7 +538,9 @@ bool br_node_reparent(br_engine *e, br_node n, br_node new_parent)
     br_mat3 local = br_mat3_mul(br_mat3_invert(parent_world, NULL), world);
     br_node_transform *t = br_scene_transform_at(s, n.index);
     br_vec2 position;
-    br_mat3_decompose(local, &position, &t->scale, &t->rotation, &t->skew);
+    float rotation = 0.0f;
+    br_mat3_decompose(local, &position, &t->scale, &rotation, &t->skew);
+    br_scene_set_rotation(t, rotation);
     /* decompose assumes no pivot/origin: undo their translation (see br_scene_compute_local) */
     br_mat3 m = br_mat3_from_transform(0.0f, 0.0f, 0.0f, 0.0f, t->scale.x, t->scale.y, t->rotation, t->skew.x, t->skew.y);
     br_vec2 pivot_offset = br_vec2_make(t->pivot.x * m.a + t->pivot.y * m.c, t->pivot.x * m.b + t->pivot.y * m.d);
@@ -704,7 +717,7 @@ void br_node_set_rotation(br_engine *e, br_node n, float radians)
 {
     br_node_transform *t = br_node_transform_for(e, n);
     if (t != NULL) {
-        t->rotation = radians;
+        br_scene_set_rotation(t, radians);
         br_node_transform_changed(e, n);
     }
 }
@@ -937,9 +950,9 @@ void br_node_set_cullable(br_engine *e, br_node n, bool cullable)
     }
     rec->cullable = cullable;
     if (cullable) {
-        e->scene->cullable_count += 1;
+        br_scene_cullable_add(e->scene, n.index);
     } else {
-        e->scene->cullable_count -= 1;
+        br_scene_cullable_remove(e->scene, n.index);
     }
 }
 
@@ -1265,6 +1278,7 @@ static void br_scene_shutdown(br_engine *e, void *user)
     br_array_free(&s->destroy_listeners);
     br_array_free(&s->sort_queue);
     br_array_free(&s->sort_scratch);
+    br_array_free(&s->cullables);
     br_free(s);
     e->scene = NULL;
 }
@@ -1283,6 +1297,7 @@ void br_scene_register(br_engine *e)
     br_array_init(&s->pending_destroy, sizeof(uint32_t));
     br_array_init(&s->destroy_listeners, sizeof(br_destroy_listener));
     br_array_init(&s->sort_queue, sizeof(uint32_t));
+    br_array_init(&s->cullables, sizeof(uint32_t));
     br_engine_on_shutdown(e, br_scene_shutdown, NULL);
 
     br_node_type_desc container;

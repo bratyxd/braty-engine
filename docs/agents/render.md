@@ -80,6 +80,8 @@ br_render_push_custom(rc, &draw);
 `own_passes = true`: the engine ends its pass, you run any passes on `info->cmd` (3D scene into an
 HDR target, ping-pong blurs), the engine reopens its target with contents kept.
 Allocate transient vertices during collect (in the render callback), never in the callback.
+Scissor masks: `info->scissor_on` / `info->scissor` (target pixels, clamped). In-pass callbacks
+start with that scissor already set; if you call `SDL_SetGPUScissor` yourself, pass `&info->scissor`.
 
 ```c
 /* in the node's render callback (PRE_RENDER) */
@@ -107,18 +109,32 @@ callback, the effects hook or an overlay. It switches the draw list to the rende
 so no recursion) mapping `world_area` onto the whole texture, then switches back. Then push a quad
 with that texture. Outside the render phase use `br_render_to_texture(e, node, rt)`.
 
+A node used as a mask (`br_node_set_mask` on another node) is never drawn as content by the
+stage walk, but it **is** drawn when it is the explicit top node `n` of
+`br_render_subtree_to_texture`: that is how the filters module renders alpha/colour masks
+offscreen. Its descendants and the rest of the walk follow the normal rules.
+
 ## Extension point 5: the effects hook (Task 8: filters, alpha/colour masks, cache, advanced blend)
 
 `br_render_set_effects_hook(e, fn, user)` - one per engine. The walk calls `fn` instead of the
 normal draw for every node where `br_node_needs_effects` is true (filters set, cache_as_texture,
 `BR_MASK_ALPHA/COLOR`, blend `>= BR_BLEND_ADVANCED_FIRST`). Return true if you drew it.
 
+**Installing a hook replaces the filters module's** (it installs one at startup): filters,
+alpha/colour masks, cache_as_texture and advanced blend modes stop working unless you chain.
+Usually you do not need a hook at all (use a node type or `br_render_subtree_to_texture` from a
+render callback). If you do, read the previous one with `br_render_effects_hook` and pass every
+node you do not handle to it:
+
 ```c
+s->next_effects = br_render_effects_hook(e, &s->next_effects_user); /* chain, do not replace */
+br_render_set_effects_hook(e, demo_effects, s);
+
 static bool demo_effects(br_engine *e, br_node n, br_render_ctx *rc, void *user)
 {
     demo_state *s = user;
-    if (!br_node_cache_as_texture(e, n)) {
-        return false; /* not ours: draw normally */
+    if (!br_node_equal(n, s->cached)) {
+        return s->next_effects != NULL && s->next_effects(e, n, rc, s->next_effects_user);
     }
     br_rect b = br_node_get_bounds(e, n);
     if (br_rect_is_empty(b) || !br_render_texture_resize(e, s->effect_target, b.width, b.height)) {
@@ -156,5 +172,9 @@ window coordinates, same push functions. Overlays added later draw on top.
 - `br_render_pack_color(c, alpha)` premultiplies; do not premultiply twice.
 - Callback `user` pointers must live until RENDER of the same frame.
 - Headless engines skip collect entirely (no GPU).
-- Stats for 100k rotating sprites (examples/sprites.c, RTX 3060 Ti): 31 batches, ~22-30 ms/frame
-  in a Release build; per-node trig for rotation and the walk dominate.
+- Performance (examples/sprites.c `--count 100000 --novsync --profile [--static]`, Release,
+  RTX 3060 Ti, best of 5): 31 batches; rotating ~12 ms/frame (the example's own bunny system
+  5 ms, scene.transform 1.6, render.collect 4.0, submit 0.8), static ~4.3 ms (collect 3.5).
+  No engine allocations per frame once warmed up. Batched vertices are written straight into
+  the GPU transient buffer: anything else that allocates transient vertices mid-walk just
+  starts a new batch.
