@@ -267,7 +267,9 @@ static bool demo_init(br_engine *e)
         return false;
     }
     br_engine_on_shutdown(e, demo_shutdown, s);
-    br_gpu_set_clear_color(br_engine_gpu(e), br_color_from_hex(0x101422, 1.0f));
+    if (br_engine_gpu(e) != NULL) { /* NULL under --headless: nodes still update, nothing is drawn */
+        br_gpu_set_clear_color(br_engine_gpu(e), br_color_from_hex(0x101422, 1.0f));
+    }
     setup_bitmap_fonts(e); /* first: the rich text uses the Pixel5x7 family */
     setup_left_column(e);
     setup_alignment(e);

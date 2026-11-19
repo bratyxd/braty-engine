@@ -358,6 +358,34 @@ static void test_action(void)
     br_engine_destroy(e);
 }
 
+/* ---- examples that talk to the GPU directly still run (and exit 0) under --headless, the mode
+ * play-test scripts run in on CI */
+
+static void test_examples_headless(void)
+{
+    const char *names[] = { "hello_quad", "sprites_demo", "text_demo" };
+    for (uint32_t i = 0; i < BR_ARRAY_COUNT(names); i++) {
+        char path[1024];
+        SDL_snprintf(path, sizeof(path), "%s%s.exe", SDL_GetBasePath(), names[i]);
+        if (!SDL_GetPathInfo(path, NULL)) {
+            SDL_snprintf(path, sizeof(path), "%s%s", SDL_GetBasePath(), names[i]); /* no .exe outside Windows */
+        }
+        if (!SDL_GetPathInfo(path, NULL)) {
+            printf("skipped %s: not built next to the test\n", names[i]);
+            continue;
+        }
+        const char *args[] = { path, "--headless", "--frames", "3", NULL };
+        SDL_Process *process = SDL_CreateProcess(args, false);
+        int code = -1;
+        BR_CHECK(process != NULL && SDL_WaitProcess(process, true, &code));
+        BR_CHECK(code == 0);
+        if (code != 0) {
+            printf("%s --headless exited with %d\n", names[i], code);
+        }
+        SDL_DestroyProcess(process);
+    }
+}
+
 int main(void)
 {
     test_parse_errors();
@@ -367,5 +395,6 @@ int main(void)
     test_record_replay();
     test_record_replay_gamepad();
     test_expect_exit_code();
+    test_examples_headless();
     return br_test_finish();
 }

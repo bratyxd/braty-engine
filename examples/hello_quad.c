@@ -139,6 +139,13 @@ static bool hello_init(br_engine *e)
     if (s == NULL) {
         return false;
     }
+    if (g == NULL) {
+        /* --headless: no GPU to draw with; run the update only, so --frames still exits 0 */
+        br_log_info("hello_quad: headless, the quad is not drawn (this example talks to the GPU directly)");
+        br_engine_on_shutdown(e, hello_shutdown, s);
+        br_system_add(e, "hello.update", BR_PHASE_UPDATE, 0, update_system, s);
+        return true;
+    }
     br_engine_on_shutdown(e, hello_shutdown, s);
     s->texture = make_checker_texture(g);
     uint16_t indices[6] = { 0, 1, 2, 0, 2, 3 };
