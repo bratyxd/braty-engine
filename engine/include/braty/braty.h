@@ -76,4 +76,13 @@
 #include "braty/br_spline.h"
 #include "braty/br_query.h"
 
+/* Phase 2 modules: cameras, canvas3d, scenes, animation, profiler */
+#include "braty/br_camera.h"
+#include "braty/br_canvas3d.h"
+#include "braty/br_scene.h"
+#include "braty/br_asset_group.h"
+#include "braty/br_animation.h"
+#include "braty/br_tween.h"
+#include "braty/br_profiler.h"
+
 #endif

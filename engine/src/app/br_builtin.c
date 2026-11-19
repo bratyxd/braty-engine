@@ -29,6 +29,11 @@ void br_builtin_register(br_engine *e)
     br_gltf_register(e);
     br_data_register(e);
     br_debug_register(e);
+    br_camera_register(e);
+    br_canvas3d_register(e);
+    br_scenes_register(e);
+    br_animation_register(e);
+    br_profiler_register(e);
     br_playtest_register(e);
     /* registered last so it runs first at shutdown: every node's on_destroy still sees its module */
     br_engine_on_shutdown(e, br_scene_shutdown_nodes, NULL);

@@ -109,6 +109,11 @@ struct br_engine {
     struct br_debug_state     *debug;
     struct br_playtest_state  *playtest;  /* play-test scripts, interactive mode, record (Task 14) */
     struct br_arena_state     *arena;     /* frame arena + tracked arenas (Task 14) */
+    struct br_camera_state      *camera;
+    struct br_canvas3d_state    *canvas3d;
+    struct br_scenes_state      *scenes;
+    struct br_animation_state   *animation;
+    struct br_profiler_state    *profiler;
 };
 
 /* FPS cap: waits until the next frame's deadline (br_pacing.c). No-op when uncapped. */
