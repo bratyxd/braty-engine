@@ -83,6 +83,7 @@ struct br_engine {
     struct br_gltf_state      *gltf;      /* glTF + 3D animation (Task 11) */
     struct br_data_state      *data;
     struct br_debug_state     *debug;
+    struct br_arena_state     *arena;     /* frame arena + tracked arenas (Task 14) */
 };
 
 /* Registers every built-in module. Defined in br_builtin.c (owned by Task 2). */
