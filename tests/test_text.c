@@ -1,0 +1,305 @@
+/* test_text - UTF-8, AngelCode parsing (text + XML), measuring, wrapping, rich-text tags (headless). */
+#include "braty/braty.h"
+#include "br_test.h"
+
+/* A monospace bitmap font: every glyph advances 10, one kerning pair (a b = -2). */
+static const char *k_fnt_text =
+    "info face=\"Test\" size=16 bold=0 italic=0\n"
+    "common lineHeight=20 base=16 scaleW=64 scaleH=64 pages=1 packed=0\n"
+    "page id=0 file=\"test page.png\"\n"
+    "chars count=8\n"
+    "char id=32 x=0 y=0 width=0 height=0 xoffset=0 yoffset=0 xadvance=10 page=0 chnl=15\n"
+    "char id=97 x=0 y=0 width=8 height=10 xoffset=1 yoffset=6 xadvance=10 page=0 chnl=15\n"
+    "char id=98 x=8 y=0 width=8 height=14 xoffset=1 yoffset=2 xadvance=10 page=0 chnl=15\n"
+    "char id=99 x=16 y=0 width=8 height=10 xoffset=1 yoffset=6 xadvance=10 page=0 chnl=15\n"
+    "char id=100 x=24 y=0 width=8 height=14 xoffset=1 yoffset=2 xadvance=10 page=0 chnl=15\n"
+    "char id=101 x=32 y=0 width=8 height=10 xoffset=1 yoffset=6 xadvance=10 page=0 chnl=15\n"
+    "char id=233 x=40 y=0 width=8 height=14 xoffset=1 yoffset=2 xadvance=10 page=0 chnl=15\n"
+    "char id=8364 x=48 y=0 width=9 height=14 xoffset=0 yoffset=2 xadvance=12 page=0 chnl=15\n"
+    "kernings count=1\n"
+    "kerning first=97 second=98 amount=-2\n";
+
+static const char *k_fnt_xml =
+    "<?xml version=\"1.0\"?>\n"
+    "<font>\n"
+    "  <info face=\"Test\" size=\"16\"/>\n"
+    "  <common lineHeight=\"20\" base=\"16\" scaleW=\"64\" scaleH=\"64\" pages=\"2\"/>\n"
+    "  <pages>\n"
+    "    <page id=\"0\" file=\"a.png\" />\n"
+    "    <page id=\"1\" file=\"b.png\" />\n"
+    "  </pages>\n"
+    "  <distanceField fieldType=\"msdf\" distanceRange=\"4\"/>\n"
+    "  <chars count=\"3\">\n"
+    "    <char id=\"98\" x=\"8\" y=\"0\" width=\"8\" height=\"14\" xoffset=\"1\" yoffset=\"2\" xadvance=\"10\" page=\"1\"/>\n"
+    "    <char id=\"97\" x=\"0\" y=\"0\" width=\"8\" height=\"10\" xoffset=\"1\" yoffset=\"6\" xadvance=\"10\" page=\"0\"/>\n"
+    "    <char id=\"32\" x=\"0\" y=\"0\" width=\"0\" height=\"0\" xoffset=\"0\" yoffset=\"0\" xadvance=\"10\" page=\"0\"/>\n"
+    "  </chars>\n"
+    "  <kernings count=\"1\">\n"
+    "    <kerning first=\"97\" second=\"98\" amount=\"-2\" />\n"
+    "  </kernings>\n"
+    "</font>\n";
+
+static bool near(float a, float b)
+{
+    return SDL_fabsf(a - b) < 0.01f;
+}
+
+static void test_utf8(void)
+{
+    const char *s = "a\xC3\xA9\xE2\x82\xAC\xF0\x9F\x98\x80"; /* a e-acute euro U+1F600 */
+    size_t len = SDL_strlen(s);
+    size_t off = 0;
+    BR_CHECK(br_text_utf8_next(s, len, &off) == 0x61 && off == 1);
+    BR_CHECK(br_text_utf8_next(s, len, &off) == 0xE9 && off == 3);
+    BR_CHECK(br_text_utf8_next(s, len, &off) == 0x20AC && off == 6);
+    BR_CHECK(br_text_utf8_next(s, len, &off) == 0x1F600 && off == 10);
+    BR_CHECK(br_text_utf8_next(s, len, &off) == 0);
+
+    /* invalid input decodes as U+FFFD and moves one byte */
+    const char *bad = "\x80\xC3\x28\xE2\x82\xC0\xAF\xF8";
+    size_t blen = SDL_strlen(bad);
+    off = 0;
+    BR_CHECK(br_text_utf8_next(bad, blen, &off) == 0xFFFD && off == 1);     /* stray continuation */
+    BR_CHECK(br_text_utf8_next(bad, blen, &off) == 0xFFFD && off == 2);     /* bad continuation */
+    BR_CHECK(br_text_utf8_next(bad, blen, &off) == '(' && off == 3);
+    BR_CHECK(br_text_utf8_next(bad, blen, &off) == 0xFFFD && off == 4);     /* E2 82 then C0 */
+    const char *overlong = "\xC0\xAF";
+    off = 0;
+    BR_CHECK(br_text_utf8_next(overlong, 2, &off) == 0xFFFD && off == 1);
+    const char *truncated = "\xE2\x82";
+    off = 0;
+    BR_CHECK(br_text_utf8_next(truncated, 2, &off) == 0xFFFD && off == 1);
+
+    char buf[4];
+    BR_CHECK(br_text_utf8_encode(0x20AC, buf) == 3 && (uint8_t)buf[0] == 0xE2 && (uint8_t)buf[2] == 0xAC);
+    BR_CHECK(br_text_utf8_encode(0x1F600, buf) == 4);
+    BR_CHECK(br_text_utf8_encode(0xD800, buf) == 0);
+}
+
+static void test_fnt_text(br_engine *e, br_font *f)
+{
+    BR_CHECK(f != NULL);
+    if (f == NULL) {
+        return;
+    }
+    BR_CHECK(br_font_is_bitmap(f));
+    BR_CHECK(!br_font_is_sdf(f));
+    BR_CHECK(br_bitmap_font_char_count(f) == 8);
+    BR_CHECK(br_bitmap_font_page_count(f) == 1);
+    BR_CHECK(SDL_strcmp(br_bitmap_font_page_file(f, 0), "test page.png") == 0);
+    BR_CHECK(near(br_font_native_size(f), 16.0f));
+    float lh, base;
+    br_bitmap_font_line_metrics(f, &lh, &base);
+    BR_CHECK(near(lh, 20.0f) && near(base, 16.0f));
+    br_bitmap_char c;
+    BR_CHECK(br_bitmap_font_get_char(f, 'b', &c));
+    BR_CHECK(near(c.x, 8.0f) && near(c.height, 14.0f) && near(c.yoffset, 2.0f) && near(c.xadvance, 10.0f));
+    BR_CHECK(br_bitmap_font_get_char(f, 0x20AC, &c) && near(c.xadvance, 12.0f));
+    BR_CHECK(!br_bitmap_font_get_char(f, 'z', &c));
+    BR_CHECK(near(br_font_kerning(f, 'a', 'b', 16.0f), -2.0f));
+    BR_CHECK(near(br_font_kerning(f, 'b', 'a', 16.0f), 0.0f));
+    BR_CHECK(near(br_font_kerning(f, 'a', 'b', 32.0f), -4.0f)); /* scales with size */
+    br_font_metrics m = br_font_get_metrics(f, 32.0f);
+    BR_CHECK(near(m.ascent, 32.0f) && near(m.line_height, 40.0f));
+    (void)e;
+}
+
+static void test_fnt_xml(br_engine *e)
+{
+    br_font *f = br_bitmap_font_parse(e, k_fnt_xml, SDL_strlen(k_fnt_xml), "", false);
+    BR_CHECK(f != NULL);
+    if (f == NULL) {
+        return;
+    }
+    BR_CHECK(br_bitmap_font_char_count(f) == 3);
+    BR_CHECK(br_bitmap_font_page_count(f) == 2);
+    BR_CHECK(SDL_strcmp(br_bitmap_font_page_file(f, 1), "b.png") == 0);
+    BR_CHECK(br_font_is_sdf(f));
+    br_bitmap_char c;
+    BR_CHECK(br_bitmap_font_get_char(f, 'b', &c) && c.page == 1 && near(c.xoffset, 1.0f));
+    BR_CHECK(br_bitmap_font_get_char(f, 'a', &c) && near(c.yoffset, 6.0f)); /* sorted after parsing */
+    BR_CHECK(near(br_font_kerning(f, 'a', 'b', 16.0f), -2.0f));
+    br_font_destroy(e, f);
+
+    /* not a font: fails cleanly */
+    const char *junk = "<?xml version=\"1.0\"?><settings volume=\"3\"/>";
+    BR_CHECK(br_bitmap_font_parse(e, junk, SDL_strlen(junk), "", false) == NULL);
+    BR_CHECK(br_bitmap_font_parse(e, "", 0, "", false) == NULL);
+}
+
+static void test_measure(br_engine *e, br_font *f)
+{
+    br_text_style st = br_text_style_default();
+    st.font = f;
+    st.font_size = 16.0f;
+    br_text_metrics m = br_text_measure(e, "acd", &st);
+    BR_CHECK(near(m.width, 30.0f));
+    BR_CHECK(near(m.height, 20.0f) && m.line_count == 1);
+    BR_CHECK(near(br_text_measure(e, "ab", &st).width, 18.0f));             /* kerning */
+    BR_CHECK(near(br_text_measure(e, "a\xC3\xA9\xE2\x82\xAC", &st).width, 32.0f)); /* UTF-8: 10 + 10 + 12 */
+    st.letter_spacing = 2.0f;
+    BR_CHECK(near(br_text_measure(e, "acd", &st).width, 34.0f));            /* not after the last char */
+    st.letter_spacing = 0.0f;
+    st.font_size = 32.0f;
+    BR_CHECK(near(br_text_measure(e, "acd", &st).width, 60.0f));            /* scaled from native 16 */
+    st.font_size = 16.0f;
+    m = br_text_measure(e, "ac\nd", &st);
+    BR_CHECK(m.line_count == 2 && near(m.width, 20.0f) && near(m.height, 40.0f) && near(m.line_height, 20.0f));
+    st.leading = 5.0f;
+    BR_CHECK(near(br_text_measure(e, "ac\nd", &st).height, 45.0f));
+    st.leading = 0.0f;
+    st.line_height = 30.0f;
+    BR_CHECK(near(br_text_measure(e, "ac\nd", &st).height, 60.0f));
+
+    /* the TTF path: measure equals the font's own advances and kerning */
+    br_font *ttf = br_font_default(e);
+    BR_CHECK(ttf != NULL && !br_font_is_bitmap(ttf));
+    br_text_style ts = br_text_style_default();
+    ts.font_size = 40.0f;
+    float expect = br_font_advance(ttf, 'A', 40.0f) + br_font_kerning(ttf, 'A', 'V', 40.0f) +
+                   br_font_advance(ttf, 'V', 40.0f);
+    BR_CHECK(near(br_text_measure(e, "AV", &ts).width, expect));
+    BR_CHECK(br_font_kerning(ttf, 'A', 'V', 40.0f) < 0.0f); /* Noto Sans kerns AV (GPOS) */
+    BR_CHECK(br_font_has_glyph(ttf, 0x0416) && br_font_has_glyph(ttf, 0x03A9)); /* Cyrillic, Greek */
+    br_font_metrics fm = br_font_get_metrics(ttf, 40.0f);
+    BR_CHECK(fm.ascent > 30.0f && fm.descent < -5.0f);
+}
+
+static void test_wrap(br_engine *e, br_font *f)
+{
+    br_text_style st = br_text_style_default();
+    st.font = f;
+    st.font_size = 0.0f; /* native 16 */
+    st.word_wrap = true;
+    st.wrap_width = 75.0f;
+    br_node n = br_text_create(e, "aaa bbb ccc", &st);
+    BR_CHECK(br_text_line_count(e, n) == 2);
+    br_text_line_info li;
+    BR_CHECK(br_text_get_line(e, n, 0, &li) && li.byte_start == 0 && li.byte_end == 7 && near(li.width, 70.0f));
+    BR_CHECK(br_text_get_line(e, n, 1, &li) && li.byte_start == 8 && li.byte_end == 11 && near(li.width, 30.0f));
+    BR_CHECK(near(li.y, 20.0f) && near(li.baseline, 36.0f));
+    BR_CHECK(!br_text_get_line(e, n, 2, &li));
+
+    /* alignment within the widest line */
+    st.align = BR_TEXT_ALIGN_RIGHT;
+    br_text_set_style(e, n, &st);
+    BR_CHECK(br_text_get_line(e, n, 1, &li) && near(li.x, 40.0f));
+    st.align = BR_TEXT_ALIGN_CENTER;
+    br_text_set_style(e, n, &st);
+    BR_CHECK(br_text_get_line(e, n, 1, &li) && near(li.x, 20.0f));
+    st.align = BR_TEXT_ALIGN_JUSTIFY;
+    br_text_set_style(e, n, &st);
+    br_text_set_text(e, n, "aa b ccc dd");     /* "aa b ccc" (80 > 75) wraps: "aa b" / "ccc dd" */
+    br_rect box;
+    BR_CHECK(br_text_line_count(e, n) == 2);
+    BR_CHECK(br_text_get_char_box(e, n, 3, &box) && near(box.x, 50.0f)); /* 'b' moved by the free 20 */
+
+    /* a word longer than the line: overflows, or breaks with break_words */
+    st.align = BR_TEXT_ALIGN_LEFT;
+    st.wrap_width = 35.0f;
+    br_text_set_style(e, n, &st);
+    br_text_set_text(e, n, "aaaaaaaa");
+    BR_CHECK(br_text_line_count(e, n) == 1);
+    st.break_words = true;
+    br_text_set_style(e, n, &st);
+    BR_CHECK(br_text_line_count(e, n) == 3);
+    BR_CHECK(br_text_get_line(e, n, 1, &li) && li.byte_start == 3 && li.byte_end == 6);
+
+    /* white space modes */
+    st.word_wrap = false;
+    st.white_space = BR_TEXT_WHITE_SPACE_NORMAL;
+    BR_CHECK(near(br_text_measure(e, "  a   c \n d ", &st).width, 50.0f)); /* "a c d" */
+    BR_CHECK(br_text_measure(e, "  a   c \n d ", &st).line_count == 1);
+    st.white_space = BR_TEXT_WHITE_SPACE_PRE_LINE;
+    br_text_metrics m = br_text_measure(e, "a   c \n  d", &st);
+    BR_CHECK(m.line_count == 2 && near(m.width, 30.0f));
+    st.white_space = BR_TEXT_WHITE_SPACE_PRE;
+    BR_CHECK(near(br_text_measure(e, "a   c", &st).width, 50.0f));
+
+    /* anchor and padding move the bounds */
+    br_text_set_text(e, n, "acd");
+    br_text_set_anchor(e, n, 0.5f, 1.0f);
+    st.padding = 4.0f;
+    br_text_set_style(e, n, &st);
+    br_rect b = br_node_get_local_bounds(e, n);
+    BR_CHECK(near(b.x, -19.0f) && near(b.y, -24.0f) && near(b.width, 38.0f) && near(b.height, 28.0f));
+    br_node_destroy(e, n);
+}
+
+static void test_rich(br_engine *e, br_font *f)
+{
+    br_text_style st = br_text_style_default();
+    st.font = f;
+    st.font_size = 16.0f;
+    st.fill = br_color_make(1.0f, 1.0f, 1.0f, 1.0f);
+    br_node n = br_rich_text_create(e, "<b>ab</b> <color=#ff0000>c</color><br><size=32>d</size> <x>e</x>&lt;&amp;", &st);
+    br_rich_tag_style hl;
+    SDL_zero(hl);
+    hl.set_color = true;
+    hl.color = br_color_make(0.0f, 1.0f, 0.0f, 1.0f);
+    hl.underline = true;
+    br_rich_text_set_tag_style(e, n, "hl", &hl);
+    BR_CHECK(SDL_strcmp(br_rich_text_plain(e, n), "ab c\nd <x>e</x><&") == 0); /* <x> is unknown: literal */
+    br_rich_char_style cs;
+    BR_CHECK(br_rich_text_char_style(e, n, 0, &cs) && cs.bold && near(cs.color.r, 1.0f) && near(cs.font_size, 16.0f));
+    BR_CHECK(br_rich_text_char_style(e, n, 2, &cs) && !cs.bold);                 /* the space */
+    BR_CHECK(br_rich_text_char_style(e, n, 3, &cs) && near(cs.color.g, 0.0f) && !cs.use_gradient);
+    BR_CHECK(br_rich_text_char_style(e, n, 4, &cs) && near(cs.font_size, 32.0f)); /* 'd' (newline is not a char) */
+    BR_CHECK(br_text_line_count(e, n) == 2);
+    br_text_line_info li;
+    BR_CHECK(br_text_get_line(e, n, 1, &li) && near(li.height, 40.0f));         /* tallest span sets the line */
+
+    br_text_set_text(e, n, "x<hl>yy</hl>z");
+    BR_CHECK(SDL_strcmp(br_rich_text_plain(e, n), "xyyz") == 0);
+    BR_CHECK(br_rich_text_char_style(e, n, 1, &cs) && cs.underline && near(cs.color.g, 1.0f));
+    BR_CHECK(br_rich_text_char_style(e, n, 3, &cs) && !cs.underline);
+    br_text_set_text(e, n, "<i><b>a</i>b</b>"); /* closing an outer tag also closes the inner one */
+    BR_CHECK(br_rich_text_char_style(e, n, 0, &cs) && cs.bold && cs.italic);
+    BR_CHECK(br_rich_text_char_style(e, n, 1, &cs) && !cs.bold && !cs.italic);
+    br_text_set_text(e, n, "<color=nonsense>a");
+    BR_CHECK(SDL_strcmp(br_rich_text_plain(e, n), "<color=nonsense>a") == 0);
+    br_node_destroy(e, n);
+}
+
+static void test_split(br_engine *e, br_font *f)
+{
+    br_text_style st = br_text_style_default();
+    st.font = f;
+    st.font_size = 0.0f;
+    br_node chars = br_split_text_create(e, "ab cd", &st, BR_SPLIT_CHARS);
+    BR_CHECK(br_node_child_count(e, chars) == 4);
+    br_node c = br_node_child_at(e, chars, 2); /* 'c' */
+    BR_CHECK(SDL_strcmp(br_text_get_text(e, c), "c") == 0);
+    br_vec2 p = br_node_position(e, c);
+    BR_CHECK(near(p.x, 18.0f + 10.0f + 5.0f) && near(p.y, 10.0f)); /* after kerned "ab" and a space */
+    br_node words = br_split_text_create(e, "ab cd", &st, BR_SPLIT_WORDS);
+    BR_CHECK(br_node_child_count(e, words) == 2);
+    BR_CHECK(SDL_strcmp(br_text_get_text(e, br_node_child_at(e, words, 1)), "cd") == 0);
+    br_node lines = br_split_text_create(e, "ab\ncd e", &st, BR_SPLIT_LINES);
+    BR_CHECK(br_node_child_count(e, lines) == 2);
+    BR_CHECK(SDL_strcmp(br_text_get_text(e, br_node_child_at(e, lines, 1)), "cd e") == 0);
+    br_node_destroy(e, chars);
+    br_node_destroy(e, words);
+    br_node_destroy(e, lines);
+}
+
+int main(void)
+{
+    test_utf8();
+    br_engine *e = br_engine_create("test_text", NULL);
+    BR_CHECK(e != NULL);
+    if (e == NULL) {
+        return br_test_finish();
+    }
+    br_font *f = br_bitmap_font_parse(e, k_fnt_text, SDL_strlen(k_fnt_text), "", false);
+    test_fnt_text(e, f);
+    test_fnt_xml(e);
+    if (f != NULL) {
+        test_measure(e, f);
+        test_wrap(e, f);
+        test_rich(e, f);
+        test_split(e, f);
+    }
+    br_engine_destroy(e); /* frees f and the default font */
+    return br_test_finish();
+}
