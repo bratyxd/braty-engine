@@ -332,9 +332,13 @@ void br_node3d_flush(br_engine *e)
     br_array_clear(&t->pending);
 }
 
-void br_node3d_table_free(br_engine *e)
+void br_three_d_shutdown_nodes(br_engine *e, void *user)
 {
+    (void)user;
     br_three_d_state *s = e->three_d;
+    if (s == NULL) {
+        return;
+    }
     br_node3d_table *t = &s->nodes;
     for (uint32_t i = 0; i < t->capacity; i++) {
         if (t->alive[i]) {
@@ -345,6 +349,13 @@ void br_node3d_table_free(br_engine *e)
         }
     }
     br_node3d_flush(e);
+}
+
+void br_node3d_table_free(br_engine *e)
+{
+    br_three_d_state *s = e->three_d;
+    br_node3d_table *t = &s->nodes;
+    br_three_d_shutdown_nodes(e, NULL); /* no-op if br_builtin's hook already ran */
     for (uint32_t i = 0; i < s->types.count; i++) {
         br_node3d_type_entry *type = br_array_at(&s->types, i);
         br_array_free(&type->data);

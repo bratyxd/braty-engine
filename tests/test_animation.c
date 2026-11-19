@@ -818,6 +818,18 @@ static void run_script(br_engine *e, float *out)
     br_anim_library_free(lib);
 }
 
+/* Regression: 3D nodes still alive at br_engine_destroy used to be freed after the animation
+ * module had shut down, and its destroy listener crashed (test_canvas3d segfaulted). */
+static void test_shutdown_with_live_3d_nodes(void)
+{
+    br_engine *e = br_engine_create("test_animation_shutdown", NULL);
+    br_node3d loose = br_node3d_create_group(e);
+    br_animator a = br_animator_add(e, br_anim_target_3d(loose));
+    BR_CHECK(br_animator_valid(e, a));
+    br_engine_destroy(e); /* must not crash */
+    BR_CHECK(true);
+}
+
 static void test_determinism(void)
 {
     float a[4];
@@ -854,5 +866,6 @@ int main(void)
         br_engine_destroy(e);
     }
     test_determinism();
+    test_shutdown_with_live_3d_nodes();
     return br_test_finish();
 }

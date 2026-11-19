@@ -224,6 +224,9 @@ typedef struct br_three_d_state {
 /* br_node3d.c */
 void br_node3d_table_init(br_engine *e);
 void br_node3d_table_free(br_engine *e);
+/* Destroys every live 3D node (on_destroy and destroy listeners run). Registered by br_builtin
+ * to run early at shutdown, while the modules that listen for 3D node deaths still exist. */
+void br_three_d_shutdown_nodes(br_engine *e, void *user);
 void br_node3d_flush(br_engine *e);
 bool br_node3d_index_valid(br_three_d_state *s, br_node3d n);
 br_node3d br_node3d_handle(br_three_d_state *s, uint32_t index);
