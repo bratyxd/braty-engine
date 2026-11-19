@@ -8,7 +8,7 @@ static bool br_pick_geometry(br_engine *e, br_geometry3d geometry, br_ray3d ray,
 {
     br_geometry3d_data *d = br_geometry3d_data_get(e, geometry);
     float t_box = 0.0f;
-    if (d == NULL || !br_ray3d_aabb(ray, d->bounds, &t_box) || t_box > hit->distance) {
+    if (d == NULL || !br_ray3d_box(ray, d->bounds, &t_box) || t_box > hit->distance) {
         return false;
     }
     bool found = false;
@@ -17,7 +17,7 @@ static bool br_pick_geometry(br_engine *e, br_geometry3d geometry, br_ray3d ray,
         br_vec3 b = d->vertices[d->indices[i + 1]].position;
         br_vec3 c = d->vertices[d->indices[i + 2]].position;
         float t = 0.0f;
-        if (br_ray3d_triangle(ray, a, b, c, &t, NULL, NULL) && t < hit->distance) {
+        if (br_ray_triangle(ray.origin, ray.direction, a, b, c, &t, NULL, NULL) && t < hit->distance) {
             hit->distance = t;
             hit->point = br_vec3_add(ray.origin, br_vec3_scale(ray.direction, t));
             hit->normal = br_vec3_normalize(br_vec3_cross(br_vec3_sub(b, a), br_vec3_sub(c, a)));
@@ -183,13 +183,13 @@ static bool br_batched_pick(br_engine *e, br_node3d n, const void *data, br_ray3
         return false;
     }
     float t = 0.0f;
-    if (!br_ray3d_aabb(ray, b->store->bounds, &t) || t > hit->distance) {
+    if (!br_ray3d_box(ray, b->store->bounds, &t) || t > hit->distance) {
         return false;
     }
     bool found = false;
     const br_instance3d *inst = b->store->instances.data;
     for (uint32_t i = 0; i < b->store->instances.count; i++) {
-        if (!br_ray3d_aabb(ray, br_aabb_transform(d->bounds, inst[i].model), &t) || t > hit->distance) {
+        if (!br_ray3d_box(ray, br_aabb_transform(d->bounds, inst[i].model), &t) || t > hit->distance) {
             continue;
         }
         bool ok = false;

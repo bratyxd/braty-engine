@@ -41,13 +41,8 @@ br_mat4 br_camera3d_projection(const br_camera3d *camera, float aspect);
 
 /* ---- pure geometry helpers */
 
-/* Six planes (xyz = inward normal, w = distance): left, right, bottom, top, near, far. */
-typedef struct br_frustum { br_vec4 planes[6]; } br_frustum;
-
-/* Frustum of a view-projection matrix (depth 0..1 clip space). */
-br_frustum br_frustum_from_matrix(br_mat4 view_projection);
-/* False only if the box is fully outside one plane (conservative). */
-bool br_frustum_test_aabb(const br_frustum *f, br_aabb box);
+/* Frustums, ray vs box and ray vs triangle are in br_math.h: br_frustum_planes +
+ * br_frustum_planes_aabb, br_ray3d_box, br_ray_triangle. */
 /* An empty box (min = +inf, max = -inf), ready for br_aabb_extend. */
 br_aabb br_aabb_empty(void);
 /* Grows a box to contain p. */
@@ -60,10 +55,6 @@ bool br_aabb_is_valid(br_aabb box);
 br_aabb br_aabb_transform(br_aabb box, br_mat4 m);
 /* World ray through normalised device coordinates (x, y in -1..1, y up). */
 br_ray3d br_ray3d_from_ndc(br_mat4 inverse_view_projection, float ndc_x, float ndc_y);
-/* Ray vs triangle (both sides). t = ray parameter; u, v barycentrics of b and c (may be NULL). */
-bool br_ray3d_triangle(br_ray3d ray, br_vec3 a, br_vec3 b, br_vec3 c, float *t, float *u, float *v);
-/* Ray vs box; t = entry parameter (0 if the origin is inside). */
-bool br_ray3d_aabb(br_ray3d ray, br_aabb box, float *t);
 
 /* ---- orbit camera (PixiJS 3D OrbitCameraControl) */
 

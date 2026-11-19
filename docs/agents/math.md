@@ -104,9 +104,8 @@ each octave uses `seed + octave`.
 - `br_aabb` and `br_ray3d` live here. Every 3D box / ray test has a loose-vector form
   (`br_ray_box(origin, dir, min, max, &t)`) and a typed one (`br_ray3d_box(ray, box, &t)`,
   `br_ray3d_plane/_sphere/_obb`, `br_aabb_aabb`, `br_sphere_aabb`, `br_frustum_planes_aabb`,
-  `br_closest_point_aabb`, `br_closest_point_ray3d`). `br_camera3d.h` still has its own
-  `br_frustum` + `br_frustum_test_aabb`, `br_ray3d_aabb` and `br_ray3d_triangle` (= `br_ray_triangle`);
-  the `br_math.h` versions are the general ones.
+  `br_closest_point_aabb`, `br_closest_point_ray3d`). The 3D module uses these too (picking:
+  `br_ray3d_box` + `br_ray_triangle`; culling: `br_frustum_planes` + `br_frustum_planes_aabb`).
 - `br_sat_*` need convex polygons. The MTV pushes the first shape out of the second.
 - `br_spring_step` is implicit Euler: stable at any dt, slightly over-damped at very large dt.
 - `br_smooth_dampf` keeps state in `*velocity`; start it at 0 and keep it per follower.

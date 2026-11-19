@@ -65,23 +65,23 @@ static void test_rays(void)
     float t = 0.0f;
     float u = 0.0f;
     float v = 0.0f;
-    BR_CHECK(br_ray3d_triangle(r, a, b, c, &t, &u, &v));
+    BR_CHECK(br_ray_triangle(r.origin, r.direction, a, b, c, &t, &u, &v));
     BR_CHECK(near_eq(t, 5.0f) && near_eq(u, 0.25f) && near_eq(v, 0.25f));
-    BR_CHECK(br_ray3d_triangle(r, a, c, b, &t, NULL, NULL)); /* back face hits too */
+    BR_CHECK(br_ray_triangle(r.origin, r.direction, a, c, b, &t, NULL, NULL)); /* back face hits too */
     br_ray3d miss = { { 0.8f, 0.8f, 5.0f }, { 0.0f, 0.0f, -1.0f } };
-    BR_CHECK(!br_ray3d_triangle(miss, a, b, c, &t, NULL, NULL));
+    BR_CHECK(!br_ray_triangle(miss.origin, miss.direction, a, b, c, &t, NULL, NULL));
     br_ray3d away = { { 0.25f, 0.25f, 5.0f }, { 0.0f, 0.0f, 1.0f } };
-    BR_CHECK(!br_ray3d_triangle(away, a, b, c, &t, NULL, NULL)); /* behind the origin */
+    BR_CHECK(!br_ray_triangle(away.origin, away.direction, a, b, c, &t, NULL, NULL)); /* behind the origin */
     br_ray3d parallel = { { 0.25f, 0.25f, 5.0f }, { 1.0f, 0.0f, 0.0f } };
-    BR_CHECK(!br_ray3d_triangle(parallel, a, b, c, &t, NULL, NULL));
+    BR_CHECK(!br_ray_triangle(parallel.origin, parallel.direction, a, b, c, &t, NULL, NULL));
 
     br_aabb box = { { -1.0f, -1.0f, -1.0f }, { 1.0f, 1.0f, 1.0f } };
     br_ray3d into = { { 0.0f, 0.0f, 10.0f }, { 0.0f, 0.0f, -1.0f } };
-    BR_CHECK(br_ray3d_aabb(into, box, &t) && near_eq(t, 9.0f));
+    BR_CHECK(br_ray3d_box(into, box, &t) && near_eq(t, 9.0f));
     br_ray3d inside = { { 0.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f } };
-    BR_CHECK(br_ray3d_aabb(inside, box, &t) && near_eq(t, 0.0f));
+    BR_CHECK(br_ray3d_box(inside, box, &t) && near_eq(t, 0.0f));
     br_ray3d past = { { 0.0f, 3.0f, 10.0f }, { 0.0f, 0.0f, -1.0f } };
-    BR_CHECK(!br_ray3d_aabb(past, box, &t));
+    BR_CHECK(!br_ray3d_box(past, box, &t));
 }
 
 static br_aabb box_at(float x, float y, float z, float h)
@@ -95,13 +95,14 @@ static void test_frustum(void)
     br_mat4 proj = br_mat4_perspective(90.0f * BR_DEG_TO_RAD, 1.0f, 1.0f, 100.0f);
     br_mat4 view = br_mat4_look_at(br_vec3_make(0.0f, 0.0f, 0.0f), br_vec3_make(0.0f, 0.0f, -1.0f),
                                    br_vec3_make(0.0f, 1.0f, 0.0f));
-    br_frustum f = br_frustum_from_matrix(br_mat4_mul(proj, view));
-    BR_CHECK(br_frustum_test_aabb(&f, box_at(0.0f, 0.0f, -10.0f, 1.0f)));    /* in front */
-    BR_CHECK(!br_frustum_test_aabb(&f, box_at(0.0f, 0.0f, 10.0f, 1.0f)));    /* behind */
-    BR_CHECK(!br_frustum_test_aabb(&f, box_at(-30.0f, 0.0f, -10.0f, 1.0f))); /* left of the 90 degree cone */
-    BR_CHECK(!br_frustum_test_aabb(&f, box_at(0.0f, 0.0f, -200.0f, 1.0f)));  /* beyond far */
-    BR_CHECK(br_frustum_test_aabb(&f, box_at(-10.5f, 0.0f, -10.0f, 1.0f)));  /* straddles the left plane */
-    BR_CHECK(br_frustum_test_aabb(&f, box_at(0.0f, 0.0f, -0.5f, 1.0f)));    /* straddles near */
+    br_plane f[6];
+    br_frustum_planes(br_mat4_mul(proj, view), f);
+    BR_CHECK(br_frustum_planes_aabb(f, box_at(0.0f, 0.0f, -10.0f, 1.0f)));    /* in front */
+    BR_CHECK(!br_frustum_planes_aabb(f, box_at(0.0f, 0.0f, 10.0f, 1.0f)));    /* behind */
+    BR_CHECK(!br_frustum_planes_aabb(f, box_at(-30.0f, 0.0f, -10.0f, 1.0f))); /* left of the 90 degree cone */
+    BR_CHECK(!br_frustum_planes_aabb(f, box_at(0.0f, 0.0f, -200.0f, 1.0f)));  /* beyond far */
+    BR_CHECK(br_frustum_planes_aabb(f, box_at(-10.5f, 0.0f, -10.0f, 1.0f)));  /* straddles the left plane */
+    BR_CHECK(br_frustum_planes_aabb(f, box_at(0.0f, 0.0f, -0.5f, 1.0f)));    /* straddles near */
 
     br_aabb e = br_aabb_empty();
     BR_CHECK(!br_aabb_is_valid(e));

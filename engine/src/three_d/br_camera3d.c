@@ -1,4 +1,4 @@
-/* br_camera3d: projection, frustum, AABB and ray maths (pure), shadow cascade splits, orbit camera. */
+/* br_camera3d: projection, AABB and NDC-ray maths (pure), shadow cascade splits, orbit camera. */
 #include "three_d/br_three_d_internal.h"
 
 #include "braty/br_input.h"
@@ -38,49 +38,6 @@ br_mat4 br_camera3d_projection(const br_camera3d *camera, float aspect)
         return br_mat4_ortho(-w, w, -h, h, camera->near_z, camera->far_z);
     }
     return br_mat4_perspective(camera->fov_y, aspect, camera->near_z, camera->far_z);
-}
-
-/* ---- frustum (Gribb-Hartmann plane extraction for depth 0..1) */
-
-static br_vec4 br_matrix_row(br_mat4 m, int r)
-{
-    return br_vec4_make(m.m[r], m.m[4 + r], m.m[8 + r], m.m[12 + r]);
-}
-
-static br_vec4 br_plane_normalize(br_vec4 p)
-{
-    float len = SDL_sqrtf(p.x * p.x + p.y * p.y + p.z * p.z);
-    return len > 0.0f ? br_vec4_scale(p, 1.0f / len) : p;
-}
-
-br_frustum br_frustum_from_matrix(br_mat4 vp)
-{
-    br_vec4 r0 = br_matrix_row(vp, 0);
-    br_vec4 r1 = br_matrix_row(vp, 1);
-    br_vec4 r2 = br_matrix_row(vp, 2);
-    br_vec4 r3 = br_matrix_row(vp, 3);
-    br_frustum f;
-    f.planes[0] = br_plane_normalize(br_vec4_add(r3, r0));               /* left: x >= -w */
-    f.planes[1] = br_plane_normalize(br_vec4_add(r3, br_vec4_scale(r0, -1.0f))); /* right */
-    f.planes[2] = br_plane_normalize(br_vec4_add(r3, r1));               /* bottom */
-    f.planes[3] = br_plane_normalize(br_vec4_add(r3, br_vec4_scale(r1, -1.0f))); /* top */
-    f.planes[4] = br_plane_normalize(r2);                                /* near: z >= 0 */
-    f.planes[5] = br_plane_normalize(br_vec4_add(r3, br_vec4_scale(r2, -1.0f))); /* far: z <= w */
-    return f;
-}
-
-bool br_frustum_test_aabb(const br_frustum *f, br_aabb box)
-{
-    for (int i = 0; i < 6; i++) {
-        br_vec4 p = f->planes[i];
-        /* the box corner furthest along the plane normal */
-        br_vec3 v = br_vec3_make(p.x >= 0.0f ? box.max.x : box.min.x, p.y >= 0.0f ? box.max.y : box.min.y,
-                                 p.z >= 0.0f ? box.max.z : box.min.z);
-        if (p.x * v.x + p.y * v.y + p.z * v.z + p.w < 0.0f) {
-            return false;
-        }
-    }
-    return true;
 }
 
 /* ---- AABB */
@@ -137,77 +94,6 @@ br_ray3d br_ray3d_from_ndc(br_mat4 inverse_view_projection, float ndc_x, float n
     r.origin = near_point;
     r.direction = br_vec3_normalize(br_vec3_sub(far_point, near_point));
     return r;
-}
-
-bool br_ray3d_triangle(br_ray3d ray, br_vec3 a, br_vec3 b, br_vec3 c, float *t, float *u, float *v)
-{
-    /* Moller-Trumbore, both faces */
-    br_vec3 e1 = br_vec3_sub(b, a);
-    br_vec3 e2 = br_vec3_sub(c, a);
-    br_vec3 p = br_vec3_cross(ray.direction, e2);
-    float det = br_vec3_dot(e1, p);
-    if (SDL_fabsf(det) < 1e-12f) {
-        return false;
-    }
-    float inv = 1.0f / det;
-    br_vec3 s = br_vec3_sub(ray.origin, a);
-    float bu = br_vec3_dot(s, p) * inv;
-    if (bu < 0.0f || bu > 1.0f) {
-        return false;
-    }
-    br_vec3 q = br_vec3_cross(s, e1);
-    float bv = br_vec3_dot(ray.direction, q) * inv;
-    if (bv < 0.0f || bu + bv > 1.0f) {
-        return false;
-    }
-    float tt = br_vec3_dot(e2, q) * inv;
-    if (tt < 0.0f) {
-        return false;
-    }
-    if (t != NULL) {
-        *t = tt;
-    }
-    if (u != NULL) {
-        *u = bu;
-    }
-    if (v != NULL) {
-        *v = bv;
-    }
-    return true;
-}
-
-bool br_ray3d_aabb(br_ray3d ray, br_aabb box, float *t)
-{
-    float o[3] = { ray.origin.x, ray.origin.y, ray.origin.z };
-    float d[3] = { ray.direction.x, ray.direction.y, ray.direction.z };
-    float lo[3] = { box.min.x, box.min.y, box.min.z };
-    float hi[3] = { box.max.x, box.max.y, box.max.z };
-    float t_near = 0.0f;
-    float t_far = FLT_MAX;
-    for (int i = 0; i < 3; i++) {
-        if (SDL_fabsf(d[i]) < 1e-12f) {
-            if (o[i] < lo[i] || o[i] > hi[i]) {
-                return false;
-            }
-            continue;
-        }
-        float t1 = (lo[i] - o[i]) / d[i];
-        float t2 = (hi[i] - o[i]) / d[i];
-        if (t1 > t2) {
-            float tmp = t1;
-            t1 = t2;
-            t2 = tmp;
-        }
-        t_near = SDL_max(t_near, t1);
-        t_far = SDL_min(t_far, t2);
-        if (t_near > t_far) {
-            return false;
-        }
-    }
-    if (t != NULL) {
-        *t = t_near;
-    }
-    return true;
 }
 
 /* ---- shadows */

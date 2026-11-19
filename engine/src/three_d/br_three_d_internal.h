@@ -199,7 +199,7 @@ typedef struct br_view3d_node {
 struct br_render3d_ctx {
     br_engine       *e;
     br_view3d_state *view;
-    br_frustum       frustum;
+    br_plane         frustum[6];  /* br_frustum_planes of the view-projection */
 };
 
 typedef struct br_three_d_state {

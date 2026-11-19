@@ -60,7 +60,7 @@ br_vec3 br_render3d_camera_position(br_render3d_ctx *ctx)
 
 bool br_render3d_visible(br_render3d_ctx *ctx, br_aabb world_bounds)
 {
-    return br_frustum_test_aabb(&ctx->frustum, world_bounds);
+    return br_frustum_planes_aabb(ctx->frustum, world_bounds);
 }
 
 br_node br_render3d_view(br_render3d_ctx *ctx)
@@ -84,7 +84,7 @@ void br_render3d_submit_with_parent(br_render3d_ctx *ctx, const br_draw3d *draw,
         return;
     }
     uint32_t passes = mat->alpha_mode == BR_ALPHA_BLEND ? BR_PASS3D_TRANSPARENT : BR_PASS3D_OPAQUE;
-    if (!br_frustum_test_aabb(&ctx->frustum, draw->world_bounds)) {
+    if (!br_frustum_planes_aabb(ctx->frustum, draw->world_bounds)) {
         passes = 0;
     }
     if (draw->cast_shadows) {
@@ -380,7 +380,7 @@ void br_render3d_collect(br_engine *e, br_view3d_state *v)
     br_render3d_ctx ctx;
     ctx.e = e;
     ctx.view = v;
-    ctx.frustum = br_frustum_from_matrix(v->view_projection);
+    br_frustum_planes(v->view_projection, ctx.frustum);
     br_render3d_walk(e, &ctx);
 
     const br_item3d *items = v->items.data;
