@@ -43,6 +43,10 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
    machine (title / play / game over) loads scenes itself; the sample removed `start_scene`
    and lists its scenes under `game.scenes` (read with `br_game_config_json`). **Fix:** Phase 2
    Task 16 (`br_scene_load` by name); until then document the pattern (GETTING_STARTED does).
+   **Resolved (Task 16):** top-level `"scenes": { "title": "scenes/title.scene.json" }` in
+   game.json; `br_scene_load(e, "title", BR_SCENE_SINGLE)` / `br_scene_switch(e, "play", ...)`
+   load by name; `start_scene` may be a name and loads as a `br_scene`. Test: `tests/test_scene.c`,
+   `test_game_config_keys`.
 4. **gap - assets cannot be pointed at the source tree.** game.json and `asset_root` resolve
    against the executable directory (`br_game_config_load`, `br_engine_create`). The sample
    copies `data/` next to the executable after each build (its `CMakeLists.txt`), which makes
@@ -64,6 +68,7 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
    flush). Right after switching from the play scene the game logged 57 nodes, a few frames
    later 14. **Fix:** decrement a separate counter in `br_node_destroy`, or document "including
    nodes destroyed this frame".
+   **Resolved (Task 16):** the count excludes nodes waiting for the flush. Test: `tests/test_node.c`.
 6. **gap - scene loads leak asset references** (`br_data.c`, `br_data_texture` and the `assets`
    preload; existing `ponytail:`). Measured: `sprites/atlas.json` has 2 references after the
    first scene and 9 after three rounds (+2 or +3 per scene load; never released; the asset
@@ -71,10 +76,16 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
    a scene's atlas. **Fix:** Phase 2 Task 16 asset groups; interim: record the paths a load
    referenced (`br_scene_file_collect_assets` already finds them) on the root and drop them in
    a `br_scene_on_node_destroy` listener.
+   **Resolved (Task 16):** the outermost load of a scene file / prefab captures every reference
+   it takes; a `br_scene`'s asset group or the subtree root owns them and releases them after the
+   node flush. Measured: the soak's atlas count stays at 3 at every round start (bundle + old and
+   new scene in the switch frame) and 2 at shutdown. Tests: `tests/test_scene.c`
+   (`test_scene_file_roots`, `test_load_unload_baseline`).
 7. **friction - instantiating a prefab at a position** (`br_prefab.h`). Overrides are a `cJSON`;
    a spawner wants "this prefab, here, with this velocity". The sample instantiates, then sets
    the position, then fetches the component (`systems.c`, `sc_spawn_debris`). **Fix:**
    `br_prefab_instantiate_at(e, path, parent, br_vec2 position)`; the rest stays code.
+   **Resolved (Task 16):** `br_prefab_instantiate_at`. Test: `tests/test_scene.c`.
 8. **friction - component pointers die on any add** (`br_component_get/at`). In a system that
    holds a `sc_pilot *` and then calls something that may instantiate a prefab (scene switch,
    spawn), the pointer silently dangles. The sample was audited by hand (`sc_rules_system`
@@ -82,10 +93,12 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
    "array version" bumped on growth and let `br_component_at` / `_get` callers assert it with a
    cheap `br_component_version(e, id)`; or document a "re-fetch after any create" rule in
    scene.md.
+   **Resolved (Task 16, documented):** the re-fetch rule is in scene.md and data.md.
 9. **friction - texture references are long.** `"sprites/atlas.json#ship.png"` appears ~25
    times in the sample's data. Manifest aliases *do* work (`"atlas#crate.png"` resolved with
    no extra reference, verified), but no doc says so. **Fix:** say it in DATA_FORMATS.md
    section 4 and data.md.
+   **Resolved (Task 16):** both say it.
 
 ## 3. Input and scripted play
 
@@ -118,6 +131,8 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
     call has progress 1 "failures included", so the game learns about a missing music file only
     when `br_sound_load` logs. **Fix:** add `uint32_t failed` to the callback (or
     `br_assets_bundle_failed(e, name)`).
+    **Resolved (Task 16):** `br_assets_bundle_failed(e, name)`; asset groups report `failed` in
+    their done callback. Test: `tests/test_asset_group.c`.
 
 ## 5. Rendering features
 
