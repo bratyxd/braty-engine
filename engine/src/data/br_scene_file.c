@@ -484,6 +484,7 @@ br_node br_scene_file_load(br_engine *e, const char *path, br_node parent)
     br_free(bytes);
     if (br_node_valid(e, n)) {
         br_data_watch_add(e, path, n);
+        br_log_info("scene file: loaded '%s'", path);
     }
     return n;
 }
