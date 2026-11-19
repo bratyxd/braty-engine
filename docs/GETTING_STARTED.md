@@ -101,9 +101,10 @@ them (and open the PNG) to check every step. `--gpu-driver vulkan` or `direct3d1
 
 ## 4. game.json
 
-Move the settings into data. `br_game_config_load` reads game.json in `br_main` (there is no
-engine yet), `br_game_config_apply` applies the rest in `init`. The `desc` points into the
-config, so the config must outlive `br_main`: it is a file-scope static, the only one a game needs.
+Move the settings into data. `br_game_config_main` reads game.json in `br_main` (there is no
+engine yet) and hands it to the engine, which applies it (window, vsync, clear colour, input,
+audio, manifest, debug overlay) before `init` and loads its `start_scene` right after `init`.
+`br_main` is one line.
 
 <!-- file: data/game.json -->
 ```json
@@ -119,21 +120,16 @@ config, so the config must outlive `br_main`: it is a file-scope static, the onl
 ```c
 #include "braty/braty_main.h"
 
-static br_game_config config; /* br_main's desc points into it: keep it alive */
-
 static bool game_init(br_engine *e)
 {
-    br_game_config_apply(e, &config); /* vsync, clear colour, input, audio, start scene, ... */
+    (void)e; /* game.json is already applied */
     return true;
 }
 
 br_app_desc br_main(int argc, char **argv)
 {
-    br_game_config_load(NULL, "game.json", &config); /* next to the executable */
-    br_game_config_args(&config, argc, argv);        /* --debug, --scene <path> */
-    br_app_desc desc = br_game_config_app_desc(&config);
-    desc.init = game_init;
-    return desc;
+    /* game.json next to the executable; --debug and --scene <path> from the command line */
+    return br_game_config_main("game.json", argc, argv, game_init);
 }
 ```
 
@@ -144,7 +140,7 @@ settings go under a `"game"` key and are read with `br_game_config_json(e)`.
 
 A scene file is a tree of nodes. Every node has the Container fields (`position`, `scale`,
 `rotation`, `alpha`, `tint`, ...) plus the fields of its `type`. Add `"start_scene"` to
-game.json and the scene is loaded under the stage by `br_game_config_apply`.
+game.json and the engine loads the scene under the stage right after `init`.
 
 <!-- file: data/assets/scenes/main.scene.json -->
 ```json
@@ -178,8 +174,8 @@ game runs (debug build) you can edit the scene file in the build directory and i
 ## 6. A component and a system
 
 Behaviour is a **system** over a **component**. A component is a struct plus a field list that
-lets scene files fill it. Register components before loading files that use them, so init
-registers first and applies game.json (which loads the scene) last. Per-game state lives in one
+lets scene files fill it. Register components in `init`: the start scene that uses them is
+loaded after `init` returns. Per-game state lives in one
 struct handed to the systems as `user` and freed on shutdown.
 
 <!-- file: data/assets/scenes/main.scene.json -->
@@ -209,8 +205,6 @@ typedef struct mover {
 typedef struct game {
     uint32_t mover_id;
 } game;
-
-static br_game_config config;
 
 static void mover_system(br_engine *e, float dt, void *user)
 {
@@ -244,16 +238,12 @@ static bool game_init(br_engine *e)
     g->mover_id = br_component_register(e, &desc);
     br_system_add(e, "game.mover", BR_PHASE_UPDATE, 0, mover_system, g);
 
-    return br_node_valid(e, br_game_config_apply(e, &config)); /* loads the start scene */
+    return true; /* the start scene is loaded after init: its components exist by then */
 }
 
 br_app_desc br_main(int argc, char **argv)
 {
-    br_game_config_load(NULL, "game.json", &config);
-    br_game_config_args(&config, argc, argv);
-    br_app_desc desc = br_game_config_app_desc(&config);
-    desc.init = game_init;
-    return desc;
+    return br_game_config_main("game.json", argc, argv, game_init);
 }
 ```
 
@@ -320,8 +310,6 @@ typedef struct game {
     uint32_t pilot_id;
 } game;
 
-static br_game_config config;
-
 static void pilot_system(br_engine *e, float dt, void *user)
 {
     (void)dt;
@@ -375,21 +363,17 @@ static bool game_init(br_engine *e)
     br_system_add(e, "game.pilot", BR_PHASE_UPDATE, 0, pilot_system, g);
     br_system_add(e, "game.mover", BR_PHASE_UPDATE, 10, mover_system, g); /* after pilot */
 
-    return br_node_valid(e, br_game_config_apply(e, &config));
+    return true;
 }
 
 br_app_desc br_main(int argc, char **argv)
 {
-    br_game_config_load(NULL, "game.json", &config);
-    br_game_config_args(&config, argc, argv);
-    br_app_desc desc = br_game_config_app_desc(&config);
-    desc.init = game_init;
-    return desc;
+    return br_game_config_main("game.json", argc, argv, game_init);
 }
 ```
 
 Arrow keys, WASD, the d-pad and the left stick all steer. Scripts and tests can drive the same
-path with `br_input_inject_key(e, SDL_SCANCODE_RIGHT, true)` (see the sample's `--autoplay`).
+path with `br_input_inject_key(e, SDL_SCANCODE_RIGHT, true)` (the play-test module does it for you: docs/PLAYTESTING.md).
 
 ## 8. Assets, a spritesheet, a prefab and a bundle
 
@@ -482,8 +466,6 @@ typedef struct game {
     int32_t   score;
     uint32_t  rng;
 } game;
-
-static br_game_config config;
 
 static float random01(game *g)
 {
@@ -599,18 +581,13 @@ static bool game_init(br_engine *e)
     br_system_add(e, "game.mover", BR_PHASE_UPDATE, 10, mover_system, g);
     br_system_add(e, "game.coins", BR_PHASE_UPDATE, 20, coin_system, g);
 
-    br_node scene = br_game_config_apply(e, &config); /* registers the manifest too */
-    br_assets_load_bundle(e, "game", on_bundle, g);    /* atlas + sound in the background */
-    return br_node_valid(e, scene);
+    br_assets_load_bundle(e, "game", on_bundle, g); /* game.json's manifest is registered already */
+    return true;
 }
 
 br_app_desc br_main(int argc, char **argv)
 {
-    br_game_config_load(NULL, "game.json", &config);
-    br_game_config_args(&config, argc, argv);
-    br_app_desc desc = br_game_config_app_desc(&config);
-    desc.init = game_init;
-    return desc;
+    return br_game_config_main("game.json", argc, argv, game_init);
 }
 ```
 
@@ -630,7 +607,7 @@ my_game/build/my_game --debug --frames 120 --screenshot debug.png
 ## Where next
 
 - `sample_projects/star_courier/`: the same pattern at full size - a state machine switching
-  scene files, ten components, particles, a filter flash, a tuning file, `--autoplay`.
+  scene files, ten components, particles, a filter flash, a tuning file, play-test scripts (`playtest/round.json`, docs/PLAYTESTING.md).
 - `docs/DATA_FORMATS.md`: every key of every file. `docs/agents/<module>.md`: one page per
   module with the 5-10 functions you need. Headers in `engine/include/braty/` are the reference.
 - `docs/API_REVIEW.md`: known rough edges, so you do not trip over them twice.
