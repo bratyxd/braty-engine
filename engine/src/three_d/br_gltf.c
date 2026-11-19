@@ -958,7 +958,14 @@ br_model *br_model_load(br_engine *e, const char *path)
     br_asset_options options;
     SDL_zero(options);
     options.type = "model";
-    return br_assets_load_with(e, path, &options);
+    void *asset = br_assets_load_with(e, path, &options);
+    const char *type = br_assets_type(e, path);
+    if (asset != NULL && (type == NULL || SDL_strcmp(type, "model") != 0)) {
+        br_log_error("model '%s': already loaded as a %s asset", path, type != NULL ? type : "different");
+        br_assets_unload(e, path);
+        return NULL;
+    }
+    return asset;
 }
 
 br_model *br_model_parse(br_engine *e, const char *path, const void *bytes, size_t size)

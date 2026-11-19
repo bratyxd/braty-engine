@@ -80,9 +80,9 @@ static void on_fox_loaded(br_engine *e, const char *path, void *asset, void *use
     br_node3d_set_position(e, s->fox, br_vec3_make(g_row_x[6], 0.0f, 2.6f));
     br_node3d_set_euler(e, s->fox, 0.0f, 0.9f, 0.0f);
     br_animator3d_play(e, s->fox, "Survey");
-    br_node3d_set_visible(e, s->fox, g_focus < 0 || g_focus == 6); /* close-ups of the row: out of the way */
     /* later, every 3 s: br_animator3d_cross_fade(e, s->fox, "Walk", 2.0f); */
     /* --- end snippet --- */
+    br_node3d_set_visible(e, s->fox, g_focus < 0 || g_focus == 6); /* close-ups of the row: out of the way */
     s->fox_clip = 0;
     s->next_fade = 1.0f;
 
