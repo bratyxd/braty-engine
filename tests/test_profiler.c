@@ -169,6 +169,9 @@ static void test_verdict_rule(void)
     BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_GPU);
     in.gpu_ms = 0.0f; /* no fence numbers: the CPU waiting on the GPU is enough */
     BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_GPU);
+    in = input(0.36f, 0.01f, 0.19f); /* thousands of FPS: a fence estimate within its resolution */
+    in.gpu_ms = 0.3f;
+    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_CPU_RENDER);
 
     in = input(16.7f, 2.0f, 1.0f); /* vsync at 60 Hz with time to spare */
     in.acquire_ms = 13.0f;
@@ -410,6 +413,24 @@ static void test_overhead(void)
            "a headless frame without them %.1f us\n",
            cost, cost / 16666.0 * 100.0, cost * 1000.0 / 200.0, base);
     BR_CHECK(cost < 166.0); /* < 1% of a 60 Hz frame */
+    /* the fence thread polls every 0.1 ms; how long that sleep really is sets the GPU estimate's resolution */
+    uint64_t slept[51];
+    for (int i = 0; i < 51; i++) {
+        uint64_t start = SDL_GetTicksNS();
+        SDL_DelayNS(100000);
+        slept[i] = SDL_GetTicksNS() - start;
+    }
+    for (int i = 0; i < 51; i++) {
+        for (int j = i + 1; j < 51; j++) {
+            if (slept[j] < slept[i]) {
+                uint64_t t = slept[i];
+                slept[i] = slept[j];
+                slept[j] = t;
+            }
+        }
+    }
+    printf("fence poll period (SDL_DelayNS(100 us)): median %.0f us, max %.0f us\n", (double)slept[25] / 1000.0,
+           (double)slept[50] / 1000.0);
 }
 
 /* ---- the overlay takes clicks on its windows */

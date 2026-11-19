@@ -5,6 +5,9 @@
 
 /* Frames the raw verdict must hold before the shown one changes (no flicker). */
 #define BR_PROFILER_VERDICT_HOLD 15
+/* The fence estimate's resolution: the poll thread sleeps 0.1 ms, which is ~0.5 ms on Windows,
+ * and a late "done" also delays the next frame's start; below this the CPU side is preferred. */
+#define BR_PROFILER_GPU_RESOLUTION_MS 1.0f
 /* Frames a budget must stay under before it can warn again. */
 #define BR_PROFILER_BUDGET_REARM 60
 
@@ -581,8 +584,9 @@ br_profiler_verdict br_profiler_verdict_rule(const br_profiler_verdict_input *in
         return BR_PROFILER_VERDICT_VSYNC;
     }
     /* 3. GPU: the fence estimate (only without vsync, where it is not inflated by display waits)
-     * exceeds the CPU's work, or the CPU spends more time waiting for the GPU than working */
-    if (in->refresh_ms <= 0.0f && in->gpu_ms > 0.0f && in->gpu_ms > cpu) {
+     * exceeds the CPU's work by more than its resolution, or the CPU spends more time waiting
+     * for the GPU than working */
+    if (in->refresh_ms <= 0.0f && in->gpu_ms > cpu + BR_PROFILER_GPU_RESOLUTION_MS) {
         return BR_PROFILER_VERDICT_GPU;
     }
     if (waits > cpu) {
