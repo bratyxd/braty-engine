@@ -1,0 +1,15 @@
+{
+  "parameters": { "speed": 0.0 },
+  "entry": "idle",
+  "states": [
+    { "name": "idle", "clip": "Survey" },
+    { "name": "walk", "clip": "Walk" },
+    { "name": "run", "clip": "Run", "speed": 1.2 }
+  ],
+  "transitions": [
+    { "from": "idle", "to": "walk", "when": [["speed", ">", 0.2]], "duration": 0.4 },
+    { "from": "walk", "to": "run", "when": [["speed", ">", 0.7]], "duration": 0.3 },
+    { "from": "run", "to": "walk", "when": [["speed", "<", 0.6]], "duration": 0.3 },
+    { "from": "walk", "to": "idle", "when": [["speed", "<", 0.1]], "duration": 0.5 }
+  ]
+}

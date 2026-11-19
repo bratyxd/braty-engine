@@ -1,0 +1,26 @@
+{
+  "clips": [
+    {
+      "name": "pulse",
+      "loop": "loop",
+      "tracks": [
+        { "target": ":material.base_color", "ease": "in_out_sine",
+          "keys": [[0, "#3a6cff"], [1, "#ff3a6a"], [2, "#3a6cff"]] },
+        { "target": ":material.emissive", "ease": "in_out_sine",
+          "keys": [[0, "#000000"], [1, "#9a1838"], [2, "#000000"]] },
+        { "target": ":scale", "interpolation": "bezier",
+          "keys": [ { "time": 0, "value": [1, 1, 1], "out": [1, 1, 1] },
+                    { "time": 1, "value": [1.25, 1.25, 1.25], "in": [1.25, 1.25, 1.25], "out": [1.25, 1.25, 1.25] },
+                    { "time": 2, "value": [1, 1, 1], "in": [1, 1, 1] } ] }
+      ]
+    },
+    {
+      "name": "breathe",
+      "loop": "loop",
+      "tracks": [
+        { "target": "#0:morph_weights", "ease": "in_out_quad",
+          "keys": [[0, [0, 0]], [1, [1, 0]], [2, [0, 1]], [3, [0, 0]]] }
+      ]
+    }
+  ]
+}
