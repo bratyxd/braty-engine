@@ -67,6 +67,8 @@ bool br_gpu_buffer_update(br_gpu *g, SDL_GPUBuffer *buffer, uint32_t offset, con
     SDL_GPUBufferRegion dst = { buffer, offset, size };
     SDL_UploadToGPUBuffer(copy, &src, &dst, false);
     SDL_EndGPUCopyPass(copy);
+    g->stats.uploads += 1;
+    g->stats.upload_bytes += size;
     bool ok = SDL_SubmitGPUCommandBuffer(cmd);
     SDL_ReleaseGPUTransferBuffer(g->device, transfer); /* SDL defers the release until the GPU is done */
     return ok;
@@ -151,6 +153,8 @@ static bool br_transient_upload_stream(br_gpu *g, br_transient_stream *s, SDL_GP
     SDL_GPUTransferBufferLocation src = { s->transfer, 0 };
     SDL_GPUBufferRegion dst = { s->buffer, 0, s->cpu.count };
     SDL_UploadToGPUBuffer(copy, &src, &dst, true);
+    g->stats.uploads += 1;
+    g->stats.upload_bytes += s->cpu.count;
     return true;
 }
 
@@ -312,6 +316,8 @@ bool br_gpu_texture_upload(br_gpu *g, br_gpu_texture *t, uint32_t x, uint32_t y,
     dst.d = 1;
     SDL_UploadToGPUTexture(copy, &src, &dst, false);
     SDL_EndGPUCopyPass(copy);
+    g->stats.uploads += 1;
+    g->stats.upload_bytes += size;
     if (t->mip_levels > 1) {
         SDL_GenerateMipmapsForGPUTexture(cmd, t->handle);
     }
@@ -537,7 +543,7 @@ SDL_GPUTextureFormat br_gpu_render_target_depth_format(const br_render_target *r
 SDL_GPURenderPass *br_gpu_render_target_begin(br_gpu *g, SDL_GPUCommandBuffer *cmd, br_render_target *rt,
                                               bool clear, br_color clear_color)
 {
-    (void)g;
+    g->stats.target_switches += 1;
     if (rt == NULL || rt->color == NULL) {
         br_log_error("render pass on a missing render target");
         return NULL;

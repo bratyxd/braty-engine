@@ -2,6 +2,7 @@
 #include "app/br_engine_internal.h"
 #include "data/br_data_internal.h"
 #include "playtest/br_playtest_internal.h"
+#include "braty/br_profiler.h"
 
 #include "stb/stb_image_write.h"
 
@@ -236,7 +237,10 @@ SDL_AppResult br_app_iterate(void *appstate)
     if (e->playtest_stdin) {
         return br_playtest_stdin_iterate(e); /* frames advance only on "step" commands */
     }
+    br_profiler_frame_begin(e); /* the frame starts before the FPS-cap wait, so the wait shows */
+    br_profile_begin(e, "pace");
     br_app_pace_frame(e);
+    br_profile_end(e);
     uint64_t now = SDL_GetTicksNS();
     float raw = 1.0f / 60.0f;
     if (e->ticker.last_ns != 0 && now > e->ticker.last_ns) {

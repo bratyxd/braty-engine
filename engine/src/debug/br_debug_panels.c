@@ -9,7 +9,7 @@
 
 static const int br_debug_full_row[1] = { -1 };
 
-static void br_debug_labelf(mu_Context *ui, const char *fmt, ...)
+void br_debug_labelf(mu_Context *ui, const char *fmt, ...)
 {
     char text[256];
     va_list args;

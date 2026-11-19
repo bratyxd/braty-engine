@@ -1,6 +1,7 @@
 /* br_batch: the draw list. Pushes (collect) append commands and vertices; replay (RENDER)
  * turns them into SDL_GPU passes and draws. */
 #include "render/br_render_internal.h"
+#include "braty/br_profiler.h"
 
 #include "batch.frag.h"
 #include "batch.vert.h"
@@ -121,6 +122,9 @@ static br_draw_state br_batch_state_of(const br_render_ctx *rc)
 
 static br_draw_cmd *br_batch_new_cmd(br_render_ctx *rc, br_draw_kind kind)
 {
+    if (rc->open_batch >= 0 && (kind == BR_DRAW_CUSTOM || kind == BR_DRAW_CALLBACK)) {
+        br_profiler_count(rc->e, BR_PROFILER_BREAK_SHADER, 1);
+    }
     br_draw_cmd *cmd = br_array_push(&rc->e->render->cmds, NULL);
     if (cmd != NULL) {
         cmd->kind = kind;
@@ -155,6 +159,7 @@ static br_draw_cmd *br_batch_for(br_render_ctx *rc, br_texture source, uint32_t 
     if (b != NULL && (b->serial != rc->serial || b->state.blend != rc->blend ||
                       b->vertex_count + vertex_count > BR_RENDER_MAX_BATCH_VERTICES ||
                       b->vertex_offset + b->vertex_count * (uint32_t)sizeof(br_batch_vertex) != vertex_offset)) {
+        br_profiler_count(rc->e, b->state.blend != rc->blend ? BR_PROFILER_BREAK_BLEND : BR_PROFILER_BREAK_OTHER, 1);
         b = NULL;
     }
     if (b != NULL) {
@@ -170,6 +175,7 @@ static br_draw_cmd *br_batch_for(br_render_ctx *rc, br_texture source, uint32_t 
             b->texture_count += 1;
             return b;
         }
+        br_profiler_count(rc->e, BR_PROFILER_BREAK_TEXTURE, 1);
     }
     b = br_batch_new_cmd(rc, BR_DRAW_BATCH);
     if (b == NULL) {
@@ -373,6 +379,7 @@ void br_render_push_custom(br_render_ctx *rc, const br_custom_draw *draw)
     }
     cmd->custom = r->customs.count - 1;
     r->building.draw_calls += 1;
+    br_profiler_count(e, BR_PROFILER_TRIANGLES, (int64_t)(cc.indexed ? cc.index_count : cc.vertex_count) / 3 * cc.instance_count);
     r->building.vertices += cc.vertex_count * cc.instance_count;
 }
 
@@ -409,6 +416,7 @@ void br_batch_finish(br_engine *e)
                                 &r->index_base);
     }
     r->stats = r->building;
+    br_profiler_count(e, BR_PROFILER_TRIANGLES, r->indices.count / 3);
 }
 
 /* ---- replay */
@@ -455,6 +463,7 @@ static bool br_replay_prepare(br_replay *rp, br_pipeline_desc *desc, const br_dr
     if (pipeline != rp->bound) {
         SDL_BindGPUGraphicsPipeline(rp->pass, pipeline);
         rp->bound = pipeline;
+        br_profiler_count(rp->e, BR_PROFILER_PIPELINE_SWITCHES, 1);
     }
     SDL_Rect scissor = { 0, 0, (int)rp->rt->width, (int)rp->rt->height };
     if (state->scissor_on) {

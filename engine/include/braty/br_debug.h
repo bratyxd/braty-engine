@@ -7,6 +7,8 @@
  *   Inspector live position / scale / rotation / alpha / visible of the selected node (editable)
  *   Systems   every system with its last run time; checkboxes enable/disable them
  *   Log       the last lines written through br_log_* (and SDL_Log)
+ * F2 toggles the profiler panel (br_profiler.h): frame graph, scope tree, counters, memory.
+ * Clicks, wheel and typing that land on an overlay window are kept from the game.
  *
  * Input comes from the input module (mouse, wheel, keys, text); text uses a bitmap font made
  * from the text module's default font. Headless engines keep the state and log capture but
@@ -17,6 +19,7 @@
 
 #include "braty/br_render.h"
 
+#include <SDL3/SDL_events.h>
 #include <SDL3/SDL_scancode.h>
 
 /* Lines kept by the log console. */
@@ -35,6 +38,10 @@ void br_debug_set_toggle_key(br_engine *e, SDL_Scancode key);
 void br_debug_select(br_engine *e, br_node n);
 /* The selected node (zero handle if none or destroyed). */
 br_node br_debug_selected(br_engine *e);
+/* True if the overlay takes this event (a click or wheel on one of its windows, the release of
+ * such a click, typing into one of its fields): the overlay's SDL event filter then keeps it
+ * from the game. */
+bool br_debug_wants_event(br_engine *e, const SDL_Event *ev);
 /* Number of captured log lines (at most BR_DEBUG_LOG_LINES). */
 uint32_t br_debug_log_count(br_engine *e);
 /* Captured log line i (0 = oldest kept), "" if out of range. */

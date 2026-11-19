@@ -1,6 +1,7 @@
 /* br_render: the stage walk (collect), masks, render-to-texture, hooks, render context API. */
 #include "render/br_render_internal.h"
 #include "scene/br_scene_internal.h"
+#include "braty/br_profiler.h"
 
 /* Flags for the top node of a br_render_walk call (not inherited by children). */
 #define BR_WALK_SKIP_EFFECTS 1u   /* the effects hook is drawing this node: draw it plainly */
@@ -13,6 +14,9 @@ static void br_render_walk(br_render_ctx *rc, uint32_t index, br_blend_mode inhe
 
 void br_render_ctx_changed(br_render_ctx *rc)
 {
+    if (rc->open_batch >= 0) {
+        br_profiler_count(rc->e, BR_PROFILER_BREAK_STATE, 1);
+    }
     br_render_state *r = rc->e->render;
     r->serial_counter += 1;
     rc->serial = r->serial_counter;
@@ -293,6 +297,7 @@ static void br_render_walk(br_render_ctx *rc, uint32_t index, br_blend_mode inhe
     br_render_state *r = e->render;
     br_node_record *rec = br_scene_record_at(s, index);
     if (rec->destroyed || (s->cull_frame != 0 && rec->culled_frame == s->cull_frame)) {
+        br_profiler_count(e, BR_PROFILER_NODES_CULLED, rec->destroyed ? 0 : 1);
         return; /* destroyed, or culled (br_scene_is_culled) */
     }
     bool as_mask = (flags & BR_WALK_AS_MASK) != 0;
@@ -640,12 +645,14 @@ static void br_render_collect_system(br_engine *e, float dt, void *user)
         br_render_ctx_set_target(&rc, frame, window_area, (float)pw, (float)ph, true);
         br_batch_push_pass(&rc, frame, false, br_color_make(0, 0, 0, 0)); /* overlays go to the window */
     }
+    br_profile_begin(e, "render.overlays");
     for (uint32_t i = 0; i < r->overlays.count; i++) {
         br_overlay_entry *o = br_array_at(&r->overlays, i);
         br_render_set_space(&rc, br_mat3_identity());
         rc.blend = BR_BLEND_NORMAL;
         o->fn(e, &rc, o->user);
     }
+    br_profile_end(e);
     br_batch_finish(e);
     r->collected = true;
 }

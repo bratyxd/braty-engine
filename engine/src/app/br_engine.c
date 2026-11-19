@@ -1,6 +1,7 @@
 /* br_engine: lifetime, window, systems and phases, ticker, event and shutdown hooks. */
 #include "app/br_engine_internal.h"
 #include "gpu/br_gpu_internal.h"
+#include "braty/br_profiler.h"
 
 /* ---- lifetime */
 
@@ -366,7 +367,9 @@ static void br_run_phases(br_engine *e, br_phase first, br_phase last, float dt)
             continue;
         }
         uint64_t start = SDL_GetTicksNS();
+        br_profile_begin(e, s->name); /* every system is a profiler scope */
         s->fn(e, dt, s->user);
+        br_profile_end(e);
         s = br_array_at(&e->systems, i); /* re-fetch: nothing should move it, but stay safe */
         s->last_time_ns = SDL_GetTicksNS() - start;
     }
@@ -412,19 +415,34 @@ bool br_engine_step(br_engine *e, float dt_seconds)
         br_gpu_transient_reset(e->gpu);
     }
     e->stepping = true;
+    /* profiler: the top-level scopes are the frame's steps (docs/PROFILING.md) */
+    br_profiler_frame_begin(e); /* no-op when br_app_iterate already began it */
+    br_profile_begin(e, "update");
     br_run_phases(e, BR_PHASE_INPUT, BR_PHASE_INPUT, dt_seconds);
     br_run_fixed_update(e, dt_seconds);
-    br_run_phases(e, BR_PHASE_UPDATE, BR_PHASE_PRE_RENDER, dt_seconds);
+    br_run_phases(e, BR_PHASE_UPDATE, BR_PHASE_LATE_UPDATE, dt_seconds);
+    br_profile_end(e);
+    br_profile_begin(e, "render.prepare");
+    br_run_phases(e, BR_PHASE_PRE_RENDER, BR_PHASE_PRE_RENDER, dt_seconds);
+    br_profile_end(e);
     bool presented = false;
     if (e->gpu != NULL) {
-        if (br_gpu_frame_begin(e->gpu)) {
+        br_profile_begin(e, "gpu.acquire");
+        bool acquired = br_gpu_frame_begin(e->gpu);
+        br_profile_end(e);
+        if (acquired) {
+            br_profile_begin(e, "render");
             br_run_phases(e, BR_PHASE_RENDER, BR_PHASE_POST_RENDER, dt_seconds);
+            br_profile_end(e);
+            br_profile_begin(e, "gpu.present");
             br_gpu_frame_end(e->gpu);
+            br_profile_end(e);
             presented = true;
         } else {
             e->skipped_frames += 1;
         }
     }
+    br_profiler_frame_end(e);
     e->stepping = false;
     for (uint32_t i = 0; i < e->pending_systems.count; i++) {
         br_system_insert_sorted(&e->systems, br_array_at(&e->pending_systems, i));

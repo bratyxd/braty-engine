@@ -76,6 +76,9 @@ static void br_debug_system(br_engine *e, float dt, void *user)
     if (br_input_key_pressed(e, s->toggle_key)) {
         s->open = !s->open;
     }
+    if (e->profiler != NULL && br_input_key_pressed(e, s->profiler_key)) {
+        br_profiler_set_open(e, !br_profiler_is_open(e));
+    }
     uint64_t now = SDL_GetTicksNS();
     if (s->last_ns != 0) {
         s->frame_ms[s->frame_index] = (float)((double)(now - s->last_ns) / 1e6);
@@ -277,18 +280,153 @@ static void br_debug_input(br_engine *e, mu_Context *ui)
     }
 }
 
-/* ---- the overlay: build the UI and draw it, after the stage */
+/* ---- taking input that lands on the overlay */
+
+static bool br_debug_over_window(br_debug_state *s, float x, float y)
+{
+    mu_Context *ui = s->ui;
+    for (int i = 0; i < ui->root_list.idx; i++) {
+        mu_Container *cnt = ui->root_list.items[i];
+        mu_Rect r = cnt->rect;
+        if (cnt->open && cnt != s->hud && x >= (float)r.x && y >= (float)r.y && x < (float)(r.x + r.w) &&
+            y < (float)(r.y + r.h)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool br_debug_is_toggle(br_debug_state *s, SDL_Scancode key)
+{
+    return key == s->toggle_key || key == s->profiler_key;
+}
+
+bool br_debug_wants_event(br_engine *e, const SDL_Event *ev)
+{
+    br_debug_state *s = e->debug;
+    if (s == NULL || !s->ui_live) {
+        return false;
+    }
+    switch (ev->type) {
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        if (ev->button.button < 32 && br_debug_over_window(s, ev->button.x, ev->button.y)) {
+            s->captured |= 1u << ev->button.button;
+            return true;
+        }
+        return false;
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+        if (ev->button.button < 32 && (s->captured & (1u << ev->button.button)) != 0) {
+            s->captured &= ~(1u << ev->button.button); /* the release of a press the overlay took */
+            return true;
+        }
+        return false;
+    case SDL_EVENT_MOUSE_WHEEL:
+        return br_debug_over_window(s, ev->wheel.mouse_x, ev->wheel.mouse_y);
+    case SDL_EVENT_KEY_DOWN:
+    case SDL_EVENT_KEY_UP:
+        /* typing into a number field (shift-click on it) */
+        return s->ui->number_edit != 0 && !br_debug_is_toggle(s, ev->key.scancode);
+    case SDL_EVENT_TEXT_INPUT:
+        return s->ui->number_edit != 0;
+    default:
+        return false;
+    }
+}
+
+/* Feeds an event the game will not see to microui (the input module never gets it). */
+static void br_debug_feed(br_debug_state *s, const SDL_Event *ev)
+{
+    mu_Context *ui = s->ui;
+    int button = ev->button.button == SDL_BUTTON_LEFT    ? MU_MOUSE_LEFT
+                 : ev->button.button == SDL_BUTTON_RIGHT ? MU_MOUSE_RIGHT
+                                                         : MU_MOUSE_MIDDLE;
+    if (ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        mu_input_mousedown(ui, (int)ev->button.x, (int)ev->button.y, button);
+    } else if (ev->type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        mu_input_mouseup(ui, (int)ev->button.x, (int)ev->button.y, button);
+    } else if (ev->type == SDL_EVENT_MOUSE_WHEEL) {
+        mu_input_scroll(ui, 0, (int)(-ev->wheel.y * 30.0f));
+    } else if (ev->type == SDL_EVENT_KEY_DOWN || ev->type == SDL_EVENT_KEY_UP) {
+        int key = 0;
+        SDL_Scancode sc = ev->key.scancode;
+        if (sc == SDL_SCANCODE_LSHIFT || sc == SDL_SCANCODE_RSHIFT) {
+            key = MU_KEY_SHIFT;
+        } else if (sc == SDL_SCANCODE_LCTRL || sc == SDL_SCANCODE_RCTRL) {
+            key = MU_KEY_CTRL;
+        } else if (sc == SDL_SCANCODE_LALT || sc == SDL_SCANCODE_RALT) {
+            key = MU_KEY_ALT;
+        } else if (sc == SDL_SCANCODE_BACKSPACE) {
+            key = MU_KEY_BACKSPACE;
+        } else if (sc == SDL_SCANCODE_RETURN || sc == SDL_SCANCODE_KP_ENTER) {
+            key = MU_KEY_RETURN;
+        }
+        if (key != 0 && ev->type == SDL_EVENT_KEY_DOWN) {
+            mu_input_keydown(ui, key);
+        } else if (key != 0) {
+            mu_input_keyup(ui, key);
+        }
+    } else if (ev->type == SDL_EVENT_TEXT_INPUT) {
+        mu_input_text(ui, ev->text.text);
+    }
+}
+
+/* SDL event filter: events the overlay takes never reach the queue, so neither the input
+ * module, pointer events nor game systems see them. */
+static bool SDLCALL br_debug_event_filter(void *user, SDL_Event *ev)
+{
+    br_engine *e = user;
+    br_debug_state *s = e->debug;
+    if (br_debug_wants_event(e, ev)) {
+        br_debug_feed(s, ev);
+        return false;
+    }
+    return s->prev_filter != NULL ? s->prev_filter(s->prev_filter_user, ev) : true;
+}
+
+/* ---- the UI: built every frame something is shown (also headless), drawn after the stage */
+
+static void br_debug_ui_system(br_engine *e, float dt, void *user)
+{
+    (void)dt;
+    br_debug_state *s = user;
+    bool show = s->open || br_profiler_is_open(e) || br_profiler_hud(e);
+    s->ui_live = false;
+    s->hud = NULL;
+    if (!show) {
+        s->ui->root_list.idx = 0;
+        s->captured = 0;
+        return;
+    }
+    if (e->window != NULL && !br_debug_font_ready(e, s)) {
+        return;
+    }
+    if (e->window != NULL && !s->filter_set) {
+        // ponytail: SDL's event filter is process-wide (chained to the previous one), like the log hook; injected input (br_input_inject_*) skips it.
+        SDL_GetEventFilter(&s->prev_filter, &s->prev_filter_user);
+        SDL_SetEventFilter(br_debug_event_filter, e);
+        s->filter_set = true;
+    }
+    br_debug_input(e, s->ui);
+    mu_begin(s->ui);
+    if (s->open) {
+        br_debug_panels(e, s);
+    }
+    if (br_profiler_is_open(e)) {
+        br_debug_profiler_panel(e, s);
+    }
+    if (br_profiler_hud(e)) {
+        br_debug_profiler_hud(e, s);
+    }
+    mu_end(s->ui);
+    s->ui_live = true;
+}
 
 static void br_debug_overlay(br_engine *e, br_render_ctx *rc, void *user)
 {
     br_debug_state *s = user;
-    if (!s->open || !br_debug_font_ready(e, s)) {
+    if (!s->ui_live || s->font == NULL) {
         return;
     }
-    br_debug_input(e, s->ui);
-    mu_begin(s->ui);
-    br_debug_panels(e, s);
-    mu_end(s->ui);
     br_render_set_blend(rc, BR_BLEND_NORMAL);
     br_debug_draw(e, rc);
 }
@@ -299,6 +437,13 @@ static void br_debug_shutdown(br_engine *e, void *user)
 {
     (void)user;
     br_debug_state *s = e->debug;
+    if (s->filter_set) {
+        SDL_EventFilter filter = NULL;
+        void *filter_user = NULL;
+        if (SDL_GetEventFilter(&filter, &filter_user) && filter == br_debug_event_filter && filter_user == e) {
+            SDL_SetEventFilter(s->prev_filter, s->prev_filter_user);
+        }
+    }
     SDL_LogOutputFunction fn = NULL;
     void *fn_user = NULL;
     SDL_GetLogOutputFunction(&fn, &fn_user);
@@ -307,6 +452,8 @@ static void br_debug_shutdown(br_engine *e, void *user)
     }
     SDL_DestroyMutex(s->log_lock);
     br_array_free(&s->expanded);
+    br_free(s->prof_rows);
+    br_free(s->prof_assets);
     br_free(s->ui);
     br_free(s);
     e->debug = NULL;
@@ -324,6 +471,7 @@ void br_debug_register(br_engine *e)
     e->debug = s;
     s->ui = ui;
     s->toggle_key = SDL_SCANCODE_F1;
+    s->profiler_key = SDL_SCANCODE_F2;
     br_array_init(&s->expanded, sizeof(br_node));
     s->log_lock = SDL_CreateMutex();
     mu_init(ui);
@@ -336,6 +484,7 @@ void br_debug_register(br_engine *e)
     SDL_GetLogOutputFunction(&s->prev_log_fn, &s->prev_log_user);
     SDL_SetLogOutputFunction(br_debug_log_output, s);
     br_system_add(e, "debug.toggle", BR_PHASE_UPDATE, -1000, br_debug_system, s);
+    br_system_add(e, "debug.ui", BR_PHASE_PRE_RENDER, 900, br_debug_ui_system, s); /* before render.collect */
     br_render_add_overlay(e, br_debug_overlay, s);
     br_engine_on_shutdown(e, br_debug_shutdown, NULL);
 }
