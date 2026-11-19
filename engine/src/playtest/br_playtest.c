@@ -48,6 +48,16 @@ static double br_pt_number(const cJSON *cmd, const char *key, double fallback)
     return cJSON_IsNumber(v) ? v->valuedouble : fallback;
 }
 
+/* A number clamped to [lo, hi] before any integer conversion (commands come from outside). */
+static double br_pt_clamped(const cJSON *cmd, const char *key, double fallback, double lo, double hi)
+{
+    double v = br_pt_number(cmd, key, fallback);
+    if (v < lo) {
+        return lo;
+    }
+    return v > hi ? hi : v;
+}
+
 /* The frame that will see input sent now: this one inside the playtest system, else the next. */
 static uint64_t br_pt_input_frame(br_engine *e)
 {
@@ -136,7 +146,7 @@ static bool br_pt_cmd_key(br_engine *e, const cJSON *cmd, SDL_Scancode key)
 {
     const char *action = br_pt_string(cmd, "action");
     if (action == NULL || SDL_strcmp(action, "tap") == 0) {
-        uint64_t frames = (uint64_t)br_pt_number(cmd, "frames", 1.0);
+        uint64_t frames = (uint64_t)br_pt_clamped(cmd, "frames", 1.0, 1.0, 1e9);
         br_pt_key(e, key, true);
         br_pt_schedule_release(e, br_pt_input_frame(e) + (frames > 0 ? frames : 1), true, key, 0, 0.0f, 0.0f);
     } else if (SDL_strcmp(action, "down") == 0 || SDL_strcmp(action, "up") == 0) {
@@ -178,7 +188,7 @@ static bool br_pt_cmd_mouse(br_engine *e, const cJSON *cmd)
     br_vec2 at = br_input_mouse_position(e);
     float x = (float)br_pt_number(cmd, "x", at.x);
     float y = (float)br_pt_number(cmd, "y", at.y);
-    int button = (int)br_pt_number(cmd, "button", SDL_BUTTON_LEFT);
+    int button = (int)br_pt_clamped(cmd, "button", SDL_BUTTON_LEFT, 1.0, 8.0);
     if (action == NULL || SDL_strcmp(action, "move") == 0) {
         e->playtest->injecting = true;
         br_input_inject_pointer_move(e, x, y);
@@ -210,7 +220,7 @@ static bool br_pt_cmd_touch(br_engine *e, const cJSON *cmd)
         return br_playtest_fail(e, "touch: action must be down, move or up, got '%s'", action);
     }
     e->playtest->injecting = true;
-    br_input_inject_touch(e, type, (uint64_t)br_pt_number(cmd, "finger", 0.0), (float)br_pt_number(cmd, "x", 0.0),
+    br_input_inject_touch(e, type, (uint64_t)br_pt_clamped(cmd, "finger", 0.0, 0.0, 1e9), (float)br_pt_number(cmd, "x", 0.0),
                           (float)br_pt_number(cmd, "y", 0.0));
     e->playtest->injecting = false;
     return true;
@@ -237,7 +247,7 @@ static bool br_pt_cmd_click(br_engine *e, const cJSON *cmd)
     if (!br_playtest_query_click_point(e, br_pt_string(cmd, "label"), &x, &y)) {
         return false;
     }
-    int button = (int)br_pt_number(cmd, "button", SDL_BUTTON_LEFT);
+    int button = (int)br_pt_clamped(cmd, "button", SDL_BUTTON_LEFT, 1.0, 8.0);
     e->playtest->injecting = true;
     br_input_inject_pointer_move(e, x, y);
     e->playtest->injecting = false;
@@ -284,8 +294,13 @@ static bool br_pt_validate(const cJSON *cmd, char *why, size_t why_size)
     br_str_copy(keys, sizeof(keys), info->required);
     char *save = NULL;
     for (char *key = SDL_strtok_r(keys, " ", &save); key != NULL; key = SDL_strtok_r(NULL, " ", &save)) {
-        if (cJSON_GetObjectItemCaseSensitive(cmd, key) == NULL) {
+        const cJSON *v = cJSON_GetObjectItemCaseSensitive(cmd, key);
+        if (v == NULL) {
             SDL_snprintf(why, why_size, "%s: missing \"%s\"", name, key);
+            return false;
+        }
+        if (SDL_strcmp(key, "value") != 0 && !cJSON_IsString(v)) {
+            SDL_snprintf(why, why_size, "%s: \"%s\" must be a string", name, key);
             return false;
         }
     }
@@ -455,7 +470,7 @@ static br_pt_result br_pt_exec_find(br_engine *e, const cJSON *cmd, cJSON *reply
 static br_pt_result br_pt_exec_logs(br_engine *e, const cJSON *cmd, cJSON *reply)
 {
     br_playtest_state *s = e->playtest;
-    uint32_t want = (uint32_t)br_pt_number(cmd, "count", 20.0);
+    uint32_t want = (uint32_t)br_pt_clamped(cmd, "count", 20.0, 0.0, BR_PLAYTEST_LOG_LINES);
     uint32_t have = s->log_count < BR_PLAYTEST_LOG_LINES ? s->log_count : BR_PLAYTEST_LOG_LINES;
     uint32_t n = want < have ? want : have;
     cJSON *lines = cJSON_CreateArray();
@@ -470,9 +485,9 @@ static br_pt_result br_pt_exec_logs(br_engine *e, const cJSON *cmd, cJSON *reply
 static br_pt_result br_pt_exec_wait(br_engine *e, const cJSON *cmd)
 {
     br_playtest_state *s = e->playtest;
-    double frames = br_pt_number(cmd, "frames", 1.0);
+    double frames = br_pt_clamped(cmd, "frames", 1.0, 0.0, 1e9);
     if (cJSON_GetObjectItemCaseSensitive(cmd, "seconds") != NULL) {
-        frames = SDL_ceil(br_pt_number(cmd, "seconds", 0.0) * 60.0);
+        frames = SDL_ceil(br_pt_clamped(cmd, "seconds", 0.0, 0.0, 1e7) * 60.0);
     }
     if (frames < 1.0) {
         return BR_PT_DONE;
@@ -486,9 +501,9 @@ static br_pt_result br_pt_exec_wait(br_engine *e, const cJSON *cmd)
 static br_pt_result br_pt_exec_wait_until(br_engine *e, const cJSON *cmd)
 {
     br_playtest_state *s = e->playtest;
-    double timeout = br_pt_number(cmd, "timeout_frames", BR_PLAYTEST_DEFAULT_TIMEOUT);
+    double timeout = br_pt_clamped(cmd, "timeout_frames", BR_PLAYTEST_DEFAULT_TIMEOUT, 0.0, 1e9);
     if (cJSON_GetObjectItemCaseSensitive(cmd, "timeout") != NULL) {
-        timeout = SDL_ceil(br_pt_number(cmd, "timeout", 10.0) * 60.0);
+        timeout = SDL_ceil(br_pt_clamped(cmd, "timeout", 10.0, 0.0, 1e7) * 60.0);
     }
     s->waiting = true;
     s->until = cmd;
@@ -527,7 +542,7 @@ static br_pt_result br_pt_exec(br_engine *e, const cJSON *cmd, cJSON *reply)
     }
     if (SDL_strcmp(name, "screenshot") == 0) {
         const char *file = br_pt_string(cmd, "file");
-        uint32_t downsample = (uint32_t)br_pt_number(cmd, "downsample", 1.0);
+        uint32_t downsample = (uint32_t)br_pt_clamped(cmd, "downsample", 1.0, 1.0, 64.0);
         if (!br_engine_screenshot_downsampled(e, file, downsample > 0 ? downsample : 1)) {
             return br_pt_ok(br_playtest_fail(e, "screenshot '%s' failed (headless, or nothing rendered yet?)", file));
         }

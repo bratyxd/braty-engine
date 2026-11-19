@@ -239,6 +239,10 @@ static void test_interactive(void)
                        "expect failed: game:score is 10, expected < 5"));
     BR_CHECK(reply_has(e, "{\"cmd\":\"screenshot\",\"file\":\"x.png\"}", "\"ok\":false"));
     BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\"}", "not supported yet"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"touch\",\"action\":3}", "must be a string"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"key\",\"key\":\"Space\",\"frames\":-5}", "\"ok\":true")); /* clamped to 1 */
+    BR_CHECK(reply_has(e, "{\"cmd\":\"logs\",\"count\":-1}", "\"lines\":[]"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"step\",\"frames\":-3}", "\"ok\":true,\"frame\":66"));
     BR_CHECK(br_playtest_failed(e));
     BR_CHECK(reply_has(e, "{\"cmd\":\"quit\"}", "\"ok\":true"));
     br_engine_destroy(e);
