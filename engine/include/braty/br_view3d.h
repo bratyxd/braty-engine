@@ -238,6 +238,10 @@ br_node br_view3d_create(br_engine *e, float width, float height);
 uint32_t br_view3d_type(br_engine *e);
 /* The root 3D node: everything under it is drawn. */
 br_node3d br_view3d_root(br_engine *e, br_node view);
+/* Draws another root's subtree instead of the view's own root, so several views (cameras) can
+ * show one scene. The view's own root stays alive (destroyed with the view); a destroyed root
+ * falls back to it. */
+void br_view3d_set_root(br_engine *e, br_node view, br_node3d root);
 /* Uses a camera3d node (anywhere in the table, usually under the root). */
 void br_view3d_set_camera(br_engine *e, br_node view, br_node3d camera);
 /* The camera node. */

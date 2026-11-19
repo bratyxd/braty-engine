@@ -202,6 +202,9 @@ static void br_view3d_render(br_engine *e, br_node n, const void *data, br_rende
         if (!br_view3d_ensure_targets(e, v)) {
             return;
         }
+        if (!br_node3d_valid(e, v->root)) {
+            v->root = v->own_root; /* a shared root was destroyed */
+        }
         br_render3d_collect(e, v);
         if (v->shadow_tiles != 0) {
             br_view3d_ensure_shadow_atlas(e, v);
@@ -267,6 +270,7 @@ static void br_view3d_on_create(br_engine *e, br_node n, void *data)
     br_array_init(&v->joints, sizeof(br_mat4));
     br_array_init(&v->lights, sizeof(br_light3d_entry));
     v->root = br_node3d_create_group(e);
+    v->own_root = v->root;
     br_node3d_set_label(e, v->root, "root");
     v->camera = br_camera3d_create(e, NULL);
     br_node3d_set_label(e, v->camera, "camera");
@@ -291,7 +295,7 @@ static void br_view3d_on_destroy(br_engine *e, br_node n, void *data)
             break;
         }
     }
-    br_node3d_destroy(e, v->root);
+    br_node3d_destroy(e, v->own_root);
     br_view3d_free_all_targets(e, v);
     br_array_free(&v->items);
     br_array_free(&v->opaque);
@@ -345,6 +349,14 @@ br_node3d br_view3d_root(br_engine *e, br_node view)
     br_node3d none = { 0, 0 };
     br_view3d_state *v = br_view3d_state_get(e, view);
     return v != NULL ? v->root : none;
+}
+
+void br_view3d_set_root(br_engine *e, br_node view, br_node3d root)
+{
+    br_view3d_state *v = br_view3d_state_get(e, view);
+    if (v != NULL && br_node3d_valid(e, root)) {
+        v->root = root;
+    }
 }
 
 void br_view3d_set_camera(br_engine *e, br_node view, br_node3d camera)
