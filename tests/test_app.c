@@ -2,6 +2,8 @@
 #include "braty/braty.h"
 #include "br_test.h"
 
+#include <SDL3/SDL.h>
+
 typedef struct boot_probe {
     int      init_calls;
     void    *seen_user;
@@ -56,8 +58,62 @@ static void test_user_and_args(void)
     br_engine_destroy(plain);
 }
 
+/* ---- API_REVIEW item 2: br_game_config_main keeps the config; apply before init, scene after */
+
+typedef struct probe_component {
+    int32_t value;
+} probe_component;
+
+typedef struct config_probe {
+    bool     json_seen_in_init;
+    uint32_t component_id;
+} config_probe;
+
+static config_probe s_config;
+
+static bool config_init(br_engine *e)
+{
+    s_config.json_seen_in_init = br_game_config_json(e) != NULL; /* applied before init */
+    static const br_field_desc fields[] = { { "value", BR_FIELD_INT, offsetof(probe_component, value) } };
+    br_component_desc desc = { "probe", sizeof(probe_component), fields, 1 };
+    s_config.component_id = br_component_register(e, &desc);
+    return true;
+}
+
+static bool write_next_to_exe(const char *name, const char *text)
+{
+    char path[1024];
+    SDL_snprintf(path, sizeof(path), "%s%s", SDL_GetBasePath(), name);
+    return SDL_SaveFile(path, text, SDL_strlen(text));
+}
+
+static void test_game_config_main(void)
+{
+    BR_CHECK(write_next_to_exe("test_app_game.json",
+                               "{ \"window\": { \"title\": \"boot test\" }, \"start_scene\": \"test_app_scene.json\","
+                               "  \"game\": { \"level\": 3 } }"));
+    /* the scene uses a component that only exists once init ran */
+    BR_CHECK(write_next_to_exe("test_app_scene.json",
+                               "{ \"type\": \"container\", \"children\": [ { \"type\": \"container\","
+                               "  \"label\": \"booted\", \"components\": { \"probe\": { \"value\": 7 } } } ] }"));
+    char *argv[] = { "test_app", "--headless" };
+    br_app_desc desc = br_game_config_main("test_app_game.json", 2, argv, config_init);
+    BR_CHECK(desc.config != NULL && SDL_strcmp(desc.title, "boot test") == 0);
+    void *state = NULL;
+    BR_CHECK(br_app_init(&state, &desc, 2, argv) == SDL_APP_CONTINUE);
+    br_engine *e = state;
+    BR_CHECK(s_config.json_seen_in_init);
+    br_node booted = br_node_find_by_label(e, br_scene_root(e), "booted", true);
+    probe_component *p = br_component_get(e, booted, s_config.component_id);
+    BR_CHECK(p != NULL && p->value == 7);
+    const cJSON *level = cJSON_GetObjectItem(cJSON_GetObjectItem(br_game_config_json(e), "game"), "level");
+    BR_CHECK(cJSON_IsNumber(level) && level->valueint == 3);
+    br_app_quit(state, SDL_APP_SUCCESS);
+}
+
 int main(void)
 {
     test_user_and_args();
+    test_game_config_main();
     return br_test_finish();
 }

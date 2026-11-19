@@ -30,6 +30,8 @@
 
 /* ---- game entry point */
 
+struct br_game_config;
+
 /* What the game hands the engine. Zero fields get defaults (title "braty", 1280x720, asset
  * root = executable directory). */
 typedef struct br_app_desc {
@@ -40,6 +42,9 @@ typedef struct br_app_desc {
     bool (*init)(br_engine *e);           /* register components, systems, load first scene */
     void (*shutdown)(br_engine *e);
     void *user;                           /* for the game: br_engine_app_user(e) in init and later */
+    /* Set by br_game_config_main, owned by the engine: applied before init (window, input,
+     * audio, manifest, ...), its start scene loaded after init, then freed. */
+    struct br_game_config *config;
 } br_app_desc;
 
 /* The only function a game must define (include braty_main.h once in that file). */

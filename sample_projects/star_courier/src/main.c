@@ -10,15 +10,6 @@
 #include "braty/braty_main.h"
 #include "game.h"
 
-/* What br_main hands to init. br_main runs before the engine exists and br_app_desc.init gets no
- * user pointer, so this is the one static (see docs/API_REVIEW.md); nothing changes it later. */
-typedef struct sc_boot {
-    br_game_config config;   /* br_main's desc points into it */
-    bool           autoplay;
-} sc_boot;
-
-static sc_boot s_boot;
-
 /* ---- --autoplay: injects real key events, the same path a keyboard takes */
 
 enum { SC_BOT_LEFT = 1, SC_BOT_RIGHT = 2, SC_BOT_UP = 4, SC_BOT_DOWN = 8 };
@@ -133,7 +124,11 @@ static bool sc_init(br_engine *e)
     if (g == NULL) {
         return false;
     }
-    g->autoplay = s_boot.autoplay;
+    int argc = 0;
+    char **argv = br_engine_args(e, &argc);
+    for (int i = 1; i < argc; i++) {
+        g->autoplay = g->autoplay || SDL_strcmp(argv[i], "--autoplay") == 0;
+    }
     g->rng = 0x2545f491u;
     br_engine_on_shutdown(e, sc_shutdown, g);
     sc_components_register(e, g); /* before any file that uses them is loaded */
@@ -142,8 +137,8 @@ static bool sc_init(br_engine *e)
         br_system_add(e, "sc.autoplay", BR_PHASE_INPUT, -3000000, sc_autoplay_system, g); /* before input latches */
     }
 
-    /* window, input, audio, manifest; no start_scene: the state machine loads game.scenes.* */
-    br_game_config_apply(e, &s_boot.config);
+    /* game.json (window, input, audio, manifest) was applied before init; there is no
+     * start_scene: the state machine loads game.scenes.* */
     g->tuning_node = br_scene_file_load(e, sc_config_string(e, NULL, "tuning"), br_scene_root(e));
     if (br_component_get(e, g->tuning_node, g->id.tuning) == NULL) {
         return false; /* reasons are logged with file and JSON path */
@@ -165,12 +160,6 @@ static bool sc_init(br_engine *e)
 
 br_app_desc br_main(int argc, char **argv)
 {
-    for (int i = 1; i < argc; i++) {
-        s_boot.autoplay = s_boot.autoplay || SDL_strcmp(argv[i], "--autoplay") == 0;
-    }
-    br_game_config_load(NULL, "game.json", &s_boot.config); /* next to the executable */
-    br_game_config_args(&s_boot.config, argc, argv);        /* --debug, --scene */
-    br_app_desc desc = br_game_config_app_desc(&s_boot.config);
-    desc.init = sc_init;
-    return desc;
+    /* game.json next to the executable; --debug, --scene from the command line */
+    return br_game_config_main("game.json", argc, argv, sc_init);
 }

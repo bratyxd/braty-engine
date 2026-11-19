@@ -289,9 +289,8 @@ static void br_config_apply_audio(br_engine *e, const cJSON *audio)
     }
 }
 
-br_node br_game_config_apply(br_engine *e, br_game_config *config)
+void br_game_config_apply_settings(br_engine *e, br_game_config *config)
 {
-    br_node none = { 0, 0 };
     SDL_Window *window = br_engine_window(e);
     br_gpu *gpu = br_engine_gpu(e);
     if (window != NULL) {
@@ -334,11 +333,36 @@ br_node br_game_config_apply(br_engine *e, br_game_config *config)
     cJSON_Delete(e->data->game_json);
     e->data->game_json = config->json;
     config->json = NULL;
+}
 
+br_node br_game_config_load_start_scene(br_engine *e, const br_game_config *config)
+{
+    br_node none = { 0, 0 };
     if (config->start_scene[0] == '\0') {
         return none;
     }
     return br_scene_file_load(e, config->start_scene, br_scene_root(e));
+}
+
+br_node br_game_config_apply(br_engine *e, br_game_config *config)
+{
+    br_game_config_apply_settings(e, config);
+    return br_game_config_load_start_scene(e, config);
+}
+
+br_app_desc br_game_config_main(const char *path, int argc, char **argv, bool (*init)(br_engine *e))
+{
+    br_app_desc desc;
+    SDL_zero(desc);
+    br_game_config *config = br_alloc(sizeof(br_game_config));
+    if (config != NULL) {
+        br_game_config_load(NULL, path, config); /* a missing file is logged; defaults are kept */
+        br_game_config_args(config, argc, argv);
+        desc = br_game_config_app_desc(config);
+    }
+    desc.init = init;
+    desc.config = config;
+    return desc;
 }
 
 const cJSON *br_game_config_json(br_engine *e)

@@ -1,5 +1,6 @@
 /* SDL main-callback glue: command line, the per-frame tick, --frames / --screenshot. */
 #include "app/br_engine_internal.h"
+#include "data/br_data_internal.h"
 
 #include "stb/stb_image_write.h"
 
@@ -70,34 +71,53 @@ static bool br_app_write_screenshot(br_engine *e, const char *path)
     return ok;
 }
 
+/* Window, game.json (desc->config), the game's init, the start scene. */
+static bool br_app_start(br_engine *e, const br_app_desc *desc, const br_app_args *args)
+{
+    int width = desc->width > 0 ? desc->width : 1280;
+    int height = desc->height > 0 ? desc->height : 720;
+    if (!args->headless && !br_engine_open_window(e, width, height, args->gpu_driver)) {
+        return false;
+    }
+    if (desc->config != NULL) {
+        br_game_config_apply_settings(e, desc->config);
+    }
+    if (desc->init != NULL && !desc->init(e)) {
+        br_log_error("game init failed");
+        return false;
+    }
+    /* set only after a successful init, so a failed init does not run the game's shutdown */
+    e->game_shutdown = desc->shutdown;
+    if (desc->config != NULL && desc->config->start_scene[0] != '\0') {
+        /* after init: the scene may use components the game registers there */
+        if (!br_node_valid(e, br_game_config_load_start_scene(e, desc->config))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 SDL_AppResult br_app_init(void **appstate, const br_app_desc *desc, int argc, char **argv)
 {
     br_app_args args;
     br_app_parse_args(argc, argv, &args);
     const char *title = desc->title != NULL ? desc->title : "braty";
-    int width = desc->width > 0 ? desc->width : 1280;
-    int height = desc->height > 0 ? desc->height : 720;
-
     br_engine *e = br_engine_create(title, desc->asset_root);
-    if (e == NULL) {
-        return SDL_APP_FAILURE;
+    bool ok = e != NULL;
+    if (ok) {
+        *appstate = e;
+        e->frame_limit = args.frames;
+        e->screenshot_path = br_strdup(args.screenshot);
+        e->app_user = desc->user;
+        e->argc = argc;
+        e->argv = argv;
+        ok = br_app_start(e, desc, &args);
     }
-    *appstate = e;
-    e->frame_limit = args.frames;
-    e->screenshot_path = br_strdup(args.screenshot);
-    e->app_user = desc->user;
-    e->argc = argc;
-    e->argv = argv;
-    if (!args.headless && !br_engine_open_window(e, width, height, args.gpu_driver)) {
-        return SDL_APP_FAILURE;
+    if (desc->config != NULL) {
+        br_game_config_free(desc->config);
+        br_free(desc->config);
     }
-    if (desc->init != NULL && !desc->init(e)) {
-        br_log_error("game init failed");
-        return SDL_APP_FAILURE;
-    }
-    /* set only after a successful init, so a failed init does not run the game's shutdown */
-    e->game_shutdown = desc->shutdown;
-    return SDL_APP_CONTINUE;
+    return ok ? SDL_APP_CONTINUE : SDL_APP_FAILURE;
 }
 
 SDL_AppResult br_app_iterate(void *appstate)

@@ -1,22 +1,20 @@
 /* br_game_config.h - game.json: window, asset root, manifest, start scene, ticker, clear
- * colour, input actions, audio buses, debug overlay. A whole br_main can be:
- *
- *   static br_game_config config;   (the desc returned by br_main points into it)
+ * colour, input actions, audio buses, debug overlay. A whole br_main is one line:
  *
  *   static bool game_init(br_engine *e)
  *   {
- *       ...register components and systems...
- *       return br_node_valid(e, br_game_config_apply(e, &config));   (loads the start scene)
+ *       ...register components and systems (game.json is already applied; the start
+ *       scene loads after init returns, so its components are registered by then)...
+ *       return true;
  *   }
  *
  *   br_app_desc br_main(int argc, char **argv)
  *   {
- *       br_game_config_load(NULL, "game.json", &config);   (no engine yet: read from the exe dir)
- *       br_game_config_args(&config, argc, argv);           (--debug, --scene path)
- *       br_app_desc desc = br_game_config_app_desc(&config);
- *       desc.init = game_init;
- *       return desc;
+ *       return br_game_config_main("game.json", argc, argv, game_init);
  *   }
+ *
+ * The step-by-step form (br_game_config_load / _args / _app_desc, then br_game_config_apply
+ * inside init) still works when a game needs more control; the config must then outlive br_main.
  *
  * Every key is optional; see docs/DATA_FORMATS.md for the full file. The whole document is kept
  * for the game (br_game_config_json); put game settings under "game" (other unknown keys warn).
@@ -49,6 +47,11 @@ typedef struct br_game_config {
     bool     hot_reload;                           /* scene hot reload (debug builds: true) */
     cJSON   *json;                                 /* the whole document (owned) */
 } br_game_config;
+
+/* Loads game.json (relative to the executable directory) and the command line into a config the
+ * engine owns, and returns a desc for it with `init`: the engine applies the config before init
+ * and loads its start scene after init. */
+br_app_desc br_game_config_main(const char *path, int argc, char **argv, bool (*init)(br_engine *e));
 
 /* Defaults only (no file). */
 void br_game_config_defaults(br_game_config *config);

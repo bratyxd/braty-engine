@@ -164,6 +164,13 @@ void br_data_apply_node(br_engine *e, br_node n, const cJSON *json, bool build_c
 /* Resolves queued references against root (then the stage) and clears the queue. */
 void br_data_resolve_refs(br_engine *e, br_node root);
 
+/* ---- br_game_config.c (br_app_init uses these for br_app_desc.config) */
+
+/* br_game_config_apply without the start scene; takes over config->json. */
+void br_game_config_apply_settings(br_engine *e, br_game_config *config);
+/* Loads config->start_scene under the stage; zero handle if none or it failed. */
+br_node br_game_config_load_start_scene(br_engine *e, const br_game_config *config);
+
 /* ---- br_scene_reload.c */
 
 /* Starts watching a scene file loaded into root (hot reload). */

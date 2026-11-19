@@ -28,11 +28,17 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
    The sample keeps exactly one (`static sc_boot s_boot` in `src/main.c`); `examples/data_demo.c`
    does the same. **Fix:** add `void *user` to `br_app_desc` and `void *br_engine_app_user(e)`,
    plus `br_engine_args(e, &argc)` returning argv.
+   **Resolved (Task 14):** `br_app_desc.user`, `br_engine_app_user(e)`, `br_engine_args(e, &argc)`.
+   Test: `tests/test_app.c`, `test_user_and_args`.
 2. **friction - the `br_game_config` must outlive `br_main`** (`br_game_config_app_desc` returns
    pointers into it; `br_game_config_apply` runs later in init). Every game needs the static
    above. **Fix:** `br_app_desc br_game_config_main(const char *path, int argc, char **argv,
    bool (*init)(br_engine *))`: the engine keeps the parsed config itself (`e->data`) and
    applies it before calling `init`; `br_main` becomes one line.
+   **Resolved (Task 14):** `br_game_config_main(path, argc, argv, init)` returns a desc whose
+   `config` the engine owns: settings are applied before `init`, `start_scene` is loaded after
+   it (so it can use components registered in `init`), then the config is freed. Star Courier
+   uses it. Test: `tests/test_app.c`, `test_game_config_main`.
 3. **friction - `start_scene` assumes one scene** (`br_game_config_apply`). A game with a state
    machine (title / play / game over) loads scenes itself; the sample removed `start_scene`
    and lists its scenes under `game.scenes` (read with `br_game_config_json`). **Fix:** Phase 2
