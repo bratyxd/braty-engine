@@ -202,10 +202,7 @@ static void br_particle_draw(br_engine *e, const br_render_callback_info *info, 
         return;
     }
     SDL_BindGPUGraphicsPipeline(info->pass, pipeline);
-    /* ponytail: the callback info carries no scissor, so scissor masks do not clip particle
-     * containers (stencil masks do); pass the scissor in br_render_callback_info to fix. */
-    SDL_Rect full = { 0, 0, (int)info->target->width, (int)info->target->height };
-    SDL_SetGPUScissor(info->pass, &full);
+    SDL_SetGPUScissor(info->pass, &info->scissor);
     if (desc.stencil_test) {
         SDL_SetGPUStencilReference(info->pass, info->stencil_ref);
     }
