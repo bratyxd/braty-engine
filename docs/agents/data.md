@@ -82,6 +82,9 @@ silently, wrong types log `file: children[3].my_key: expected a number`.
 ## Gotchas
 
 - Register components (and handlers) **before** loading files that use them.
+- Unknown keys of built-in node types, text styles and game.json are logged as warnings
+  (`level.scene.json: children[0].posiiton: unknown key`); your own types' keys are not checked.
+  Game settings in game.json go under `"game"`.
 - Texture references: `"path.png"`, `"sheet.json#frame"`, or a bare frame name of a sheet that is
   already loaded (list sheets in the root's `"assets"` so they load first).
 - `BR_FIELD_STRING`/`BR_FIELD_ASSET` hold 63 bytes; asset fields are not loaded for you.
