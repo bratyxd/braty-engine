@@ -101,6 +101,48 @@ static const cJSON *br_config_section(br_config_reader *r, const cJSON *doc, con
     return v;
 }
 
+/* Warns about keys of obj that `known` (space-separated, spaces at both ends) does not list:
+ * a typo in game.json would otherwise be ignored silently. Game data belongs under "game". */
+static void br_config_warn_keys(const char *source, const char *section, const cJSON *obj, const char *known)
+{
+    const cJSON *item = NULL;
+    cJSON_ArrayForEach(item, obj)
+    {
+        char word[BR_DATA_NAME_SIZE + 2];
+        SDL_snprintf(word, sizeof(word), " %s ", item->string);
+        if (SDL_strstr(known, word) != NULL) {
+            continue;
+        }
+        if (section[0] != '\0') {
+            br_log_warn("%s: %s.%s: unknown key (ignored; a typo?)", source, section, item->string);
+        } else {
+            br_log_warn("%s: %s: unknown key (ignored; game data goes under \"game\")", source, item->string);
+        }
+    }
+}
+
+static void br_config_check_keys(const char *source, const cJSON *doc)
+{
+    br_config_warn_keys(source, "", doc,
+                        " window asset_root manifest start_scene clear_color ticker input audio debug game ");
+    const char *sections[] = { "window", "ticker", "debug", "audio" };
+    const char *keys[] = { " title width height fullscreen vsync resizable ", " max_fps min_fps speed ",
+                           " overlay toggle_key hot_reload ", " master_volume muted buses sprites " };
+    for (uint32_t i = 0; i < BR_ARRAY_COUNT(sections); i++) {
+        const cJSON *section = cJSON_GetObjectItemCaseSensitive(doc, sections[i]);
+        if (cJSON_IsObject(section)) {
+            br_config_warn_keys(source, sections[i], section, keys[i]);
+        }
+    }
+    const cJSON *action = NULL;
+    cJSON_ArrayForEach(action, cJSON_GetObjectItemCaseSensitive(doc, "input"))
+    {
+        char section[BR_DATA_NAME_SIZE + 8];
+        SDL_snprintf(section, sizeof(section), "input.%s", action->string);
+        br_config_warn_keys(source, section, action, " keys mouse buttons axes ");
+    }
+}
+
 bool br_game_config_parse(const char *json, size_t size, const char *source_name, br_game_config *config)
 {
     br_game_config_defaults(config);
@@ -116,6 +158,7 @@ bool br_game_config_parse(const char *json, size_t size, const char *source_name
         cJSON_Delete(doc);
         return false;
     }
+    br_config_check_keys(source, doc);
     br_config_reader r = { source, "", true };
     br_config_string(&r, doc, "asset_root", config->asset_root, sizeof(config->asset_root));
     br_config_string(&r, doc, "manifest", config->manifest, sizeof(config->manifest));

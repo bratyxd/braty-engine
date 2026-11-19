@@ -336,9 +336,90 @@ static void br_data_preload_assets(br_engine *e, const cJSON *assets)
     br_data_path_pop(e, mark);
 }
 
+/* ---- unknown keys: a typo in a data file ("posiiton") would otherwise be ignored silently */
+
+/* Keys every node object may have (section 2.1 of docs/DATA_FORMATS.md). */
+static const char *br_data_container_keys =
+    " type label position scale skew pivot origin rotation angle alpha tint visible renderable z_index"
+    " sortable_children cullable cullable_children render_group cache_as_texture cull_area blend mask layer"
+    " filters filter_resolution filter_area event_mode interactive_children cursor hit_area on components"
+    " children assets prefab ";
+
+/* Type-specific keys per JSON type name (section 2.2). */
+typedef struct br_data_known_keys {
+    const char *type;
+    const char *keys;   /* space-separated, with a space at both ends */
+} br_data_known_keys;
+
+static const br_data_known_keys br_data_type_keys[] = {
+    { "container", " " },
+    { "sprite", " texture anchor round_pixels width height " },
+    { "animated_sprite",
+      " texture anchor round_pixels width height animation gif frames fps speed loop playing frame update_anchor " },
+    { "nine_slice", " texture borders width height anchor edge_fill center_fill hide_center " },
+    { "nine_slice_sprite", " texture borders width height anchor edge_fill center_fill hide_center " },
+    { "tiling_sprite", " texture width height anchor tile_position tile_scale tile_rotation clamp_margin " },
+    { "graphics", " commands svg fill stroke " },
+    { "mesh", " texture positions uvs colors indices plane perspective rope " },
+    { "mesh_simple", " texture positions uvs colors indices plane perspective rope " },
+    { "mesh_plane", " texture positions uvs colors indices plane perspective rope " },
+    { "perspective_mesh", " texture positions uvs colors indices plane perspective rope " },
+    { "mesh_rope", " texture positions uvs colors indices plane perspective rope " },
+    { "particle_container", " texture dynamic particles " },
+    { "text", " text font size style anchor resolution " },
+    { "bitmap_text", " text font size style anchor resolution " },
+    { "rich_text", " text font size style anchor resolution tag_styles " },
+};
+
+static const char *br_data_text_style_keys =
+    " font font_family font_size bold italic fill gradient stroke drop_shadow align word_wrap wrap_width"
+    " break_words line_height leading letter_spacing padding white_space baseline ";
+
+static bool br_data_key_listed(const char *list, const char *key)
+{
+    char word[BR_DATA_NAME_SIZE + 2];
+    SDL_snprintf(word, sizeof(word), " %s ", key);
+    return SDL_strstr(list, word) != NULL;
+}
+
+/* Warns (does not fail) for every key of obj that neither list names. */
+static void br_data_warn_keys(br_engine *e, const cJSON *obj, const char *list, const char *extra)
+{
+    const cJSON *item = NULL;
+    cJSON_ArrayForEach(item, obj)
+    {
+        if (br_data_key_listed(list, item->string) || (extra != NULL && br_data_key_listed(extra, item->string))) {
+            continue;
+        }
+        size_t mark = br_data_path_push_key(e, item->string);
+        br_data_warnf(e, "unknown key (ignored; a typo?)");
+        br_data_path_pop(e, mark);
+    }
+}
+
+/* Node keys are checked for the built-in types only: other types (yours, view3d) read keys we
+ * cannot know about. */
+static void br_data_check_keys(br_engine *e, const cJSON *json)
+{
+    const cJSON *type = cJSON_GetObjectItemCaseSensitive(json, "type");
+    const char *type_name = cJSON_IsString(type) ? type->valuestring : "container";
+    for (uint32_t i = 0; i < BR_ARRAY_COUNT(br_data_type_keys); i++) {
+        if (SDL_strcmp(br_data_type_keys[i].type, type_name) == 0) {
+            br_data_warn_keys(e, json, br_data_container_keys, br_data_type_keys[i].keys);
+            const cJSON *style = cJSON_GetObjectItemCaseSensitive(json, "style");
+            if (cJSON_IsObject(style)) {
+                size_t mark = br_data_path_push_key(e, "style");
+                br_data_warn_keys(e, style, br_data_text_style_keys, NULL);
+                br_data_path_pop(e, mark);
+            }
+            return;
+        }
+    }
+}
+
 void br_data_apply_node(br_engine *e, br_node n, const cJSON *json, bool build_children)
 {
-    // ponytail: unknown keys (typos like "posiiton") are ignored silently; a per-type list of known keys would let us warn.
+    br_data_check_keys(e, json);
     const cJSON *assets = cJSON_GetObjectItemCaseSensitive(json, "assets");
     if (assets != NULL) {
         br_data_preload_assets(e, assets); /* before anything that names them */

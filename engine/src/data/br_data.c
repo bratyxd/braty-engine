@@ -24,6 +24,18 @@ void br_data_errorf(br_engine *e, const char *fmt, ...)
     br_log_error("%s", s->last_error);
 }
 
+void br_data_warnf(br_engine *e, const char *fmt, ...)
+{
+    br_data_state *s = e->data;
+    char message[512];
+    va_list args;
+    va_start(args, fmt);
+    SDL_vsnprintf(message, sizeof(message), fmt, args);
+    va_end(args);
+    const char *file = s->file[0] != '\0' ? s->file : "<json>";
+    br_log_warn("%s: %s: %s", file, s->path, message);
+}
+
 void br_data_error(br_engine *e, const char *key, const char *message)
 {
     size_t mark = key != NULL ? br_data_path_push_key(e, key) : e->data->path_len;
