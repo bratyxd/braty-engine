@@ -170,7 +170,8 @@ static bool br_gltf_check_extensions(const char *path, const cgltf_data *data, b
                                               "KHR_meshopt_compression", "KHR_texture_basisu" };
     static const char *const supported[] = { "KHR_lights_punctual", "KHR_materials_emissive_strength",
                                              "KHR_materials_unlit", "KHR_texture_transform",
-                                             "KHR_mesh_quantization" };
+                                             "KHR_mesh_quantization", "KHR_materials_transmission",
+                                             "EXT_mesh_gpu_instancing" };
     for (size_t i = 0; i < data->extensions_used_count; i++) {
         const char *name = data->extensions_used[i];
         if (br_gltf_in_list(name, compressed, BR_ARRAY_COUNT(compressed))) {
@@ -317,6 +318,67 @@ static void br_gltf_material(const cgltf_data *data, const cgltf_material *m, br
                                                               : BR_ALPHA_OPAQUE;
     d->alpha_cutoff = m->alpha_cutoff;
     d->double_sided = m->double_sided != 0;
+    if (m->has_transmission && m->transmission.transmission_factor > 0.0f) {
+        // ponytail: transmission as plain alpha blending (alpha = 1 - 0.7 * factor); no refraction or screen-space background.
+        d->alpha_mode = BR_ALPHA_BLEND;
+        d->base_color.a *= 1.0f - 0.7f * m->transmission.transmission_factor;
+    }
+}
+
+/* EXT_mesh_gpu_instancing: one matrix per instance from the TRANSLATION / ROTATION / SCALE
+ * accessors (missing ones are identity). False if the attributes disagree on the count. */
+static bool br_gltf_gpu_instances(const cgltf_node *n, br_model_node *mn)
+{
+    const cgltf_mesh_gpu_instancing *gi = &n->mesh_gpu_instancing;
+    const cgltf_accessor *t = NULL;
+    const cgltf_accessor *r = NULL;
+    const cgltf_accessor *sc = NULL;
+    size_t count = 0;
+    for (size_t i = 0; i < gi->attributes_count; i++) {
+        const cgltf_attribute *a = &gi->attributes[i];
+        if (a->name == NULL || a->data == NULL) {
+            continue;
+        }
+        if (SDL_strcmp(a->name, "TRANSLATION") == 0) {
+            t = a->data;
+        } else if (SDL_strcmp(a->name, "ROTATION") == 0) {
+            r = a->data;
+        } else if (SDL_strcmp(a->name, "SCALE") == 0) {
+            sc = a->data;
+        } else {
+            continue;
+        }
+        if (count != 0 && a->data->count != count) {
+            return false;
+        }
+        count = a->data->count;
+    }
+    if (count == 0) {
+        return true;
+    }
+    mn->instances = br_alloc(sizeof(br_mat4) * count);
+    if (mn->instances == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < count; i++) {
+        float tv[3] = { 0.0f, 0.0f, 0.0f };
+        float rv[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+        float sv[3] = { 1.0f, 1.0f, 1.0f };
+        if (t != NULL) {
+            cgltf_accessor_read_float(t, i, tv, 3);
+        }
+        if (r != NULL) {
+            cgltf_accessor_read_float(r, i, rv, 4);
+        }
+        if (sc != NULL) {
+            cgltf_accessor_read_float(sc, i, sv, 3);
+        }
+        br_quat q = { rv[0], rv[1], rv[2], rv[3] };
+        mn->instances[i] = br_mat4_from_trs(br_vec3_make(tv[0], tv[1], tv[2]), br_quat_normalize(q),
+                                            br_vec3_make(sv[0], sv[1], sv[2]));
+    }
+    mn->instance_count = (uint32_t)count;
+    return true;
 }
 
 /* ---- primitives */
@@ -563,6 +625,7 @@ static void br_gltf_free_model(br_engine *e, br_model *m)
     for (uint32_t i = 0; i < m->node_count; i++) {
         br_free(m->nodes[i].name);
         br_free(m->nodes[i].extras);
+        br_free(m->nodes[i].instances);
     }
     for (uint32_t i = 0; i < m->mesh_count; i++) {
         br_free(m->meshes[i].name);
@@ -607,6 +670,8 @@ static void br_gltf_free_model(br_engine *e, br_model *m)
     br_free(m->cameras);
     br_free(m->lights);
     br_free(m->clips);
+    br_free(m->path);
+    br_free(m->scene_extras);
     br_free(m);
 }
 
@@ -796,10 +861,15 @@ static bool br_gltf_convert(br_engine *e, const char *path, const cgltf_options 
         for (uint32_t w = 0; w < mn->weight_count; w++) {
             mn->weights[w] = (weights != NULL && w < given) ? weights[w] : 0.0f;
         }
+        if (n->has_mesh_gpu_instancing && n->mesh != NULL && !br_gltf_gpu_instances(n, mn)) {
+            br_log_warn("glTF '%s': node '%s': bad EXT_mesh_gpu_instancing attributes; drawn once", path, mn->name);
+        }
     }
 
     /* scene roots: the default scene, else the first, else every parentless node */
     const cgltf_scene *scene = data->scene != NULL ? data->scene : (data->scenes_count > 0 ? &data->scenes[0] : NULL);
+    m->path = br_strdup(path);
+    m->scene_extras = scene != NULL && scene->extras.data != NULL ? br_strdup(scene->extras.data) : NULL;
     m->roots = br_gltf_alloc_array(m->node_count, sizeof(uint32_t), &ok);
     for (uint32_t i = 0; ok && scene != NULL && i < scene->nodes_count; i++) {
         m->roots[m->root_count++] = (uint32_t)cgltf_node_index(data, scene->nodes[i]);
@@ -825,7 +895,11 @@ static bool br_gltf_convert(br_engine *e, const char *path, const cgltf_options 
             for (uint32_t v = 0; v < pd->vertex_count; v++) {
                 box = br_aabb_extend(box, pd->vertices[v].position);
             }
-            m->bounds = br_aabb_union(m->bounds, br_aabb_transform(box, br_gltf_mat4(world)));
+            uint32_t copies = m->nodes[i].instance_count;
+            for (uint32_t k = 0; k < (copies > 0 ? copies : 1); k++) {
+                br_mat4 w = copies > 0 ? br_mat4_mul(br_gltf_mat4(world), m->nodes[i].instances[k]) : br_gltf_mat4(world);
+                m->bounds = br_aabb_union(m->bounds, br_aabb_transform(box, w));
+            }
         }
     }
 
@@ -1014,6 +1088,7 @@ static void br_gltf_shutdown(br_engine *e, void *user)
     br_gltf_state *s = e->gltf;
     br_array_free(&s->anims);
     br_array_free(&s->logged_ext);
+    br_gltf_components_free(e);
     br_free(s);
     e->gltf = NULL;
 }
@@ -1029,6 +1104,7 @@ void br_gltf_register(br_engine *e)
     br_array_init(&s->anims, sizeof(br_gltf_anim));
     br_array_init(&s->logged_ext, BR_GLTF_EXT_NAME);
     br_gltf_instance_register(e);
+    br_gltf_components_register(e);
 
     br_asset_loader_desc desc;
     SDL_zero(desc);

@@ -15,8 +15,29 @@
  * [x, y, z]), "visible" and "children". Colours are written as a colour picker shows them
  * (sRGB) and converted to linear. A gltf node's "animation" is a clip name or index. Shapes and their "size": cube [x, y, z], sphere [r],
  * plane [w, d], cylinder [r, h], cone [r, h], torus [R, r], capsule [r, length].
+ *
+ * glTF nodes: "source" may name one node of a kit ("models/kit.glb#Tree"); "batch": false keeps
+ * repeated static meshes as separate mesh3d nodes; "camera": true (the file's first camera, or a
+ * framing camera if it has none) or "Name" makes a glTF camera the view's camera;
+ * "default_light": true adds a sun when the file has no lights. Every 3D node may carry
+ * "components" (3D components, br_gltf.h); their node fields name 3D labels in the view, resolved
+ * after the whole scene is built.
  */
-#include "data/br_data_internal.h"
+#include "data/br_gltf_scene_internal.h"
+#include "three_d/br_gltf_internal.h"
+
+/* A 3D node's "components" object, applied once the view's scene is built (forward references). */
+typedef struct br_json3d_pending {
+    br_node3d    node;
+    const cJSON *components;
+    char         path[BR_DATA_PATH_SIZE];
+} br_json3d_pending;
+
+/* What the 3D builders share while one view's JSON is read. */
+typedef struct br_json3d_ctx {
+    br_node  view;
+    br_array pending;   /* br_json3d_pending */
+} br_json3d_ctx;
 
 enum { BR_JSON3D_GROUP, BR_JSON3D_MESH, BR_JSON3D_LIGHT, BR_JSON3D_GLTF };
 
@@ -210,13 +231,17 @@ static br_node3d br_json3d_gltf(br_engine *e, const cJSON *json)
         br_data_errorf(e, "a gltf node needs \"source\": \"models/x.glb\"; skipped");
         return none;
     }
+    br_gltf_options options;
+    SDL_zero(options);
+    bool batch = true;
+    br_data_get_bool(e, json, "batch", &batch);
+    options.no_batching = !batch;
     /* the asset reference belongs to the load in progress (released with the scene / file root) */
-    br_model *model = br_model_load(e, source);
-    if (model == NULL) {
-        br_data_error(e, "source", "model could not be loaded; skipped");
+    br_node3d n = br_gltf_instantiate(e, source, none, &options);
+    if (!br_node3d_valid(e, n)) {
+        br_data_error(e, "source", "model (or its #node) could not be loaded; skipped");
         return none;
     }
-    br_node3d n = br_model_instantiate(e, model);
     /* "animation": a clip name, or a clip index for unnamed clips */
     const cJSON *anim = cJSON_GetObjectItemCaseSensitive(json, "animation");
     char clip[BR_DATA_NAME_SIZE];
@@ -265,9 +290,54 @@ static void br_json3d_transform(br_engine *e, br_node3d n, const cJSON *json)
     }
 }
 
-static void br_json3d_children(br_engine *e, br_node3d parent, const cJSON *list, const char *key);
+/* True if a light3d node is under n (n included). */
+static bool br_json3d_has_light(br_engine *e, br_node3d n)
+{
+    if (br_light3d_get(e, n) != NULL) {
+        return true;
+    }
+    for (br_node3d c = br_node3d_first_child(e, n); br_node3d_valid(e, c); c = br_node3d_next_sibling(e, c)) {
+        if (br_json3d_has_light(e, c)) {
+            return true;
+        }
+    }
+    return false;
+}
 
-static void br_json3d_node(br_engine *e, br_node3d parent, const cJSON *json)
+/* "camera" and "default_light" of a gltf node (after its transform: framing needs world bounds). */
+static void br_json3d_gltf_view(br_engine *e, br_json3d_ctx *ctx, br_node3d n, const cJSON *json)
+{
+    if (br_model3d_model(e, n) == NULL || !br_node_valid(e, ctx->view)) {
+        return;
+    }
+    bool sun = false;
+    br_data_get_bool(e, json, "default_light", &sun);
+    sun = sun && !br_json3d_has_light(e, n); /* a kit part has none of the file's lights */
+    const cJSON *cam = cJSON_GetObjectItemCaseSensitive(json, "camera");
+    bool frame = false;
+    if (cJSON_IsTrue(cam) || cJSON_IsString(cam)) {
+        br_node3d c = br_model3d_camera(e, n, cJSON_IsString(cam) ? cam->valuestring : NULL);
+        br_camera3d *cd = br_camera3d_get(e, c);
+        if (cd != NULL) {
+            // ponytail: hot reload of this view rebuilds the scene but keeps only the current camera node (now inside the old instance); reload a view using a glTF camera by reloading its scene.
+            cd->aspect = 0.0f; /* follow the view, not the exporter's render size */
+            br_view3d_set_camera(e, ctx->view, c);
+        } else if (cJSON_IsString(cam)) {
+            br_data_error(e, "camera", "no camera on a node with that name");
+        } else {
+            frame = true;
+        }
+    } else if (cam != NULL && !cJSON_IsFalse(cam)) {
+        br_data_error(e, "camera", "expected true, false or a camera node name");
+    }
+    if (frame || sun) {
+        br_gltf_frame_view(e, ctx->view, n, NULL, frame, sun);
+    }
+}
+
+static void br_json3d_children(br_engine *e, br_json3d_ctx *ctx, br_node3d parent, const cJSON *list, const char *key);
+
+static void br_json3d_node(br_engine *e, br_json3d_ctx *ctx, br_node3d parent, const cJSON *json)
 {
     if (!cJSON_IsObject(json)) {
         br_data_errorf(e, "a 3D node must be an object; skipped");
@@ -290,10 +360,50 @@ static void br_json3d_node(br_engine *e, br_node3d parent, const cJSON *json)
     }
     br_node3d_add_child(e, parent, n);
     br_json3d_transform(e, n, json);
-    br_json3d_children(e, n, cJSON_GetObjectItemCaseSensitive(json, "children"), "children");
+    if (type == BR_JSON3D_GLTF) {
+        br_json3d_gltf_view(e, ctx, n, json);
+    }
+    const cJSON *components = cJSON_GetObjectItemCaseSensitive(json, "components");
+    if (components != NULL) {
+        br_json3d_pending *p = br_array_push(&ctx->pending, NULL);
+        if (p != NULL) {
+            p->node = n;
+            p->components = components;
+            br_str_copy(p->path, sizeof(p->path), e->data->path);
+        }
+    }
+    br_json3d_children(e, ctx, n, cJSON_GetObjectItemCaseSensitive(json, "children"), "children");
 }
 
-static void br_json3d_children(br_engine *e, br_node3d parent, const cJSON *list, const char *key)
+/* Applies the queued "components" objects (every label of the view exists now). */
+static void br_json3d_apply_pending(br_engine *e, br_json3d_ctx *ctx, br_node3d root)
+{
+    br_data_state *s = e->data;
+    char saved[BR_DATA_PATH_SIZE];
+    size_t saved_len = s->path_len;
+    SDL_memcpy(saved, s->path, sizeof(saved));
+    for (uint32_t i = 0; i < ctx->pending.count; i++) {
+        const br_json3d_pending *p = br_array_at(&ctx->pending, i);
+        br_str_copy(s->path, sizeof(s->path), p->path);
+        s->path_len = SDL_strlen(s->path);
+        br_data_path_push_key(e, "components");
+        if (!cJSON_IsObject(p->components)) {
+            br_data_errorf(e, "expected an object { \"name\": { fields } }");
+            continue;
+        }
+        const cJSON *item = NULL;
+        cJSON_ArrayForEach(item, p->components)
+        {
+            size_t item_mark = br_data_path_push_key(e, item->string);
+            br_data_component3d_apply(e, p->node, item->string, item, root, false);
+            br_data_path_pop(e, item_mark);
+        }
+    }
+    SDL_memcpy(s->path, saved, sizeof(saved));
+    s->path_len = saved_len;
+}
+
+static void br_json3d_children(br_engine *e, br_json3d_ctx *ctx, br_node3d parent, const cJSON *list, const char *key)
 {
     if (list == NULL) {
         return;
@@ -307,7 +417,7 @@ static void br_json3d_children(br_engine *e, br_node3d parent, const cJSON *list
         cJSON_ArrayForEach(item, list)
         {
             size_t item_mark = br_data_path_push_index(e, i);
-            br_json3d_node(e, parent, item);
+            br_json3d_node(e, ctx, parent, item);
             br_data_path_pop(e, item_mark);
             i++;
         }
@@ -379,7 +489,12 @@ static bool br_data_view3d_from_json(br_engine *e, br_node n, void *data, const 
         }
         child = next;
     }
-    br_json3d_children(e, root, cJSON_GetObjectItemCaseSensitive(json, "scene"), "scene");
+    br_json3d_ctx ctx;
+    ctx.view = n;
+    br_array_init(&ctx.pending, sizeof(br_json3d_pending));
+    br_json3d_children(e, &ctx, root, cJSON_GetObjectItemCaseSensitive(json, "scene"), "scene");
+    br_json3d_apply_pending(e, &ctx, root);
+    br_array_free(&ctx.pending);
     return true;
 }
 
