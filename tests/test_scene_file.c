@@ -433,6 +433,62 @@ static void test_game_config_apply(br_engine *e)
     br_ticker_set_speed(e, 1.0f);
 }
 
+/* ---- unknown keys: warned with file and JSON path, not errors, the rest still loads */
+
+/* Log lines since `first` containing text (run this test while the log is not full). */
+static uint32_t log_count_since(br_engine *e, uint32_t first, const char *text)
+{
+    uint32_t found = 0;
+    for (uint32_t i = first; i < br_debug_log_count(e); i++) {
+        found += strstr(br_debug_log_line(e, i), text) != NULL ? 1 : 0;
+    }
+    return found;
+}
+
+static bool log_has_since(br_engine *e, uint32_t first, const char *text)
+{
+    if (log_count_since(e, first, text) == 0) {
+        printf("  no log line since %u contains '%s'\n", first, text);
+        return false;
+    }
+    return true;
+}
+
+static void test_unknown_keys(br_engine *e)
+{
+    uint32_t errors = br_scene_file_error_count(e);
+    uint32_t first = br_debug_log_count(e);
+    const char *json = "{ \"type\": \"container\", \"label\": \"typos\", \"children\": ["
+                       " { \"type\": \"sprite\", \"posiiton\": [1, 2], \"anchor\": [0.5, 0.5] },"
+                       " { \"type\": \"text\", \"text\": \"x\", \"style\": { \"font_szie\": 12 } },"
+                       " { \"label\": \"plain\", \"position\": [3, 4], \"colour\": \"red\" } ] }";
+    br_node root = load(e, json);
+    BR_CHECK(br_node_valid(e, root));
+    BR_CHECK(br_scene_file_error_count(e) == errors); /* warnings only */
+    BR_CHECK(log_has_since(e, first, "test.scene.json: children[0].posiiton: unknown key"));
+    BR_CHECK(log_has_since(e, first, "test.scene.json: children[1].style.font_szie: unknown key"));
+    BR_CHECK(log_has_since(e, first, "test.scene.json: children[2].colour: unknown key"));
+    BR_CHECK(br_node_position(e, find(e, root, "plain")).x == 3.0f); /* known keys still apply */
+    br_node_destroy(e, root);
+
+    /* the every-type scene uses only known keys: no warning */
+    first = br_debug_log_count(e);
+    root = load(e, every_type_scene);
+    BR_CHECK(log_count_since(e, first, "unknown key") == 0);
+    br_node_destroy(e, root);
+
+    first = br_debug_log_count(e);
+    br_game_config c;
+    const char *cfg = "{ \"window\": { \"widht\": 640 }, \"lives\": 3, \"game\": { \"anything\": 1 },"
+                      "  \"input\": { \"jump\": { \"key\": [\"Space\"] } } }";
+    BR_CHECK(br_game_config_parse(cfg, strlen(cfg), "game.json", &c));
+    BR_CHECK(log_has_since(e, first, "game.json: window.widht: unknown key"));
+    BR_CHECK(log_has_since(e, first, "game.json: lives: unknown key"));
+    BR_CHECK(log_has_since(e, first, "game.json: input.jump.key: unknown key"));
+    BR_CHECK(log_count_since(e, first, "unknown key") == 3); /* "game" contents are the game's */
+    br_game_config_free(&c);
+}
+
 /* ---- debug: log capture, selection */
 
 static void test_debug(br_engine *e)
@@ -465,6 +521,7 @@ int main(void)
     }
     register_every_field(e);
 
+    test_unknown_keys(e); /* first: it reads the log, which keeps BR_DEBUG_LOG_LINES lines */
     test_every_type_round_trip(e);
     test_collect_assets(e);
     test_component_fields(e);

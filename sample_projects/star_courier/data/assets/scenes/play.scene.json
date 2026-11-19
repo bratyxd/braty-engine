@@ -1,0 +1,56 @@
+{
+  "type": "container",
+  "label": "play",
+  "assets": ["sprites/atlas.json"],
+  "children": [
+    { "prefab": "prefabs/starfield.prefab.json" },
+
+    { "type": "container", "label": "field",
+      "filters": [ { "type": "blur", "enabled": false, "strength": 1, "quality": 2 },
+                   { "type": "color_matrix", "enabled": false } ],
+      "children": [
+        { "prefab": "prefabs/station.prefab.json", "position": [960, 420] },
+        { "type": "container", "label": "crates" },
+        { "type": "particle_container", "label": "thrust_fx", "texture": "sprites/atlas.json#spark.png",
+          "blend": "add", "dynamic": ["vertex", "position", "color"],
+          "components": { "emitter": { "rate": 90, "life": 0.45, "speed": [90, 170], "spread": 0.5,
+                                       "direction": 1.5708, "scale": [1.1, 0.2], "color_start": "#ffe08a",
+                                       "color_end": "#ff5a3c", "drag": 2.0, "follow": "ship", "offset": [0, 20],
+                                       "needs_thrust": true } } },
+        { "prefab": "prefabs/ship.prefab.json", "position": [400, 400] },
+        { "type": "container", "label": "debris" },
+        { "type": "particle_container", "label": "burst_fx", "texture": "sprites/atlas.json#spark.png",
+          "blend": "add", "dynamic": ["vertex", "position", "color"],
+          "components": { "emitter": { "rate": 0, "life": 0.7, "speed": [60, 320], "spread": 6.2832,
+                                       "scale": [1.4, 0.1], "color_start": "#ffffff", "color_end": "#ffffff",
+                                       "drag": 3.0 } } }
+      ] },
+
+    { "type": "container", "label": "hud", "children": [
+      { "prefab": "prefabs/panel.prefab.json", "position": [640, 40], "width": 1248, "height": 60 },
+      { "type": "text", "label": "score_text", "text": "SCORE 0", "position": [44, 40], "anchor": [0, 0.5],
+        "components": { "pulse": { "kick": 0.25, "decay": 6 } },
+        "style": { "font_size": 28, "bold": true, "fill": "#ffb547", "stroke": { "width": 3, "color": "#3a1d05" } } },
+      { "type": "text", "label": "level_text", "text": "LEVEL 1", "position": [640, 40], "anchor": [0.5, 0.5],
+        "components": { "pulse": { "kick": 0.5, "decay": 3 } },
+        "style": { "font_size": 26, "bold": true, "fill": "#a78bfa", "stroke": { "width": 3, "color": "#1f1446" } } },
+      { "type": "container", "label": "lives", "position": [1140, 40], "children": [
+        { "type": "sprite", "label": "life_1", "texture": "sprites/atlas.json#life.png", "position": [0, 0], "scale": 1.2 },
+        { "type": "sprite", "label": "life_2", "texture": "sprites/atlas.json#life.png", "position": [32, 0], "scale": 1.2 },
+        { "type": "sprite", "label": "life_3", "texture": "sprites/atlas.json#life.png", "position": [64, 0], "scale": 1.2 },
+        { "type": "sprite", "label": "life_4", "texture": "sprites/atlas.json#life.png", "position": [96, 0], "scale": 1.2 }
+      ] },
+      { "type": "text", "label": "hint", "text": "Pick up a crate", "position": [640, 696], "anchor": [0.5, 0.5],
+        "components": { "pulse": { "kick": 0.15, "decay": 5 } },
+        "style": { "font_size": 20, "fill": "#e8fbff", "drop_shadow": { "color": "#000000aa", "distance": 2 } } },
+
+      { "type": "container", "label": "pause_panel", "visible": false, "position": [640, 360], "children": [
+        { "prefab": "prefabs/panel.prefab.json", "width": 420, "height": 170 },
+        { "type": "text", "text": "PAUSED", "position": [0, -22], "anchor": [0.5, 0.5],
+          "style": { "font_size": 54, "bold": true, "fill": "#e8fbff", "stroke": { "width": 4, "color": "#0e3b46" } } },
+        { "type": "text", "text": "P / Esc / Start to resume", "position": [0, 40], "anchor": [0.5, 0.5],
+          "style": { "font_size": 20, "fill": "#7dd3c8" } }
+      ] }
+    ] }
+  ]
+}

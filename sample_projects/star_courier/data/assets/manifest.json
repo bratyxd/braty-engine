@@ -1,0 +1,10 @@
+{
+  "bundles": [
+    { "name": "game", "assets": [
+      { "alias": "atlas", "src": "sprites/atlas.json" },
+      { "alias": "stars_far", "src": "bg/stars_far.png" },
+      { "alias": "stars_near", "src": "bg/stars_near.png" },
+      { "alias": "music", "src": "sounds/music.wav" }
+    ] }
+  ]
+}

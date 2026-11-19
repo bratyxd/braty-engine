@@ -85,6 +85,8 @@ typedef struct br_data_state {
 
 /* Formats an error at the current JSON path ("file: path: message"), logs and remembers it. */
 void br_data_errorf(br_engine *e, const char *fmt, ...);
+/* Logs a warning at the current JSON path (not counted as an error). */
+void br_data_warnf(br_engine *e, const char *fmt, ...);
 /* Appends ".key" to the JSON path; returns the length to restore with br_data_path_pop. */
 size_t br_data_path_push_key(br_engine *e, const char *key);
 /* Appends "[index]" to the JSON path. */

@@ -12,7 +12,9 @@ Everything a designer tweaks is JSON. This file documents every format the engin
 Paths inside data files are asset paths: forward slashes, relative to the asset root,
 case-sensitive. Errors never stop a load: each is logged as `file: json.path: reason`
 (`level.scene.json: children[2].components.velocity.x: expected a number`), the bad value is
-skipped (a bad node with its subtree), and the rest loads.
+skipped (a bad node with its subtree), and the rest loads. Unknown keys (typos like
+`"posiiton"`) log a warning at their JSON path; they are checked for game.json and for the
+built-in node types and text styles, not for your own node types.
 
 A working set of all three files: `examples/data/` (`game.json`, `demo.scene.json`,
 `coin.prefab.json`), run by `examples/data_demo.c`.
@@ -66,7 +68,7 @@ overlay closed, F1, hot reload on in debug builds.
 | `debug.overlay` | Debug overlay open at start (`--debug` on the command line does the same). |
 | `debug.toggle_key` | SDL key name toggling the overlay (`"F1"`, `"F12"`, `"Grave"`). |
 | `debug.hot_reload` | Poll loaded scene files and reload them when they change (default: on in debug builds, off with `NDEBUG`). |
-| anything else | Kept for the game: `br_game_config_json(e)` returns the document. |
+| `game` | Anything the game wants: `br_game_config_json(e)` returns the whole document. Other unknown keys log a warning. |
 
 Command line (`br_game_config_args`): `--debug` opens the overlay, `--scene path` replaces
 `start_scene`.

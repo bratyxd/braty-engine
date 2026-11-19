@@ -1,0 +1,74 @@
+# Builds the engine, examples and sample game on Windows (MinGW-w64 GCC), Linux and macOS and
+# runs the headless tests (ctest).
+#
+# NOT YET RUN: this workflow was written without access to GitHub Actions. Only the Windows/GCC
+# build has ever been run (locally); the Linux and macOS jobs are the first time those platforms
+# get built at all, so expect fixes. SDL 3.4.20 is fetched and built by CMake (FetchContent),
+# which takes a few minutes per job. No GPU on CI runners: tests are headless by design; the
+# examples and the game are built, not run.
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows-mingw:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+      - name: Configure
+        run: cmake --preset windows-gcc
+      - name: Build
+        run: cmake --build --preset windows-gcc
+      - name: Test
+        run: ctest --preset windows-gcc
+
+  linux:
+    runs-on: ubuntu-24.04
+    env:
+      SDL_VIDEODRIVER: dummy
+      SDL_AUDIODRIVER: dummy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies (compiler, Ninja, SDL3's X11/Wayland/audio headers)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build pkg-config \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
+            libxkbcommon-dev libwayland-dev wayland-protocols libegl1-mesa-dev libdrm-dev libgbm-dev \
+            libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev libdbus-1-dev
+      - name: Configure
+        run: cmake --preset linux
+      - name: Build
+        run: cmake --build --preset linux
+      - name: Test
+        run: ctest --preset linux
+
+  macos:
+    runs-on: macos-14
+    env:
+      SDL_VIDEODRIVER: dummy
+      SDL_AUDIODRIVER: dummy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ninja
+        run: brew install ninja
+      - name: Configure
+        run: cmake --preset macos
+      - name: Build
+        run: cmake --build --preset macos
+      - name: Test
+        run: ctest --preset macos

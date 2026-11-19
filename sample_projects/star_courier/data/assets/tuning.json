@@ -1,0 +1,37 @@
+{
+  "type": "container",
+  "label": "tuning",
+  "components": {
+    "tuning": {
+      "lives": 3,
+      "invulnerable_time": 1.6,
+      "gameover_delay": 1.4,
+      "field_min": [40, 96],
+      "field_max": [1240, 690],
+
+      "crates_on_field": 2,
+      "crate_value": 100,
+      "level_bonus": 0.5,
+      "deliveries_per_level": 3,
+      "station_move_time": 0.9,
+
+      "debris_interval": 1.7,
+      "debris_interval_min": 0.32,
+      "debris_interval_scale": 0.8,
+      "debris_speed": [70, 130],
+      "debris_speed_scale": 1.12,
+      "debris_max": 30,
+      "debris_small": "prefabs/debris_small.prefab.json",
+      "debris_medium": "prefabs/debris_medium.prefab.json",
+      "debris_large": "prefabs/debris_large.prefab.json",
+      "crate_prefab": "prefabs/crate.prefab.json",
+
+      "flash_time": 0.45,
+      "flash_blur": 6,
+      "flash_color": "#ff4060",
+      "pickup_burst": 18,
+      "deliver_burst": 48,
+      "hit_burst": 40
+    }
+  }
+}

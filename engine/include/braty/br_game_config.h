@@ -18,8 +18,8 @@
  *       return desc;
  *   }
  *
- * Every key is optional; see docs/DATA_FORMATS.md for the full file. Unknown top-level keys are
- * kept for the game (br_game_config_json).
+ * Every key is optional; see docs/DATA_FORMATS.md for the full file. The whole document is kept
+ * for the game (br_game_config_json); put game settings under "game" (other unknown keys warn).
  */
 #ifndef BR_GAME_CONFIG_H
 #define BR_GAME_CONFIG_H

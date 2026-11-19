@@ -8,6 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(BRATY_BUILD_TESTS "Build tests/test_*.c" ON)
 option(BRATY_BUILD_EXAMPLES "Build examples/*.c" ON)
+option(BRATY_BUILD_SAMPLES "Build sample_projects/* (each has its own CMakeLists.txt)" ON)
 
 # --- SDL3: prebuilt package first (pass -DCMAKE_PREFIX_PATH=.deps/sdl3), source fallback second.
 find_package(SDL3 CONFIG QUIET)
@@ -44,6 +45,7 @@ target_include_directories(braty
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/engine/src)
 target_compile_options(braty PRIVATE ${BR_WARNINGS})
 target_link_libraries(braty PUBLIC SDL3::SDL3 braty_third_party)
+add_library(braty::braty ALIAS braty)   # games: add_subdirectory(<braty> ...) then link braty::braty
 
 # --- tests: every tests/test_*.c is one CTest executable
 if(BRATY_BUILD_TESTS)
@@ -67,4 +69,9 @@ if(BRATY_BUILD_EXAMPLES)
         target_compile_options(${name} PRIVATE ${BR_WARNINGS})
         target_link_libraries(${name} PRIVATE braty)
     endforeach()
+endif()
+
+# --- sample games: each builds standalone too (cmake -S sample_projects/<name>)
+if(BRATY_BUILD_SAMPLES)
+    add_subdirectory(sample_projects/star_courier)
 endif()

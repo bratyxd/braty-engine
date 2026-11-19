@@ -1,0 +1,2 @@
+{ "prefab": "prefabs/debris.prefab.json", "texture": "sprites/atlas.json#debris_a.png",
+  "components": { "debris": { "radius": 15 } } }

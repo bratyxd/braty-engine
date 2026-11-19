@@ -1,0 +1,34 @@
+{
+  "window": { "title": "Star Courier", "width": 1280, "height": 720, "vsync": true, "resizable": false },
+  "asset_root": "assets",
+  "manifest": "manifest.json",
+  "clear_color": "#0b1026",
+  "ticker": { "max_fps": 0, "min_fps": 10, "speed": 1 },
+  "input": {
+    "left":  { "keys": ["Left", "A"],  "buttons": ["dpleft"],  "axes": ["-leftx"] },
+    "right": { "keys": ["Right", "D"], "buttons": ["dpright"], "axes": ["+leftx"] },
+    "up":    { "keys": ["Up", "W"],    "buttons": ["dpup"],    "axes": ["-lefty"] },
+    "down":  { "keys": ["Down", "S"],  "buttons": ["dpdown"],  "axes": ["+lefty"] },
+    "start": { "keys": ["Return", "Space"], "buttons": ["a", "start"], "mouse": [1] },
+    "pause": { "keys": ["P", "Escape"], "buttons": ["start", "back"] },
+    "steer": { "mouse": [1] }
+  },
+  "audio": {
+    "master_volume": 0.8,
+    "buses": { "music": 0.45, "sfx": 0.9 },
+    "sprites": {
+      "sounds/sfx.wav": {
+        "pickup": [0, 0.18], "deliver": [1, 0.53], "hit": [2, 0.45],
+        "levelup": [3, 0.46], "start": [4, 0.5], "gameover": [5, 0.8]
+      }
+    }
+  },
+  "debug": { "overlay": false, "toggle_key": "F1", "hot_reload": true },
+  "game": {
+    "tuning": "tuning.json",
+    "music": "music",
+    "sfx": "sounds/sfx.wav",
+    "scenes": { "title": "scenes/title.scene.json", "play": "scenes/play.scene.json",
+                "gameover": "scenes/gameover.scene.json" }
+  }
+}

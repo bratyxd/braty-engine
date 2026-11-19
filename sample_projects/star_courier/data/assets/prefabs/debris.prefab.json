@@ -1,0 +1,9 @@
+{
+  "type": "sprite",
+  "label": "debris",
+  "texture": "sprites/atlas.json#debris_b.png",
+  "components": {
+    "debris": { "radius": 20 },
+    "body": { "velocity": [0, 0], "spin": 0.5 }
+  }
+}

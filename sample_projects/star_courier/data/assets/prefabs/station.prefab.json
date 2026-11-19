@@ -1,0 +1,11 @@
+{
+  "type": "container",
+  "label": "station",
+  "components": { "station": { "radius": 42, "halo": "halo" } },
+  "children": [
+    { "type": "sprite", "label": "halo", "texture": "sprites/atlas.json#ring.png", "scale": 2.1, "tint": "#a78bfa",
+      "alpha": 0.35, "blend": "add" },
+    { "type": "sprite", "label": "station_art", "texture": "sprites/atlas.json#station.png",
+      "components": { "body": { "spin": 0.35 } } }
+  ]
+}

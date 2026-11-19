@@ -10,13 +10,42 @@ The full plan and feature map: `docs/plans/2026-11-19-braty-engine.md`.
 ## Build, test, look at it
 
 ```sh
-cmake --preset windows-gcc && cmake --build --preset windows-gcc
-ctest --preset windows-gcc
-build/windows-gcc/hello_quad.exe --frames 3 --screenshot out.png [--gpu-driver vulkan|direct3d12]
+cmake --preset windows-gcc [-DCMAKE_PREFIX_PATH=<SDL3 prefix>]   # default prefix: .deps/sdl3
+cmake --build --preset windows-gcc                                  # engine, tests, examples, sample
+ctest --preset windows-gcc                                          # headless tests
+build/windows-gcc/hello_quad.exe --frames 3 --screenshot build/out.png [--gpu-driver vulkan|direct3d12]
+build/windows-gcc/sample_projects/star_courier/star_courier.exe --autoplay --frames 700 --screenshot build/game.png
 ```
 
 Every app built on `br_app` takes `--frames N --screenshot out.png` (fixed 1/60 s steps, exits 0).
-**Open the PNG before claiming a visual feature works.** Details: `docs/BUILDING.md`.
+**Open the PNG before claiming a visual feature works**, on both `direct3d12` and `vulkan`.
+Examples find their data at `../../examples` relative to the executable, so they work from any
+working directory but only when built into the default `build/<preset>/`; the sample game
+copies its data next to its executable and works from any build directory. Star Courier's
+`--autoplay` plays itself deterministically: `--frames 60` = title, `700` = gameplay,
+`1300` = game over; `--frames 3600` is the 60-second soak (it logs node/texture/asset counts at
+every game over). Details: `docs/BUILDING.md`, other platforms: `docs/PLATFORMS.md`.
+
+## How to make a game with Braty
+
+Read `docs/GETTING_STARTED.md` (a new game in eleven compiling steps), then copy the shape of
+`sample_projects/star_courier/`:
+
+- `data/game.json` - window, asset root, manifest, input actions, audio buses and sound
+  sprites; game-specific settings under `"game"`. Unknown keys are warned about.
+- `data/assets/` - scene files (one per screen), prefabs (spawned things), a TexturePacker
+  spritesheet, a manifest with a bundle, and `tuning.json` (every gameplay number, loaded as a
+  component so errors carry JSON paths and edits hot-reload).
+- `src/game.h` - component structs + the ONE game-state struct handed to systems as `user`.
+- `src/components.c` - a `br_field_desc` list per component (`br_component_register`).
+- `src/systems.c` - systems over component arrays (input -> intent, state machine, spawner,
+  movement, collision -> events, rules, fx, hud).
+- `src/main.c` - `br_main` with `br_game_config_load` / `_args` / `_app_desc`, init registers
+  components and systems, then `br_game_config_apply`.
+- `CMakeLists.txt` - `add_subdirectory(<braty>)`, link `braty::braty`, copy `data/` next to the
+  executable.
+
+Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
 
 ## Code rules (hard requirements)
 
@@ -69,6 +98,7 @@ The contracts are fixed in the plan under "Core contracts".
 - **A shader**: `engine/shaders/<name>.<vert|frag>.hlsl`, run `python tools/compile_shaders.py`,
   include `<name>.<stage>.h`, use `br_shader_<name>_<stage>` in a `br_pipeline_desc`.
   Rules in `docs/BUILDING.md` and `docs/agents/gpu.md`.
+- **Data a game reads** (scenes, prefabs, game.json, components): `docs/DATA_FORMATS.md`.
 - **Module state**: one pointer per module in `struct br_engine`
   (`engine/src/app/br_engine_internal.h`); allocate in `br_<module>_register`, free on shutdown.
 - **A module (Tasks 3-11)**: your public header and an empty `br_<module>_register(e)` already
@@ -79,6 +109,8 @@ The contracts are fixed in the plan under "Core contracts".
 - **A test**: `tests/test_<module>.c` with a plain `main` and `BR_CHECK(cond)` from
   `tests/br_test.h`, return `br_test_finish()`. CMake picks it up automatically.
 - **An example**: `examples/<name>.c` including `braty/braty_main.h`. Picked up automatically.
+- **A sample game**: `sample_projects/<name>/` with its own `CMakeLists.txt` (copy Star
+  Courier's), plus one `add_subdirectory` line under `BRATY_BUILD_SAMPLES` in the root CMakeLists.
 
 ## Module guides
 
@@ -101,12 +133,13 @@ Read the guide, then the module's public header (headers are the API reference).
 | events | `docs/agents/events.md` | done (Task 7) |
 | audio | `docs/agents/audio.md` | done (Task 7) |
 | filters | `docs/agents/filters.md` | done (Task 8) |
-| three_d | `docs/agents/three_d.md` | Task 9 |
-| gltf | `docs/agents/gltf.md` | Task 11 |
-| data | `docs/agents/data.md` | Task 10 |
-| debug | `docs/agents/debug.md` | Task 10 |
+| three_d | `docs/agents/three_d.md` | done (Task 9) |
+| gltf | `docs/agents/gltf.md` | in progress (Task 11) |
+| data | `docs/agents/data.md` | done (Task 10) |
+| debug | `docs/agents/debug.md` | done (Task 10) |
 
-Guides marked with a task number do not exist until that task lands.
+Guides marked "in progress" do not exist until that task lands. Phase 2 (arenas, play-testing
+API, cameras, scenes and asset groups, animation, profiler): `docs/plans/2026-11-19-braty-engine-phase2.md`.
 
 ## Layout
 
@@ -116,5 +149,6 @@ engine/src/<module>/    sources; private headers *_internal.h
 engine/shaders/         HLSL sources + compiled/ generated headers (committed)
 third_party/            stb, cgltf, cJSON, microui (+ licences, see third_party/README.md)
 tools/                  compile_shaders.py
-tests/  examples/  docs/
+sample_projects/        star_courier (sample game; builds standalone or from the root project)
+tests/  examples/  docs/   docs: BUILDING, GETTING_STARTED, PLATFORMS, DATA_FORMATS, API_REVIEW, agents/
 ```
