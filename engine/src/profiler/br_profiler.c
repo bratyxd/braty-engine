@@ -192,12 +192,12 @@ void br_profiler_self_times(const br_profiler_scope *scopes, uint32_t count, uin
 
 /* ---- scopes */
 
+#ifndef BRATY_PROFILER_OFF
 static bool br_profiler_recording(br_profiler_state *p)
 {
     return p != NULL && p->in_frame && SDL_GetCurrentThreadID() == p->main_thread;
 }
 
-#ifndef BRATY_PROFILER_OFF
 void br_profile_begin(br_engine *e, const char *name)
 {
     br_profiler_state *p = e->profiler;

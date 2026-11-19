@@ -9,6 +9,65 @@
 
 #include <SDL3/SDL.h>
 
+/* ---- the verdict rule */
+
+static br_profiler_verdict_input input(float interval, float update, float render)
+{
+    br_profiler_verdict_input in;
+    SDL_zero(in);
+    in.interval_ms = interval;
+    in.update_ms = update;
+    in.render_ms = render;
+    return in;
+}
+
+static void test_verdict_rule(void)
+{
+    br_profiler_verdict_input in = input(0.0f, 0.0f, 0.0f);
+    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_NONE);
+
+    in = input(26.0f, 25.0f, 0.8f); /* --cpu-load 25 */
+    in.gpu_ms = 0.5f;
+    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_CPU_UPDATE);
+
+    in = input(33.0f, 0.2f, 32.0f); /* many draw calls */
+    in.gpu_ms = 15.0f;
+    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_CPU_RENDER);
+
+    in = input(36.0f, 0.4f, 1.7f); /* --gpu-load: the fence estimate says so */
+    in.acquire_ms = 33.5f;
+    in.gpu_ms = 36.0f;
+    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_GPU);
+    in.gpu_ms = 0.0f; /* no fence numbers: the CPU waiting on the GPU is enough */
+    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_GPU);
+    in = input(0.36f, 0.01f, 0.19f); /* thousands of FPS: a fence estimate within its resolution */
+    in.gpu_ms = 0.3f;
+    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_CPU_RENDER);
+
+    in = input(16.7f, 2.0f, 1.0f); /* vsync at 60 Hz with time to spare */
+    in.acquire_ms = 13.0f;
+    in.refresh_ms = 16.67f;
+    in.gpu_ms = 16.0f; /* inflated by display waits: ignored under vsync */
+    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_VSYNC);
+    in = input(33.3f, 20.0f, 1.0f); /* vsync, but the CPU misses the refresh */
+    in.acquire_ms = 12.0f;
+    in.refresh_ms = 16.67f;
+    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_CPU_UPDATE);
+
+    in = input(33.3f, 2.0f, 1.0f); /* capped at 30 FPS */
+    in.pace_ms = 30.0f;
+    in.cap_ms = 33.33f;
+    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_FPS_CAP);
+    in = input(50.0f, 48.0f, 1.0f); /* a cap the game cannot reach */
+    in.cap_ms = 33.33f;
+    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_CPU_UPDATE);
+    for (int v = 0; v < BR_PROFILER_VERDICT_COUNT; v++) {
+        BR_CHECK(SDL_strlen(br_profiler_verdict_name((br_profiler_verdict)v)) > 0);
+    }
+}
+
+#ifndef BRATY_PROFILER_OFF
+
 /* ---- an injected clock: time moves only when a test system says so */
 
 typedef struct fake_clock {
@@ -136,63 +195,6 @@ static void test_ring(void)
     BR_CHECK(br_profiler_get_frame(e, 0, &info) && info.number == BR_PROFILER_FRAMES + 50);
     BR_CHECK(br_profiler_get_frame(e, 1, &info) && info.frame_ms == 0.0f); /* no interval across a pause */
     br_engine_destroy(e);
-}
-
-/* ---- the verdict rule */
-
-static br_profiler_verdict_input input(float interval, float update, float render)
-{
-    br_profiler_verdict_input in;
-    SDL_zero(in);
-    in.interval_ms = interval;
-    in.update_ms = update;
-    in.render_ms = render;
-    return in;
-}
-
-static void test_verdict_rule(void)
-{
-    br_profiler_verdict_input in = input(0.0f, 0.0f, 0.0f);
-    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_NONE);
-
-    in = input(26.0f, 25.0f, 0.8f); /* --cpu-load 25 */
-    in.gpu_ms = 0.5f;
-    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_CPU_UPDATE);
-
-    in = input(33.0f, 0.2f, 32.0f); /* many draw calls */
-    in.gpu_ms = 15.0f;
-    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_CPU_RENDER);
-
-    in = input(36.0f, 0.4f, 1.7f); /* --gpu-load: the fence estimate says so */
-    in.acquire_ms = 33.5f;
-    in.gpu_ms = 36.0f;
-    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_GPU);
-    in.gpu_ms = 0.0f; /* no fence numbers: the CPU waiting on the GPU is enough */
-    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_GPU);
-    in = input(0.36f, 0.01f, 0.19f); /* thousands of FPS: a fence estimate within its resolution */
-    in.gpu_ms = 0.3f;
-    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_CPU_RENDER);
-
-    in = input(16.7f, 2.0f, 1.0f); /* vsync at 60 Hz with time to spare */
-    in.acquire_ms = 13.0f;
-    in.refresh_ms = 16.67f;
-    in.gpu_ms = 16.0f; /* inflated by display waits: ignored under vsync */
-    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_VSYNC);
-    in = input(33.3f, 20.0f, 1.0f); /* vsync, but the CPU misses the refresh */
-    in.acquire_ms = 12.0f;
-    in.refresh_ms = 16.67f;
-    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_CPU_UPDATE);
-
-    in = input(33.3f, 2.0f, 1.0f); /* capped at 30 FPS */
-    in.pace_ms = 30.0f;
-    in.cap_ms = 33.33f;
-    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_FPS_CAP);
-    in = input(50.0f, 48.0f, 1.0f); /* a cap the game cannot reach */
-    in.cap_ms = 33.33f;
-    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_CPU_UPDATE);
-    for (int v = 0; v < BR_PROFILER_VERDICT_COUNT; v++) {
-        BR_CHECK(SDL_strlen(br_profiler_verdict_name((br_profiler_verdict)v)) > 0);
-    }
 }
 
 /* The shown verdict follows the window average and ignores short spikes. */
@@ -432,6 +434,8 @@ static void test_overhead(void)
     printf("fence poll period (SDL_DelayNS(100 us)): median %.0f us, max %.0f us\n", (double)slept[25] / 1000.0,
            (double)slept[50] / 1000.0);
 }
+
+#endif
 
 /* ---- the overlay takes clicks on its windows */
 
