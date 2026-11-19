@@ -3,7 +3,11 @@
  * hand-computed come from tests/tools/math_reference.py. */
 #include "br_test.h"
 
+#include "braty/br_ease.h"
 #include "braty/br_math.h"
+#include "braty/br_noise.h"
+#include "braty/br_random.h"
+#include "braty/br_spline.h"
 
 #include <math.h>
 #include <string.h>
@@ -659,6 +663,250 @@ static void test_color_spaces(void)
     BR_CHECK(color_near(ends, 0, 0, 1, 0));
 }
 
+static void test_ease(void)
+{
+    for (int i = 0; i < BR_EASE_COUNT; i++) {
+        br_ease_type type = (br_ease_type)i;
+        BR_CHECK(br_ease_apply(type, 0.0f) == 0.0f && br_ease_apply(type, 1.0f) == 1.0f);
+        BR_CHECK(br_ease_apply(type, -3.0f) == 0.0f && br_ease_apply(type, 7.0f) == 1.0f); /* clamped */
+        bool ok = false;
+        BR_CHECK(br_ease_from_name(br_ease_name(type), &ok) == type && ok);
+        for (int k = 1; k < 100; k++) {
+            float v = br_ease_apply(type, (float)k / 100.0f);
+            BR_CHECK(v == v && v > -0.5f && v < 1.5f);
+        }
+    }
+    /* families: in(t) == 1 - out(1 - t), in_out(0.5) == 0.5 */
+    for (int f = BR_EASE_IN_QUAD; f < BR_EASE_COUNT; f += 3) {
+        for (int k = 0; k <= 10; k++) {
+            float t = (float)k / 10.0f;
+            float in = br_ease_apply((br_ease_type)f, t);
+            float out = br_ease_apply((br_ease_type)(f + 1), 1.0f - t);
+            BR_CHECK(br_nearly_equal(in, 1.0f - out, 1e-5f));
+        }
+        BR_CHECK(br_nearly_equal(br_ease_apply((br_ease_type)(f + 2), 0.5f), 0.5f, 1e-5f));
+    }
+    BR_CHECK(br_ease_linear(0.3f) == 0.3f);
+    BR_CHECK(br_nearly_equal(br_ease_in_quad(0.5f), 0.25f, 1e-6f) && br_nearly_equal(br_ease_out_quad(0.5f), 0.75f, 1e-6f));
+    BR_CHECK(br_nearly_equal(br_ease_out_cubic(0.5f), 0.875f, 1e-6f));
+    BR_CHECK(br_nearly_equal(br_ease_in_out_cubic(0.25f), 0.0625f, 1e-6f));
+    BR_CHECK(br_nearly_equal(br_ease_in_quart(0.5f), 0.0625f, 1e-6f) && br_nearly_equal(br_ease_in_quint(0.5f), 0.03125f, 1e-6f));
+    BR_CHECK(br_nearly_equal(br_ease_in_sine(0.5f), 0.29289322f, 1e-5f));
+    BR_CHECK(br_nearly_equal(br_ease_in_expo(0.5f), 0.03125f, 1e-6f));
+    BR_CHECK(br_nearly_equal(br_ease_in_circ(0.5f), 0.13397460f, 1e-5f));
+    BR_CHECK(br_nearly_equal(br_ease_in_back(0.5f), -0.0876975f, 1e-5f)); /* pulls back below 0 */
+    BR_CHECK(br_nearly_equal(br_ease_out_elastic(0.5f), 1.015625f, 1e-4f));
+    BR_CHECK(br_nearly_equal(br_ease_out_bounce(0.5f), 0.765625f, 1e-5f));
+    BR_CHECK(br_nearly_equal(br_ease_in_out_quad(0.25f), 0.125f, 1e-6f));
+    BR_CHECK(br_nearly_equal(br_ease_out_quart(0.5f), 0.9375f, 1e-6f) && br_nearly_equal(br_ease_out_quint(0.5f), 0.96875f, 1e-6f));
+
+    bool ok = false;
+    BR_CHECK(br_ease_from_name("ease_OUT_Cubic", &ok) == BR_EASE_OUT_CUBIC && ok);
+    BR_CHECK(br_ease_from_name("in_out_bounce", NULL) == BR_EASE_IN_OUT_BOUNCE);
+    BR_CHECK(br_ease_from_name("wobble", &ok) == BR_EASE_LINEAR && !ok);
+    BR_CHECK(br_ease_from_name(NULL, &ok) == BR_EASE_LINEAR && !ok);
+    BR_CHECK(br_ease_apply(BR_EASE_COUNT, 0.4f) == 0.4f && br_str_equal(br_ease_name(BR_EASE_COUNT), "linear"));
+}
+
+static void test_random(void)
+{
+    /* reference sequence of pcg32-demo (seed 42, stream 54), recomputed by tests/tools/math_reference.py */
+    br_random r;
+    br_random_seed(&r, 42u, 54u);
+    uint32_t expect[6] = { 0xa15c02b7u, 0x7b47f409u, 0xba1d3330u, 0x83d2f293u, 0xbfa4784bu, 0xcbed606eu };
+    for (int i = 0; i < 6; i++) {
+        BR_CHECK(br_random_u32(&r) == expect[i]);
+    }
+    br_random a, b, c;
+    br_random_seed(&a, 7, 1);
+    br_random_seed(&b, 7, 1);
+    br_random_seed(&c, 7, 2);
+    bool same = true, differs = false;
+    for (int i = 0; i < 16; i++) {
+        uint32_t va = br_random_u32(&a);
+        same = same && va == br_random_u32(&b);
+        differs = differs || va != br_random_u32(&c);
+    }
+    BR_CHECK(same && differs);
+
+    br_random_seed(&r, 1, 1);
+    BR_CHECK(br_random_bounded(&r, 0) == 0);
+    bool in_range = true, saw_lo = false, saw_hi = false;
+    float fmin = 1.0f, fmax = 0.0f;
+    for (int i = 0; i < 2000; i++) {
+        in_range = in_range && br_random_bounded(&r, 7) < 7;
+        int32_t v = br_random_range_int(&r, -2, 2);
+        in_range = in_range && v >= -2 && v <= 2;
+        saw_lo = saw_lo || v == -2;
+        saw_hi = saw_hi || v == 2;
+        float f = br_random_float(&r);
+        fmin = br_minf(fmin, f);
+        fmax = br_maxf(fmax, f);
+        float g = br_random_range(&r, 3.0f, 5.0f);
+        in_range = in_range && g >= 3.0f && g < 5.0f;
+        in_range = in_range && !br_random_bool(&r, 0.0f) && br_random_bool(&r, 1.0f);
+    }
+    BR_CHECK(in_range && saw_lo && saw_hi && fmin >= 0.0f && fmax < 1.0f && fmin < 0.01f && fmax > 0.99f);
+    BR_CHECK(br_random_range_int(&r, 5, 1) == 5);
+    br_random_range_int(&r, INT32_MIN, INT32_MAX); /* full range: no overflow */
+
+    br_vec3 mean = br_vec3_make(0, 0, 0);
+    bool shapes = true;
+    for (int i = 0; i < 10000; i++) {
+        shapes = shapes && br_vec2_length(br_random_in_circle(&r)) <= 1.0f + 1e-5f;
+        shapes = shapes && br_nearly_equal(br_vec2_length(br_random_on_circle(&r)), 1.0f, 1e-4f);
+        shapes = shapes && br_vec3_length(br_random_in_sphere(&r)) <= 1.0f + 1e-5f;
+        br_vec3 s = br_random_on_sphere(&r);
+        shapes = shapes && br_nearly_equal(br_vec3_length(s), 1.0f, 1e-4f);
+        mean = br_vec3_add(mean, s);
+    }
+    BR_CHECK(shapes && br_vec3_length(br_vec3_scale(mean, 1.0f / 10000.0f)) < 0.05f);
+
+    int items[10] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+    int copy[10];
+    memcpy(copy, items, sizeof(items));
+    br_random_seed(&a, 3, 3);
+    br_random_seed(&b, 3, 3);
+    br_random_shuffle(&a, items, 10, sizeof(int));
+    br_random_shuffle(&b, copy, 10, sizeof(int));
+    int seen = 0;
+    bool moved = false;
+    for (int i = 0; i < 10; i++) {
+        seen |= 1 << items[i];
+        moved = moved || items[i] != i;
+    }
+    BR_CHECK(seen == 0x3ff && moved && memcmp(items, copy, sizeof(items)) == 0);
+    br_random_shuffle(&a, items, 0, sizeof(int)); /* empty: no-op */
+
+    float none[3] = { 0, -1, 0 };
+    float only_middle[3] = { 0, 2, 0 };
+    float quarter[2] = { 1, 3 };
+    BR_CHECK(br_random_weighted(&r, none, 3) == -1);
+    int hits = 0;
+    bool always_middle = true;
+    for (int i = 0; i < 10000; i++) {
+        always_middle = always_middle && br_random_weighted(&r, only_middle, 3) == 1;
+        hits += br_random_weighted(&r, quarter, 2) == 1 ? 1 : 0;
+    }
+    BR_CHECK(always_middle && br_nearly_equal((float)hits / 10000.0f, 0.75f, 0.03f));
+
+    float sum = 0.0f, sum2 = 0.0f;
+    for (int i = 0; i < 20000; i++) {
+        float g = br_random_gaussian(&r, 5.0f, 2.0f);
+        sum += g;
+        sum2 += g * g;
+    }
+    float gmean = sum / 20000.0f;
+    BR_CHECK(br_nearly_equal(gmean, 5.0f, 0.1f) && br_nearly_equal(sqrtf(sum2 / 20000.0f - gmean * gmean), 2.0f, 0.1f));
+}
+
+static float noise_eval(int which, float x, float y, float z, uint32_t seed)
+{
+    switch (which) {
+    case 0: return br_noise_value2(x, y, seed);
+    case 1: return br_noise_value3(x, y, z, seed);
+    case 2: return br_noise_perlin2(x, y, seed);
+    case 3: return br_noise_perlin3(x, y, z, seed);
+    case 4: return br_noise_simplex2(x, y, seed);
+    case 5: return br_noise_simplex3(x, y, z, seed);
+    case 6: return br_noise_fbm2(BR_NOISE_SIMPLEX, x, y, seed, 5, 2.0f, 0.5f);
+    case 7: return br_noise_fbm3(BR_NOISE_PERLIN, x, y, z, seed, 4, 2.0f, 0.5f);
+    default: return br_noise_fbm2(BR_NOISE_VALUE, x, y, seed, 3, 2.0f, 0.5f);
+    }
+}
+
+static void test_noise(void)
+{
+    for (int which = 0; which < 9; which++) {
+        float lo = 0.0f, hi = 0.0f, max_step = 0.0f, seed_diff = 0.0f;
+        bool finite = true, repeat = true;
+        for (int i = 0; i < 40; i++) {
+            for (int j = 0; j < 40; j++) {
+                float x = (float)i * 0.173f - 3.1f, y = (float)j * 0.191f + 0.7f, z = (float)(i + j) * 0.07f;
+                float v = noise_eval(which, x, y, z, 0);
+                finite = finite && v == v;
+                repeat = repeat && v == noise_eval(which, x, y, z, 0);
+                lo = br_minf(lo, v);
+                hi = br_maxf(hi, v);
+                max_step = br_maxf(max_step, fabsf(noise_eval(which, x + 0.001f, y, z, 0) - v));
+                seed_diff += fabsf(noise_eval(which, x, y, z, 12345u) - v);
+            }
+        }
+        BR_CHECK(finite && repeat);
+        BR_CHECK(lo >= -1.1f && hi <= 1.1f);    /* about [-1, 1] */
+        BR_CHECK(hi - lo > 0.5f);              /* not flat */
+        BR_CHECK(max_step < 0.02f);            /* continuous */
+        BR_CHECK(seed_diff > 100.0f);          /* another seed is another field */
+    }
+    /* gradient noise is zero on the integer lattice, for any seed */
+    for (int i = -3; i < 3; i++) {
+        BR_CHECK(br_noise_perlin3((float)i, (float)(i * 2), 5.0f, 0) == 0.0f);
+        BR_CHECK(br_noise_perlin2((float)i, 7.0f, 99u) == 0.0f);
+    }
+    /* 256-unit period */
+    BR_CHECK(br_nearly_equal(br_noise_perlin2(1.3f, 2.7f, 5), br_noise_perlin2(257.3f, 2.7f, 5), 1e-3f));
+    BR_CHECK(br_noise_fbm2(BR_NOISE_PERLIN, 1.5f, 2.5f, 0, 0, 2.0f, 0.5f) == 0.0f); /* zero octaves */
+}
+
+static void test_splines(void)
+{
+    br_vec2 q = br_spline_bezier_quadratic2(br_vec2_make(0, 0), br_vec2_make(1, 2), br_vec2_make(2, 0), 0.5f);
+    BR_CHECK(vec2_near(q, 1, 1));
+    BR_CHECK(vec3_near(br_spline_bezier_quadratic3(br_vec3_make(0, 0, 0), br_vec3_make(1, 2, 0), br_vec3_make(2, 0, 4), 1.5f), 2, 0, 4));
+    BR_CHECK(vec2_near(br_spline_bezier_quadratic_tangent2(br_vec2_make(0, 0), br_vec2_make(1, 2), br_vec2_make(2, 0), 0.0f), 2, 4));
+    BR_CHECK(vec3_near(br_spline_bezier_quadratic_tangent3(br_vec3_make(0, 0, 0), br_vec3_make(1, 2, 0), br_vec3_make(2, 0, 0), 1.0f), 2, -4, 0));
+
+    br_vec2 c0 = { 0, 0 }, c1 = { 0, 1 }, c2 = { 1, 1 }, c3 = { 1, 0 };
+    BR_CHECK(vec2_near(br_spline_bezier_cubic2(c0, c1, c2, c3, 0.5f), 0.5f, 0.75f));
+    BR_CHECK(vec2_near(br_spline_bezier_cubic2(c0, c1, c2, c3, -1.0f), 0, 0)); /* clamped */
+    BR_CHECK(vec2_near(br_spline_bezier_cubic_tangent2(c0, c1, c2, c3, 0.0f), 0, 3));
+    br_vec3 d0 = { 0, 0, 0 }, d1 = { 0, 1, 0 }, d2 = { 1, 1, 0 }, d3 = { 1, 0, 0 };
+    BR_CHECK(vec3_near(br_spline_bezier_cubic3(d0, d1, d2, d3, 1.0f), 1, 0, 0));
+    BR_CHECK(vec3_near(br_spline_bezier_cubic_tangent3(d0, d1, d2, d3, 0.5f), 1.5f, 0, 0));
+
+    /* Catmull-Rom: through p1 at 0 and p2 at 1; evenly spaced collinear points give a straight, even line */
+    br_vec2 r0 = { 0, 0 }, r1 = { 1, 0 }, r2 = { 2, 0 }, r3 = { 3, 0 };
+    BR_CHECK(vec2_near(br_spline_catmull_rom2(r0, r1, r2, r3, 0.0f), 1, 0) && vec2_near(br_spline_catmull_rom2(r0, r1, r2, r3, 1.0f), 2, 0));
+    BR_CHECK(vec2_near(br_spline_catmull_rom2(r0, r1, r2, r3, 0.25f), 1.25f, 0));
+    br_vec3 s0 = { 0, 0, 0 }, s1 = { 1, 1, 0 }, s2 = { 2, 0, 0 }, s3 = { 3, 1, 0 };
+    BR_CHECK(vec3_near(br_spline_catmull_rom3(s0, s1, s2, s3, 0.0f), 1, 1, 0));
+    BR_CHECK(vec3_near(br_spline_catmull_rom_tangent3(s0, s1, s2, s3, 0.0f), 1, 0, 0)); /* (p2 - p0) / 2 */
+
+    BR_CHECK(br_nearly_equal(br_spline_hermitef(0, 0, 1, 0, 0.5f), 0.5f, EPS));
+    BR_CHECK(br_nearly_equal(br_spline_hermitef(0, 1, 1, 1, 0.3f), 0.3f, EPS)); /* tangents = chord: a line */
+    BR_CHECK(vec2_near(br_spline_hermite2(br_vec2_make(0, 0), br_vec2_make(2, 0), br_vec2_make(2, 0), br_vec2_make(2, 0), 0.5f), 1, 0));
+    BR_CHECK(vec3_near(br_spline_hermite3(d0, d1, d3, d1, 1.0f), 1, 0, 0));
+
+    /* paths */
+    br_vec3 pts[4] = { { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 }, { 10, 0, 0 } }; /* x = 10 t^3: very uneven speed */
+    br_spline3 bez = { BR_SPLINE_BEZIER, pts, 4 };
+    BR_CHECK(br_spline3_segment_count(bez) == 1);
+    BR_CHECK(vec3_near(br_spline3_point(bez, 0.5f), 1.25f, 0, 0));
+    float lengths[256];
+    br_spline_arc_table table;
+    BR_CHECK(!br_spline_arc_table_build(&table, bez, lengths, 1));
+    BR_CHECK(br_spline_arc_table_build(&table, bez, lengths, 256) && br_nearly_equal(table.total, 10.0f, 1e-3f));
+    float t = br_spline_arc_param(&table, 5.0f);
+    BR_CHECK(br_nearly_equal(t, 0.7937005f, 1e-3f) && br_nearly_equal(br_spline3_point(bez, t).x, 5.0f, 0.05f));
+    BR_CHECK(br_spline_arc_param(&table, 50.0f) == 1.0f && br_spline_arc_param(&table, -1.0f) == 0.0f);
+
+    br_vec3 way[4] = { { 0, 0, 0 }, { 1, 0, 0 }, { 1, 1, 0 }, { 2, 1, 0 } };
+    br_spline3 cr = { BR_SPLINE_CATMULL_ROM, way, 4 };
+    BR_CHECK(br_spline3_segment_count(cr) == 3);
+    for (int i = 0; i < 4; i++) {
+        br_vec3 p = br_spline3_point(cr, (float)i / 3.0f);
+        BR_CHECK(vec3_near(p, way[i].x, way[i].y, way[i].z)); /* passes through every point */
+    }
+    float h = 1e-3f;
+    br_vec3 numeric = br_vec3_scale(br_vec3_sub(br_spline3_point(cr, 0.5f + h), br_spline3_point(cr, 0.5f - h)), 0.5f / h);
+    BR_CHECK(br_vec3_nearly_equal(numeric, br_spline3_tangent(cr, 0.5f), 1e-2f));
+    br_spline3 single = { BR_SPLINE_CATMULL_ROM, way, 1 };
+    br_spline3 empty = { BR_SPLINE_BEZIER, way, 0 };
+    BR_CHECK(vec3_near(br_spline3_point(single, 0.5f), 0, 0, 0) && vec3_near(br_spline3_point(empty, 0.5f), 0, 0, 0));
+    BR_CHECK(vec3_near(br_spline3_tangent(empty, 0.5f), 0, 0, 0));
+    BR_CHECK(br_spline_arc_table_build(&table, single, lengths, 8) && br_spline_arc_param(&table, 1.0f) == 0.0f);
+}
+
 int main(int argc, char **argv)
 {
     (void)argc;
@@ -676,5 +924,9 @@ int main(int argc, char **argv)
     test_sat2d();
     test_geometry3d();
     test_color_spaces();
+    test_ease();
+    test_random();
+    test_noise();
+    test_splines();
     return br_test_finish();
 }
