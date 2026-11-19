@@ -21,6 +21,11 @@ or `--record FILE` is given (or the C API is called).
   `br_data_apply_node`, so every scene-file key can be set.
 - Recording is an event handler: every real input event becomes a command stamped with the
   frame that consumes it (`e->stepping ? frame : frame + 1`), written as waits + commands.
+  Gamepads: br_input handles an event before the recorder (registered earlier), so the
+  recorder keeps its own slot map (`pad_ids`) to name the slot of a removed pad and to skip
+  SDL's late duplicate ADDED of a virtual pad. Pads replay as `connect` (virtual pad of the
+  recorded type, moved to the recorded slot) + injected buttons/axes; axis values round-trip
+  exactly because injection rounds (`SDL_lroundf`).
 - `--playtest-stdin` is `br_playtest_stdin.c`: the only engine file with C stdio, compiled only
   with `BRATY_PLAYTEST_STDIN`. `br_app_iterate` calls it instead of stepping: read a line
   (blocking), run it, print the reply.

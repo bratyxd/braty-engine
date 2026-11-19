@@ -29,7 +29,10 @@ static void walker_system(br_engine *e, float dt, void *user)
         if (br_input_key_down(e, SDL_SCANCODE_RIGHT)) {
             br_node_set_position(e, n, p.x + w->speed * dt, p.y);
         }
-        if (br_input_key_pressed(e, SDL_SCANCODE_SPACE)) {
+        /* the left stick of pad 0 moves it too; its south button jumps */
+        p = br_node_position(e, n);
+        br_node_set_position(e, n, p.x + w->speed * br_input_gamepad_axis(e, 0, SDL_GAMEPAD_AXIS_LEFTX) * dt, p.y);
+        if (br_input_key_pressed(e, SDL_SCANCODE_SPACE) || br_input_gamepad_pressed(e, 0, SDL_GAMEPAD_BUTTON_SOUTH)) {
             w->jumps++;
             s_game.score += 10;
         }
@@ -189,6 +192,58 @@ static void test_record_replay(void)
     br_engine_destroy(b);
 }
 
+/* ---- a recorded gamepad session (a "real" PS5 pad: connect, stick, button, a second pad that
+ * comes and goes) replays to the same dump */
+
+static void test_record_replay_gamepad(void)
+{
+    br_engine *a = make_game();
+    BR_CHECK(br_playtest_record_start(a, at_exe("pt_recorded_pad.json")));
+    br_playtest_step(a, 3);
+    int pad = br_input_gamepad_attach_virtual(a, BR_GAMEPAD_TYPE_PS5);
+    BR_CHECK(pad == 0);
+    for (int frame = 1; frame <= 60; frame++) {
+        if (frame == 5) {
+            br_input_inject_gamepad_axis(a, pad, SDL_GAMEPAD_AXIS_LEFTX, 0.37f); /* not a round number */
+        }
+        if (frame == 25) {
+            br_input_inject_gamepad_axis(a, pad, SDL_GAMEPAD_AXIS_LEFTX, -0.81f);
+        }
+        if (frame == 10 || frame == 12) {
+            br_input_inject_gamepad_button(a, pad, SDL_GAMEPAD_BUTTON_SOUTH, frame == 10);
+        }
+        if (frame == 30) {
+            BR_CHECK(br_input_gamepad_attach_virtual(a, BR_GAMEPAD_TYPE_XBOXONE) == 1);
+        }
+        if (frame == 40) {
+            BR_CHECK(br_input_gamepad_detach_virtual(a, 1));
+        }
+        br_playtest_step(a, 1);
+    }
+    char *dump_a = br_playtest_dump_json(a);
+    BR_CHECK(br_playtest_record_stop(a));
+    br_engine_destroy(a);
+    char *script = SDL_LoadFile(at_exe("pt_recorded_pad.json"), NULL);
+    BR_CHECK(script != NULL && SDL_strstr(script, "\"action\":\"connect\",\"type\":\"ps5\",\"slot\":0") != NULL);
+    BR_CHECK(script != NULL && SDL_strstr(script, "\"action\":\"disconnect\",\"slot\":1") != NULL);
+    SDL_free(script);
+
+    br_engine *b = make_game();
+    BR_CHECK(br_playtest_run_script(b, at_exe("pt_recorded_pad.json")));
+    char *dump_b = br_playtest_dump_json(b);
+    BR_CHECK(dump_a != NULL && dump_b != NULL && SDL_strcmp(dump_a, dump_b) == 0);
+    BR_CHECK(br_input_gamepad_type(b, 0) == BR_GAMEPAD_TYPE_PS5 && !br_input_gamepad_connected(b, 1));
+    cJSON *jumps = br_playtest_get(b, "hero:walker.jumps");
+    BR_CHECK(jumps != NULL && jumps->valueint == 1);
+    cJSON_Delete(jumps);
+    if (dump_a != NULL && dump_b != NULL && SDL_strcmp(dump_a, dump_b) != 0) {
+        printf("record:\n%s\nreplay:\n%s\n", dump_a, dump_b);
+    }
+    br_free(dump_a);
+    br_free(dump_b);
+    br_engine_destroy(b);
+}
+
 /* ---- the interactive protocol, one command per call */
 
 static bool reply_has(br_engine *e, const char *command, const char *expected)
@@ -238,13 +293,45 @@ static void test_interactive(void)
     BR_CHECK(reply_has(e, "{\"cmd\":\"expect\",\"path\":\"game:score\",\"op\":\"<\",\"value\":5}",
                        "expect failed: game:score is 10, expected < 5"));
     BR_CHECK(reply_has(e, "{\"cmd\":\"screenshot\",\"file\":\"x.png\"}", "\"ok\":false"));
-    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\"}", "not supported yet"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\"}", "gamepad: missing \\\"action\\\""));
     BR_CHECK(reply_has(e, "{\"cmd\":\"touch\",\"action\":3}", "must be a string"));
     BR_CHECK(reply_has(e, "{\"cmd\":\"key\",\"key\":\"Space\",\"frames\":-5}", "\"ok\":true")); /* clamped to 1 */
     BR_CHECK(reply_has(e, "{\"cmd\":\"logs\",\"count\":-1}", "\"lines\":[]"));
     BR_CHECK(reply_has(e, "{\"cmd\":\"step\",\"frames\":-3}", "\"ok\":true,\"frame\":66"));
     BR_CHECK(br_playtest_failed(e));
     BR_CHECK(reply_has(e, "{\"cmd\":\"quit\"}", "\"ok\":true"));
+    br_engine_destroy(e);
+}
+
+/* ---- gamepad commands: a virtual pad of a family, buttons, axes, disconnect */
+
+static void test_gamepad(void)
+{
+    br_engine *e = make_game();
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\",\"action\":\"connect\",\"type\":\"ps5\"}", "\"slot\":0"));
+    BR_CHECK(br_input_gamepad_type(e, 0) == BR_GAMEPAD_TYPE_PS5);
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\",\"action\":\"connect\",\"type\":\"xbox\",\"slot\":3}", "\"slot\":3"));
+    BR_CHECK(br_input_gamepad_family_of(br_input_gamepad_type(e, 3)) == BR_GAMEPAD_FAMILY_XBOX);
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\",\"action\":\"axis\",\"axis\":\"leftx\",\"value\":1}", "\"ok\":true"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"step\",\"frames\":60}", "\"ok\":true"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"hero:x\"}", "\"value\":160")); /* 60 units/s for 1 s */
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\",\"action\":\"tap\",\"button\":\"a\",\"frames\":2}", "\"ok\":true"));
+    br_playtest_step(e, 1);
+    BR_CHECK(br_input_gamepad_pressed(e, 0, SDL_GAMEPAD_BUTTON_SOUTH));
+    br_playtest_step(e, 1);
+    BR_CHECK(br_input_gamepad_down(e, 0, SDL_GAMEPAD_BUTTON_SOUTH));
+    br_playtest_step(e, 1);
+    BR_CHECK(br_input_gamepad_released(e, 0, SDL_GAMEPAD_BUTTON_SOUTH));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\",\"action\":\"down\",\"button\":\"dpup\",\"slot\":5}", "\"ok\":true"));
+    br_playtest_step(e, 1);
+    BR_CHECK(br_input_gamepad_down(e, 5, SDL_GAMEPAD_BUTTON_DPAD_UP)); /* an injected pad, no device */
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\",\"action\":\"disconnect\",\"slot\":5}", "\"ok\":true"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\",\"action\":\"disconnect\"}", "\"ok\":true"));
+    BR_CHECK(!br_input_gamepad_connected(e, 0) && !br_input_gamepad_connected(e, 5) && br_input_gamepad_connected(e, 3));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\",\"action\":\"disconnect\"}", "no pad in slot 0"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\",\"action\":\"connect\",\"type\":\"n64\"}", "unknown type 'n64'"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\",\"action\":\"tap\",\"button\":\"jump\"}", "needs \\\"button\\\""));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\",\"action\":\"axis\",\"axis\":\"leftx\"}", "number \\\"value\\\""));
     br_engine_destroy(e);
 }
 
@@ -275,8 +362,10 @@ int main(void)
 {
     test_parse_errors();
     test_action();
+    test_gamepad();
     test_interactive();
     test_record_replay();
+    test_record_replay_gamepad();
     test_expect_exit_code();
     return br_test_finish();
 }

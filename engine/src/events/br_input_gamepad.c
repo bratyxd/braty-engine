@@ -543,7 +543,7 @@ void br_input_inject_gamepad_axis(br_engine *e, int slot, SDL_GamepadAxis axis, 
     ev.type = SDL_EVENT_GAMEPAD_AXIS_MOTION;
     ev.gaxis.which = id;
     ev.gaxis.axis = (Uint8)axis;
-    ev.gaxis.value = (Sint16)(br_clampf(value, -1.0f, 1.0f) * 32767.0f);
+    ev.gaxis.value = (Sint16)SDL_lroundf(br_clampf(value, -1.0f, 1.0f) * 32767.0f); /* round: value / 32767 round-trips */
     br_input_send(e, &ev);
 }
 

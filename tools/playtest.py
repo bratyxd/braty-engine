@@ -17,7 +17,9 @@ From a shell (each command is one argument; replies are printed one JSON line ea
     python tools/playtest.py GAME.exe "step 60" "action start" "step 30" \
         "screenshot build/shot.png" "get ship:position" quit
 
-Short commands: step [N], key NAME [down|up|tap], action NAME, click LABEL,
+Short commands: step [N], key NAME [down|up|tap], action NAME [tap|down|up [VALUE]],
+gamepad connect TYPE [SLOT] | disconnect [SLOT] | tap|down|up BUTTON [SLOT] |
+axis AXIS VALUE [SLOT], click LABEL,
 text "...", screenshot FILE, get PATH, set PATH JSON, find LABEL, dump [FILE],
 stats, logs [N], quit. Anything starting with "{" is sent as raw JSON.
 Full reference: docs/PLAYTESTING.md.
@@ -81,8 +83,36 @@ class Playtest:
             cmd["frames"] = frames
         return self.send(cmd)
 
-    def action(self, name):
-        return self.send({"cmd": "action", "name": name})
+    def action(self, name, action="tap", value=None, frames=None):
+        """Drives an input action: tap (default), down / up; value 0..1 for analogue actions."""
+        cmd = {"cmd": "action", "name": name, "action": action}
+        if value is not None:
+            cmd["value"] = value
+        if frames is not None:
+            cmd["frames"] = frames
+        return self.send(cmd)
+
+    # ---- gamepads (slot = player 0..7)
+    def gamepad_connect(self, type="generic", slot=None):
+        """Attaches a virtual pad ("xbox", "playstation", "switch", "ps5"...); returns its slot."""
+        cmd = {"cmd": "gamepad", "action": "connect", "type": type}
+        if slot is not None:
+            cmd["slot"] = slot
+        return self.send(cmd)["slot"]
+
+    def gamepad_disconnect(self, slot=0):
+        return self.send({"cmd": "gamepad", "action": "disconnect", "slot": slot})
+
+    def gamepad_button(self, button, action="tap", slot=0, frames=None):
+        """SDL button names: a (south), b, x, y, start, back, dpup, leftshoulder...; tap, down or up."""
+        cmd = {"cmd": "gamepad", "action": action, "button": button, "slot": slot}
+        if frames is not None:
+            cmd["frames"] = frames
+        return self.send(cmd)
+
+    def gamepad_axis(self, axis, value, slot=0):
+        """leftx, lefty, rightx, righty (-1..1), lefttrigger, righttrigger (0..1); held until changed."""
+        return self.send({"cmd": "gamepad", "action": "axis", "axis": axis, "value": value, "slot": slot})
 
     def click(self, label):
         return self.send({"cmd": "click", "label": label})
@@ -152,6 +182,22 @@ class Playtest:
         self.quit()
 
 
+def parse_gamepad(rest):
+    """gamepad connect TYPE [SLOT] | disconnect [SLOT] | tap|down|up BUTTON [SLOT] | axis AXIS VALUE [SLOT]"""
+    action = rest[0]
+    if action == "connect":
+        cmd = {"cmd": "gamepad", "action": action, "type": rest[1] if len(rest) > 1 else "generic"}
+        if len(rest) > 2:
+            cmd["slot"] = int(rest[2])
+        return cmd
+    if action == "disconnect":
+        return {"cmd": "gamepad", "action": action, "slot": int(rest[1]) if len(rest) > 1 else 0}
+    if action == "axis":
+        return {"cmd": "gamepad", "action": action, "axis": rest[1], "value": float(rest[2]),
+                "slot": int(rest[3]) if len(rest) > 3 else 0}
+    return {"cmd": "gamepad", "action": action, "button": rest[1], "slot": int(rest[2]) if len(rest) > 2 else 0}
+
+
 def parse_short(text):
     """'step 60' -> {"cmd": "step", "frames": 60}; raw JSON passes through."""
     if text.lstrip().startswith("{"):
@@ -163,7 +209,12 @@ def parse_short(text):
     if name == "key":
         return {"cmd": "key", "key": rest[0], "action": rest[1] if len(rest) > 1 else "tap"}
     if name == "action":
-        return {"cmd": "action", "name": rest[0]}
+        cmd = {"cmd": "action", "name": rest[0], "action": rest[1] if len(rest) > 1 else "tap"}
+        if len(rest) > 2:
+            cmd["value"] = float(rest[2])
+        return cmd
+    if name == "gamepad":
+        return parse_gamepad(rest)
     if name in ("click", "find"):
         return {"cmd": name, "label": rest[0]}
     if name == "text":

@@ -53,7 +53,7 @@ are the game's own; `dump` shows all of them.
 |---|---|
 | `--playtest script.json` | Runs a script (a JSON array of commands), then exits: code 0 if every step passed, 1 if one failed (the reason and step number are logged). |
 | `--playtest-stdin` | Interactive: one JSON command per line on stdin, one JSON reply per line on stdout. The game advances only on `step` / `wait`. `tools/playtest.py` speaks this. |
-| `--record session.json` | Plays normally and writes the real keyboard / mouse / text / touch input as a script at exit. |
+| `--record session.json` | Plays normally and writes the real keyboard / mouse / text / touch / gamepad input as a script at exit. |
 
 `--playtest` and `--playtest-stdin` imply `--deterministic` (every frame is exactly 1/60 s, the
 engine RNG is seeded, asset loads complete in order) and `--vsync off` unless `--vsync` is given,
@@ -85,7 +85,22 @@ One JSON object each, the same in scripts and on stdin.
 | `click` | `{"cmd": "click", "label": "play_button"}` | Moves the mouse to the centre of the node's bounds and taps the left button. |
 | `text` | `{"cmd": "text", "text": "PLAYER 1"}` | One text-input event, as an IME would send. |
 | `touch` | `{"cmd": "touch", "action": "down", "finger": 0, "x": 100, "y": 200}` | `down`, `move`, `up`; window coordinates. |
-| `gamepad` | | Not available yet: `br_input` has no gamepad injection (Task 14c adds it). |
+| `gamepad` | see below | Virtual pads, buttons, sticks and triggers. |
+
+`gamepad` commands (`"slot"` is the player slot 0..7, default 0; one example each):
+
+| Action | Example | Notes |
+|---|---|---|
+| `connect` | `{"cmd": "gamepad", "action": "connect", "type": "ps5"}` | Attaches an SDL virtual pad of that family (also headless); the reply has its `"slot"`. Types: `xbox`, `playstation`, `switch`, `generic`, or exactly `xbox360`, `xboxone`, `ps3`, `ps4`, `ps5`, `switchpro`, `joyconleft`, `joyconright`, `joyconpair`, `gamecube`, `steam`. `"slot"` moves it to that slot. Glyphs and prompts follow the family. |
+| `disconnect` | `{"cmd": "gamepad", "action": "disconnect", "slot": 0}` | Removes the pad (virtual or injected). |
+| `tap` | `{"cmd": "gamepad", "action": "tap", "button": "a", "frames": 2}` | Down now, up after `"frames"` (default 1). SDL button names: `a` (south face button: Cross, Switch B), `b`, `x`, `y`, `back`, `guide`, `start`, `leftstick`, `rightstick`, `leftshoulder`, `rightshoulder`, `dpup`, `dpdown`, `dpleft`, `dpright`, `misc1`, `touchpad`... |
+| `down` | `{"cmd": "gamepad", "action": "down", "button": "rightshoulder"}` | Held until `up`. |
+| `up` | `{"cmd": "gamepad", "action": "up", "button": "rightshoulder"}` | |
+| `axis` | `{"cmd": "gamepad", "action": "axis", "axis": "leftx", "value": 1}` | Holds the axis at `"value"` until the next `axis`: `leftx`, `lefty` (y > 0 = down), `rightx`, `righty` -1..1, `lefttrigger`, `righttrigger` 0..1. Dead zones apply as for a real pad. |
+
+Buttons and axes on an empty slot create an "injected" pad there (no SDL device, generic family),
+so `connect` is only needed for a specific family. A pad of a recorded session comes back as
+`connect` with its type and slot, so a real controller session replays on a virtual pad.
 
 ### Looking at the game
 
@@ -186,6 +201,7 @@ Also `br_playtest_set`, `br_playtest_screenshot`, `br_playtest_record_start/stop
 - While `--playtest-stdin` waits for the next command the read blocks (the game is paused on
   purpose), so the window does not process events and Windows may label it "not responding";
   frames and screenshots are unaffected.
-- Recording does not capture gamepads (they cannot be injected yet), and records every mouse
-  motion event (large files for long mouse-heavy sessions).
+- Recording captures gamepad connect / disconnect, buttons and axes, not their touchpads,
+  gyros or accelerometers. It records every mouse motion and stick event (large files for
+  long sessions).
 - The current scene name is not reported: scenes become objects in Task 16.
