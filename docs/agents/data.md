@@ -19,7 +19,8 @@ Every format with full examples: `docs/DATA_FORMATS.md`.
 - Each node remembers the JSON it came from; `br_scene_file_save` writes live transforms,
   components and text plus that stored JSON, so load -> save -> load is stable.
 - **Prefabs** are scene files instantiated with overrides (objects merge, `children` append).
-- **game.json** fills `br_app_desc` in `br_main` (no engine yet) and applies the rest in init.
+- **game.json** fills `br_app_desc` in `br_main` (no engine yet); with `br_game_config_main`
+  the engine applies the rest before init and loads `start_scene` after init.
 - **Hot reload** (debug builds): files loaded with `br_scene_file_load` are polled every 30 frames
   (`SDL_GetPathInfo`) and rebuilt into the same root node.
 
@@ -32,7 +33,8 @@ Every format with full examples: `docs/DATA_FORMATS.md`.
 | `br_scene_file_save(e, root, path)`, `br_scene_file_to_json` | Write a subtree back out. |
 | `br_prefab_instantiate(e, path, parent, overrides)` | One prefab instance. |
 | `br_scene_file_add_handler(e, "name", fn, user)` | Lets files attach `"on": { "click": "name" }`. |
-| `br_game_config_load` / `_args` / `_app_desc` / `_apply` | game.json from `br_main` to init. |
+| `br_game_config_main(path, argc, argv, init)` | game.json for the whole app in one line (the engine owns the config). |
+| `br_game_config_load` / `_args` / `_app_desc` / `_apply` | The same in steps, when a game needs more control. |
 | `br_data_get_float/vec2/color/texture/enum/...` | Reading keys in your own type's `from_json` (errors carry the path). |
 | `br_scene_file_parse_node`, `_apply_component`, `_read_field`, `_write_field`, `_collect_assets` | Building blocks for scenes/tools. |
 | `br_scene_file_set_hot_reload`, `br_scene_file_poll` | Hot-reload control. |
@@ -40,8 +42,6 @@ Every format with full examples: `docs/DATA_FORMATS.md`.
 ## Snippet (from examples/data_demo.c)
 
 ```c
-static br_game_config config; /* br_main's desc points into it */
-
 static bool demo_init(br_engine *e)
 {
     static const br_field_desc fields[] = {
@@ -51,15 +51,14 @@ static bool demo_init(br_engine *e)
     br_component_desc desc = { "mover", sizeof(mover), fields, BR_ARRAY_COUNT(fields) };
     br_component_register(e, &desc);
     br_system_add(e, "demo.mover", BR_PHASE_UPDATE, 0, mover_system, NULL);
-    return br_node_valid(e, br_game_config_apply(e, &config)); /* loads the start scene */
+    return true; /* game.json was applied before init; its start scene loads after it */
 }
 
 br_app_desc br_main(int argc, char **argv)
 {
-    br_game_config_load(NULL, "../../examples/data/game.json", &config); /* relative to the exe */
-    br_game_config_args(&config, argc, argv);                             /* --debug, --scene */
-    br_app_desc desc = br_game_config_app_desc(&config);
-    desc.init = demo_init;
+    /* BRATY_EXAMPLES_DIR (set by CMake) is the source tree, so any build directory works */
+    br_app_desc desc = br_game_config_main(BRATY_EXAMPLES_DIR "/data/game.json", argc, argv, demo_init);
+    desc.asset_root = BRATY_EXAMPLES_DIR;
     return desc;
 }
 ```
@@ -72,6 +71,23 @@ br_app_desc br_main(int argc, char **argv)
 { "prefab": "data/coin.prefab.json", "position": [400, 0],
   "components": { "mover": { "velocity": [-90, 0] } }, "tint": "#ffb0b0" }
 ```
+
+## 3D views in scene files
+
+A `view3d` node (a 2D node that renders a 3D scene) is read by
+`engine/src/data/br_node_json_view3d.c`: view settings, a camera, and a `scene` array of 3D nodes
+(`group`, `mesh`, `light`, `gltf`). Full key list: `docs/DATA_FORMATS.md`, section "3D views".
+
+```json
+{ "type": "view3d", "size": [420, 250], "position": [845, 455], "msaa": 4, "background": "#20242c",
+  "camera": { "position": [0, 2, 6], "target": [0, 1, 0], "fov": 50 },
+  "scene": [
+    { "type": "light", "kind": "directional", "intensity": 2, "shadows": true, "position": [-4, 8, 4] },
+    { "type": "mesh", "shape": "cube", "size": [1, 1, 1], "material": { "model": "pbr", "color": "#c04040" } },
+    { "type": "gltf", "source": "models/Fox/Fox.glb", "animation": "Run", "scale": 0.02 } ] }
+```
+
+`br_scene_file_save` writes a view3d as it was loaded (live changes to its 3D nodes are not written), and 3D keys are not checked for typos.
 
 ## Your own node type in scene files
 
@@ -96,4 +112,4 @@ silently, wrong types log `file: children[3].my_key: expected a number`.
   Task 16 adds asset groups).
 - Hot reload recreates the children of the watched root: handles to old children turn stale.
   Edited prefab files are re-read only when a scene using them changes.
-- `view3d` (Task 9) has no JSON yet.
+- `view3d` contents are saved as loaded, not from the live 3D nodes.

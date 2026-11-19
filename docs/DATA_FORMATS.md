@@ -23,9 +23,11 @@ A working set of all three files: `examples/data/` (`game.json`, `demo.scene.jso
 
 ## 1. game.json
 
-Read by `br_game_config_load` (from `br_main`, before an engine exists; the path is relative to
-the executable directory) and applied by `br_game_config_apply` (from the game's init). Every key
-is optional; the values below are the defaults unless noted.
+Read in `br_main`, before an engine exists (the path is relative to the executable directory).
+`br_game_config_main("game.json", argc, argv, init)` does it all: the engine applies the file
+before `init` and loads `start_scene` after `init`. (The step-by-step form is
+`br_game_config_load` / `_args` / `_app_desc` in `br_main` and `br_game_config_apply` in init.)
+Every key is optional; the values below are the defaults unless noted.
 
 ```json
 {
@@ -35,7 +37,7 @@ is optional; the values below are the defaults unless noted.
   "manifest": "manifest.json",
   "start_scene": "scenes/title.scene.json",
   "clear_color": "#1b1e2b",
-  "ticker": { "max_fps": 0, "min_fps": 10, "speed": 1 },
+  "ticker": { "max_fps": 0, "min_fps": 10, "speed": 1, "fixed_hz": 0 },
   "input": {
     "jump": { "keys": ["Space"], "buttons": ["a"] },
     "left": { "keys": ["Left", "A"], "axes": ["-leftx"] }
@@ -57,12 +59,13 @@ overlay closed, F1, hot reload on in debug builds.
 
 | Key | Meaning |
 |---|---|
-| `window.*` | Window title and size (in `br_app_desc`), fullscreen / vsync / resizable (applied). |
+| `window.*` | Window title and size (in `br_app_desc`), fullscreen / resizable (applied). |
+| `window.vsync` | `true` / `false`, or `"on"`, `"off"`, `"mailbox"`, `"adaptive"` (`br_app_set_vsync`; unsupported modes fall back with a log line; SDL GPU has no adaptive mode, it becomes on). |
 | `asset_root` | Directory of all other paths, relative to the executable directory. |
 | `manifest` | Added with `br_assets_load_manifest` (aliases and bundles). |
-| `start_scene` | Loaded under the stage by `br_game_config_apply`, which returns its root. |
+| `start_scene` | Loaded under the stage after `init` (`br_game_config_main`), or by `br_game_config_apply`, which returns its root. |
 | `clear_color` | Window clear colour, any colour string (section 4). |
-| `ticker` | `br_ticker_set_max_fps` (0 = uncapped), `_min_fps` (dt clamp), `_speed` (time scale). |
+| `ticker` | `max_fps`: FPS cap, 0 = uncapped, works with vsync off (`br_app_set_max_fps`); `min_fps`: dt clamp; `speed`: time scale; `fixed_hz`: rate of `BR_PHASE_FIXED_UPDATE`, 0 = once per frame (`br_app_set_fixed_timestep`). |
 | `input` | Named actions, the `br_input_actions_from_json` format (section 5). |
 | `audio` | Master volume/mute, named buses (a number = volume), sound sprites per file (`[start, duration]` seconds). |
 | `debug.overlay` | Debug overlay open at start (`--debug` on the command line does the same). |
@@ -71,7 +74,8 @@ overlay closed, F1, hot reload on in debug builds.
 | `game` | Anything the game wants: `br_game_config_json(e)` returns the whole document. Other unknown keys log a warning. |
 
 Command line (`br_game_config_args`): `--debug` opens the overlay, `--scene path` replaces
-`start_scene`.
+`start_scene`. The engine's own flags override game.json: `--vsync MODE`, `--max-fps N`,
+`--assets DIR` (or `BRATY_ASSETS`; replaces `asset_root`, relative to the working directory).
 
 Bad values are logged as `game.json: window.width: expected a positive number` and keep their
 default; a syntax error keeps every default and makes `br_game_config_load` return false.
@@ -254,7 +258,47 @@ Groups: `vertex position rotation uvs color`.
 `font` loads a file: `.fnt`/`.xml` = bitmap font, others = TTF/OTF. `align`: `left center right
 justify`; `white_space`: `pre normal pre_line`; `baseline`: `top alphabetic middle bottom`.
 
-**3D views** are not covered yet (`view3d` JSON is a follow-up of Task 9).
+**3D views** (`"type": "view3d"`, read by `engine/src/data/br_node_json_view3d.c`): a 2D node
+that renders a 3D scene into its rectangle. Container fields apply to the view itself; the 3D
+content is the `scene` array.
+
+```json
+{ "type": "view3d", "size": [640, 360], "auto_resize": false, "msaa": 4, "background": "#20242c",
+  "environment": { "sky": "#9db8e8", "ground": "#5a4a3a", "intensity": 0.4 },
+  "camera": { "position": [0, 2, 6], "target": [0, 1, 0], "fov": 50, "near": 0.1, "far": 200 },
+  "scene": [
+    { "type": "light", "kind": "directional", "color": "#fff0dc", "intensity": 2, "shadows": true,
+      "position": [-4, 8, 4], "target": [0, 0, 0] },
+    { "type": "mesh", "shape": "plane", "size": [20, 20], "cast_shadows": false,
+      "material": { "model": "pbr", "color": "#707880", "roughness": 0.9 } },
+    { "type": "gltf", "source": "models/Fox/Fox.glb", "animation": "Run", "scale": 0.02, "rotation": [0, 90, 0] },
+    { "type": "group", "label": "props", "position": [2, 0, 0], "children": [] } ] }
+```
+
+| Key | Meaning |
+|---|---|
+| `size` | View size in stage units (default [640, 360]). |
+| `auto_resize` | Follow the window size. |
+| `msaa` | MSAA sample count (1 = off). |
+| `background` | Clear colour of the view. |
+| `environment` | Hemisphere ambient: `sky`, `ground` colours and `intensity` (defaults: grey-blue sky, dark brown ground, 0.4). |
+| `camera` | The view's camera: `fov` (vertical, degrees), `near`, `far`, plus the 3D node keys below (`position`, `target`, ...). |
+| `scene` | Array of 3D nodes. |
+
+Every 3D node: `type` (`group` (default), `mesh`, `light`, `gltf`), `label`, `position`
+[x, y, z], `rotation` (Euler degrees [x, y, z]), `scale` (number or [x, y, z]), `target`
+(look at a point), `visible`, `children` (array of 3D nodes).
+
+| Type | Keys |
+|---|---|
+| `mesh` | `shape` and `size`: `cube` [x, y, z], `sphere` [r], `plane` [w, d], `cylinder` [r, h], `cone` [r, h], `torus` [R, r], `capsule` [r, length]; `cast_shadows`; `material`: `model` (`pbr` (default), `phong`, `flat`, `toon`), `color`, `metallic`, `roughness`, `emissive`, `emissive_strength`, `specular`, `shininess`, `double_sided`, `alpha` (`opaque`, `mask`, `blend`), `texture` (base colour). |
+| `light` | `kind` (`directional` (default), `point`, `spot`), `color`, `intensity`, `range`, `shadows`, `shadow_distance`, `cascades` (1-4), `inner_angle` / `outer_angle` (degrees, spot). |
+| `gltf` | `source` (a .glb/.gltf path, required), `animation` (clip name or index), `speed`, `loop`, `time`. |
+
+Colours are written as a colour picker shows them (sRGB) and converted to linear. 3D keys are
+not checked for typos, and `br_scene_file_save` writes a view3d as it was loaded (live changes
+to its 3D nodes are not saved). Each `mesh` creates its own geometry and material (see the
+`ponytail:` in the loader). Example in use: `examples/gltf_demo.c` (the inset view).
 
 ### 2.3 Node type names
 
