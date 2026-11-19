@@ -454,12 +454,17 @@ void br_obb2d_corners(br_vec2 center, br_vec2 half_extents, float rotation, br_v
 
 /* ---- 3D primitives and intersections
  *
- * Boxes are passed as (box_min, box_max) and rays as (origin, dir) so these work with
- * br_aabb / br_ray3d (br_view3d.h) without depending on them. Ray results are the ray parameter
- * t (point = origin + dir * t); t is in world units only if dir has unit length. Rays start at
- * t = 0: hits behind the origin are misses, an origin inside a solid gives t = 0.
+ * Every box / ray function comes in two forms: loose vectors, (box_min, box_max) and
+ * (origin, dir), and the types br_aabb / br_ray3d (br_ray3d_box, br_aabb_aabb...). Ray results
+ * are the ray parameter t (point = origin + dir * t); t is in world units only if dir has unit
+ * length. Rays start at t = 0: hits behind the origin are misses, an origin inside a solid
+ * gives t = 0.
  */
 
+/* Axis-aligned box. An empty box has min > max. */
+typedef struct br_aabb   { br_vec3 min; br_vec3 max; } br_aabb;
+/* A ray: origin + t * direction. */
+typedef struct br_ray3d  { br_vec3 origin; br_vec3 direction; } br_ray3d;
 typedef struct br_plane  { br_vec3 normal; float d; } br_plane;   /* dot(normal, p) + d = 0 */
 typedef struct br_sphere { br_vec3 center; float radius; } br_sphere;
 typedef struct br_obb    { br_vec3 center; br_vec3 half_extents; br_quat rotation; } br_obb;
@@ -500,6 +505,26 @@ void br_frustum_planes(br_mat4 view_projection, br_plane out[6]);
 bool br_frustum_planes_sphere(const br_plane planes[6], br_sphere s);
 /* True if the box is at least partly inside the planes (conservative: may say true near corners). */
 bool br_frustum_planes_box(const br_plane planes[6], br_vec3 box_min, br_vec3 box_max);
+
+/* The same tests on br_aabb / br_ray3d. */
+/* br_ray_plane on a br_ray3d. */
+bool br_ray3d_plane(br_ray3d ray, br_plane plane, float *t);
+/* br_ray_sphere on a br_ray3d. */
+bool br_ray3d_sphere(br_ray3d ray, br_sphere sphere, float *t);
+/* br_ray_box on a br_ray3d and a br_aabb. */
+bool br_ray3d_box(br_ray3d ray, br_aabb box, float *t);
+/* br_ray_obb on a br_ray3d. */
+bool br_ray3d_obb(br_ray3d ray, br_obb box, float *t);
+/* br_sphere_box on a br_aabb. */
+bool br_sphere_aabb(br_sphere s, br_aabb box);
+/* br_box_box on two br_aabb. */
+bool br_aabb_aabb(br_aabb a, br_aabb b);
+/* br_frustum_planes_box on a br_aabb. */
+bool br_frustum_planes_aabb(const br_plane planes[6], br_aabb box);
+/* br_closest_point_box on a br_aabb. */
+br_vec3 br_closest_point_aabb(br_vec3 p, br_aabb box);
+/* br_closest_point_ray on a br_ray3d. */
+br_vec3 br_closest_point_ray3d(br_vec3 p, br_ray3d ray);
 
 /* Closest point to p on segment a-b. */
 br_vec3 br_closest_point_segment(br_vec3 p, br_vec3 a, br_vec3 b);

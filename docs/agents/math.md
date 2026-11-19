@@ -37,7 +37,7 @@ same functions.
 | `br_vec2/3_reflect`, `_project`, `_angle`, `_clamp_length`, `_move_towards`, `br_vec3_slerp` | Vector helpers. |
 | `br_rect_contains`, `br_polygon_contains`, ... `_bounds` | Hit areas and bounds (Pixi shapes). |
 | `br_sat_polygon_polygon`, `br_sat_circle_polygon`, `br_obb2d_corners` | 2D convex overlap + push-out vector. |
-| `br_ray_plane / _sphere / _box / _obb / _triangle` | 3D ray casts (t = ray parameter). |
+| `br_ray_plane / _sphere / _box / _obb / _triangle`, `br_ray3d_*` on `br_ray3d` / `br_aabb` | 3D ray casts (t = ray parameter). |
 | `br_sphere_sphere`, `br_sphere_box`, `br_box_box`, `br_obb_obb` | 3D overlap tests. |
 | `br_frustum_planes`, `br_frustum_planes_sphere / _box` | Culling with your own view-projection. |
 | `br_closest_point_segment / _ray / _plane / _box / _obb / _triangle`, `br_closest_points_segments`, `br_barycentric` | Closest points. |
@@ -101,9 +101,12 @@ each octave uses `seed + octave`.
 - Singular matrices invert to identity and report `ok = false`.
 - Ray functions return the ray parameter t: a distance only if the direction has unit length.
   Rays starting inside a solid report t = 0.
-- 3D boxes and rays are passed as `(min, max)` / `(origin, dir)` so they work with `br_aabb` /
-  `br_ray3d` from `br_view3d.h`. `br_camera3d.h` keeps its own `br_frustum_test_aabb` and
-  `br_ray3d_*`; the `br_math.h` versions are the general ones.
+- `br_aabb` and `br_ray3d` live here. Every 3D box / ray test has a loose-vector form
+  (`br_ray_box(origin, dir, min, max, &t)`) and a typed one (`br_ray3d_box(ray, box, &t)`,
+  `br_ray3d_plane/_sphere/_obb`, `br_aabb_aabb`, `br_sphere_aabb`, `br_frustum_planes_aabb`,
+  `br_closest_point_aabb`, `br_closest_point_ray3d`). `br_camera3d.h` still has its own
+  `br_frustum` + `br_frustum_test_aabb`, `br_ray3d_aabb` and `br_ray3d_triangle` (= `br_ray_triangle`);
+  the `br_math.h` versions are the general ones.
 - `br_sat_*` need convex polygons. The MTV pushes the first shape out of the second.
 - `br_spring_step` is implicit Euler: stable at any dt, slightly over-damped at very large dt.
 - `br_smooth_dampf` keeps state in `*velocity`; start it at 0 and keep it per follower.
