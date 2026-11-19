@@ -12,7 +12,7 @@
 ```sh
 cmake --preset windows-gcc          # configure into build/windows-gcc
 cmake --build --preset windows-gcc  # engine, tests, examples
-ctest --preset windows-gcc          # test_core, test_math
+ctest --preset windows-gcc          # every tests/test_*.c
 build/windows-gcc/hello_quad.exe --frames 3 --screenshot out.png
 ```
 

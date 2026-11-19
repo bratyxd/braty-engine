@@ -45,13 +45,13 @@ Every app built on `br_app` takes `--frames N --screenshot out.png` (fixed 1/60 
 - **Systems** (`br_app.h`, available now): `br_system_add(e, name, phase, priority, fn, user)`.
   Phases: INPUT, UPDATE, LATE_UPDATE, PRE_RENDER (always run) then RENDER, POST_RENDER (only when
   a frame can be drawn). Engine work (transforms, culling, rendering) is systems too.
-- **Nodes** (Task 2, `br_node.h`): handles `br_node { index, generation }` into a node table
+- **Nodes** (`br_node.h`): handles `br_node { index, generation }` into a node table
   (hierarchy, transform, alpha, tint, visibility...). Each node has a type; per-type data lives in
   a dense pool. Stale handles are detected by generation and ignored.
-- **Components** (Task 2): user structs in dense arrays attached to nodes, described field by
+- **Components** (`br_node.h`): user structs in dense arrays attached to nodes, described field by
   field (`br_component_desc`) so scene files can fill them. Systems iterate
   `br_component_count` / `br_component_at` / `br_component_owner_at`.
-- **Assets** (Task 2/5): loaders registered per file extension, cache keyed by path.
+- **Assets** (`br_assets.h`): loaders registered per file extension, cache keyed by path.
 
 The contracts are fixed in the plan under "Core contracts".
 
@@ -60,17 +60,22 @@ The contracts are fixed in the plan under "Core contracts".
 - **A system**: write `static void my_system(br_engine *e, float dt, void *user)`, register it in
   your init with `br_system_add`. Keep state in a struct passed as `user`; free it with
   `br_engine_on_shutdown`. See `docs/agents/app.md`.
-- **A node type** (Task 2 API): fill a `br_node_type_desc` (name = JSON "type", data_size,
+- **A node type**: fill a `br_node_type_desc` (name = JSON "type", data_size,
   callbacks for create/destroy/bounds/render/hit_test/from_json) and call
   `br_node_type_register` from your module's `br_<module>_register(e)`. See `docs/agents/scene.md`.
-- **A component** (Task 2 API): a plain struct + a `br_field_desc` array + `br_component_register`.
-- **An asset loader** (Task 2 API): fill `br_asset_loader_desc` (type name, extensions, load,
+- **A component**: a plain struct + a `br_field_desc` array + `br_component_register`.
+- **An asset loader**: fill `br_asset_loader_desc` (type name, extensions, load,
   unload) and call `br_assets_register_loader`. See `docs/agents/assets.md`.
 - **A shader**: `engine/shaders/<name>.<vert|frag>.hlsl`, run `python tools/compile_shaders.py`,
   include `<name>.<stage>.h`, use `br_shader_<name>_<stage>` in a `br_pipeline_desc`.
   Rules in `docs/BUILDING.md` and `docs/agents/gpu.md`.
 - **Module state**: one pointer per module in `struct br_engine`
   (`engine/src/app/br_engine_internal.h`); allocate in `br_<module>_register`, free on shutdown.
+- **A module (Tasks 3-11)**: your public header and an empty `br_<module>_register(e)` already
+  exist, are included by `braty/braty.h` and called from `engine/src/app/br_builtin.c`. Fill them;
+  add `.c` files in your `engine/src/<module>/` directory. Never edit `braty.h`, `br_builtin.c`,
+  `br_engine_internal.h` or CMake. Drawing from a node type, offscreen rendering, callback
+  commands and the effects hook: `docs/agents/render.md`.
 - **A test**: `tests/test_<module>.c` with a plain `main` and `BR_CHECK(cond)` from
   `tests/br_test.h`, return `br_test_finish()`. CMake picks it up automatically.
 - **An example**: `examples/<name>.c` including `braty/braty_main.h`. Picked up automatically.
@@ -85,9 +90,9 @@ Read the guide, then the module's public header (headers are the API reference).
 | math | `docs/agents/math.md` | done (Task 1) |
 | gpu | `docs/agents/gpu.md` | done (Task 1) |
 | app | `docs/agents/app.md` | done (Task 1) |
-| scene | `docs/agents/scene.md` | Task 2 |
-| render | `docs/agents/render.md` | Task 2 |
-| assets | `docs/agents/assets.md` | Tasks 2, 5 |
+| scene | `docs/agents/scene.md` | done (Task 2) |
+| render | `docs/agents/render.md` | done (Task 2) |
+| assets | `docs/agents/assets.md` | core done (Task 2), Task 5 |
 | graphics | `docs/agents/graphics.md` | Task 3 |
 | text | `docs/agents/text.md` | Task 4 |
 | sprites | `docs/agents/sprites.md` | Task 6 |
@@ -106,7 +111,7 @@ Guides marked with a task number do not exist until that task lands.
 ## Layout
 
 ```
-engine/include/braty/   public headers (br_core.h, br_math.h, br_gpu.h, br_app.h, braty_main.h, ...)
+engine/include/braty/   public headers; braty.h includes them all, braty_main.h = braty.h + entry point
 engine/src/<module>/    sources; private headers *_internal.h
 engine/shaders/         HLSL sources + compiled/ generated headers (committed)
 third_party/            stb, cgltf, cJSON, microui (+ licences, see third_party/README.md)
