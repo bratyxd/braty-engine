@@ -16,44 +16,46 @@
 #define BR_NO_NODE 0xFFFFFFFFu
 
 typedef struct br_node_record {
+    /* hot: read for every node by the transform, cull and render walks (first two cache lines) */
     uint32_t parent;             /* node index, BR_NO_NODE if detached */
-    br_array children;           /* uint32_t node indices, in draw order */
     uint32_t type_id;
     uint32_t data_index;         /* row in the type's data pool */
-    char    *label;              /* NULL = no label */
+    uint32_t world_color;        /* br_render_pack_color(world_tint, world_alpha), kept with them */
+    br_array children;           /* uint32_t node indices, in draw order */
+    br_array layer_members;      /* br_node: nodes attached to this node as a layer */
+    uint64_t culled_frame;       /* culled in cull pass number == this */
+    br_node  layer;              /* render layer that draws this node (zero = none) */
+    br_node  mask;
+    void    *filters;            /* opaque, owned by the filters module */
+    uint32_t mask_users;         /* nodes using this node as their mask: not drawn as content */
+    br_mask_kind mask_kind;
+    int      blend_mode;         /* br_blend_mode or >= BR_BLEND_ADVANCED_FIRST */
 
     bool destroyed;              /* waiting for the flush at the start of the next frame */
     bool transform_dirty;        /* local fields changed since the last transform update */
     bool color_dirty;            /* alpha/tint changed */
     bool child_dirty;            /* a descendant has a dirty flag */
-    bool sort_queued;            /* in the sort queue */
-
     bool visible;
     bool renderable;
-    bool sortable_children;
     bool render_group;
     bool cullable;
     bool cullable_children;
-    bool has_cull_area;
-    br_rect  cull_area;
-    uint64_t culled_frame;       /* culled in cull pass number == this */
-    int      z_index;
-    int      blend_mode;         /* br_blend_mode or >= BR_BLEND_ADVANCED_FIRST */
+    bool cache_as_texture;
 
+    /* colour: touched when alpha/tint change */
     float    alpha;
     br_color tint;
     float    world_alpha;
     br_color world_tint;
 
-    br_node  layer;              /* render layer that draws this node (zero = none) */
-    br_array layer_members;      /* br_node: nodes attached to this node as a layer */
-
-    br_node      mask;
-    br_mask_kind mask_kind;
-    bool         mask_inverse;
-    uint32_t     mask_users;     /* nodes using this node as their mask: not drawn as content */
-    void        *filters;        /* opaque, owned by the filters module */
-    bool         cache_as_texture;
+    /* cold */
+    char    *label;              /* NULL = no label */
+    bool     sort_queued;        /* in the sort queue */
+    bool     sortable_children;
+    bool     has_cull_area;
+    bool     mask_inverse;
+    br_rect  cull_area;
+    int      z_index;
 
     br_event_mode event_mode;
     bool          interactive_children;
@@ -70,6 +72,8 @@ typedef struct br_node_transform {
     float   rotation;
     br_mat3 local;
     br_mat3 world;   /* local -> space of the nearest render-group ancestor (the stage if none) */
+    float   rotation_cos;  /* cos/sin of rotation, updated whenever rotation is set (br_scene_set_rotation) */
+    float   rotation_sin;
 } br_node_transform;
 
 typedef struct br_node_type_entry {
@@ -116,16 +120,25 @@ void br_scene_register(br_engine *e);
 void br_scene_shutdown_nodes(br_engine *e, void *user);
 /* The record of a live node, NULL if stale or destroyed. */
 br_node_record *br_scene_record(br_engine *e, br_node n);
-/* The record at an index (no checks; index must be a live slot). */
-br_node_record *br_scene_record_at(br_scene_state *s, uint32_t index);
+/* The record at an index (no checks; index must be a live slot). Pointers stay valid until a
+ * node is created. Inline: the systems and the render walk call it for every node. */
+static inline br_node_record *br_scene_record_at(br_scene_state *s, uint32_t index)
+{
+    return (br_node_record *)s->nodes.items.data + index;
+}
 /* The transform at an index (no checks). */
-br_node_transform *br_scene_transform_at(br_scene_state *s, uint32_t index);
+static inline br_node_transform *br_scene_transform_at(br_scene_state *s, uint32_t index)
+{
+    return (br_node_transform *)s->transforms.data + index;
+}
 /* The handle of the node at an index. */
 br_node br_scene_handle(br_scene_state *s, uint32_t index);
 /* The type entry of a type id, NULL if unknown. */
 br_node_type_entry *br_scene_type_entry(br_scene_state *s, uint32_t type_id);
 /* Per-type data of the node at an index (NULL for types without data). */
 void *br_scene_type_data(br_scene_state *s, uint32_t index);
+/* Sets rotation and its cached cos/sin (the only way rotation should be written). */
+void br_scene_set_rotation(br_node_transform *t, float radians);
 /* Local matrix computed from the transform fields. */
 br_mat3 br_scene_compute_local(const br_node_transform *t);
 /* Product of local matrices from index up to the stage, or up to (not including) the nearest

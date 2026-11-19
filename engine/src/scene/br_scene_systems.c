@@ -1,5 +1,6 @@
 /* Engine systems of the scene: destroy flush, transform update (dirty only), z-sort, culling.
  * Plus bounds and z-sorting helpers shared with the renderer. */
+#include "braty/br_render.h"
 #include "scene/br_scene_internal.h"
 
 /* ---- z-sorting (stable: equal z keeps the current order) */
@@ -110,11 +111,12 @@ static void br_transform_update(br_scene_state *s, uint32_t index, const br_pare
     if (recolored) {
         rec->world_alpha = parent->alpha * rec->alpha;
         rec->world_tint = br_color_multiply(parent->tint, rec->tint);
+        rec->world_color = br_render_pack_color(rec->world_tint, rec->world_alpha);
     }
     rec->transform_dirty = false;
     rec->color_dirty = false;
     rec->child_dirty = false;
-    if (!visit_children) {
+    if (!visit_children || rec->children.count == 0) {
         return;
     }
     br_parent_state me;
@@ -125,8 +127,9 @@ static void br_transform_update(br_scene_state *s, uint32_t index, const br_pare
     me.moved = moved && !rec->render_group;
     me.recolored = recolored;
     me.is_group = rec->render_group;
+    const uint32_t *children = rec->children.data;
     for (uint32_t i = 0; i < rec->children.count; i++) {
-        br_transform_update(s, *(uint32_t *)br_array_at(&rec->children, i), &me);
+        br_transform_update(s, children[i], &me);
     }
 }
 
