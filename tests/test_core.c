@@ -212,6 +212,7 @@ static void test_systems(void)
     br_engine *e = br_engine_create("braty-test", NULL);
     BR_CHECK(e != NULL);
     order_log log = { { 0 } };
+    uint32_t builtin = br_system_count(e); /* engine modules add their own systems */
     br_system_add(e, "c", BR_PHASE_LATE_UPDATE, 0, sys_c, &log);
     br_system_add(e, "b2", BR_PHASE_UPDATE, 5, sys_b, &log);
     br_system_add(e, "a", BR_PHASE_UPDATE, -5, sys_a, &log);
@@ -219,12 +220,12 @@ static void test_systems(void)
     br_system_add(e, "render", BR_PHASE_RENDER, 0, sys_r, &log);
     br_system_add(e, "adder", BR_PHASE_INPUT, 0, sys_adder, &log);
     br_system_add(e, "a", BR_PHASE_UPDATE, 0, sys_a, &log); /* duplicate name: refused */
-    BR_CHECK(br_system_count(e) == 6);
+    BR_CHECK(br_system_count(e) == builtin + 6);
 
     /* headless: RENDER phase does not run, so no "R" */
     BR_CHECK(!br_engine_step(e, 0.016f));
     BR_CHECK(br_str_equal(log.text, "+abbc"));
-    BR_CHECK(br_system_count(e) == 7);
+    BR_CHECK(br_system_count(e) == builtin + 7);
 
     log.text[0] = 0;
     br_system_set_enabled(e, "b1", false);
@@ -232,7 +233,17 @@ static void test_systems(void)
     BR_CHECK(br_str_equal(log.text, "d+abc")); /* late_added (priority -100) first, b1 off */
 
     br_system_info info;
-    BR_CHECK(br_system_get_info(e, 0, &info) && br_str_equal(info.name, "late_added"));
+    int late_index = -1;
+    int adder_index = -1;
+    for (uint32_t i = 0; br_system_get_info(e, i, &info); i++) {
+        if (br_str_equal(info.name, "late_added")) {
+            late_index = (int)i;
+        }
+        if (br_str_equal(info.name, "adder")) {
+            adder_index = (int)i;
+        }
+    }
+    BR_CHECK(late_index >= 0 && late_index < adder_index); /* sorted in by priority */
     BR_CHECK(!br_system_get_info(e, 99, &info));
 
     BR_CHECK(br_ticker_frame(e) == 2);
