@@ -69,6 +69,11 @@ typedef void (*br_system_fn)(br_engine *e, float dt_seconds, void *user);
 void br_system_add(br_engine *e, const char *name, br_phase phase, int priority, br_system_fn fn, void *user);
 /* Enables or disables a system by name. Disabled systems are skipped. */
 void br_system_set_enabled(br_engine *e, const char *name, bool enabled);
+/* Puts a system into a named group ("gameplay"), or into none with NULL. */
+void br_system_set_group(br_engine *e, const char *name, const char *group);
+/* Enables or disables a whole group (pause = gameplay off, UI on). Applies to systems added to
+ * the group later too. A system runs only when it and its group are both enabled. */
+void br_system_group_set_enabled(br_engine *e, const char *group, bool enabled);
 
 /* Read-only view of one system, for debug tools. */
 typedef struct br_system_info {

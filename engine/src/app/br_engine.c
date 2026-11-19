@@ -44,6 +44,7 @@ br_engine *br_engine_create(const char *title, const char *asset_root)
     }
     br_array_init(&e->systems, sizeof(br_system_entry));
     br_array_init(&e->pending_systems, sizeof(br_system_entry));
+    br_array_init(&e->disabled_groups, sizeof(char *));
     br_array_init(&e->event_handlers, sizeof(br_event_handler_entry));
     br_array_init(&e->shutdown_handlers, sizeof(br_shutdown_entry));
     e->ticker.speed = 1.0f;
@@ -57,6 +58,7 @@ static void br_free_system_names(br_array *systems)
     for (uint32_t i = 0; i < systems->count; i++) {
         br_system_entry *s = br_array_at(systems, i);
         br_free(s->name);
+        br_free(s->group);
     }
     br_array_free(systems);
 }
@@ -73,6 +75,10 @@ void br_engine_destroy(br_engine *e)
     br_array_free(&e->shutdown_handlers);
     br_free_system_names(&e->systems);
     br_free_system_names(&e->pending_systems);
+    for (uint32_t i = 0; i < e->disabled_groups.count; i++) {
+        br_free(*(char **)br_array_at(&e->disabled_groups, i));
+    }
+    br_array_free(&e->disabled_groups);
     br_array_free(&e->event_handlers);
     br_gpu_destroy(e->gpu);
     if (e->window != NULL) {
@@ -225,6 +231,8 @@ void br_system_add(br_engine *e, const char *name, br_phase phase, int priority,
     entry.fn = fn;
     entry.user = user;
     entry.enabled = true;
+    entry.group = NULL;
+    entry.group_enabled = true;
     entry.last_time_ns = 0;
     if (e->stepping) {
         /* the system list must not shift under the running loop; merged after the frame */
@@ -245,6 +253,59 @@ void br_system_set_enabled(br_engine *e, const char *name, bool enabled)
         return;
     }
     s->enabled = enabled;
+}
+
+/* Index of a group in disabled_groups, -1 if it is enabled. */
+static int br_group_disabled_index(br_engine *e, const char *group)
+{
+    for (uint32_t i = 0; i < e->disabled_groups.count; i++) {
+        if (SDL_strcmp(*(char **)br_array_at(&e->disabled_groups, i), group) == 0) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+void br_system_set_group(br_engine *e, const char *name, const char *group)
+{
+    br_system_entry *s = br_system_find(&e->systems, name);
+    if (s == NULL) {
+        s = br_system_find(&e->pending_systems, name);
+    }
+    if (s == NULL) {
+        br_log_warn("br_system_set_group: no system '%s'", name);
+        return;
+    }
+    br_free(s->group);
+    s->group = br_strdup(group);
+    s->group_enabled = group == NULL || br_group_disabled_index(e, group) < 0;
+}
+
+static void br_group_update(br_array *systems, const char *group, bool enabled)
+{
+    for (uint32_t i = 0; i < systems->count; i++) {
+        br_system_entry *s = br_array_at(systems, i);
+        if (s->group != NULL && SDL_strcmp(s->group, group) == 0) {
+            s->group_enabled = enabled;
+        }
+    }
+}
+
+void br_system_group_set_enabled(br_engine *e, const char *group, bool enabled)
+{
+    if (group == NULL) {
+        return;
+    }
+    int index = br_group_disabled_index(e, group);
+    if (enabled && index >= 0) {
+        br_free(*(char **)br_array_at(&e->disabled_groups, (uint32_t)index));
+        br_array_remove_swap(&e->disabled_groups, (uint32_t)index);
+    } else if (!enabled && index < 0) {
+        char *copy = br_strdup(group);
+        br_array_push(&e->disabled_groups, &copy);
+    }
+    br_group_update(&e->systems, group, enabled);
+    br_group_update(&e->pending_systems, group, enabled);
 }
 
 uint32_t br_system_count(br_engine *e)
@@ -270,7 +331,7 @@ static void br_run_phases(br_engine *e, br_phase first, br_phase last, float dt)
 {
     for (uint32_t i = 0; i < e->systems.count; i++) {
         br_system_entry *s = br_array_at(&e->systems, i);
-        if (s->phase < first || s->phase > last || !s->enabled) {
+        if (s->phase < first || s->phase > last || !s->enabled || !s->group_enabled) {
             continue;
         }
         uint64_t start = SDL_GetTicksNS();

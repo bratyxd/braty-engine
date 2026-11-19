@@ -18,6 +18,8 @@ typedef struct br_system_entry {
     br_system_fn fn;
     void        *user;
     bool         enabled;
+    char        *group;           /* NULL = none */
+    bool         group_enabled;   /* cached from engine.disabled_groups */
     uint64_t     last_time_ns;
 } br_system_entry;
 
@@ -52,7 +54,8 @@ struct br_engine {
     br_array systems;               /* br_system_entry, sorted by phase then priority */
     br_array pending_systems;       /* added while stepping; merged after the step */
     bool     stepping;
-    br_array event_handlers;        /* br_event_handler_entry */
+    br_array disabled_groups;       /* char *, system groups switched off */
+    br_array event_handlers;       /* br_event_handler_entry */
     br_array shutdown_handlers;     /* br_shutdown_entry, run in reverse order */
 
     br_ticker_state ticker;

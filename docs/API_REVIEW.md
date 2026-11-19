@@ -110,6 +110,10 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
     checks `g->state` / `g->paused` itself. **Fix:** an optional group name in `br_system_add`
     (or a `br_system_set_group`) and `br_system_group_set_enabled(e, "gameplay", false)`;
     Phase 2 Task 16's `br_system_add_for_scene` is the same mechanism.
+    **Resolved (Task 14):** `br_system_set_group(e, name, "gameplay")` and
+    `br_system_group_set_enabled(e, "gameplay", false)`; a system runs when it and its group are
+    both enabled, and systems joining a disabled group start disabled. Test: `tests/test_app.c`,
+    `test_system_groups`. (Star Courier still checks its state itself; switching it over is optional.)
 14. **friction - bundle progress cannot report failure** (`br_asset_progress_fn`). The last
     call has progress 1 "failures included", so the game learns about a missing music file only
     when `br_sound_load` logs. **Fix:** add `uint32_t failed` to the callback (or

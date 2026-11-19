@@ -135,8 +135,48 @@ static void test_assets_override(void)
     SDL_free(cwd);
 }
 
+/* API_REVIEW item 13: switch a group of systems off and on. */
+static void count_system(br_engine *e, float dt, void *user)
+{
+    (void)e;
+    (void)dt;
+    *(int *)user += 1;
+}
+
+static void test_system_groups(void)
+{
+    br_engine *e = br_engine_create("test_app", NULL);
+    int move = 0, spawn = 0, hud = 0, late = 0;
+    br_system_add(e, "move", BR_PHASE_UPDATE, 0, count_system, &move);
+    br_system_add(e, "spawn", BR_PHASE_UPDATE, 0, count_system, &spawn);
+    br_system_add(e, "hud", BR_PHASE_UPDATE, 0, count_system, &hud);
+    br_system_set_group(e, "move", "gameplay");
+    br_system_set_group(e, "spawn", "gameplay");
+    br_engine_step(e, 0.016f);
+    BR_CHECK(move == 1 && spawn == 1 && hud == 1);
+
+    br_system_group_set_enabled(e, "gameplay", false);
+    br_system_add(e, "late", BR_PHASE_UPDATE, 0, count_system, &late);
+    br_system_set_group(e, "late", "gameplay"); /* joins a group that is already off */
+    br_engine_step(e, 0.016f);
+    BR_CHECK(move == 1 && spawn == 1 && hud == 2 && late == 0);
+
+    br_system_set_enabled(e, "spawn", false); /* own flag and group flag are independent */
+    br_system_group_set_enabled(e, "gameplay", true);
+    br_engine_step(e, 0.016f);
+    BR_CHECK(move == 2 && spawn == 1 && hud == 3 && late == 1);
+
+    br_system_set_group(e, "spawn", NULL);
+    br_system_set_enabled(e, "spawn", true);
+    br_system_group_set_enabled(e, "gameplay", false);
+    br_engine_step(e, 0.016f);
+    BR_CHECK(move == 2 && spawn == 2 && late == 1);
+    br_engine_destroy(e);
+}
+
 int main(void)
 {
+    test_system_groups();
     test_assets_override();
     test_user_and_args();
     test_game_config_main();
