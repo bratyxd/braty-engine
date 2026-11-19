@@ -126,6 +126,23 @@ These apply to every task.
 - Each module ships `examples/<module>_demo.c` exercising its features on screen.
 - Before each commit: full build with zero warnings in your files, `ctest` green.
 
+**Agent-friendliness (user requirement)**
+- `AGENTS.md` at the repo root is the entry point for any AI agent working on the engine or
+  making a game with it: what the engine is, how to build/test/screenshot, the code rules above,
+  the data-driven model (nodes, components, systems), "how to add a node type / component /
+  system / asset loader / shader", and an index of module guides. `CLAUDE.md` contains only
+  `@AGENTS.md`. Task 1 creates both, with the index listing every `docs/agents/<module>.md`
+  named below; Task 12 does the final pass.
+- Every task writes `docs/agents/<module>.md` for each module it owns (file names = module
+  directory names: `core`, `math`, `gpu`, `app`, `scene`, `render`, `assets`, `graphics`, `text`,
+  `sprites`, `mesh`, `particles`, `events`, `audio`, `filters`, `three_d`, `gltf`, `data`,
+  `debug`). Each is short and task-oriented: what the module does, the 5-10 functions you
+  actually need, one minimal working code snippet (compiled as part of the module's example so
+  it cannot rot), the scene-JSON form if any, and gotchas. These files are in each task's
+  "Owns" list implicitly.
+- Public headers are the API reference: one-line doc comment per function, grouped by topic,
+  so an agent can learn a module by reading a single header.
+
 **Git**
 - Small meaningful commits, imperative subject, prefixed by module (`graphics: add dashed strokes`).
 - `git add` only files you own. Never `git add -A`. Never rewrite history.
