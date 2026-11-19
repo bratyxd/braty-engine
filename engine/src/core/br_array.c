@@ -10,15 +10,21 @@ static uint8_t *br_array_bytes(const br_array *a, uint32_t index)
 
 void br_array_init(br_array *a, uint32_t elem_size)
 {
+    br_array_init_with_allocator(a, elem_size, NULL);
+}
+
+void br_array_init_with_allocator(br_array *a, uint32_t elem_size, const br_allocator *allocator)
+{
     a->data = NULL;
     a->count = 0;
     a->capacity = 0;
     a->elem_size = elem_size;
+    a->allocator = allocator;
 }
 
 void br_array_free(br_array *a)
 {
-    br_free(a->data);
+    br_allocator_free(a->allocator, a->data);
     a->data = NULL;
     a->count = 0;
     a->capacity = 0;
@@ -33,7 +39,8 @@ bool br_array_reserve(br_array *a, uint32_t capacity)
     while (new_capacity < capacity) {
         new_capacity *= 2;
     }
-    void *data = br_realloc(a->data, (size_t)new_capacity * a->elem_size);
+    void *data = br_allocator_realloc(a->allocator, a->data, (size_t)a->capacity * a->elem_size,
+                                      (size_t)new_capacity * a->elem_size);
     if (data == NULL) {
         return false;
     }

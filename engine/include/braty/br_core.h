@@ -22,8 +22,40 @@ typedef struct br_engine br_engine;
 void *br_alloc(size_t size);
 /* Resizes a block from br_alloc/br_realloc. New bytes are NOT zeroed. */
 void *br_realloc(void *ptr, size_t size);
-/* Frees a block from br_alloc/br_realloc/br_strdup/br_file_read_all. NULL is fine. */
+/* Frees a block from br_alloc/br_realloc/br_strdup/br_file_read_all. NULL is fine.
+ * Never mix with SDL_free/free: br_alloc blocks carry a size header (for br_memory_stats). */
 void br_free(void *ptr);
+
+/* Process-wide heap counters of br_alloc/br_realloc/br_free (thread-safe). */
+typedef struct br_memory_stats {
+    uint64_t live_allocations;   /* blocks not yet freed */
+    uint64_t live_bytes;         /* bytes requested by those blocks */
+    uint64_t total_allocations;  /* br_alloc calls (and br_realloc(NULL, ...)) since start */
+    uint64_t peak_bytes;         /* highest live_bytes seen */
+} br_memory_stats;
+
+/* Copies the current heap counters into *out. They cover every engine in the process. */
+void br_memory_get_stats(br_memory_stats *out);
+
+/* ---- br_allocator: where a container gets its memory
+ *
+ * A plain struct of function pointers. A NULL `const br_allocator *` means the heap
+ * (br_alloc/br_realloc/br_free). Arenas hand out one (br_arena_linear_allocator, ...).
+ * alloc must return zeroed memory; realloc gets the old size so bump arenas can copy.
+ */
+typedef struct br_allocator {
+    void *(*alloc)(void *user, size_t size);
+    void *(*realloc)(void *user, void *ptr, size_t old_size, size_t new_size);
+    void (*free)(void *user, void *ptr);
+    void *user;
+} br_allocator;
+
+/* Allocates `size` zeroed bytes from `a` (NULL = heap). */
+void *br_allocator_alloc(const br_allocator *a, size_t size);
+/* Resizes a block from `a` (NULL = heap); ptr may be NULL. New bytes are NOT zeroed. */
+void *br_allocator_realloc(const br_allocator *a, void *ptr, size_t old_size, size_t new_size);
+/* Returns a block to `a` (NULL = heap). NULL ptr is fine. */
+void br_allocator_free(const br_allocator *a, void *ptr);
 
 /* ---- logging (SDL_Log underneath; category "braty") */
 
@@ -50,11 +82,14 @@ typedef struct br_array {
     uint32_t count;      /* elements in use */
     uint32_t capacity;   /* elements allocated */
     uint32_t elem_size;  /* bytes per element */
+    const br_allocator *allocator; /* NULL = heap; must outlive the array */
 } br_array;
 
-/* Initialises an empty array of elements of `elem_size` bytes. Allocates nothing. */
+/* Initialises an empty heap array of elements of `elem_size` bytes. Allocates nothing. */
 void br_array_init(br_array *a, uint32_t elem_size);
-/* Frees the storage and resets the array to empty (elem_size is kept). */
+/* Like br_array_init, but storage comes from `allocator` (NULL = heap). */
+void br_array_init_with_allocator(br_array *a, uint32_t elem_size, const br_allocator *allocator);
+/* Frees the storage and resets the array to empty (elem_size and allocator are kept). */
 void br_array_free(br_array *a);
 /* Makes room for at least `capacity` elements. */
 bool br_array_reserve(br_array *a, uint32_t capacity);
@@ -92,8 +127,10 @@ typedef struct br_pool {
     uint32_t alive_count;
 } br_pool;
 
-/* Initialises an empty pool of elements of `elem_size` bytes. */
+/* Initialises an empty heap pool of elements of `elem_size` bytes. */
 void br_pool_init(br_pool *p, uint32_t elem_size);
+/* Like br_pool_init, but all storage comes from `allocator` (NULL = heap). */
+void br_pool_init_with_allocator(br_pool *p, uint32_t elem_size, const br_allocator *allocator);
 /* Frees all storage. */
 void br_pool_free(br_pool *p);
 /* Allocates a zeroed slot. Writes its handle to *index / *generation. Returns the data, NULL on failure. */
@@ -126,10 +163,13 @@ typedef struct br_map {
     uint32_t  capacity;   /* power of two, or 0 */
     uint32_t  count;
     uint32_t  value_size;
+    const br_allocator *allocator; /* NULL = heap; also used for the copied keys */
 } br_map;
 
-/* Initialises an empty map whose values are `value_size` bytes. */
+/* Initialises an empty heap map whose values are `value_size` bytes. */
 void br_map_init(br_map *m, uint32_t value_size);
+/* Like br_map_init, but storage and copied keys come from `allocator` (NULL = heap). */
+void br_map_init_with_allocator(br_map *m, uint32_t value_size, const br_allocator *allocator);
 /* Frees keys and storage. */
 void br_map_free(br_map *m);
 /* Inserts or overwrites `key`. Returns the stored value, NULL on failure. */
