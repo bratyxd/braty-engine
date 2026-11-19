@@ -136,8 +136,21 @@ static void test_vsync_settings(void)
     br_engine_destroy(e);
 }
 
+/* API_REVIEW item 21: the frame graph's "slow" line follows the pacing target. */
+static void test_frame_budget(void)
+{
+    br_engine *e = br_engine_create("test_pacing", NULL);
+    BR_CHECK(SDL_fabsf(br_app_frame_budget_ms(e) - 1000.0f / 60.0f) < 1e-3f); /* nothing known */
+    br_app_set_max_fps(e, 144.0f);
+    BR_CHECK(SDL_fabsf(br_app_frame_budget_ms(e) - 1000.0f / 144.0f) < 1e-3f);
+    br_app_set_max_fps(e, 30.0f);
+    BR_CHECK(SDL_fabsf(br_app_frame_budget_ms(e) - 1000.0f / 30.0f) < 1e-3f);
+    br_engine_destroy(e);
+}
+
 int main(void)
 {
+    test_frame_budget();
     test_vsync_settings();
     test_fixed_timestep();
     test_fps_cap();

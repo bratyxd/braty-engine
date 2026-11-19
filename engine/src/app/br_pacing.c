@@ -126,3 +126,19 @@ uint32_t br_app_fixed_steps(br_engine *e)
 {
     return e->ticker.fixed_steps;
 }
+
+float br_app_frame_budget_ms(br_engine *e)
+{
+    float budget = 0.0f;
+    if (e->ticker.max_fps > 0.0f) {
+        budget = 1000.0f / e->ticker.max_fps;
+    }
+    bool waits_for_display = e->vsync == BR_VSYNC_ON || e->vsync == BR_VSYNC_ADAPTIVE;
+    if (e->window != NULL && waits_for_display) {
+        const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(e->window));
+        if (mode != NULL && mode->refresh_rate > 0.0f && 1000.0f / mode->refresh_rate > budget) {
+            budget = 1000.0f / mode->refresh_rate;
+        }
+    }
+    return budget > 0.0f ? budget : 1000.0f / 60.0f;
+}

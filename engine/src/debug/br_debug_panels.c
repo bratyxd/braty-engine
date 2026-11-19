@@ -21,8 +21,10 @@ static void br_debug_labelf(mu_Context *ui, const char *fmt, ...)
 
 /* ---- stats */
 
-static void br_debug_frame_graph(mu_Context *ui, const br_debug_state *s)
+static void br_debug_frame_graph(br_engine *e, mu_Context *ui, const br_debug_state *s)
 {
+    /* red = slower than the pacing target (+10%), not a fixed 17 ms that 60 Hz vsync already hits */
+    float slow_ms = br_app_frame_budget_ms(e) * 1.1f;
     mu_layout_row(ui, 1, br_debug_full_row, 50);
     mu_Rect r = mu_layout_next(ui);
     mu_draw_rect(ui, r, mu_color(15, 16, 20, 255));
@@ -31,7 +33,7 @@ static void br_debug_frame_graph(mu_Context *ui, const br_debug_state *s)
     for (uint32_t i = 0; i < BR_DEBUG_FRAME_SAMPLES; i++) {
         float ms = s->frame_ms[(s->frame_index + i) % BR_DEBUG_FRAME_SAMPLES];
         int h = (int)(br_clampf(ms / max_ms, 0.0f, 1.0f) * (float)r.h);
-        mu_Color c = ms > 17.0f ? mu_color(230, 90, 70, 255) : mu_color(90, 200, 120, 255);
+        mu_Color c = ms > slow_ms ? mu_color(230, 90, 70, 255) : mu_color(90, 200, 120, 255);
         int x = r.x + (int)((float)i * bar);
         int w = (int)((float)(i + 1) * bar) - (int)((float)i * bar);
         mu_draw_rect(ui, mu_rect(x, r.y + r.h - h, w > 0 ? w : 1, h), c);
@@ -50,7 +52,7 @@ static void br_debug_stats(br_engine *e, br_debug_state *s)
     float last = s->frame_ms[(s->frame_index + BR_DEBUG_FRAME_SAMPLES - 1) % BR_DEBUG_FRAME_SAMPLES];
     mu_layout_row(ui, 1, br_debug_full_row, 0);
     br_debug_labelf(ui, "FPS %.1f   frame %.2f ms", (double)br_ticker_fps(e), (double)last);
-    br_debug_frame_graph(ui, s);
+    br_debug_frame_graph(e, ui, s);
     br_render_stats rs;
     br_render_get_stats(e, &rs);
     mu_layout_row(ui, 1, br_debug_full_row, 0);

@@ -216,6 +216,9 @@ float br_app_fixed_timestep(br_engine *e);
 float br_app_fixed_alpha(br_engine *e);
 /* FIXED_UPDATE runs in the current frame. */
 uint32_t br_app_fixed_steps(br_engine *e);
+/* The frame time the pacing aims for, in ms: the FPS cap, or the display refresh with vsync on
+ * (whichever is slower); 1000/60 when neither is known. The debug frame graph colours by it. */
+float br_app_frame_budget_ms(br_engine *e);
 
 /* ---- SDL main-callback glue (called by braty_main.h, not by games) */
 
