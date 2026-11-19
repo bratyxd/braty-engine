@@ -35,7 +35,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
 SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 {
-    return br_app_event(appstate, event);
+    return br_app_device_event(appstate, event);
 }
 
 void SDL_AppQuit(void *appstate, SDL_AppResult result)

@@ -1146,6 +1146,11 @@ static void br_pt_record_event(br_engine *e, const SDL_Event *ev, void *user)
     }
 }
 
+bool br_playtest_recording(br_engine *e)
+{
+    return e->playtest != NULL && e->playtest->recording;
+}
+
 bool br_playtest_record_start(br_engine *e, const char *path)
 {
     br_playtest_state *s = e->playtest;

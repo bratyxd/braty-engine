@@ -85,6 +85,8 @@ void br_playtest_expose(br_engine *e, const char *name, const br_field_desc *fie
 
 /* Starts recording real input (keyboard, mouse, text, touch, gamepads) frame by frame. */
 bool br_playtest_record_start(br_engine *e, const char *path);
+/* True while real input is being recorded. */
+bool br_playtest_recording(br_engine *e);
 /* Writes the recording as a script (waits + input commands + a final wait and quit). */
 bool br_playtest_record_stop(br_engine *e);
 

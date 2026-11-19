@@ -228,6 +228,10 @@ SDL_AppResult br_app_init(void **appstate, const br_app_desc *desc, int argc, ch
 SDL_AppResult br_app_iterate(void *appstate);
 /* SDL_AppEvent body. */
 SDL_AppResult br_app_event(void *appstate, SDL_Event *event);
+/* Entry for events that come from SDL itself (real devices). Under --deterministic, real
+ * keyboard / mouse / touch / pen / gamepad input is dropped unless it is being recorded, so a
+ * stray mouse over the window cannot change a scripted run. Injected input calls br_app_event. */
+SDL_AppResult br_app_device_event(void *appstate, SDL_Event *event);
 /* SDL_AppQuit body. */
 void br_app_quit(void *appstate, SDL_AppResult result);
 

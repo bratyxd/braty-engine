@@ -305,6 +305,32 @@ SDL_AppResult br_app_event(void *appstate, SDL_Event *event)
     return SDL_APP_CONTINUE;
 }
 
+static bool br_app_is_device_input(Uint32 type)
+{
+    if (type >= SDL_EVENT_KEY_DOWN && type < SDL_EVENT_JOYSTICK_AXIS_MOTION) {
+        return true; /* keyboard, text input and mouse */
+    }
+    if (type >= SDL_EVENT_JOYSTICK_AXIS_MOTION && type < SDL_EVENT_FINGER_DOWN) {
+        return true; /* joysticks and gamepads, including hot-plug */
+    }
+    if (type >= SDL_EVENT_FINGER_DOWN && type <= SDL_EVENT_FINGER_CANCELED) {
+        return true;
+    }
+    if (type >= SDL_EVENT_PEN_PROXIMITY_IN && type <= SDL_EVENT_PEN_AXIS) {
+        return true;
+    }
+    return false;
+}
+
+SDL_AppResult br_app_device_event(void *appstate, SDL_Event *event)
+{
+    br_engine *e = appstate;
+    if (e->deterministic && !br_playtest_recording(e) && br_app_is_device_input(event->type)) {
+        return SDL_APP_CONTINUE;
+    }
+    return br_app_event(appstate, event);
+}
+
 void br_app_quit(void *appstate, SDL_AppResult result)
 {
     (void)result;
