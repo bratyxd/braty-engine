@@ -1,0 +1,14 @@
+{ "type": "container", "label": "level_b",
+  "children": [
+    { "type": "view3d", "label": "world", "size": [1280, 720], "msaa": 4, "background": "#1c2230",
+      "camera": { "position": [0, 2.5, 7], "target": [0, 0.6, 0], "fov": 45 },
+      "scene": [
+        { "type": "light", "kind": "directional", "intensity": 2.2, "shadows": true, "position": [-4, 8, 4], "target": [0, 0, 0] },
+        { "type": "mesh", "shape": "plane", "size": [20, 20], "cast_shadows": false, "material": { "color": "#4a5260", "roughness": 0.9 } },
+        { "type": "mesh", "shape": "cube", "size": [1.2, 1.2, 1.2], "position": [-2.2, 0.6, 0], "rotation": [0, 30, 0],
+          "material": { "color": "#e06a50", "texture": "scenes/tiles/tile_03.png" } },
+        { "type": "mesh", "shape": "sphere", "size": [0.75], "position": [0, 0.75, 0.4], "material": { "color": "#58c4ff", "roughness": 0.3 } },
+        { "type": "mesh", "shape": "torus", "size": [0.6, 0.22], "position": [2.2, 0.8, 0], "rotation": [70, 0, 0],
+          "material": { "color": "#ffd76a", "metallic": 0.6, "roughness": 0.35 } } ] },
+    { "type": "text", "text": "LEVEL B  -  3D content from scene JSON, freed with the scene", "position": [640, 52],
+      "anchor": [0.5, 0.5], "style": { "font_size": 30, "fill": "white", "stroke": { "width": 3, "color": "#1a2030" } } } ] }

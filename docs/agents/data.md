@@ -21,6 +21,11 @@ Every format with full examples: `docs/DATA_FORMATS.md`.
 - **Prefabs** are scene files instantiated with overrides (objects merge, `children` append).
 - **game.json** fills `br_app_desc` in `br_main` (no engine yet); with `br_game_config_main`
   the engine applies the rest before init and loads `start_scene` after init.
+- **Asset references**: the outermost load (`br_scene_file_load*`, `br_prefab_instantiate`,
+  hot reload) captures every reference it takes. A `br_scene` (`docs/agents/scenes.md`) gets
+  them in its group; otherwise the subtree's root owns them (owner `file:<path>`) and they are
+  released one frame after the root dies (after the node flush; at once outside a frame means at
+  the next step). Meshes and materials made from view3d JSON are freed with their 3D node.
 - **Hot reload** (debug builds): files loaded with `br_scene_file_load` are polled every 30 frames
   (`SDL_GetPathInfo`) and rebuilt into the same root node.
 
@@ -31,7 +36,7 @@ Every format with full examples: `docs/DATA_FORMATS.md`.
 | `br_scene_file_load(e, path, parent)` | Build a scene file under parent; returns its root. |
 | `br_scene_file_load_json(e, text, size, name, parent)` | Same from memory (tests, tools). |
 | `br_scene_file_save(e, root, path)`, `br_scene_file_to_json` | Write a subtree back out. |
-| `br_prefab_instantiate(e, path, parent, overrides)` | One prefab instance. |
+| `br_prefab_instantiate(e, path, parent, overrides)`, `_at(e, path, parent, pos)` | One prefab instance (at a position). |
 | `br_scene_file_add_handler(e, "name", fn, user)` | Lets files attach `"on": { "click": "name" }`. |
 | `br_game_config_main(path, argc, argv, init)` | game.json for the whole app in one line (the engine owns the config). |
 | `br_game_config_load` / `_args` / `_app_desc` / `_apply` | The same in steps, when a game needs more control. |
@@ -101,15 +106,18 @@ silently, wrong types log `file: children[3].my_key: expected a number`.
 - Unknown keys of built-in node types, text styles and game.json are logged as warnings
   (`level.scene.json: children[0].posiiton: unknown key`); your own types' keys are not checked.
   Game settings in game.json go under `"game"`.
-- Texture references: `"path.png"`, `"sheet.json#frame"`, or a bare frame name of a sheet that is
-  already loaded (list sheets in the root's `"assets"` so they load first).
+- Texture references: `"path.png"`, `"sheet.json#frame"`, `"alias#frame"` (a manifest alias of
+  the sheet: no extra reference, shorter), or a bare frame name of a sheet that is already loaded
+  (list sheets in the root's `"assets"` so they load first).
+- Root `"assets"` entries: a path, a manifest bundle name, or `{ "path" | "bundle": ..., "load":
+  "preload" | "lazy" }`; `lazy` ones are listed in a br_scene's group but not loaded by the file.
+- Component pointers (`br_component_get/at`) die when any component of that kind is added (a
+  prefab instantiated, a scene loaded): re-fetch after anything that may create nodes.
 - `BR_FIELD_STRING`/`BR_FIELD_ASSET` hold 63 bytes; asset fields are not loaded for you.
 - Saving: graphics commands, filters, masks, hit areas and handlers are written as loaded (the
   engine cannot read them back from a node); edit them in code and they are not saved
   (`ponytail:` in br_node_json_container.c).
 - Components named `module.name` are engine-internal and never saved.
-- Scene loads take asset references that are not released when the scene is destroyed (Phase 2
-  Task 16 adds asset groups).
 - Hot reload recreates the children of the watched root: handles to old children turn stale.
   Edited prefab files are re-read only when a scene using them changes.
 - `view3d` contents are saved as loaded, not from the live 3D nodes.

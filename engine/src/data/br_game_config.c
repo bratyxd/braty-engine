@@ -124,7 +124,7 @@ static void br_config_warn_keys(const char *source, const char *section, const c
 static void br_config_check_keys(const char *source, const cJSON *doc)
 {
     br_config_warn_keys(source, "", doc,
-                        " window asset_root manifest start_scene clear_color ticker input audio debug game ");
+                        " window asset_root manifest start_scene scenes clear_color ticker input audio debug game ");
     const char *sections[] = { "window", "ticker", "debug", "audio" };
     const char *keys[] = { " title width height fullscreen vsync resizable ", " max_fps min_fps speed fixed_hz ",
                            " overlay toggle_key hot_reload ", " master_volume muted buses sprites " };
@@ -139,7 +139,7 @@ static void br_config_check_keys(const char *source, const cJSON *doc)
     {
         char section[BR_DATA_NAME_SIZE + 8];
         SDL_snprintf(section, sizeof(section), "input.%s", action->string);
-        br_config_warn_keys(source, section, action, " keys mouse buttons axes ");
+        br_config_warn_keys(source, section, action, " keys mouse buttons axes threshold context ");
     }
 }
 
@@ -202,6 +202,20 @@ bool br_game_config_parse(const char *json, size_t size, const char *source_name
         br_config_error(&r, "input", "expected an object of actions");
     }
     br_config_section(&r, doc, "audio");
+    const cJSON *scenes = cJSON_GetObjectItemCaseSensitive(doc, "scenes");
+    const cJSON *scene = NULL;
+    if (scenes != NULL && !cJSON_IsObject(scenes)) {
+        br_config_error(&r, "scenes", "expected an object { \"name\": \"path.scene.json\" }");
+    }
+    if (!cJSON_IsObject(scenes)) {
+        scenes = NULL;
+    }
+    cJSON_ArrayForEach(scene, scenes)
+    {
+        if (!cJSON_IsString(scene)) {
+            br_log_error("%s: scenes.%s: expected a scene file path", source, scene->string);
+        }
+    }
     config->json = doc;
     return true;
 }
@@ -348,7 +362,10 @@ br_node br_game_config_load_start_scene(br_engine *e, const br_game_config *conf
     if (config->start_scene[0] == '\0') {
         return none;
     }
-    return br_scene_file_load(e, config->start_scene, br_scene_root(e));
+    /* a br_scene (a name from "scenes" or a path): the root returned is the file's own root */
+    br_scene scene = br_scene_load(e, config->start_scene, BR_SCENE_SINGLE);
+    br_node root = br_node_child_at(e, br_scene_root_2d(e, scene), 0);
+    return br_node_valid(e, root) ? root : none;
 }
 
 br_node br_game_config_apply(br_engine *e, br_game_config *config)

@@ -206,7 +206,8 @@ static void test_deferred_destroy(br_engine *e)
     br_system_add(e, "test.destroy", BR_PHASE_UPDATE, 0, destroy_system, &t);
     br_engine_step(e, 1.0f / 60.0f);
     BR_CHECK(t.checked);
-    BR_CHECK(br_scene_node_count(e) == nodes_before);
+    /* API_REVIEW item 5: destroyed nodes stop counting at once, not at the flush */
+    BR_CHECK(br_scene_node_count(e) == nodes_before - 2);
     br_engine_step(e, 1.0f / 60.0f); /* the flush runs at the start of this frame */
     BR_CHECK(g_listener_calls == 2);
     BR_CHECK(br_scene_node_count(e) == nodes_before - 2);

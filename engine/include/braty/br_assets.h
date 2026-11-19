@@ -88,6 +88,13 @@ typedef struct br_asset_info {
 
 /* Fills up to `max` entries of `out` (any order). Returns the number of cached assets. */
 uint32_t br_assets_list(br_engine *e, br_asset_info *out, uint32_t max);
+/* Who holds references on an asset: names of asset groups ("scene:level1", your groups,
+ * "file:<scene path>" for scene files loaded with br_scene_file_load) and loaded bundles
+ * ("bundle:game"). Fills up to `max` names (valid until the owner goes away); returns the total.
+ * References beyond the owners come from direct br_assets_load calls or from loaders. */
+uint32_t br_assets_owners(br_engine *e, const char *path, const char **out, uint32_t max);
+/* Logs every live asset with type, reference count, size and owners (one line each). */
+void br_assets_report(br_engine *e);
 
 /* ---- resolver (aliases, base path, "{a,b}" patterns, resolution and format preferences) */
 
@@ -147,6 +154,9 @@ void br_assets_unload_bundle(br_engine *e, const char *bundle);
 uint32_t br_assets_bundle_size(br_engine *e, const char *bundle);
 /* Resolved path of asset `index` of a bundle, NULL if out of range. */
 const char *br_assets_bundle_path(br_engine *e, const char *bundle, uint32_t index);
+/* Assets of a bundle that are not in the cache: after the progress callback reached 1, the
+ * ones that failed to load. */
+uint32_t br_assets_bundle_failed(br_engine *e, const char *bundle);
 
 /* ---- loader results of the built-in json/text/binary loaders */
 

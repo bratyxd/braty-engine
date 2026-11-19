@@ -1,0 +1,4 @@
+{ "type": "container", "label": "b_root",
+  "children": [
+    { "type": "sprite", "label": "blue", "texture": "scenes/blue.png" },
+    { "type": "sprite", "label": "shared_b", "texture": "scenes/shared.png" } ] }

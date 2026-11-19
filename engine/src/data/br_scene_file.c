@@ -313,6 +313,55 @@ bool br_scene_file_apply_component(br_engine *e, br_node n, const char *name, co
 
 /* ---- building nodes */
 
+bool br_data_assets_entry(br_engine *e, const cJSON *item, br_data_asset_entry_fn fn, void *user)
+{
+    const char *name = NULL;
+    bool lazy = false;
+    if (cJSON_IsString(item)) {
+        name = item->valuestring;
+    } else if (cJSON_IsObject(item)) {
+        /* { "path": "a.png", "load": "lazy" } or { "bundle": "music", "load": "preload" } */
+        const cJSON *path = cJSON_GetObjectItemCaseSensitive(item, "path");
+        const cJSON *bundle = cJSON_GetObjectItemCaseSensitive(item, "bundle");
+        const cJSON *load = cJSON_GetObjectItemCaseSensitive(item, "load");
+        name = cJSON_IsString(path) ? path->valuestring : cJSON_IsString(bundle) ? bundle->valuestring : NULL;
+        if (load != NULL) {
+            if (cJSON_IsString(load) && SDL_strcmp(load->valuestring, "lazy") == 0) {
+                lazy = true;
+            } else if (!cJSON_IsString(load) || SDL_strcmp(load->valuestring, "preload") != 0) {
+                br_data_error(e, "load", "expected \"preload\" or \"lazy\"");
+                return false;
+            }
+        }
+        if (cJSON_IsString(bundle) && br_assets_bundle_size(e, bundle->valuestring) == 0) {
+            br_data_error(e, "bundle", "unknown bundle (add the manifest first)");
+            return false;
+        }
+    }
+    if (name == NULL) {
+        br_data_errorf(e, "expected an asset path, a bundle name or { \"path\" | \"bundle\", \"load\" }");
+        return false;
+    }
+    /* a manifest bundle name lists its assets; anything else is one asset path */
+    uint32_t bundle_size = br_assets_bundle_size(e, name);
+    if (bundle_size > 0) {
+        for (uint32_t i = 0; i < bundle_size; i++) {
+            fn(e, br_assets_bundle_path(e, name, i), lazy, user);
+        }
+    } else {
+        fn(e, name, lazy, user);
+    }
+    return true;
+}
+
+static void br_data_preload_one(br_engine *e, const char *path, bool lazy, void *user)
+{
+    (void)user;
+    if (!lazy && br_assets_load(e, path) == NULL) {
+        br_data_errorf(e, "asset '%s' could not be loaded", path);
+    }
+}
+
 static void br_data_preload_assets(br_engine *e, const cJSON *assets)
 {
     if (!cJSON_IsArray(assets)) {
@@ -325,11 +374,7 @@ static void br_data_preload_assets(br_engine *e, const cJSON *assets)
     cJSON_ArrayForEach(item, assets)
     {
         size_t item_mark = br_data_path_push_index(e, i);
-        if (!cJSON_IsString(item)) {
-            br_data_errorf(e, "expected an asset path");
-        } else if (br_assets_load(e, item->valuestring) == NULL) {
-            br_data_errorf(e, "asset '%s' could not be loaded", item->valuestring);
-        }
+        br_data_assets_entry(e, item, br_data_preload_one, NULL);
         br_data_path_pop(e, item_mark);
         i++;
     }
@@ -516,15 +561,55 @@ br_node br_data_build_node(br_engine *e, const cJSON *json, br_node parent)
     return n;
 }
 
+/* The group a scene-file root keeps its references in (created on first use). */
+static br_asset_group *br_data_root_group(br_engine *e, br_node root)
+{
+    br_data_stored *st = br_array_at(&e->data->stored, root.index);
+    if (st == NULL || st->generation != root.generation) {
+        return NULL;
+    }
+    if (st->assets == NULL) {
+        char name[BR_DATA_PATH_SIZE + 8];
+        SDL_snprintf(name, sizeof(name), "file:%s", e->data->file);
+        st->assets = br_asset_group_create(e, name);
+    }
+    return st->assets;
+}
+
+/* Ends the capture of an outermost load: the references go to the br_scene that asked for the
+ * load, else to the root (released when it dies), else (nothing built) they are dropped. */
+static void br_data_capture_end(br_engine *e, uint32_t mark, br_node root)
+{
+    br_asset_group *owner = e->data->owner_group;
+    if (owner == NULL && br_assets_capture_count(e, mark) > 0 && br_node_valid(e, root)) {
+        owner = br_data_root_group(e, root);
+    }
+    br_assets_capture_end(e, mark, owner);
+}
+
 br_node br_scene_file_parse_node(br_engine *e, const cJSON *json, br_node parent)
 {
     br_data_state *s = e->data;
+    bool outermost = s->load_depth == 0;
+    uint32_t mark = outermost ? br_assets_capture_begin(e) : 0;
     s->load_depth++;
     br_node n = br_data_build_node(e, json, parent);
     s->load_depth--;
     if (s->load_depth == 0) {
         br_data_resolve_refs(e, n);
     }
+    if (outermost) {
+        br_data_capture_end(e, mark, n);
+    }
+    return n;
+}
+
+br_node br_data_load_owned(br_engine *e, const char *path, br_node parent, br_asset_group *owner)
+{
+    br_asset_group *saved = e->data->owner_group;
+    e->data->owner_group = owner;
+    br_node n = br_scene_file_load(e, path, parent);
+    e->data->owner_group = saved;
     return n;
 }
 
@@ -600,6 +685,15 @@ bool br_scene_file_reload(br_engine *e, const char *path, br_node root)
     br_data_scope saved;
     br_data_begin_file(e, path, &saved);
     br_data_state *s = e->data;
+    bool outermost = s->load_depth == 0;
+    /* the rebuilt tree takes new references; the old ones go after it (shared assets stay loaded) */
+    br_data_stored *st = br_array_at(&s->stored, root.index);
+    br_asset_group *old_assets = NULL;
+    if (outermost && st != NULL && st->generation == root.generation) {
+        old_assets = st->assets;
+        st->assets = NULL;
+    }
+    uint32_t mark = outermost ? br_assets_capture_begin(e) : 0;
     s->load_depth++;
     br_data_store_json(e, root, doc);
     br_data_apply_node(e, root, doc, true);
@@ -607,6 +701,10 @@ bool br_scene_file_reload(br_engine *e, const char *path, br_node root)
     if (s->load_depth == 0) {
         br_data_resolve_refs(e, root);
     }
+    if (outermost) {
+        br_data_capture_end(e, mark, root);
+    }
+    br_asset_group_destroy(old_assets);
     br_data_end_file(e, &saved);
     cJSON_Delete(doc);
     br_log_info("scene file: reloaded '%s'", path);
@@ -734,19 +832,71 @@ static void br_data_report_path(const char *path, br_asset_path_fn fn, void *use
     }
 }
 
-static bool br_data_is_asset_key(const char *key)
+static bool br_data_is_asset_key(const char *key, const char *value)
 {
-    static const char *keys[] = { "texture", "map", "font", "gif", "animation", "prefab", "svg_file" };
+    /* "source": a glTF model of a view3d "gltf" node */
+    static const char *keys[] = { "texture", "map", "font", "gif", "prefab", "svg_file", "source" };
     for (uint32_t i = 0; i < BR_ARRAY_COUNT(keys); i++) {
         if (SDL_strcmp(keys[i], key) == 0) {
             return true;
         }
     }
-    return false;
+    /* "animation": "sheet.json#walk" names a spritesheet; a glTF clip name ("Run") is no asset */
+    return SDL_strcmp(key, "animation") == 0 && SDL_strchr(value, '#') != NULL;
 }
 
-static void br_data_collect(br_engine *e, const cJSON *json, br_asset_path_fn fn, void *user)
+/* Collection state: the callback, and whether prefab files are opened (depth-limited). */
+typedef struct br_data_collector {
+    br_asset_path_fn fn;
+    void            *user;
+    bool             expand_prefabs;
+    int              depth;
+} br_data_collector;
+
+static void br_data_collect(br_engine *e, const cJSON *json, br_data_collector *c);
+
+static void br_data_collect_prefab(br_engine *e, const char *path, br_data_collector *c)
 {
+    if (c->depth >= 16) {
+        return; /* a prefab that uses itself: the load reports it */
+    }
+    void *bytes = NULL;
+    size_t size = 0;
+    if (!br_file_read_all(e, path, &bytes, &size)) {
+        return; /* the load reports the missing prefab */
+    }
+    cJSON *doc = cJSON_ParseWithLength(bytes, size);
+    br_free(bytes);
+    if (doc != NULL) {
+        c->depth++;
+        br_data_collect(e, doc, c);
+        c->depth--;
+        cJSON_Delete(doc);
+    }
+}
+
+/* One "assets" list entry: paths and bundle names, preload or lazy, each reported once. */
+static void br_data_collect_entry(br_engine *e, const char *path, bool lazy, void *user)
+{
+    (void)e;
+    (void)lazy;
+    br_data_collector *c = user;
+    c->fn(path, c->user);
+}
+
+static void br_data_collect_report(br_engine *e, const char *key, const char *path, br_data_collector *c)
+{
+    if (c->expand_prefabs && SDL_strcmp(key, "prefab") == 0) {
+        br_data_collect_prefab(e, path, c);
+        return;
+    }
+    br_data_report_path(path, c->fn, c->user);
+}
+
+static void br_data_collect(br_engine *e, const cJSON *json, br_data_collector *c)
+{
+    br_asset_path_fn fn = c->fn;
+    void *user = c->user;
     if (cJSON_IsArray(json)) {
         /* graphics commands: ["texture", "path", ...] */
         const cJSON *first = cJSON_GetArrayItem(json, 0);
@@ -759,17 +909,24 @@ static void br_data_collect(br_engine *e, const cJSON *json, br_asset_path_fn fn
     cJSON_ArrayForEach(item, json)
     {
         const char *key = item->string;
-        if (key != NULL && cJSON_IsString(item) && br_data_is_asset_key(key)) {
-            br_data_report_path(item->valuestring, fn, user);
-        } else if (key != NULL && cJSON_IsArray(item) &&
-                   (SDL_strcmp(key, "assets") == 0 || SDL_strcmp(key, "frames") == 0)) {
+        if (key != NULL && cJSON_IsString(item) && br_data_is_asset_key(key, item->valuestring)) {
+            br_data_collect_report(e, key, item->valuestring, c);
+        } else if (key != NULL && cJSON_IsArray(item) && SDL_strcmp(key, "assets") == 0) {
+            const cJSON *entry = NULL;
+            cJSON_ArrayForEach(entry, item)
+            {
+                if (cJSON_IsString(entry) || cJSON_IsObject(entry)) {
+                    br_data_assets_entry(e, entry, br_data_collect_entry, c);
+                }
+            }
+        } else if (key != NULL && cJSON_IsArray(item) && SDL_strcmp(key, "frames") == 0) {
             const cJSON *entry = NULL;
             cJSON_ArrayForEach(entry, item)
             {
                 if (cJSON_IsString(entry)) {
                     br_data_report_path(entry->valuestring, fn, user);
                 } else {
-                    br_data_collect(e, entry, fn, user);
+                    br_data_collect(e, entry, c);
                 }
             }
         } else if (key != NULL && cJSON_IsObject(item) && SDL_strcmp(key, "components") == 0) {
@@ -785,7 +942,7 @@ static void br_data_collect(br_engine *e, const cJSON *json, br_asset_path_fn fn
                 }
             }
         } else if (cJSON_IsObject(item) || cJSON_IsArray(item)) {
-            br_data_collect(e, item, fn, user);
+            br_data_collect(e, item, c);
         }
     }
 }
@@ -793,7 +950,16 @@ static void br_data_collect(br_engine *e, const cJSON *json, br_asset_path_fn fn
 void br_scene_file_collect_assets(br_engine *e, const cJSON *json, br_asset_path_fn fn, void *user)
 {
     if (json != NULL && fn != NULL) {
-        br_data_collect(e, json, fn, user);
+        br_data_collector c = { fn, user, false, 0 };
+        br_data_collect(e, json, &c);
+    }
+}
+
+void br_data_collect_expanded(br_engine *e, const cJSON *json, br_asset_path_fn fn, void *user)
+{
+    if (json != NULL && fn != NULL) {
+        br_data_collector c = { fn, user, true, 0 };
+        br_data_collect(e, json, &c);
     }
 }
 

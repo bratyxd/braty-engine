@@ -127,7 +127,10 @@ component; strings/asset paths are inline `char[BR_FIELD_STRING_SIZE]`.
   the group. `br_node_world_transform`/`to_global` are always absolute.
 - Masks: the mask node is not drawn as content and does not count in its parent's bounds. It is
   drawn when it is the top node of `br_render_subtree_to_texture` (alpha/colour masks, render.md).
-- `br_node_child_count` includes children destroyed this frame until the flush.
+- `br_node_child_count` includes children destroyed this frame until the flush;
+  `br_scene_node_count` does not (it counts live nodes).
+- Component pointers die when the array grows: re-fetch after any create (prefab, scene load).
+- Scene *objects* (load/unload/switch, persistent nodes) are the `scenes` module: `docs/agents/scenes.md`.
 - Hot paths read the tables directly: transform internals cache cos/sin of the rotation
   (`br_scene_set_rotation` is the only writer) and the packed world colour (`world_color`, updated
   with world tint/alpha). Engine code that writes `rotation` or tint/alpha fields directly would

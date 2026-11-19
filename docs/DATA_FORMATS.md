@@ -35,11 +35,12 @@ Every key is optional; the values below are the defaults unless noted.
               "fullscreen": false, "vsync": true, "resizable": true },
   "asset_root": "assets",
   "manifest": "manifest.json",
-  "start_scene": "scenes/title.scene.json",
+  "start_scene": "title",
+  "scenes": { "title": "scenes/title.scene.json", "level1": "scenes/level1.scene.json" },
   "clear_color": "#1b1e2b",
   "ticker": { "max_fps": 0, "min_fps": 10, "speed": 1, "fixed_hz": 0 },
   "input": {
-    "jump": { "keys": ["Space"], "buttons": ["a"] },
+    "jump": { "keys": ["Space"], "buttons": ["a"], "threshold": 0.5, "context": "gameplay" },
     "left": { "keys": ["Left", "A"], "axes": ["-leftx"] }
   },
   "audio": {
@@ -63,7 +64,8 @@ overlay closed, F1, hot reload on in debug builds.
 | `window.vsync` | `true` / `false`, or `"on"`, `"off"`, `"mailbox"`, `"adaptive"` (`br_app_set_vsync`; unsupported modes fall back with a log line; SDL GPU has no adaptive mode, it becomes on). |
 | `asset_root` | Directory of all other paths, relative to the executable directory. |
 | `manifest` | Added with `br_assets_load_manifest` (aliases and bundles). |
-| `start_scene` | Loaded under the stage after `init` (`br_game_config_main`), or by `br_game_config_apply`, which returns its root. |
+| `start_scene` | A `"scenes"` key or a path; loaded as a `br_scene` (single) after `init` (`br_game_config_main`), or by `br_game_config_apply`, which returns the file's root. |
+| `scenes` | Names for scene files: `br_scene_load(e, "level1", ...)`, `br_scene_switch(e, "level1", ...)` (`docs/agents/scenes.md`). |
 | `clear_color` | Window clear colour, any colour string (section 4). |
 | `ticker` | `max_fps`: FPS cap, 0 = uncapped, works with vsync off (`br_app_set_max_fps`); `min_fps`: dt clamp; `speed`: time scale; `fixed_hz`: rate of `BR_PHASE_FIXED_UPDATE`, 0 = once per frame (`br_app_set_fixed_timestep`). |
 | `input` | Named actions, the `br_input_actions_from_json` format (section 5). |
@@ -84,8 +86,23 @@ default; a syntax error keeps every default and makes `br_game_config_load` retu
 
 ## 2. Scene files (`*.scene.json`)
 
-One node object; children nest. `br_scene_file_load(e, path, parent)` builds it under `parent`
-and returns its root. The root may list `"assets"` to load before anything else.
+One node object; children nest. `br_scene_load(e, path_or_name, mode)` loads it as a scene
+(its own root, assets and lifetime, `docs/agents/scenes.md`); `br_scene_file_load(e, path,
+parent)` builds it under any `parent` and returns its root. Either way the references the build
+takes belong to the scene (or that root) and are released with it. The root may list `"assets"`
+to load before anything else:
+
+```json
+"assets": [ "atlas.json", "music",
+            { "path": "big/boss.png", "load": "lazy" },
+            { "bundle": "level1_sounds", "load": "preload" } ]
+```
+
+An entry is an asset path, a manifest bundle name (all its assets), or an object with `path` or
+`bundle` and `load`: `preload` (default, loaded before the nodes) or `lazy` (a `br_scene` lists it
+in its group and loads it on `br_asset_group_get`; a plain file load skips it). A `br_scene` also
+collects every path its nodes, prefabs and components name (textures, spritesheets, fonts, glTF
+`source`, `map`, `BR_FIELD_ASSET` fields such as sounds) and loads those first too.
 
 ```json
 {
@@ -131,7 +148,7 @@ and returns its root. The root may list `"assets"` to load before anything else.
 | `on` | `{ "click": "handler_name", ... }` | handlers registered with `br_scene_file_add_handler`; events `pointerdown pointerup pointerupoutside pointermove pointerover pointerout pointerenter pointerleave tap click rightclick wheel globalpointermove` |
 | `components` | `{ "name": { "field": value } }` | section 2.5 |
 | `children` | array of nodes | |
-| `assets` | array of asset paths | loaded (`br_assets_load`) before the node's other fields |
+| `assets` | array of paths / bundle names / `{ path or bundle, load }` | loaded before the node's other fields (`lazy` entries are not) |
 | `prefab` | prefab path | the node is a prefab instance; other keys override it (section 3) |
 
 Labels referenced by `mask`, `layer` and node component fields are resolved after the whole file
@@ -297,8 +314,8 @@ Every 3D node: `type` (`group` (default), `mesh`, `light`, `gltf`), `label`, `po
 
 Colours are written as a colour picker shows them (sRGB) and converted to linear. 3D keys are
 not checked for typos, and `br_scene_file_save` writes a view3d as it was loaded (live changes
-to its 3D nodes are not saved). Each `mesh` creates its own geometry and material (see the
-`ponytail:` in the loader). Example in use: `examples/gltf_demo.c` (the inset view).
+to its 3D nodes are not saved). Each `mesh` creates its own geometry and material, freed when the
+mesh node is destroyed (with its view). Example in use: `examples/gltf_demo.c` (the inset view).
 
 ### 2.3 Node type names
 
@@ -420,7 +437,7 @@ itself be `{ "prefab": ..., overrides }` (up to 16 levels). Parsed prefab files 
 | colour | `"#rgb"`, `"#rgba"`, `"#rrggbb"`, `"#rrggbbaa"`, `"0xrrggbb"`, `"rgb(255, 128, 0)"`, `"rgba(255, 128, 0, 0.5)"`, CSS names (`"red"`, `"gold"`, `"transparent"`), a number `0xRRGGBB` (decimal in JSON), `[r, g, b]` / `[r, g, b, a]` in 0..1 |
 | vec2 | `[x, y]`, `{ "x": 1, "y": 2 }`, or one number for both |
 | rect | `[x, y, width, height]` |
-| texture | `"images/hero.png"` (asset path or alias), `"atlas.json#hero.png"` (spritesheet frame), `"hero.png"` (a frame of any spritesheet already loaded, e.g. through `"assets"`) |
+| texture | `"images/hero.png"` (asset path or alias), `"atlas.json#hero.png"` (spritesheet frame), `"atlas#hero.png"` (frame of a sheet by its manifest alias), `"hero.png"` (a frame of any spritesheet already loaded, e.g. through `"assets"`) |
 | angle | radians (`rotation`, `tile_rotation`, shadow `angle`), degrees only in `angle` |
 | enum | lower-case names listed with each key |
 
@@ -453,4 +470,5 @@ Example: `examples/data/atlas.json`.
 { "jump": { "keys": ["Space"], "mouse": [1], "buttons": ["a"], "axes": ["-lefty"] } }
 ```
 `keys` are SDL scancode names, `buttons` SDL gamepad button names, `axes` SDL axis names with a
-`+`/`-` direction. Details: `docs/agents/events.md`.
+`+`/`-` direction, `threshold` the analog value that counts as pressed, `context` the input
+context the action belongs to (`br_input_action_set_context`). Details: `docs/agents/input.md`.

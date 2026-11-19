@@ -14,6 +14,11 @@ Test: `tests/test_assets.c` (headless). Example: `examples/assets_demo.c`, data 
   `br_assets_get` takes none. `br_assets_unload_all` frees everything regardless.
 - The **resolver** turns a name into that path: alias -> already-cached path -> `{a,b}` pattern /
   candidate list choice (closest `@Nx` to the preferred resolution, then preferred format) -> base path.
+- **Groups** (`br_asset_group.h`, `br_asset_group.c`): a named set holding one reference per
+  asset, loaded sync or async (polled each frame, never called back after unload/destroy), with
+  lazy entries and manifest bundles. Every `br_scene` owns one; guide: `docs/agents/scenes.md`.
+- **Capture** (`br_assets_capture_begin/_end`, internal): references taken by `br_assets_load*`
+  outside loaders are recorded; the data layer hands them to the scene or file root that loaded them.
 - **Background loading**: worker threads read files and run `decode`; the main thread runs
   `load`/`finish` (GPU uploads) in the `assets.update` system (INPUT phase) within a per-frame
   budget, then calls completion callbacks. Nothing async happens outside `br_engine_step`.
@@ -24,9 +29,11 @@ Test: `tests/test_assets.c` (headless). Example: `examples/assets_demo.c`, data 
 |---|---|
 | `br_assets_load(e, path)` / `_with(e, path, &opts)` | Load or cache hit, +1 reference. NULL on failure (logged). |
 | `br_assets_unload(e, path)`, `br_assets_ref_count`, `br_assets_list` | Release, inspect (type, path, refs, bytes, loading). |
+| `br_assets_report(e)`, `br_assets_owners(e, path, out, max)` | Log every asset with its owners; the owners of one (groups, scenes, `file:`, `bundle:`). |
+| `br_asset_group_create/add/load/load_async/unload/destroy` | Load and release a set together (`br_asset_group.h`). |
 | `br_assets_load_async(e, path, opts, fn, user)` | Worker-thread load, +1 reference now, `fn` from a later step. |
 | `br_assets_load_manifest(e, "manifest.json")` | Pixi-shaped manifest: bundles + aliases. |
-| `br_assets_load_bundle(e, name, progress_fn, user)` / `_unload_bundle` | Background bundle load with progress. |
+| `br_assets_load_bundle(e, name, progress_fn, user)` / `_unload_bundle`, `_bundle_failed` | Background bundle load with progress; how many failed. |
 | `br_assets_background_load(e, paths, n)` | Prefetch with zero references. |
 | `br_assets_set_preferences(e, 2.0f, "dds,png")`, `br_assets_set_base_path` | Resolver choices. |
 | `br_texture_load(e, path)` | Typed texture load, never fails (magenta fallback). Works for png and dds/ktx. |
@@ -102,4 +109,6 @@ A loader that loads other assets uses `br_assets_load`/`br_assets_unload` (sprit
   failure. They are not premultiplied on upload (author them premultiplied); sRGB variants use the
   UNORM format like PNGs do; 2D only (no cube/array/volume); ETC1/2 has no SDL_GPU format; KTX2/Basis deferred.
 - Headless engines get texture records with sizes and no pixels, so tests can load atlases and DDS files.
+- References taken while a scene file or prefab builds belong to that build (capture): they are
+  released with the `br_scene` or the file's root node, not leaked.
 - Shutdown joins the workers, finishes queued results and frees everything before the render module.
