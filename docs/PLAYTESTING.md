@@ -124,6 +124,7 @@ so `connect` is only needed for a specific family. A pad of a recorded session c
 | `dump` | `{"cmd": "dump", "file": "build/state.json"}` | Frame, time, node count, exposed state, and the scene tree with every component (scene-file format). Without `"file"` the dump is in the reply. |
 | `stats` | `{"cmd": "stats"}` | `"stats"`: frame, time, fps, nodes, draw_calls, textures, skipped_frames, heap_bytes, vsync, max_fps, deterministic |
 | `logs` | `{"cmd": "logs", "count": 20}` | `"lines"`: the last log lines (128 are kept) |
+| `profile` | `{"cmd": "profile", "frames": 300}` | Runs N frames (default 300), then `"profile"`: `br_profiler_summary_json` of them (`frames` = frame intervals measured, at most 300; `fps`, `frame_ms_avg`, `frame_ms_p95`, `frame_ms_p99`, `frame_ms_max`, `cpu_ms_avg`, `cpu_ms_p95`, `gpu_ms_avg` (`null` when unknown), `update_ms_avg`, `render_ms_avg`, `verdict`, `top_scopes`). Short form: `profile [N]`. Under `--deterministic` frames still take real time, so the numbers are real; for frame-rate checks run without `--headless`. |
 
 ### Changing and checking state
 
@@ -140,17 +141,21 @@ so `connect` is only needed for a specific family. A pad of a recorded session c
 
 | Path | Means |
 |---|---|
-| `ship:position` | Node labelled `ship` (searched in the whole stage), built-in property. Built-ins: `position`, `x`, `y`, `scale`, `rotation` (radians), `alpha`, `visible`, `tint`, `z_index`, `label`, `type`, `children` (count), `world_position`, `bounds` ([x, y, w, h], window coordinates), `exists`. |
+| `ship:position` | Node labelled `ship` (searched in the whole stage), built-in property. Built-ins: `position`, `x`, `y`, `scale`, `rotation` (radians), `alpha`, `visible`, `tint`, `z_index`, `label`, `type`, `children` (count), `world_position`, `bounds` ([x, y, w, h], stage coordinates: window coordinates unless a 2D camera moves the stage), `exists`. |
 | `final_score:text` | Any other key of the node's scene-file form (`text`, `texture`, `style`, ...). |
 | `ship:pilot.carrying` | Component `pilot` of node `ship`, field `carrying` (fields listed in the game's `br_field_desc`). |
 | `ship:position.x` | One element: `.x .y .z .w` (or `.0 .1 ...`). Works for `get` and `set`. |
 | `game:score` | A struct the game exposed with `br_playtest_expose(e, "game", fields, count, &state)`. |
-| `json_view/json_fox:position` | 3D node `json_fox` inside the `view3d` labelled `json_view` (`*/json_fox` = any view; an unlabelled view is `/json_fox`). Properties: `position`, `scale`, `rotation` (quaternion [x, y, z, w]), `euler` (radians, X then Y then Z), `visible`, `world_position`, `screen_position` (window coordinates, `null` behind the camera), `label`, `type`, `children`, `exists`; `.x` elements as above. |
+| `profile:frame_ms_p95` | A key of the last `profile` command's summary (any key listed above; `profile:*` = all). Use it in `expect`: `{"cmd": "expect", "path": "profile:frame_ms_p95", "op": "<", "value": 16.7}`, `{"cmd": "expect", "path": "profile:verdict", "op": "contains", "value": "vsync"}`. Before any `profile` it covers every frame kept. |
+| `engine:scene` | Name of the active scene (`br_scene_active_name`, `""` when none): `{"cmd": "wait_until", "path": "engine:scene", "value": "play"}`. |
+| `json_view/json_fox:position` | 3D node `json_fox` inside the `view3d` labelled `json_view` (`*/json_fox` = any view; an unlabelled view is `/json_fox`). Properties: `position`, `scale`, `rotation` (quaternion [x, y, z, w]), `euler` (radians, X then Y then Z), `visible`, `world_position`, `screen_position` (stage coordinates, `null` behind the camera), `label`, `type`, `children`, `exists`; `.x` elements as above. |
 
 `type`, `children`, `world_position`, `bounds`, `screen_position` and `exists` are read-only.
 3D nodes work with `get`, `set`, `expect`, `wait_until`, `find` and `click` (`{"cmd": "click",
 "label": "/cube"}` clicks where the node's origin is on screen, so the view's 3D pointer events
-fire; a node whose origin is not on its surface, such as a torus, is missed); `dump` lists the
+fire; a node whose origin is not on its surface, such as a torus, is missed). `click` goes through
+2D cameras: it aims at the window point where a camera shows the node (`br_camera_stage_to_screen`).
+`dump` lists the
 3D subtree of every view under `"views3d"`.
 
 ## A game's side: exposing state

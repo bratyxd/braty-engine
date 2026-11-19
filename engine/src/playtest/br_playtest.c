@@ -420,6 +420,8 @@ static const br_pt_command_info br_pt_commands[] = {
     { "list", "type?:string component?:string", "nodes by type and/or component" },
     { "logs", "count?:number", "the last log lines" },
     { "stats", "", "frame, fps, nodes, draw calls, memory..." },
+    { "profile", "frames?:number",
+      "wait N frames (default 300), reply with the profiler summary of them; profile:<key> reads it" },
     { "expect", "path?:string op?:string value?:any log?:string", "check path op value (== != < <= > >= contains) or a log line" },
     { "log", "message:string", "write a line to the log" },
     { "help", "", "this list" },
@@ -759,6 +761,15 @@ static br_pt_result br_pt_exec(br_engine *e, const cJSON *cmd, cJSON *reply)
     if (SDL_strcmp(name, "logs") == 0) {
         return br_pt_exec_logs(e, cmd, reply);
     }
+    if (SDL_strcmp(name, "profile") == 0) {
+        /* the summary is read after the wait: br_playtest_command adds it, scripts use profile:<key> */
+        double frames = br_pt_clamped(cmd, "frames", BR_PROFILER_FRAMES, 1.0, 1e9);
+        e->playtest->profile_frames = frames < BR_PROFILER_FRAMES ? (uint32_t)frames : BR_PROFILER_FRAMES;
+        e->playtest->waiting = true;
+        e->playtest->until = NULL;
+        e->playtest->resume_frame = e->ticker.frame + (uint64_t)frames;
+        return BR_PT_WAIT;
+    }
     if (SDL_strcmp(name, "stats") == 0) {
         cJSON *stats = cJSON_CreateObject();
         br_pt_add_stats(e, stats);
@@ -941,6 +952,14 @@ char *br_playtest_command(br_engine *e, const char *json_line)
         while (r == BR_PT_WAIT) {
             br_engine_step(e, dt);
             r = br_pt_wait_check(e);
+        }
+    }
+    if (r == BR_PT_DONE && SDL_strcmp(br_pt_string(cmd, "cmd"), "profile") == 0) {
+        cJSON *summary = br_playtest_query_get(e, "profile:*");
+        if (summary == NULL) {
+            r = BR_PT_FAILED;
+        } else {
+            cJSON_AddItemToObject(results, "profile", summary);
         }
     }
     s->failed = s->failed || r == BR_PT_FAILED;

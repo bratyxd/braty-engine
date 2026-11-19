@@ -436,6 +436,25 @@ static void test_click_with_camera(void)
     br_engine_destroy(e);
 }
 
+/* ---- "profile" waits and replies with the profiler summary; profile:<key> and engine:scene paths */
+
+static void test_profile_and_scene(void)
+{
+    br_engine *e = br_engine_create("test_playtest_profile", "../../tests/data");
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"engine:scene\"}", "\"value\":\"\""));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"profile\",\"frames\":10}", "\"ok\":true,\"frame\":10,\"profile\":{\"frames\":9"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"profile\"}", "\"frame\":310,\"profile\":{\"frames\":299"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"expect\",\"path\":\"profile:frame_ms_p95\",\"op\":\">=\",\"value\":0}", "\"ok\":true"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"profile:verdict\"}", "\"value\":\""));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"profile:fps\"}", "\"ok\":true"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"profile:nope\"}", "no profile key 'nope'"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"help\"}", "\"cmd\":\"profile\""));
+    br_scene a = br_scene_load(e, "scenes/a.scene.json", BR_SCENE_SINGLE);
+    BR_CHECK(br_scene_is_loaded(e, a));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"expect\",\"path\":\"engine:scene\",\"value\":\"a\"}", "\"ok\":true"));
+    br_engine_destroy(e);
+}
+
 /* ---- "action" drives any action, also code-bound ones without a key, with analogue values */
 
 static void test_action(void)
@@ -570,6 +589,7 @@ int main(void)
     test_gamepad();
     test_3d_paths();
     test_click_with_camera();
+    test_profile_and_scene();
     test_interactive();
     test_record_replay();
     test_record_replay_gamepad();

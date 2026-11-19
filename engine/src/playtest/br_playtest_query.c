@@ -529,6 +529,43 @@ static cJSON *br_pt_dump3d(br_engine *e, br_node3d n)
     return out;
 }
 
+/* "profile:<key>" (a key of br_profiler_summary_json over the last "profile" command's frames;
+ * "profile:*" = the whole object) and "engine:scene" (the active scene's name). Only used when
+ * the game exposes no struct of that name. NULL with *handled false for any other path. */
+static cJSON *br_pt_get_builtin(br_engine *e, const br_pt_path *p, const char *path, bool *handled)
+{
+    *handled = false;
+    if (br_pt_find_exposed(e, p->target) != NULL || p->part_count != 1) {
+        return NULL;
+    }
+    if (SDL_strcmp(p->target, "engine") == 0 && SDL_strcmp(p->parts[0], "scene") == 0) {
+        *handled = true;
+        const char *name = br_scene_active_name(e);
+        return cJSON_CreateString(name != NULL ? name : "");
+    }
+    if (SDL_strcmp(p->target, "profile") != 0) {
+        return NULL;
+    }
+    *handled = true;
+    cJSON *summary = cJSON_CreateObject();
+    if (!br_profiler_summary_json(e, e->playtest->profile_frames, summary)) {
+        cJSON_Delete(summary);
+        br_playtest_fail(e, "path '%s': the profiler has recorded no frame yet", path);
+        return NULL;
+    }
+    if (SDL_strcmp(p->parts[0], "*") == 0) {
+        return summary;
+    }
+    cJSON *value = cJSON_DetachItemFromObjectCaseSensitive(summary, p->parts[0]);
+    cJSON_Delete(summary);
+    if (value == NULL) {
+        br_playtest_fail(e, "path '%s': no profile key '%s' (frames, fps, frame_ms_avg, frame_ms_p95, frame_ms_p99, "
+                         "frame_ms_max, cpu_ms_avg, cpu_ms_p95, gpu_ms_avg, update_ms_avg, render_ms_avg, verdict, "
+                         "top_scopes)", path, p->parts[0]);
+    }
+    return value;
+}
+
 cJSON *br_playtest_query_get(br_engine *e, const char *path)
 {
     br_pt_path p;
@@ -537,6 +574,11 @@ cJSON *br_playtest_query_get(br_engine *e, const char *path)
     }
     if (SDL_strchr(p.target, '/') != NULL) {
         return br_pt_get3d(e, &p, path);
+    }
+    bool handled = false;
+    cJSON *builtin = br_pt_get_builtin(e, &p, path, &handled);
+    if (handled) {
+        return builtin;
     }
     const br_field_desc *field = NULL;
     void *base = NULL;

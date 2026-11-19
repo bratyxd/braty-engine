@@ -54,6 +54,7 @@ typedef struct br_playtest_state {
     uint64_t     resume_frame;  /* "wait"/"step": continue when ticker.frame reaches it */
     const cJSON *until;         /* "wait_until": the command, owned by the script or the caller */
     uint64_t     until_deadline;
+    uint32_t     profile_frames; /* frames the last "profile" covered (0 = all kept) */
 
     bool     in_frame;          /* true while the playtest system runs inside a frame */
     bool     injecting;         /* true while the playtest itself sends input (not recorded) */

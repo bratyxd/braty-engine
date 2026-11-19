@@ -21,7 +21,7 @@ Short commands: step [N], key NAME [down|up|tap], action NAME [tap|down|up [VALU
 gamepad connect TYPE [SLOT] | disconnect [SLOT] | tap|down|up BUTTON [SLOT] |
 axis AXIS VALUE [SLOT], click LABEL,
 text "...", screenshot FILE, get PATH, set PATH JSON, find LABEL, dump [FILE],
-stats, logs [N], help, quit. Anything starting with "{" is sent as raw JSON.
+stats, profile [N], logs [N], help, quit. Anything starting with "{" is sent as raw JSON.
 A failed command raises PlaytestError with the engine's message; the game process is ended when
 the with-block exits, on an exception, and at interpreter exit.
 Full reference: docs/PLAYTESTING.md.
@@ -164,6 +164,15 @@ class Playtest:
     def stats(self):
         return self.send({"cmd": "stats"})["stats"]
 
+    def profile(self, frames=300):
+        """Runs `frames` frames and returns the profiler summary of them (frame_ms_p95, cpu_ms_avg,
+        gpu_ms_avg, fps, verdict, top_scopes...); afterwards "profile:<key>" paths read it."""
+        return self.send({"cmd": "profile", "frames": frames})["profile"]
+
+    def scene(self):
+        """Name of the active scene ("" when none)."""
+        return self.get("engine:scene")
+
     def logs(self, count=20):
         return self.send({"cmd": "logs", "count": count})["lines"]
 
@@ -257,6 +266,8 @@ def parse_short(text):
         return {"cmd": "dump", "file": rest[0]} if rest else {"cmd": "dump"}
     if name == "logs":
         return {"cmd": "logs", "count": int(rest[0]) if rest else 20}
+    if name == "profile":
+        return {"cmd": "profile", "frames": int(rest[0]) if rest else 300}
     if name in ("stats", "quit", "help"):
         return {"cmd": name}
     raise SystemExit("unknown short command %r (use raw JSON for the others)" % text)

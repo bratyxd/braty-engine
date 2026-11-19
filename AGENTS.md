@@ -39,8 +39,9 @@ python tools/playtest.py build/windows-gcc/sample_projects/star_courier/star_cou
 ```
 
 Then open `build/playtest_shot.png`. Commands: `step N`, `key Space`, `action start`, `click
-<label>`, `get <label>:<property>` / `<label>:<component>.<field>` / `game:<field>`, `set <path>
-<json>`, `dump`, `screenshot FILE`, `quit`; scripts (`--playtest file.json`) add `expect` and
+<label>`, `get <label>:<property>` / `<label>:<component>.<field>` / `game:<field>` /
+`engine:scene`, `set <path> <json>`, `dump`, `profile [N]` (then `profile:frame_ms_p95`...),
+`screenshot FILE`, `quit`; scripts (`--playtest file.json`) add `expect` and
 `wait_until` and exit 1 on failure; `--record file.json` turns a played session into a script.
 Everything, with the Python class: `docs/PLAYTESTING.md`.
 
