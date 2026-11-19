@@ -1,88 +1,36 @@
-/* br_anim3d: keyframe sampling, skinning maths, the animator API and the animation system. */
+/* br_anim3d: the Phase 1 glTF animator API (br_animator3d_*) on top of the unified animation
+ * system, skinning maths, and the skinning pass ("gltf.animate").
+ *
+ * Playing a clip through br_animator3d_* gives the model3d node a unified br_animator holding the
+ * model's clips (br_animator_add_model_clips); "animation.update" samples it like any other
+ * animator. The legacy br_animator3d struct stays the user-facing state: br_anim3d_sync_in copies
+ * the user's edits (speed, loop, paused, time) into the animator before sampling, sync_out copies
+ * time and fade state back and fires the LOOP / END callbacks. "gltf.animate" (LATE_UPDATE 0, after
+ * the animators) only computes joint matrices into the skin slots.
+ */
+#include "animation/br_animation_internal.h"
 #include "three_d/br_gltf_internal.h"
 
 
 /* ---- pure maths */
 
-static void br_anim3d_normalize4(float *q)
-{
-    float len = SDL_sqrtf(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
-    if (len > 0.0f) {
-        for (int i = 0; i < 4; i++) {
-            q[i] /= len;
-        }
-    }
-}
-
 void br_anim3d_sample(const br_anim3d_channel *ch, float t, float *out)
 {
-    uint32_t n = ch->key_count;
-    uint32_t c = ch->components;
-    if (n == 0 || c == 0) {
-        return;
-    }
-    bool cubic = ch->interpolation == BR_ANIM3D_CUBIC_SPLINE;
-    uint32_t stride = cubic ? c * 3 : c; /* floats per key */
-    uint32_t value = cubic ? c : 0;      /* the value inside a key (after the in-tangent) */
-    bool rotation = ch->path == BR_ANIM3D_ROTATION;
-
-    if (n == 1 || t <= ch->times[0] || t >= ch->times[n - 1]) {
-        uint32_t k = (n > 1 && t >= ch->times[n - 1]) ? n - 1 : 0;
-        SDL_memcpy(out, ch->values + k * stride + value, sizeof(float) * c);
-        if (rotation) {
-            br_anim3d_normalize4(out);
-        }
-        return;
-    }
-    /* binary search: times[lo] <= t < times[hi], hi = lo + 1 */
-    uint32_t lo = 0;
-    uint32_t hi = n - 1;
-    while (hi - lo > 1) {
-        uint32_t mid = (lo + hi) / 2;
-        if (ch->times[mid] <= t) {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    float dt = ch->times[hi] - ch->times[lo];
-    float u = dt > 0.0f ? (t - ch->times[lo]) / dt : 0.0f;
-    const float *a = ch->values + lo * stride;
-    const float *b = ch->values + hi * stride;
-
+    /* a view of the channel as a unified track: one sampler for every clip in the engine */
+    br_anim_track track;
+    SDL_zero(track);
+    track.interpolation = BR_ANIM_LINEAR;
     if (ch->interpolation == BR_ANIM3D_STEP) {
-        SDL_memcpy(out, a + value, sizeof(float) * c);
-    } else if (cubic) {
-        /* Hermite: p0 = value(lo), m0 = out-tangent(lo) * dt, p1 = value(hi), m1 = in-tangent(hi) * dt */
-        float u2 = u * u;
-        float u3 = u2 * u;
-        float h00 = 2.0f * u3 - 3.0f * u2 + 1.0f;
-        float h10 = u3 - 2.0f * u2 + u;
-        float h01 = -2.0f * u3 + 3.0f * u2;
-        float h11 = u3 - u2;
-        for (uint32_t i = 0; i < c; i++) {
-            float p0 = a[c + i];
-            float m0 = a[2 * c + i] * dt;
-            float p1 = b[c + i];
-            float m1 = b[i] * dt;
-            out[i] = h00 * p0 + h10 * m0 + h01 * p1 + h11 * m1;
-        }
-    } else if (rotation) {
-        br_quat qa = { a[0], a[1], a[2], a[3] };
-        br_quat qb = { b[0], b[1], b[2], b[3] };
-        br_quat q = br_quat_slerp(qa, qb, u); /* takes the short way round */
-        out[0] = q.x;
-        out[1] = q.y;
-        out[2] = q.z;
-        out[3] = q.w;
-    } else {
-        for (uint32_t i = 0; i < c; i++) {
-            out[i] = a[i] + (b[i] - a[i]) * u;
-        }
+        track.interpolation = BR_ANIM_STEP;
+    } else if (ch->interpolation == BR_ANIM3D_CUBIC_SPLINE) {
+        track.interpolation = BR_ANIM_CUBIC;
     }
-    if (rotation) {
-        br_anim3d_normalize4(out);
-    }
+    track.ease = BR_EASE_LINEAR;
+    track.components = ch->components;
+    track.key_count = ch->key_count;
+    track.times = ch->times;
+    track.values = ch->values;
+    br_anim_track_sample(&track, t, ch->path == BR_ANIM3D_ROTATION, NULL, out);
 }
 
 void br_anim3d_joint_matrices(br_mat4 mesh_world, const br_mat4 *node_worlds, const uint32_t *joints,
@@ -164,6 +112,27 @@ static br_gltf_anim *br_anim3d_slot(br_engine *e, br_node3d n)
     return br_array_at(&e->gltf->anims, inst->anim_index);
 }
 
+/* The unified animator behind a legacy one (made with the model's clips on first use). */
+static br_animator_data *br_anim3d_unified(br_engine *e, br_gltf_anim *slot, bool create)
+{
+    br_anim_target t = br_anim_target_3d(slot->instance->self);
+    br_animator a = br_animator_get(e, t);
+    if (a.generation == 0 && create) {
+        a = br_animator_add(e, t);
+        br_animator_add_model_clips(e, a, slot->instance->model);
+    }
+    br_animator_data *d = br_animator_data_get(e, a);
+    if (d != NULL && create) {
+        d->legacy.active = true;
+    }
+    return d;
+}
+
+static br_anim_loop br_anim3d_loop(const br_animator3d *a)
+{
+    return a->loop ? BR_ANIM_LOOP : BR_ANIM_CLAMP;
+}
+
 br_animator3d *br_animator3d_get(br_engine *e, br_node3d model_node)
 {
     br_gltf_anim *slot = br_anim3d_slot(e, model_node);
@@ -180,6 +149,17 @@ bool br_animator3d_play_index(br_engine *e, br_node3d model_node, uint32_t clip)
     a->clip = (int32_t)clip;
     a->time = a->speed < 0.0f ? slot->instance->model->clips[clip].duration : 0.0f;
     a->fade_clip = -1;
+    br_animator_data *d = br_anim3d_unified(e, slot, true);
+    if (d == NULL || clip >= d->clips.count) {
+        return false;
+    }
+    a = br_animator3d_get(e, model_node);
+    d->speed = a->speed;
+    d->layers[0].queue_count = 0;
+    br_animator_start(e, d, 0, (int32_t)clip, 0.0f);
+    d->layers[0].cur.loop = br_anim3d_loop(a);
+    d->layers[0].cur.time = a->time;
+    d->legacy.time = a->time;
     return true;
 }
 
@@ -216,21 +196,37 @@ bool br_animator3d_cross_fade(br_engine *e, br_node3d model_node, const char *cl
     if (a->clip < 0 || seconds <= 0.0f) {
         return br_animator3d_play_index(e, model_node, (uint32_t)index);
     }
+    br_animator_data *d = br_anim3d_unified(e, br_anim3d_slot(e, model_node), true);
+    if (d == NULL) {
+        return false;
+    }
+    a = br_animator3d_get(e, model_node);
     a->fade_clip = a->clip;
     a->fade_time = a->time;
     a->fade_elapsed = 0.0f;
     a->fade_duration = seconds;
     a->clip = index;
     a->time = 0.0f;
+    d->layers[0].queue_count = 0;
+    br_animator_start(e, d, 0, index, seconds);
+    d->layers[0].cur.loop = br_anim3d_loop(a);
+    d->layers[0].cur.time = 0.0f;
+    d->legacy.time = 0.0f;
     return true;
 }
 
 void br_animator3d_stop(br_engine *e, br_node3d model_node)
 {
     br_animator3d *a = br_animator3d_get(e, model_node);
-    if (a != NULL) {
-        a->clip = -1;
-        a->fade_clip = -1;
+    if (a == NULL) {
+        return;
+    }
+    a->clip = -1;
+    a->fade_clip = -1;
+    br_animator_data *d = br_anim3d_unified(e, br_anim3d_slot(e, model_node), false);
+    if (d != NULL) {
+        d->layers[0].cur.active = false;
+        d->layers[0].prev.active = false;
     }
 }
 
@@ -239,101 +235,90 @@ uint32_t br_animator3d_count(br_engine *e)
     return e->gltf != NULL ? e->gltf->anims.count : 0;
 }
 
-/* ---- the system */
+/* ---- legacy state <-> unified animator */
 
-/* Moves a clip clock; returns true when it wrapped (loop) or reached an end (once). */
-static bool br_anim3d_tick(float *time, float step, float duration, bool loop)
+void br_anim3d_sync_in(br_engine *e)
 {
-    if (duration <= 0.0f) {
-        *time = 0.0f;
-        return false;
+    if (e->gltf == NULL) {
+        return;
     }
-    float before = *time;
-    float t = before + step;
-    if (loop) {
-        bool wrapped = t >= duration || t < 0.0f;
-        t = SDL_fmodf(t, duration);
-        if (t < 0.0f) {
-            t += duration;
+    for (uint32_t i = 0; i < e->gltf->anims.count; i++) {
+        br_gltf_anim *slot = br_array_at(&e->gltf->anims, i);
+        if (!br_node3d_valid(e, slot->instance->self)) {
+            continue;
         }
-        *time = t;
-        return wrapped;
-    }
-    t = br_clampf(t, 0.0f, duration);
-    *time = t;
-    return t != before && (t == duration || t == 0.0f);
-}
-
-static void br_anim3d_rest(const br_model *m, br_gltf_pose *pose)
-{
-    for (uint32_t i = 0; i < m->node_count; i++) {
-        const br_model_node *node = &m->nodes[i];
-        pose->translation[i] = node->translation;
-        pose->rotation[i] = node->rotation;
-        pose->scale[i] = node->scale;
-        SDL_memcpy(pose->weights + i * BR_MESH3D_MAX_MORPH_WEIGHTS, node->weights, sizeof(node->weights));
+        br_animator_data *d = br_anim3d_unified(e, slot, false);
+        if (d == NULL || !d->legacy.active) {
+            continue;
+        }
+        const br_animator3d *a = &slot->animator;
+        br_anim_layer *l = &d->layers[0];
+        d->speed = a->speed;
+        d->paused = a->paused;
+        l->cur.loop = br_anim3d_loop(a);
+        l->prev.loop = l->cur.loop;
+        if (a->clip >= 0 && l->cur.active && a->time != d->legacy.time) {
+            l->cur.time = a->time; /* the user moved the clock */
+            l->cur.ended = false;
+        }
     }
 }
 
-static void br_anim3d_sample_clip(const br_anim3d_clip *clip, float t, br_gltf_pose *pose)
+typedef struct br_anim3d_fired {
+    br_anim3d_event_fn fn;
+    void              *user;
+    br_node3d          node;
+    uint32_t           clip;
+    br_anim3d_event    event;
+} br_anim3d_fired;
+
+void br_anim3d_sync_out(br_engine *e)
 {
-    float v[BR_MESH3D_MAX_MORPH_WEIGHTS];
-    for (uint32_t c = 0; c < clip->channel_count; c++) {
-        const br_anim3d_channel *ch = &clip->channels[c];
-        uint32_t i = ch->target;
-        br_anim3d_sample(ch, t, v);
-        if (ch->path == BR_ANIM3D_TRANSLATION) {
-            pose->translation[i] = br_vec3_make(v[0], v[1], v[2]);
-        } else if (ch->path == BR_ANIM3D_ROTATION) {
-            br_quat q = { v[0], v[1], v[2], v[3] };
-            pose->rotation[i] = q;
-        } else if (ch->path == BR_ANIM3D_SCALE) {
-            pose->scale[i] = br_vec3_make(v[0], v[1], v[2]);
+    if (e->gltf == NULL || e->gltf->anims.count == 0) {
+        return;
+    }
+    br_anim3d_fired *fired = br_frame_alloc(e, sizeof(br_anim3d_fired) * e->gltf->anims.count);
+    uint32_t fired_count = 0;
+    for (uint32_t i = 0; i < e->gltf->anims.count; i++) {
+        br_gltf_anim *slot = br_array_at(&e->gltf->anims, i);
+        if (!br_node3d_valid(e, slot->instance->self)) {
+            continue;
+        }
+        br_animator_data *d = br_anim3d_unified(e, slot, false);
+        if (d == NULL || !d->legacy.active) {
+            continue;
+        }
+        br_animator3d *a = &slot->animator;
+        const br_anim_layer *l = &d->layers[0];
+        if (l->cur.active) {
+            a->time = l->cur.time;
+        }
+        d->legacy.time = a->time;
+        if (l->prev.active) {
+            a->fade_clip = l->prev.motion;
+            a->fade_time = l->prev.time;
+            a->fade_elapsed = l->fade_elapsed;
+            a->fade_duration = l->fade_duration;
         } else {
-            SDL_memcpy(pose->weights + i * BR_MESH3D_MAX_MORPH_WEIGHTS, v, sizeof(float) * ch->components);
+            a->fade_clip = -1;
         }
+        bool fire = a->clip >= 0 && l->cur.active && (l->cur.wrapped || l->cur.ended_now);
+        if (fire && a->on_event != NULL && fired != NULL) {
+            br_anim3d_fired *f = &fired[fired_count++];
+            f->fn = a->on_event;
+            f->user = a->event_user;
+            f->node = slot->instance->self;
+            f->clip = (uint32_t)a->clip;
+            f->event = a->loop ? BR_ANIM3D_EVENT_LOOP : BR_ANIM3D_EVENT_END;
+        }
+    }
+    /* callbacks may play clips or create instances (the pools may move): after the loop */
+    for (uint32_t i = 0; i < fired_count; i++) {
+        fired[i].fn(e, fired[i].node, fired[i].clip, fired[i].event, fired[i].user);
     }
 }
 
-/* pose = blend(from, pose, w): w = 0 is `from`, w = 1 keeps `pose`. */
-static void br_anim3d_blend(uint32_t node_count, const br_gltf_pose *from, br_gltf_pose *pose, float w)
-{
-    for (uint32_t i = 0; i < node_count; i++) {
-        pose->translation[i] = br_vec3_lerp(from->translation[i], pose->translation[i], w);
-        pose->rotation[i] = br_quat_slerp(from->rotation[i], pose->rotation[i], w);
-        pose->scale[i] = br_vec3_lerp(from->scale[i], pose->scale[i], w);
-    }
-    for (uint32_t i = 0; i < node_count * BR_MESH3D_MAX_MORPH_WEIGHTS; i++) {
-        pose->weights[i] = br_lerpf(from->weights[i], pose->weights[i], w);
-    }
-}
-
-/* Writes the channels' targets of a clip from the pose into the 3D nodes / mesh morph slots. */
-static void br_anim3d_write(br_engine *e, br_gltf_instance *inst, const br_anim3d_clip *clip)
-{
-    const br_model *m = inst->model;
-    for (uint32_t c = 0; c < clip->channel_count; c++) {
-        const br_anim3d_channel *ch = &clip->channels[c];
-        uint32_t i = ch->target;
-        br_node3d n = inst->nodes[i];
-        if (ch->path == BR_ANIM3D_TRANSLATION) {
-            br_node3d_set_position(e, n, inst->pose.translation[i]);
-        } else if (ch->path == BR_ANIM3D_ROTATION) {
-            br_node3d_set_rotation(e, n, inst->pose.rotation[i]);
-        } else if (ch->path == BR_ANIM3D_SCALE) {
-            br_node3d_set_scale(e, n, inst->pose.scale[i]);
-        } else {
-            for (uint32_t p = 0; p < inst->prim_count[i]; p++) {
-                br_mesh3d *mesh = br_mesh3d_get(e, inst->prim_nodes[inst->prim_first[i] + p]);
-                if (mesh != NULL) {
-                    SDL_memcpy(mesh->morph_weights, inst->pose.weights + i * BR_MESH3D_MAX_MORPH_WEIGHTS,
-                               sizeof(mesh->morph_weights));
-                    mesh->morph_weight_count = m->nodes[i].weight_count;
-                }
-            }
-        }
-    }
-}
+/* ---- the skinning pass */
 
 /* Joint matrices of every skinned node, from the nodes' current local transforms. */
 static void br_anim3d_skin(br_engine *e, br_gltf_instance *inst)
@@ -360,50 +345,14 @@ static void br_anim3d_skin(br_engine *e, br_gltf_instance *inst)
 
 void br_anim3d_system(br_engine *e, float dt, void *user)
 {
+    (void)dt;
     (void)user;
     br_gltf_state *s = e->gltf;
     for (uint32_t idx = 0; idx < s->anims.count; idx++) {
         br_gltf_anim *slot = br_array_at(&s->anims, idx);
-        br_gltf_instance *inst = slot->instance;
-        if (!br_node3d_valid(e, inst->self)) {
-            continue; /* destroyed this frame, freed at the next flush */
-        }
-        const br_model *m = inst->model;
-        br_animator3d *a = &slot->animator;
-        bool fire = false;
-        br_anim3d_event event = BR_ANIM3D_EVENT_LOOP;
-        int32_t event_clip = a->clip;
-        if (!a->paused && a->clip >= 0) {
-            float step = dt * a->speed;
-            fire = br_anim3d_tick(&a->time, step, m->clips[a->clip].duration, a->loop);
-            event = a->loop ? BR_ANIM3D_EVENT_LOOP : BR_ANIM3D_EVENT_END;
-            if (a->fade_clip >= 0) {
-                br_anim3d_tick(&a->fade_time, step, m->clips[a->fade_clip].duration, a->loop);
-                a->fade_elapsed += dt;
-                if (a->fade_elapsed >= a->fade_duration) {
-                    a->fade_clip = -1;
-                }
-            }
-        }
-        if (a->clip >= 0 || a->fade_clip >= 0) {
-            br_anim3d_rest(m, &inst->pose);
-            if (a->clip >= 0) {
-                br_anim3d_sample_clip(&m->clips[a->clip], a->time, &inst->pose);
-            }
-            if (a->fade_clip >= 0) {
-                br_anim3d_rest(m, &inst->fade_pose);
-                br_anim3d_sample_clip(&m->clips[a->fade_clip], a->fade_time, &inst->fade_pose);
-                br_anim3d_blend(m->node_count, &inst->fade_pose, &inst->pose, a->fade_elapsed / a->fade_duration);
-                br_anim3d_write(e, inst, &m->clips[a->fade_clip]);
-            }
-            if (a->clip >= 0) {
-                br_anim3d_write(e, inst, &m->clips[a->clip]);
-            }
-        }
-        br_anim3d_skin(e, inst);
-        if (fire && a->on_event != NULL) {
-            /* the callback may play clips or create instances (the pool may move): re-fetch after */
-            a->on_event(e, inst->self, (uint32_t)event_clip, event, a->event_user);
+        if (br_node3d_valid(e, slot->instance->self)) {
+            br_anim3d_skin(e, slot->instance); /* skins follow whatever moved the joints this frame */
         }
     }
 }
+
