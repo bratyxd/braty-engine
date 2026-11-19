@@ -1,0 +1,81 @@
+{
+ "bundles": [
+  {
+   "name": "game",
+   "assets": [
+    {
+     "alias": "atlas",
+     "src": "atlas.json"
+    },
+    {
+     "alias": "checker",
+     "src": "checker.{png,dds}"
+    },
+    {
+     "alias": "gradient",
+     "src": "gradient_bc7.dds"
+    },
+    {
+     "alias": "badge",
+     "src": "badge_bc1.ktx"
+    },
+    {
+     "alias": "config",
+     "src": "config.json"
+    },
+    {
+     "alias": "missing",
+     "src": "does_not_exist.png"
+    },
+    {
+     "alias": "tile0",
+     "src": "tiles/tile_00.png"
+    },
+    {
+     "alias": "tile1",
+     "src": "tiles/tile_01.png"
+    },
+    {
+     "alias": "tile2",
+     "src": "tiles/tile_02.png"
+    },
+    {
+     "alias": "tile3",
+     "src": "tiles/tile_03.png"
+    },
+    {
+     "alias": "tile4",
+     "src": "tiles/tile_04.png"
+    },
+    {
+     "alias": "tile5",
+     "src": "tiles/tile_05.png"
+    },
+    {
+     "alias": "tile6",
+     "src": "tiles/tile_06.png"
+    },
+    {
+     "alias": "tile7",
+     "src": "tiles/tile_07.png"
+    },
+    {
+     "alias": "tile8",
+     "src": "tiles/tile_08.png"
+    },
+    {
+     "alias": "tile9",
+     "src": "tiles/tile_09.png"
+    },
+    {
+     "alias": "tile10",
+     "src": "tiles/tile_10.png"
+    },
+    {
+     "alias": "tile11",
+     "src": "tiles/tile_11.png"
+    }
+   ]
+  }
+ ]
+}
