@@ -80,7 +80,7 @@ User request, condensed, with the decision taken for each:
 
 ## Tasks
 
-Order: 14 -> {15, 16, 17, 18b in parallel} -> 18 -> 19 -> 20.
+Order: 14 -> {14c, 15, 16, 17, 18b in parallel} -> 18 -> 19 -> 20.
 
 ### Task 14: Arenas, frame pacing, regression-test harness
 
@@ -280,6 +280,59 @@ takes over `engine/src/three_d/br_anim3d*.c`, `tests/test_animation.c`, `tests/t
 - [ ] Tests: extras -> component values, sub-asset lookup, instance batching count, a fixture
       `.gltf` written by hand in `tests/data/`.
 
+### Task 14c: Input completeness, math audit, component queries (parallel with Tasks 15-17)
+
+Records three decisions the user asked for (see "Decisions" at the end of this file).
+
+**Owns:** `engine/src/events/br_input*.c`, `engine/include/braty/br_input.h`,
+`engine/src/math/**`, `engine/include/braty/br_math.h` (+ new `br_ease.h`, `br_random.h`,
+`br_noise.h`, `br_spline.h`), `engine/src/scene/br_query.c`, `br_query.h`,
+`tests/test_input.c`, `tests/test_math.c`, `tests/test_query.c`, `examples/input_demo.c`,
+`docs/agents/input.md`, `math.md`.
+
+- [ ] **Input: keep the `br_input` wrapper over SDL** (SDL already maps Xbox, PlayStation,
+      Switch and generic pads to one layout; the wrapper adds what games need on top). Audit
+      it against this list and fill the gaps:
+      - Keyboard: scancode (physical) and keycode (layout) queries, modifiers, text input + IME
+        composition, key names for prompts.
+      - Mouse: buttons, wheel (smooth + discrete), relative mode / cursor lock and confine,
+        cursor show/hide and custom cursors, multiple mice ignored unless asked.
+      - Gamepads: hot-plug, up to 8 players with stable player indices and explicit
+        device-to-player assignment, per-pad state, dead zones (radial, configurable), trigger
+        thresholds, rumble + trigger rumble, battery/connection state.
+      - Controller family: `br_gamepad_type` (xbox 360/one, ps3/ps4/ps5, switch pro/joycons,
+        generic) from `SDL_GetGamepadType`, and `br_input_glyph(action, device)` returning the
+        right label/sprite-frame name per family (A vs Cross vs B) so prompts in data
+        (`"{jump}"` in text) show the correct button and switch when the last-used device changes.
+      - PlayStation extras where SDL exposes them: touchpad fingers, gyro + accelerometer, light
+        bar colour, player LEDs; Switch gyro likewise. Adaptive triggers: raw effect
+        pass-through only, documented as untested.
+      - Touch and pen as first-class devices; touch can optionally emulate the mouse.
+      - Actions: digital + 1D + 2D axes with composite bindings (WASD -> vec2), per-device
+        binding sets, runtime rebinding with conflict detection, save/load bindings to user
+        storage, input contexts (gameplay / menu / dialog) that can be pushed and popped.
+      - Everything injectable for tests and play-testing, including virtual gamepads.
+      - `examples/input_demo.c`: live view of every device, pad family detection and glyph
+        switching. Real controllers cannot be tested by an agent: say so, and list what was
+        verified with virtual devices only.
+- [ ] **Math: keep our own `br_math`, no third-party** — audit against cglm and HandmadeMath
+      function lists and add what is missing, each with tests: scalar helpers (lerp, inverse
+      lerp, remap, clamp, smoothstep, smoothdamp, move-towards, angle wrap/delta/lerp, approx
+      equal), full vec2/3/4, mat3/mat4 (inverse, decompose TRS, look-at, ortho/perspective
+      variants), quaternion (slerp, nlerp, from/to euler, look rotation, rotate-towards), 3D
+      primitives and intersections (ray, plane, sphere, AABB, OBB, frustum; closest points),
+      2D SAT helpers, splines (Bezier, Catmull-Rom, Hermite, arc-length sampling), easing
+      functions (the full standard set as plain `float f(float t)` functions + lookup by name
+      for data files; the tween system uses these), springs, seeded RNG (PCG32: float, range,
+      in-circle, on-sphere, shuffle, weighted pick), value/Perlin/simplex noise + fBm, colour
+      spaces (sRGB<->linear, HSV, HSL, OKLab for perceptual lerp). All plain scalar C; SIMD is
+      a later, measured optimisation behind the same functions.
+- [ ] **Component queries (instead of adopting flecs):** `br_query` over 1-4 components
+      (`br_query_begin(e, ids, count)`, `br_query_next(&q)` yielding node + data pointers),
+      iterating the smallest component array and looking up the others; optional
+      `without` component; safe when rows are added/removed during iteration (changes deferred
+      to query end). Benchmark 100k entities x 3 components in the test.
+
 ### Task 18b: Profiler (runs in parallel with Tasks 15-17)
 
 User requirement: "see the game's rendering rate for both GPU and CPU and see if there is a
@@ -348,3 +401,40 @@ in the engine (microui debug overlay).
 
 - [ ] Merge, clean build, all tests + goldens, run both sample games, review against
       constraints, update README's deferred list.
+
+---
+
+## Decisions
+
+**Input wrapper: yes, keep `br_input` over SDL.** SDL3 already normalises keyboard, mouse,
+touch, pen and every common controller (Xbox, PlayStation, Switch, generic via its mapping
+database) into one gamepad layout, so no device-specific code is needed. The wrapper stays
+because games need things SDL does not provide: named actions bound in data, rebinding,
+input contexts, correct button glyphs per controller family, per-player device assignment,
+polling state for systems, and injection for tests and play-testing. Task 14c fills the gaps.
+
+**Math and tweening: our own, no third-party.** Candidates were cglm (complete, fast, but
+macro- and SIMD-intrinsic-heavy, with its own conventions) and HandmadeMath (single header,
+smaller scope). Reasons to stay with `br_math`: it already exists and is tested; its 2D matrix
+matches PixiJS semantics; its projection and depth conventions are verified against SDL_GPU on
+two backends; it follows the "plain straightforward C" rule; and no dependency has to be
+audited for console builds. There is no established standalone C tweening library worth a
+dependency; tweens are small and are built on our easing functions and the animation system
+(Task 17). Task 14c audits `br_math` against cglm's and HandmadeMath's function lists so
+nothing useful is missing.
+
+**flecs: not adopted.** flecs is an excellent ECS, and it is C. It is still the wrong fit here:
+- The engine already has the three things flecs would provide for us: entities (nodes with
+  generational handles), dense component arrays described by field tables, and phase-ordered
+  systems. Adopting it now means rewriting the scene core, data layer and every module built
+  on them.
+- Its API relies on declaration macros and token pasting (`ECS_COMPONENT`, `ecs_id(...)`) and a
+  string query language, which conflicts with the owner's "no voodoo, no clever syntax" rule.
+- It is a very large single dependency whose internals (archetype storage, query caches,
+  staging) are far harder to read and debug than our flat arrays, and it would have to be
+  vetted for every console toolchain.
+- Our needs are modest: tens of component types, systems that loop over one or a few arrays.
+  The one real gap, iterating entities that have several components at once, is closed by the
+  small `br_query` in Task 14c.
+Revisit only if profiling shows multi-component iteration is a bottleneck that `br_query`
+cannot fix.
