@@ -248,9 +248,33 @@ static void test_interactive(void)
     br_engine_destroy(e);
 }
 
+/* ---- "action" drives any action, also code-bound ones without a key, with analogue values */
+
+static void test_action(void)
+{
+    br_engine *e = make_game();
+    br_input_action_bind_gamepad_axis(e, "throttle", SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 1); /* no key, not in game.json */
+    BR_CHECK(reply_has(e, "{\"cmd\":\"action\",\"name\":\"throttle\",\"action\":\"press\",\"value\":0.25}", "\"ok\":true"));
+    br_playtest_step(e, 10);
+    BR_CHECK(br_input_action_value(e, "throttle") == 0.25f && !br_input_action_down(e, "throttle")); /* held, below 0.5 */
+    BR_CHECK(reply_has(e, "{\"cmd\":\"action\",\"name\":\"throttle\",\"action\":\"release\"}", "\"ok\":true"));
+    br_playtest_step(e, 1);
+    BR_CHECK(br_input_action_value(e, "throttle") == 0.0f);
+    BR_CHECK(reply_has(e, "{\"cmd\":\"action\",\"name\":\"throttle\",\"frames\":3}", "\"ok\":true")); /* tap, 3 frames */
+    br_playtest_step(e, 1);
+    BR_CHECK(br_input_action_pressed(e, "throttle"));
+    br_playtest_step(e, 2);
+    BR_CHECK(br_input_action_down(e, "throttle"));
+    br_playtest_step(e, 1);
+    BR_CHECK(br_input_action_released(e, "throttle"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"action\",\"name\":\"nitro\"}", "unknown input action 'nitro'"));
+    br_engine_destroy(e);
+}
+
 int main(void)
 {
     test_parse_errors();
+    test_action();
     test_interactive();
     test_record_replay();
     test_expect_exit_code();

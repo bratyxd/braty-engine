@@ -80,7 +80,7 @@ One JSON object each, the same in scripts and on stdin.
 | Command | Example | Notes |
 |---|---|---|
 | `key` | `{"cmd": "key", "key": "Space"}` | `"action"`: `tap` (default: down now, up after `"frames"`, default 1), `down`, `up`. SDL key names: `Space`, `Return`, `Escape`, `Left`, `A`, `F1`... |
-| `action` | `{"cmd": "action", "name": "start"}` | Taps the first key (or mouse button) bound to the action in game.json `"input"`. `"action"` / `"frames"` as for `key`. |
+| `action` | `{"cmd": "action", "name": "start"}` | Drives the input action itself (`br_input_inject_action`), whatever it is bound to (game.json or code). `"action"`: `tap` (default, `"frames"` long), `down` / `press` (held until `up`), `up` / `release`. `"value"` 0..1 (default 1) for analogue actions: `{"cmd": "action", "name": "throttle", "action": "down", "value": 0.4}`. Games that read keys directly (`br_input_key_down`) do not see it: use `key`. |
 | `mouse` | `{"cmd": "mouse", "action": "tap", "x": 640, "y": 360}` | `move`, `down`, `up`, `tap`, `wheel` (`"dx"`, `"dy"`); `"button"`: 1 left, 2 middle, 3 right. Window coordinates. |
 | `click` | `{"cmd": "click", "label": "play_button"}` | Moves the mouse to the centre of the node's bounds and taps the left button. |
 | `text` | `{"cmd": "text", "text": "PLAYER 1"}` | One text-input event, as an IME would send. |
@@ -186,8 +186,6 @@ Also `br_playtest_set`, `br_playtest_screenshot`, `br_playtest_record_start/stop
 - While `--playtest-stdin` waits for the next command the read blocks (the game is paused on
   purpose), so the window does not process events and Windows may label it "not responding";
   frames and screenshots are unaffected.
-- `action` uses the bindings in game.json's `"input"`; actions bound only in code cannot be
-  pressed by name yet (use `key`).
 - Recording does not capture gamepads (they cannot be injected yet), and records every mouse
   motion event (large files for long mouse-heavy sessions).
 - The current scene name is not reported: scenes become objects in Task 16.

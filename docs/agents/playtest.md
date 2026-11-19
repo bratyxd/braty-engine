@@ -59,6 +59,6 @@ br_engine_destroy(e);
   should skip it when `br_app_deterministic(e)`.
 - The log capture replaces SDL's log output function (process-wide) while play-testing; two
   engines in one process must shut down in reverse order (see the `ponytail:`).
-- No gamepad injection and no named-action injection for code-bound actions yet (Task 14c adds
-  `br_input_inject_gamepad_*` / an action injector; switch `br_pt_cmd_action` to it).
+- `action` injects the action (`br_input_inject_action`), not a key: systems polling keys
+  directly do not see it.
 - 3D nodes (inside `view3d`) are not addressable by path yet.

@@ -157,29 +157,28 @@ static bool br_pt_cmd_key(br_engine *e, const cJSON *cmd, SDL_Scancode key)
     return true;
 }
 
-/* An action from game.json "input": its first key, else its first mouse button. */
+/* A named input action, whatever it is bound to (game.json or code): tap (default, "frames"
+ * long), down / press (held until up), up / release. "value" 0..1 drives analogue actions. */
 static bool br_pt_cmd_action(br_engine *e, const cJSON *cmd)
 {
     const char *name = br_pt_string(cmd, "name");
-    // ponytail: reads game.json bindings (code-bound actions are invisible); switch to br_input_inject_action once Task 14c adds it.
-    const cJSON *action = cJSON_GetObjectItemCaseSensitive(
-        cJSON_GetObjectItemCaseSensitive(br_game_config_json(e), "input"), name);
-    const cJSON *key = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(action, "keys"), 0);
-    if (cJSON_IsString(key)) {
-        SDL_Scancode code = SDL_GetScancodeFromName(key->valuestring);
-        if (code == SDL_SCANCODE_UNKNOWN) {
-            return br_playtest_fail(e, "action '%s': game.json key '%s' is unknown", name, key->valuestring);
-        }
-        return br_pt_cmd_key(e, cmd, code);
+    const char *action = br_pt_string(cmd, "action");
+    float value = (float)br_pt_clamped(cmd, "value", 1.0, 0.0, 1.0);
+    uint32_t frames = (uint32_t)br_pt_clamped(cmd, "frames", 1.0, 1.0, 1e9);
+    if (action == NULL || SDL_strcmp(action, "tap") == 0) {
+        /* frames as given */
+    } else if (SDL_strcmp(action, "down") == 0 || SDL_strcmp(action, "press") == 0) {
+        frames = UINT32_MAX; /* held until "up" */
+    } else if (SDL_strcmp(action, "up") == 0 || SDL_strcmp(action, "release") == 0) {
+        frames = 0;
+        value = 0.0f;
+    } else {
+        return br_playtest_fail(e, "action: action must be tap, down (press) or up (release), got '%s'", action);
     }
-    const cJSON *button = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(action, "mouse"), 0);
-    if (cJSON_IsNumber(button)) {
-        br_vec2 p = br_input_mouse_position(e);
-        br_pt_button(e, p.x, p.y, button->valueint, true);
-        br_pt_schedule_release(e, br_pt_input_frame(e) + 1, false, SDL_SCANCODE_UNKNOWN, button->valueint, p.x, p.y);
-        return true;
+    if (!br_input_inject_action(e, name, value, frames)) {
+        return br_playtest_fail(e, "action: unknown input action '%s'", name);
     }
-    return br_playtest_fail(e, "action '%s': no key or mouse binding in game.json \"input\"", name);
+    return true;
 }
 
 static bool br_pt_cmd_mouse(br_engine *e, const cJSON *cmd)

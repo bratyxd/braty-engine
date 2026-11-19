@@ -14,7 +14,8 @@
  *   { "cmd": "step", "frames": 60 }                      advance (also "wait"; "seconds" too)
  *   { "cmd": "key", "key": "Space" }                     tap (down now, up next frame);
  *                                                        "action": "down"/"up", "frames": hold
- *   { "cmd": "action", "name": "start" }                 press a game.json input action
+ *   { "cmd": "action", "name": "start" }                 tap an input action (any binding);
+ *                                                        "action": "down"/"up", "value": 0..1
  *   { "cmd": "click", "label": "play_button" }           click the centre of a node
  *   { "cmd": "get", "path": "ship:position" }            node property / component field
  *   { "cmd": "set", "path": "game:lives", "value": 1 }   force a state

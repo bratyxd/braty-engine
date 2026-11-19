@@ -406,8 +406,9 @@ void br_input_inject_gamepad_button(br_engine *e, int slot, SDL_GamepadButton bu
 /* Gamepad axis in a slot (-1..1 sticks, 0..1 triggers). An empty slot gets an injected pad. */
 void br_input_inject_gamepad_axis(br_engine *e, int slot, SDL_GamepadAxis axis, float value);
 /* Holds an action at `value` for `frames` latches (1 = pressed this frame, released the next),
- * whatever it is bound to. Respects contexts like real input. */
-void br_input_inject_action(br_engine *e, const char *action, float value, uint32_t frames);
+ * whatever it is bound to. frames = 0 ends an injection early. Respects contexts like real
+ * input. False (logged) if the action is unknown. */
+bool br_input_inject_action(br_engine *e, const char *action, float value, uint32_t frames);
 /* Removes an injected pad (br_input_inject_gamepad_*) from its slot. */
 void br_input_inject_gamepad_disconnect(br_engine *e, int slot);
 
