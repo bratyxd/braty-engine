@@ -3,9 +3,6 @@
 
 #include <SDL3/SDL_stdinc.h>
 
-static float br_minf(float a, float b) { return a < b ? a : b; }
-static float br_maxf(float a, float b) { return a > b ? a : b; }
-
 br_rect br_rect_make(float x, float y, float width, float height)
 {
     br_rect r = { x, y, width, height };
@@ -225,4 +222,134 @@ float br_segment_distance(br_vec2 p, br_vec2 a, br_vec2 b)
     float len2 = br_vec2_dot(ab, ab);
     float t = len2 > 0.0f ? br_clampf(br_vec2_dot(br_vec2_sub(p, a), ab) / len2, 0.0f, 1.0f) : 0.0f;
     return br_vec2_distance(p, br_vec2_add(a, br_vec2_scale(ab, t)));
+}
+
+/* ---- separating-axis tests */
+
+/* Projects the polygon's points on axis into [*lo, *hi]. */
+static void br_sat_project(br_polygon p, br_vec2 axis, float *lo, float *hi)
+{
+    *lo = br_vec2_dot(p.points[0], axis);
+    *hi = *lo;
+    for (uint32_t i = 1; i < p.count; i++) {
+        float d = br_vec2_dot(p.points[i], axis);
+        *lo = br_minf(*lo, d);
+        *hi = br_maxf(*hi, d);
+    }
+}
+
+static br_vec2 br_sat_centroid(br_polygon p)
+{
+    br_vec2 sum = br_vec2_make(0.0f, 0.0f);
+    for (uint32_t i = 0; i < p.count; i++) {
+        sum = br_vec2_add(sum, p.points[i]);
+    }
+    return br_vec2_scale(sum, 1.0f / (float)p.count);
+}
+
+/* Tests one axis; keeps the smallest overlap in *best / *best_axis. False if it separates. */
+static bool br_sat_axis(br_vec2 axis, float a_lo, float a_hi, float b_lo, float b_hi, float *best, br_vec2 *best_axis)
+{
+    float overlap = br_minf(a_hi, b_hi) - br_maxf(a_lo, b_lo);
+    if (overlap <= 0.0f) {
+        return false;
+    }
+    if (overlap < *best) {
+        *best = overlap;
+        *best_axis = axis;
+    }
+    return true;
+}
+
+/* Tests every edge normal of `edges` against polygons a and b. */
+static bool br_sat_edges(br_polygon edges, br_polygon a, br_polygon b, float *best, br_vec2 *best_axis)
+{
+    for (uint32_t i = 0, j = edges.count - 1; i < edges.count; j = i, i++) {
+        br_vec2 axis = br_vec2_normalize(br_vec2_perp(br_vec2_sub(edges.points[i], edges.points[j])));
+        if (br_vec2_length_sq(axis) == 0.0f) {
+            continue; /* repeated point */
+        }
+        float a_lo, a_hi, b_lo, b_hi;
+        br_sat_project(a, axis, &a_lo, &a_hi);
+        br_sat_project(b, axis, &b_lo, &b_hi);
+        if (!br_sat_axis(axis, a_lo, a_hi, b_lo, b_hi, best, best_axis)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool br_sat_polygon_polygon(br_polygon a, br_polygon b, br_vec2 *mtv)
+{
+    if (a.count == 0 || b.count == 0) {
+        return false;
+    }
+    float best = 3.402823466e+38f;
+    br_vec2 axis = br_vec2_make(0.0f, 0.0f);
+    if (!br_sat_edges(a, a, b, &best, &axis) || !br_sat_edges(b, a, b, &best, &axis)) {
+        return false;
+    }
+    if (mtv != NULL) {
+        if (br_vec2_dot(br_vec2_sub(br_sat_centroid(a), br_sat_centroid(b)), axis) < 0.0f) {
+            axis = br_vec2_negate(axis); /* push a away from b */
+        }
+        *mtv = br_vec2_scale(axis, best);
+    }
+    return true;
+}
+
+bool br_sat_circle_polygon(br_circle c, br_polygon p, br_vec2 *mtv)
+{
+    if (p.count == 0) {
+        return false;
+    }
+    br_vec2 center = br_vec2_make(c.x, c.y);
+    float best = 3.402823466e+38f;
+    br_vec2 best_axis = br_vec2_make(0.0f, 0.0f);
+    /* candidate axes: every edge normal, plus the axis from the nearest vertex to the centre */
+    br_vec2 nearest = p.points[0];
+    for (uint32_t i = 1; i < p.count; i++) {
+        if (br_vec2_distance_sq(p.points[i], center) < br_vec2_distance_sq(nearest, center)) {
+            nearest = p.points[i];
+        }
+    }
+    uint32_t axis_count = p.count + 1;
+    for (uint32_t k = 0; k < axis_count; k++) {
+        br_vec2 axis;
+        if (k < p.count) {
+            uint32_t j = k == 0 ? p.count - 1 : k - 1;
+            axis = br_vec2_perp(br_vec2_sub(p.points[k], p.points[j]));
+        } else {
+            axis = br_vec2_sub(center, nearest);
+        }
+        axis = br_vec2_normalize(axis);
+        if (br_vec2_length_sq(axis) == 0.0f) {
+            continue;
+        }
+        float p_lo, p_hi;
+        br_sat_project(p, axis, &p_lo, &p_hi);
+        float d = br_vec2_dot(center, axis);
+        if (!br_sat_axis(axis, d - c.radius, d + c.radius, p_lo, p_hi, &best, &best_axis)) {
+            return false;
+        }
+    }
+    if (best_axis.x == 0.0f && best_axis.y == 0.0f) {
+        return false; /* no usable axis (all points equal and centred on them) */
+    }
+    if (mtv != NULL) {
+        if (br_vec2_dot(br_vec2_sub(center, br_sat_centroid(p)), best_axis) < 0.0f) {
+            best_axis = br_vec2_negate(best_axis);
+        }
+        *mtv = br_vec2_scale(best_axis, best);
+    }
+    return true;
+}
+
+void br_obb2d_corners(br_vec2 center, br_vec2 half_extents, float rotation, br_vec2 out[4])
+{
+    br_vec2 local[4] = { { -half_extents.x, -half_extents.y }, { half_extents.x, -half_extents.y },
+                         { half_extents.x, half_extents.y }, { -half_extents.x, half_extents.y } };
+    for (int i = 0; i < 4; i++) {
+        out[i] = br_vec2_add(center, br_vec2_rotate(local[i], rotation));
+    }
 }
