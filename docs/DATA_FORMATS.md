@@ -7,7 +7,12 @@ Everything a designer tweaks is JSON. This file documents every format the engin
 3. [Prefabs](#3-prefabs-prefabjson) (`*.prefab.json`) - reusable node trees with overrides
 4. [Values](#4-values-used-everywhere) shared by all of them: colours, vectors, textures, enums
 5. [Formats owned by other modules](#5-formats-owned-by-other-modules) - asset manifests,
-   spritesheets, bitmap fonts, input actions
+   spritesheets, bitmap fonts, input actions, glTF, play-test scripts
+6. [Animation clips](#6-animation-clips-animjson) (`*.anim.json`)
+7. [Animation state machines](#7-animation-state-machines-animgraphjson) (`*.animgraph.json`)
+
+Every JSON example below is loaded by `tests/test_data_formats.c` (the `<!-- check: ... -->`
+line before each one says how), so they stay valid.
 
 Paths inside data files are asset paths: forward slashes, relative to the asset root,
 case-sensitive. Errors never stop a load: each is logged as `file: json.path: reason`
@@ -29,6 +34,7 @@ before `init` and loads `start_scene` after `init`. (The step-by-step form is
 `br_game_config_load` / `_args` / `_app_desc` in `br_main` and `br_game_config_apply` in init.)
 Every key is optional; the values below are the defaults unless noted.
 
+<!-- check: game -->
 ```json
 {
   "window": { "title": "My Game", "width": 1280, "height": 720,
@@ -96,6 +102,7 @@ parent)` builds it under any `parent` and returns its root. Either way the refer
 takes belong to the scene (or that root) and are released with it. The root may list `"assets"`
 to load before anything else:
 
+<!-- check: fields -->
 ```json
 "assets": [ "atlas.json", "music",
             { "path": "big/boss.png", "load": "lazy" },
@@ -108,6 +115,7 @@ in its group and loads it on `br_asset_group_get`; a plain file load skips it). 
 collects every path its nodes, prefabs and components name (textures, spritesheets, fonts, glTF
 `source`, `map`, `BR_FIELD_ASSET` fields such as sounds) and loads those first too.
 
+<!-- check: scene -->
 ```json
 {
   "type": "container",
@@ -162,6 +170,7 @@ is built (so they may point forward), inside the loaded tree first, then the who
 
 **sprite**
 
+<!-- check: scene -->
 ```json
 { "type": "sprite", "texture": "atlas.json#hero.png", "anchor": [0.5, 1], "round_pixels": true,
   "width": 64, "height": 64 }
@@ -171,6 +180,7 @@ is built (so they may point forward), inside the loaded tree first, then the who
 **animated_sprite** (a sprite with frames). Frames from one of: a spritesheet animation, a GIF,
 or a list (texture references or `{ "texture", "duration" }` in seconds).
 
+<!-- check: scene -->
 ```json
 { "type": "animated_sprite", "animation": "atlas.json#walk", "fps": 12, "speed": 1, "loop": true,
   "playing": true, "frame": 0, "update_anchor": false, "anchor": [0.5, 0.5] }
@@ -181,6 +191,7 @@ Data-driven animations play unless `"playing": false`.
 
 **nine_slice** (also `nine_slice_sprite`)
 
+<!-- check: scene -->
 ```json
 { "type": "nine_slice", "texture": "atlas.json#panel.png", "borders": [8, 8, 8, 8],
   "width": 200, "height": 120, "anchor": [0, 0], "edge_fill": "tile", "center_fill": "stretch",
@@ -191,6 +202,7 @@ Data-driven animations play unless `"playing": false`.
 
 **tiling_sprite**
 
+<!-- check: scene -->
 ```json
 { "type": "tiling_sprite", "texture": "bg/stars.png", "width": 1280, "height": 720, "anchor": [0, 0],
   "tile_position": [0, 0], "tile_scale": [1, 1], "tile_rotation": 0, "clamp_margin": 0.5 }
@@ -198,6 +210,7 @@ Data-driven animations play unless `"playing": false`.
 
 **graphics** - `commands` mirrors the `br_graphics_*` calls, one array per call:
 
+<!-- check: scene -->
 ```json
 { "type": "graphics", "commands": [
     ["move_to", 0, 0], ["line_to", 100, 0], ["bezier_curve_to", 120, 0, 140, 20, 140, 40],
@@ -229,6 +242,7 @@ the error message prints.
 
 Shortcut for one SVG shape:
 
+<!-- check: scene -->
 ```json
 { "type": "graphics", "svg": "M 0 40 L 60 40 L 60 15 L 110 55 Z", "fill": "#64e08a",
   "stroke": { "width": 3, "color": "#1f5f33" } }
@@ -237,6 +251,7 @@ Shortcut for one SVG shape:
 **mesh** - the variant is chosen by its keys (`mesh_simple`, `mesh_plane`, `perspective_mesh`,
 `mesh_rope` are accepted type names too):
 
+<!-- check: scene -->
 ```json
 { "type": "mesh", "texture": "a.png", "positions": [0, 0, 100, 0, 0, 100], "uvs": [0, 0, 1, 0, 0, 1],
   "colors": ["red", "lime", "blue"], "indices": [0, 1, 2] }
@@ -249,6 +264,7 @@ Shortcut for one SVG shape:
 **particle_container** - emitters are game code; data sets the texture, the dynamic property
 groups and optional start particles:
 
+<!-- check: scene -->
 ```json
 { "type": "particle_container", "texture": "atlas.json#spark.png",
   "dynamic": ["position", "rotation", "color"],
@@ -259,6 +275,7 @@ Groups: `vertex position rotation uvs color`.
 
 **text**, **bitmap_text**, **rich_text**
 
+<!-- check: scene -->
 ```json
 { "type": "text", "text": "Hello", "anchor": [0.5, 0.5], "resolution": 2,
   "style": {
@@ -283,6 +300,7 @@ justify`; `white_space`: `pre normal pre_line`; `baseline`: `top alphabetic midd
 that renders a 3D scene into its rectangle. Container fields apply to the view itself; the 3D
 content is the `scene` array.
 
+<!-- check: scene -->
 ```json
 { "type": "view3d", "size": [640, 360], "auto_resize": false, "msaa": 4, "background": "#20242c",
   "environment": { "sky": "#9db8e8", "ground": "#5a4a3a", "intensity": 0.4 },
@@ -345,6 +363,7 @@ JSON path).
 A list of `{ "type": ..., params }`; params sit next to `type` or inside `"params"`. Every
 filter takes `enabled` (default true) and `padding`.
 
+<!-- check: fields -->
 ```json
 "filters": [
   { "type": "alpha", "alpha": 0.5 },
@@ -377,6 +396,7 @@ from code.
 | `BR_FIELD_ASSET` | asset path (a sound, a texture, a scene...), at most 63 bytes; not loaded automatically |
 | `BR_FIELD_NODE` | label of another node, or `null` |
 
+<!-- check: fields -->
 ```json
 "components": {
   "enemy": { "alive": true, "hp": 3, "speed": 120.5, "home": [400, 300], "axis": [0, 1, 0],
@@ -386,6 +406,35 @@ from code.
 Components must be registered before the file is loaded. Fields left out keep their value
 (zero for a new component). Saving writes every field of every component whose name has no
 `.` (engine-internal components are named `module.name`).
+
+**Engine components.** The animation module registers `animator` and `tween`, so scene files
+and prefabs can start animation without code:
+
+<!-- check: scene -->
+```json
+{ "type": "container", "label": "actors", "children": [
+  { "type": "sprite", "label": "hero", "texture": "atlas.json#walk_0.png",
+    "components": { "animator": { "clips": "animation/hero.anim.json", "play": "walk", "speed": 1, "loop": "loop" } },
+    "children": [ { "type": "container", "label": "leg_l" },
+                  { "type": "container", "label": "body", "children": [ { "type": "container", "label": "head" } ] } ] },
+  { "type": "sprite", "label": "panel", "alpha": 0,
+    "components": { "tween": { "property": "alpha", "to": 1, "duration": 0.4, "delay": 0.2, "ease": "out_quad" } } } ] }
+```
+
+`animator`: `clips` (an anim.json, section 6, loaded through the asset cache), `graph` (optional
+animgraph.json, section 7; its states name clips of `clips`), `play` (optional clip), `loop`, `speed` (0 = 1). `tween`: `property`
+(a property path, section 6), `to` / `from` (a number or `[x, y]`), `to_color` / `from_color`
+(colour properties such as `tint`), `mode` (`"to"` default, `"from"`, `"from_to"`), `duration`,
+`delay`, `ease` (easing name), `repeat` (-1 = forever), `yoyo`. Each row is turned into a real
+animator / tween the first frame after it appears (2D nodes; one tween component per node).
+Details: `docs/agents/animation.md`.
+
+The camera module registers `camera.follow` (`target` node, `offset`, `damping`, `dead_zone`,
+`use_bounds`, `offset3d`), `camera.shake` (`trauma`, `decay`, `max_offset`, `max_angle`,
+`frequency`), `camera.orbit` (`target` [x, y, z], `distance`, `yaw`, `pitch`, `min_distance`,
+`max_distance`, `rotate_speed`, `zoom_speed`) and `camera.anchor` (`camera` node, `anchor`,
+`offset`, `safe_area`); they go on camera nodes made in code (`docs/agents/camera.md`; a camera
+has no JSON node type yet, so a scene file can anchor a HUD node to a camera labelled in code).
 
 ### 2.6 Saving and hot reload
 
@@ -405,6 +454,7 @@ the old scene. `br_scene_file_set_hot_reload(e, enabled, poll_frames)` changes t
 
 A prefab is a scene file (one node object) meant to be instantiated many times:
 
+<!-- check: prefab prefabs/coin.prefab.json -->
 ```json
 {
   "type": "container",
@@ -412,13 +462,14 @@ A prefab is a scene file (one node object) meant to be instantiated many times:
   "components": { "mover": { "velocity": [60, 0], "spin": 0 } },
   "children": [
     { "type": "graphics", "commands": [["circle", 0, 0, 18], ["fill", "gold"]] },
-    { "type": "sprite", "texture": "gem.png", "anchor": [0.5, 0.5], "scale": 0.6 }
+    { "type": "sprite", "texture": "atlas.json#gem.png", "anchor": [0.5, 0.5], "scale": 0.6 }
   ]
 }
 ```
 
 Instances, in a scene file (other keys are overrides):
 
+<!-- check: scene -->
 ```json
 { "prefab": "prefabs/coin.prefab.json", "position": [400, 0], "tint": "#ffb0b0",
   "components": { "mover": { "velocity": [-90, 0] } },
@@ -453,10 +504,13 @@ These are read by other modules and only referenced from the files above.
 
 **Asset manifest** (`br_assets_load_manifest`, the `manifest` key of game.json), PixiJS shape:
 
+<!-- check: manifest -->
 ```json
-{ "bundles": [ { "name": "level1", "assets": [
-    { "alias": "hero", "src": "images/hero@{1,2}x.{dds,png}" },
-    { "alias": ["tiles", "t"], "src": ["atlas@2x.json", "atlas.json"], "type": "spritesheet" } ] } ] }
+{ "bundles": [
+    { "name": "level1", "assets": [
+      { "alias": "hero", "src": "images/hero@{1,2}x.{dds,png}" },
+      { "alias": ["tiles", "t"], "src": ["atlas@2x.json", "atlas.json"], "type": "spritesheet" } ] },
+    { "name": "level1_sounds", "assets": [ { "alias": "music", "src": "sounds/music.ogg" } ] } ] }
 ```
 Details: `engine/include/braty/br_assets.h`, `docs/agents/assets.md`.
 
@@ -470,9 +524,91 @@ Example: `examples/data/atlas.json`.
 
 **Input actions** (`br_input_actions_from_json`, the `input` key of game.json):
 
+<!-- check: input -->
 ```json
 { "jump": { "keys": ["Space"], "mouse": [1], "buttons": ["a"], "axes": ["-lefty"] } }
 ```
 `keys` are SDL scancode names, `buttons` SDL gamepad button names, `axes` SDL axis names with a
 `+`/`-` direction, `threshold` the analog value that counts as pressed, `context` the input
 context the action belongs to (`br_input_action_set_context`). Details: `docs/agents/input.md`.
+
+**glTF 2.0** (`.gltf`, `.glb`; read with cgltf): models for `model3d` nodes and the `gltf` 3D
+node of a `view3d`. Supported features and extensions: `docs/agents/gltf.md`.
+
+**Play-test scripts** (`--playtest file.json`): a JSON array of commands (`{"cmd": "step",
+"frames": 60}`, `{"cmd": "expect", ...}`); the whole command list is in `docs/PLAYTESTING.md`.
+
+---
+
+## 6. Animation clips (`*.anim.json`)
+
+Loaded with `br_anim_library_load(e, path)` (asset type `"anim"`) or by the `animator`
+component (section 2.5). A track targets a property path `"<node path>:<property>"` relative to
+the animator's node: `"body/arm_r:rotation"`, `":alpha"` (the node itself), `"#3:rotation"`
+(glTF node 3 of a `model3d`), `"hp.value"` (component field). Properties: `position` `x` `y`
+`scale` `rotation` `skew` `pivot` `alpha` `tint` `visible` `z_index` `sprite.texture`
+`sprite.frame` (2D); `position` `rotation` `scale` `visible` `material.*` `morph_weights` (3D);
+any float / int / bool / vec2 / vec3 / colour component field; more from
+`br_anim_property_register` (`docs/agents/animation.md`).
+
+<!-- check: anim animation/hero.anim.json -->
+```json
+{ "clips": [
+  { "name": "walk", "loop": "loop", "duration": 1.0,
+    "tracks": [
+      { "target": "leg_l:rotation", "ease": "in_out_sine", "keys": [[0, 0.45], [0.5, -0.45], [1, 0.45]] },
+      { "target": "body:position", "keys": [[0, [0, 0]], [0.5, [0, -6]], [1, [0, 0]]] },
+      { "target": "body/head:tint", "interpolation": "step", "keys": [[0, "#ffd9b0"], [0.9, "#ffb090"]] },
+      { "target": "body:y", "interpolation": "cubic",
+        "keys": [ { "time": 0, "value": 0, "out": -20 }, { "time": 1, "value": 0, "in": 20 } ] },
+      { "target": ":sprite.texture", "interpolation": "step", "keys": [[0, "atlas.json#walk_0.png"], [0.1, "atlas.json#walk_1.png"]] }
+    ],
+    "events": [ { "time": 0.0, "name": "step" }, { "time": 0.5, "name": "step" } ] } ] }
+```
+
+- A file is `{ "clips": [ ... ] }` or a single clip object (with `"tracks"`).
+- Clip keys: `name`, `loop` (`loop` default, `once`, `ping_pong`, `clamp`), `duration` (optional:
+  at least the last key time), `tracks`, `events` (`time` seconds, `name`).
+- Track keys: `target` (a property path, see above), `interpolation` (`step`, `linear` default,
+  `cubic`, `bezier`), `ease` (an easing name, LINEAR and BEZIER segments), `keys`.
+- A key is `[time, value]` or `{ "time", "value", "in", "out" }`. `in` / `out` are tangents
+  (`cubic`, default 0) or absolute handle values (`bezier`, default: the key's value).
+- A value is a number, an array of 1-8 numbers, a colour string (`"#rrggbb"`, `"#rrggbbaa"`, CSS
+  name: 4 floats, sRGB) or a texture reference (`"sheet.json#frame"`, a path, or a frame name of a
+  loaded sheet) for `sprite.texture`. Every key of a track has the same number of values.
+- Errors (`file: clips[0].tracks[2].keys[1]: reason`) skip that track or event; the rest loads.
+- 3D rotations are quaternions `[x, y, z, w]`; material colours are sRGB.
+
+---
+
+## 7. Animation state machines (`*.animgraph.json`)
+
+Loaded with `br_anim_graph_load(e, path)` (asset type `"animgraph"`) or by the `animator`
+component's `graph`; `br_animator_set_graph` attaches it.
+
+<!-- check: animgraph animation/boss.animgraph.json -->
+```json
+{ "parameters": { "speed": 0.0, "grounded": true, "jump": "trigger" },
+  "entry": "idle",
+  "states": [
+    { "name": "idle", "clip": "Survey" },
+    { "name": "move", "blend": { "parameter": "speed", "motions": [ { "clip": "Walk", "at": 0.3 }, { "clip": "Run", "at": 1.0 } ] } },
+    { "name": "aim", "blend2d": { "x": "aim_x", "y": "aim_y", "motions": [ { "clip": "AimL", "at": [-1, 0] }, { "clip": "AimR", "at": [1, 0] } ] } },
+    { "name": "jump", "clip": "Jump", "loop": "once", "speed": 1.2 } ],
+  "transitions": [
+    { "from": "idle", "to": "move", "when": [["speed", ">", 0.1]], "duration": 0.25 },
+    { "from": "*", "to": "jump", "when": [["jump"], ["grounded", "==", true]], "duration": 0.1 },
+    { "from": "jump", "to": "idle", "exit_time": 1.0, "duration": 0.2 } ] }
+```
+
+- `parameters`: a number (float), `true`/`false` (bool) or `"trigger"`, with its start value.
+- `states`: `name` plus `clip` (a clip the animator has) or `blend` (1D: `parameter`, `motions`
+  with `at` numbers) or `blend2d` (`x`, `y`, `motions` with `at` [x, y]); optional `speed`, `loop`.
+- `transitions` are checked in order; the first whose conditions all hold wins. `from`: a state
+  or `"*"` (any state but the target). `when`: `["param"]` (bool true / trigger set) or
+  `["param", op, value]` with `>`, `<`, `>=`, `<=`, `==`, `!=` and a number or bool.
+  `exit_time`: the current state's normalised time (0..1 within a loop; 1 = a once clip ended)
+  must be reached. `duration`: cross-fade seconds (default 0.25).
+- `entry`: the first state (default: the first in the list).
+- The animator must have the clips before `br_animator_set_graph`; blend states become blend
+  trees named after the state.

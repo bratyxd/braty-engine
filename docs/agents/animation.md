@@ -159,7 +159,7 @@ properties such as `tint`), `mode` (`"to"` default, `"from"`, `"from_to"`), `dur
 `ease` (easing name), `repeat` (-1 = forever), `yoyo`. Each row is turned into a real animator /
 tween the first frame after it appears (2D nodes; one tween component per node).
 
-## `*.anim.json` (copy into docs/DATA_FORMATS.md)
+## `*.anim.json` (also docs/DATA_FORMATS.md, section 6)
 
 ```json
 { "clips": [
@@ -188,7 +188,7 @@ tween the first frame after it appears (2D nodes; one tween component per node).
 - Errors (`file: clips[0].tracks[2].keys[1]: reason`) skip that track or event; the rest loads.
 - 3D rotations are quaternions `[x, y, z, w]`; material colours are sRGB.
 
-## `*.animgraph.json` (copy into docs/DATA_FORMATS.md)
+## `*.animgraph.json` (also docs/DATA_FORMATS.md, section 7)
 
 ```json
 { "parameters": { "speed": 0.0, "grounded": true, "jump": "trigger" },
