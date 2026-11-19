@@ -400,8 +400,8 @@ static void br_scene_free_node(br_engine *e, uint32_t index)
             member->layer = br_node_zero();
         }
     }
-    if (rec->cullable && s->cullable_count > 0) {
-        s->cullable_count -= 1;
+    if (rec->cullable) {
+        br_scene_cullable_remove(s, n.index);
     }
     br_free(rec->label);
     br_free((void *)rec->hit_area.points);
@@ -950,9 +950,9 @@ void br_node_set_cullable(br_engine *e, br_node n, bool cullable)
     }
     rec->cullable = cullable;
     if (cullable) {
-        e->scene->cullable_count += 1;
+        br_scene_cullable_add(e->scene, n.index);
     } else {
-        e->scene->cullable_count -= 1;
+        br_scene_cullable_remove(e->scene, n.index);
     }
 }
 
@@ -1278,6 +1278,7 @@ static void br_scene_shutdown(br_engine *e, void *user)
     br_array_free(&s->destroy_listeners);
     br_array_free(&s->sort_queue);
     br_array_free(&s->sort_scratch);
+    br_array_free(&s->cullables);
     br_free(s);
     e->scene = NULL;
 }
@@ -1296,6 +1297,7 @@ void br_scene_register(br_engine *e)
     br_array_init(&s->pending_destroy, sizeof(uint32_t));
     br_array_init(&s->destroy_listeners, sizeof(br_destroy_listener));
     br_array_init(&s->sort_queue, sizeof(uint32_t));
+    br_array_init(&s->cullables, sizeof(uint32_t));
     br_engine_on_shutdown(e, br_scene_shutdown, NULL);
 
     br_node_type_desc container;

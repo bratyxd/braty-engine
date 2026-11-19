@@ -230,36 +230,52 @@ bool br_scene_is_culled(br_scene_state *s, uint32_t index)
     return s->cull_frame != 0 && br_scene_record_at(s, index)->culled_frame == s->cull_frame;
 }
 
-static void br_cull_node(br_engine *e, uint32_t index, br_mat3 group_space, br_rect screen)
+void br_scene_cullable_add(br_scene_state *s, uint32_t index)
 {
-    br_scene_state *s = e->scene;
+    br_scene_record_at(s, index)->cull_slot = s->cullables.count;
+    br_array_push(&s->cullables, &index);
+}
+
+void br_scene_cullable_remove(br_scene_state *s, uint32_t index)
+{
+    /* swap-remove: the last entry takes the removed one's place */
+    uint32_t *list = s->cullables.data;
+    uint32_t slot = br_scene_record_at(s, index)->cull_slot;
+    if (slot >= s->cullables.count || list[slot] != index) {
+        return;
+    }
+    uint32_t last = list[s->cullables.count - 1];
+    list[slot] = last;
+    br_scene_record_at(s, last)->cull_slot = slot;
+    br_array_pop(&s->cullables);
+}
+
+/* True if the culler reaches the node: on the stage, it and its ancestors visible and every
+ * ancestor has cullable_children. Also returns the space its cached world matrix is in. */
+static bool br_cull_reachable(br_scene_state *s, uint32_t index, br_mat3 *group_space)
+{
     br_node_record *rec = br_scene_record_at(s, index);
     if (rec->destroyed || !rec->visible) {
-        return;
+        return false;
     }
-    br_mat3 world = br_mat3_mul(group_space, br_scene_transform_at(s, index)->world);
-    if (rec->cullable) {
-        br_rect bounds = br_rect_make(0.0f, 0.0f, 0.0f, 0.0f);
-        bool has = false;
-        if (rec->has_cull_area) {
-            bounds = br_rect_transform_bounds(rec->cull_area, world);
-            has = true;
-        } else {
-            br_scene_bounds(s, e, index, world, &bounds, &has);
+    uint32_t group = BR_NO_NODE;
+    uint32_t p = rec->parent;
+    while (p != BR_NO_NODE) {
+        br_node_record *prec = br_scene_record_at(s, p);
+        if (!prec->visible || !prec->cullable_children) {
+            return false;
         }
-        if (has && !br_rect_intersects(bounds, screen)) {
-            br_scene_record_at(s, index)->culled_frame = s->cull_frame;
-            return;
+        if (prec->render_group && group == BR_NO_NODE) {
+            group = p;
         }
+        index = p;
+        p = prec->parent;
     }
-    rec = br_scene_record_at(s, index);
-    if (!rec->cullable_children) {
-        return;
+    if (index != s->root.index) {
+        return false;
     }
-    br_mat3 child_space = rec->render_group ? world : group_space;
-    for (uint32_t i = 0; i < rec->children.count; i++) {
-        br_cull_node(e, *(uint32_t *)br_array_at(&rec->children, i), child_space, screen);
-    }
+    *group_space = group != BR_NO_NODE ? br_scene_chain_transform(s, group, false) : br_mat3_identity();
+    return true;
 }
 
 static void br_cull_system(br_engine *e, float dt, void *user)
@@ -270,11 +286,32 @@ static void br_cull_system(br_engine *e, float dt, void *user)
     int w, h;
     br_engine_window_size(e, &w, &h);
     s->cull_frame += 1;
-    if (s->cullable_count == 0 || w <= 0 || h <= 0) {
+    if (w <= 0 || h <= 0) {
         return;
     }
-    // ponytail: walks the whole visible tree when any node is cullable; keep a list of cullable roots if that shows in profiles.
-    br_cull_node(e, s->root.index, br_mat3_identity(), br_rect_make(0.0f, 0.0f, (float)w, (float)h));
+    br_rect screen = br_rect_make(0.0f, 0.0f, (float)w, (float)h);
+    /* only the cullable nodes are visited (not the whole tree). A cullable node inside a culled
+     * one is tested on its own bounds; it is not drawn either way. */
+    for (uint32_t i = 0; i < s->cullables.count; i++) {
+        uint32_t index = ((const uint32_t *)s->cullables.data)[i];
+        br_mat3 group_space;
+        if (!br_cull_reachable(s, index, &group_space)) {
+            continue;
+        }
+        br_node_record *rec = br_scene_record_at(s, index);
+        br_mat3 world = br_mat3_mul(group_space, br_scene_transform_at(s, index)->world);
+        br_rect bounds = br_rect_make(0.0f, 0.0f, 0.0f, 0.0f);
+        bool has = false;
+        if (rec->has_cull_area) {
+            bounds = br_rect_transform_bounds(rec->cull_area, world);
+            has = true;
+        } else {
+            br_scene_bounds(s, e, index, world, &bounds, &has);
+        }
+        if (has && !br_rect_intersects(bounds, screen)) {
+            br_scene_record_at(s, index)->culled_frame = s->cull_frame;
+        }
+    }
 }
 
 static void br_flush_system(br_engine *e, float dt, void *user)

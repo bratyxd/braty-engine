@@ -55,6 +55,7 @@ typedef struct br_node_record {
     bool     has_cull_area;
     bool     mask_inverse;
     br_rect  cull_area;
+    uint32_t cull_slot;          /* position in br_scene_state.cullables while cullable */
     int      z_index;
 
     br_event_mode event_mode;
@@ -107,7 +108,7 @@ typedef struct br_scene_state {
     br_array sort_queue;         /* uint32_t node indices whose children need sorting */
     br_array sort_scratch;       /* br_sort_item */
     br_node  root;
-    uint32_t cullable_count;
+    br_array cullables;          /* uint32_t indices of nodes with `cullable` set (record.cull_slot = position) */
     uint64_t cull_frame;         /* bumped by every cull pass */
     uint32_t sprite_type;        /* type id of "sprite" */
 } br_scene_state;
@@ -152,6 +153,9 @@ br_mat3 br_scene_group_space(br_scene_state *s, uint32_t index);
 void br_scene_refresh_subtree(br_scene_state *s, uint32_t index);
 /* True if the culler skipped the node in the last cull pass. */
 bool br_scene_is_culled(br_scene_state *s, uint32_t index);
+/* Adds a node index to / removes it from the cullable list (keeps cull_slot right). */
+void br_scene_cullable_add(br_scene_state *s, uint32_t index);
+void br_scene_cullable_remove(br_scene_state *s, uint32_t index);
 /* Sorts a list of node indices by z-index, stable. */
 void br_scene_sort_by_z(br_scene_state *s, uint32_t *indices, uint32_t count);
 /* Sorts a list of node handles by z-index, stable. */

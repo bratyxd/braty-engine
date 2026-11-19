@@ -279,6 +279,32 @@ static void test_fields(br_engine *e)
     br_node_destroy(e, n);
 }
 
+/* The culler keeps a list of cullable nodes: toggling, destroying and slot reuse keep it right. */
+static void test_cullable_list(br_engine *e)
+{
+    br_node nodes[6];
+    for (int i = 0; i < 6; i++) {
+        nodes[i] = br_node_create_container(e);
+        br_node_add_child(e, br_scene_root(e), nodes[i]);
+        br_node_set_cullable(e, nodes[i], true);
+    }
+    br_node_set_cullable(e, nodes[0], false); /* removed from the front, the last moves in */
+    br_node_destroy(e, nodes[5]);             /* immediate outside a step */
+    br_node_destroy(e, nodes[2]);
+    br_node_set_cullable(e, nodes[3], false);
+    br_node_set_cullable(e, nodes[3], true);
+    BR_CHECK(!br_node_cullable(e, nodes[0]) && br_node_cullable(e, nodes[1]) && br_node_cullable(e, nodes[3]));
+    br_node fresh = br_node_create_container(e); /* reuses a freed slot: not cullable */
+    BR_CHECK(!br_node_cullable(e, fresh));
+    br_node_set_cullable(e, fresh, true);
+    br_node_destroy(e, fresh);
+    for (int i = 0; i < 6; i++) {
+        br_node_set_cullable(e, nodes[i], false);
+        br_node_destroy(e, nodes[i]);
+    }
+    br_engine_step(e, 1.0f / 60.0f); /* the cull system runs over the (now empty) list */
+}
+
 int main(void)
 {
     br_engine *e = br_engine_create("test_node", NULL);
@@ -293,6 +319,7 @@ int main(void)
     test_deferred_destroy(e);
     test_sort_and_layers(e);
     test_fields(e);
+    test_cullable_list(e);
     br_engine_step(e, 1.0f / 60.0f);
     BR_CHECK(br_scene_node_count(e) == base);
     br_engine_destroy(e);
