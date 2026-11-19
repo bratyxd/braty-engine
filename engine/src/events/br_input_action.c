@@ -499,6 +499,12 @@ bool br_input_action_down_for(br_engine *e, const char *action, int player)
     return a != NULL && v > 0.0f && v >= a->threshold;
 }
 
+int br_input_action_last_gamepad(br_engine *e, const char *action)
+{
+    br_action *a = br_input_find_action(e->input, action);
+    return a != NULL ? a->last_gamepad : -1;
+}
+
 float br_input_action_axis(br_engine *e, const char *negative, const char *positive)
 {
     return br_input_action_value(e, positive) - br_input_action_value(e, negative);

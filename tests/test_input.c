@@ -171,12 +171,14 @@ static void test_actions(br_engine *e)
     br_input_inject_gamepad_axis(e, 1, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 1.0f);
     step(e);
     BR_CHECK(br_input_action_pressed(e, "brake"));
+    BR_CHECK(br_input_action_last_gamepad(e, "brake") == 1);   /* API_REVIEW 12: rumble the right pad */
     br_input_inject_gamepad_axis(e, 1, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 0.0f);
 
     /* per player: pad 3 presses jump; only player 3 sees it */
     br_input_inject_gamepad_button(e, 3, SDL_GAMEPAD_BUTTON_SOUTH, true);
     step(e);
-    BR_CHECK(br_input_action_down(e, "jump"));
+    BR_CHECK(br_input_action_down(e, "jump") && br_input_action_last_gamepad(e, "jump") == 3);
+    BR_CHECK(br_input_action_last_gamepad(e, "nope") == -1);
     BR_CHECK(br_input_action_down_for(e, "jump", 3) && !br_input_action_down_for(e, "jump", 1));
     BR_CHECK(!br_input_action_down_for(e, "jump", -1));
     br_input_inject_gamepad_button(e, 3, SDL_GAMEPAD_BUTTON_SOUTH, false);

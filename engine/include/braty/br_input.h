@@ -324,6 +324,8 @@ float br_input_action_value(br_engine *e, const char *action);
 float br_input_action_value_for(br_engine *e, const char *action, int player);
 /* br_input_action_value_for(...) >= threshold. */
 bool br_input_action_down_for(br_engine *e, const char *action, int player);
+/* Slot of the gamepad that last drove the action (e.g. to rumble the right pad), -1 if none. */
+int br_input_action_last_gamepad(br_engine *e, const char *action);
 /* 1D composite: value(positive) - value(negative), -1..1. */
 float br_input_action_axis(br_engine *e, const char *negative, const char *positive);
 /* 2D composite (WASD, d-pad, stick directions): x = right - left, y = down - up (screen y-down),
