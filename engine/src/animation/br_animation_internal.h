@@ -196,6 +196,10 @@ typedef struct br_animation_state {
     uint32_t tween_epoch;     /* destroy_epoch when the tweens last checked their targets */
 } br_animation_state;
 
+/* ---- br_animation.c */
+/* The module state, made on first use (modules registered before this one can add properties). */
+br_animation_state *br_anim_state(br_engine *e);
+
 /* ---- br_anim_property.c */
 void br_anim_property_register_builtins(br_engine *e);
 /* Resolves "<node path>:<property>" below root. Logs nothing. */

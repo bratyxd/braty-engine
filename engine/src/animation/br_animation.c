@@ -30,12 +30,15 @@ static void br_animation_tween_system(br_engine *e, float dt, void *user)
     br_tween_system(e, dt, user);
 }
 
-void br_animation_register(br_engine *e)
+br_animation_state *br_anim_state(br_engine *e)
 {
+    if (e->animation != NULL) {
+        return e->animation;
+    }
     br_animation_state *s = br_alloc(sizeof(br_animation_state));
     if (s == NULL) {
         br_log_error("animation: out of memory");
-        return;
+        return NULL;
     }
     br_array_init(&s->properties, sizeof(br_anim_property_row));
     br_array_init(&s->animators, sizeof(br_animator_data));
@@ -48,7 +51,14 @@ void br_animation_register(br_engine *e)
     br_pool_init(&s->tween_handles, sizeof(uint32_t));
     e->animation = s;
     br_engine_on_shutdown(e, br_animation_shutdown, s);
+    return s;
+}
 
+void br_animation_register(br_engine *e)
+{
+    if (br_anim_state(e) == NULL) {
+        return;
+    }
     br_anim_property_register_builtins(e);
     br_anim_clip_register_loader(e);
     br_anim_graph_register_loader(e);

@@ -199,9 +199,12 @@ static br_animator add_fox(br_engine *e, br_node3d root, br_model *fox, const br
     br_node3d_set_position(e, f, pos);
     br_node3d_set_scale(e, f, br_vec3_make(scale, scale, scale));
     br_node3d_set_euler(e, f, 0.0f, yaw, 0.0f);
+    /* --- snippet: docs/agents/animation.md (glTF + state machine) --- */
     br_animator a = br_animator_add(e, br_anim_target_3d(f));
     br_animator_add_model_clips(e, a, fox);   /* Survey, Walk, Run (keys shared with the model) */
     br_animator_set_graph(e, a, graph);       /* idle -> walk -> run by "speed" */
+    /* every frame: br_animator_set_float(e, a, "speed", speed); */
+    /* --- end snippet --- */
     return a;
 }
 

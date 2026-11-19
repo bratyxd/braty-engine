@@ -170,7 +170,7 @@ uint32_t br_anim_property_find(br_engine *e, br_anim_target_kind kind, const cha
 
 uint32_t br_anim_property_register(br_engine *e, const br_anim_property_desc *desc)
 {
-    br_animation_state *s = e->animation;
+    br_animation_state *s = br_anim_state(e);
     if (s == NULL || desc == NULL || desc->name == NULL || desc->get == NULL || desc->set == NULL ||
         desc->kind == BR_ANIM_TARGET_NONE) {
         br_log_error("br_anim_property_register: name, kind, get and set are required");
