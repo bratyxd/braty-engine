@@ -17,7 +17,7 @@
 #ifndef BRATY_MAIN_H
 #define BRATY_MAIN_H
 
-#include "braty/br_app.h"
+#include "braty/braty.h"
 
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL_main.h>
