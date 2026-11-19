@@ -3,6 +3,8 @@
   "asset_root": "assets",
   "manifest": "manifest.json",
   "clear_color": "#0b1026",
+  "scenes": { "title": "scenes/title.scene.json", "play": "scenes/play.scene.json",
+              "gameover": "scenes/gameover.scene.json" },
   "ticker": { "max_fps": 0, "min_fps": 10, "speed": 1 },
   "input": {
     "left":  { "keys": ["Left", "A"],  "buttons": ["dpleft"],  "axes": ["-leftx"] },
@@ -27,8 +29,6 @@
   "game": {
     "tuning": "tuning.json",
     "music": "music",
-    "sfx": "sounds/sfx.wav",
-    "scenes": { "title": "scenes/title.scene.json", "play": "scenes/play.scene.json",
-                "gameover": "scenes/gameover.scene.json" }
+    "sfx": "sounds/sfx.wav"
   }
 }

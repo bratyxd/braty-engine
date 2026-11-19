@@ -60,12 +60,13 @@ static bool sc_init(br_engine *e)
     sc_systems_register(e, g);
     sc_expose(e, g);
 
-    /* game.json (window, input, audio, manifest) was applied before init; there is no
-     * start_scene: the state machine loads game.scenes.* */
+    /* game.json (window, input, audio, manifest, scene names) was applied before init; there
+     * is no start_scene: the state machine loads the "scenes" by name */
     g->tuning_node = br_scene_file_load(e, sc_config_string(e, NULL, "tuning"), br_scene_root(e));
     if (br_component_get(e, g->tuning_node, g->id.tuning) == NULL) {
         return false; /* reasons are logged with file and JSON path */
     }
+    br_node_set_persistent(e, g->tuning_node, true); /* survives every scene load (hot reload too) */
     g->sfx = br_sound_load(e, sc_config_string(e, NULL, "sfx")); /* its sprites come from game.json */
     g->sfx_bus = br_audio_bus_find(e, "sfx");
     g->music_bus = br_audio_bus_find(e, "music");

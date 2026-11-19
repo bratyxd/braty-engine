@@ -75,16 +75,16 @@ typedef struct sc_emitter {
     br_color color[SC_EMITTER_MAX];
 } sc_emitter;
 
-/* Hand-tweened UI motion: a steady wave plus a decaying kick (score changes, level ups). */
+/* UI motion: a steady scale wave, or a kick (score changes, level ups) played as a tween. A node
+ * has one or the other: the wave writes the scale every frame. */
 typedef struct sc_pulse {
     float   wave;    /* scale amplitude of the steady wave */
     float   speed;   /* wave radians per second */
     float   kick;    /* scale amplitude of a kick */
-    float   decay;   /* kick fades at this rate per second */
+    float   decay;   /* a kick lasts 1 / decay seconds */
     /* runtime */
     bool    ready;
     br_vec2 base;
-    float   amount;
     float   time;
 } sc_pulse;
 

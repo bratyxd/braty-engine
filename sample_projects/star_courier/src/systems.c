@@ -13,7 +13,7 @@
 
 #define SC_PI 3.14159265f
 
-/* The scene of each state, by name in game.json "game.scenes" (dying keeps the play scene). */
+/* The scene of each state, a name from game.json "scenes" (dying keeps the play scene). */
 static const char *sc_scene_keys[] = { "title", "play", "", "gameover" };
 static const char *sc_state_names[] = { "title", "play", "dying", "gameover" };
 
@@ -66,12 +66,23 @@ static void sc_play_sfx(br_engine *e, sc_game *g, const char *name)
     br_audio_play(e, g->sfx, &play);
 }
 
+/* A score / hint / level-up kick: scale jumps to base * (1 + kick) and eases back in 1 / decay
+ * seconds (out-quad = the old hand-rolled base * (1 + kick * (1 - decay * t)^2)). */
 static void sc_kick(br_engine *e, sc_game *g, br_node n)
 {
     sc_pulse *p = br_component_get(e, n, g->id.pulse);
-    if (p != NULL) {
-        p->amount = 1.0f;
+    if (p == NULL || p->kick <= 0.0f || p->decay <= 0.0f) {
+        return;
     }
+    if (!p->ready) {
+        p->base = br_node_scale(e, n);
+        p->ready = true;
+    }
+    br_anim_target t = br_anim_target_2d(n);
+    float from[2] = { p->base.x * (1.0f + p->kick), p->base.y * (1.0f + p->kick) };
+    float to[2] = { p->base.x, p->base.y };
+    br_tween_kill_target(e, t);
+    br_tween_from_to(e, t, "scale", from, to, 1.0f / p->decay, BR_EASE_OUT_QUAD);
 }
 
 static float sc_distance(br_vec2 a, br_vec2 b)
@@ -189,12 +200,10 @@ static void sc_save_best(br_engine *e, sc_game *g)
 void sc_enter_state(br_engine *e, sc_game *g, sc_state state)
 {
     const sc_tuning *t = sc_tuning_get(e, g);
-    const char *path = sc_config_string(e, "scenes", sc_scene_keys[state]);
-    if (path[0] != '\0') {
-        if (br_node_valid(e, g->scene)) {
-            br_node_destroy(e, g->scene);
-        }
-        g->scene = br_scene_file_load(e, path, br_scene_root(e));
+    if (sc_scene_keys[state][0] != '\0') {
+        /* single: the previous screen and its asset references go; the tuning node is persistent */
+        br_scene scene = br_scene_load(e, sc_scene_keys[state], BR_SCENE_SINGLE);
+        g->scene = br_scene_root_2d(e, scene);
         sc_lookup(e, g);
     }
     g->state = state;
@@ -330,8 +339,7 @@ static void sc_spawn_crate(br_engine *e, sc_game *g, const sc_tuning *t)
         }
         at = sc_random_spot(g, t, 40.0f);
     }
-    br_node c = br_prefab_instantiate(e, t->crate_prefab, g->crates, NULL);
-    br_node_set_position(e, c, at.x, at.y);
+    br_node c = br_prefab_instantiate_at(e, t->crate_prefab, g->crates, at);
     sc_crate *crate = br_component_get(e, c, g->id.crate);
     if (crate != NULL) {
         crate->value = t->crate_value;
@@ -358,8 +366,7 @@ static void sc_spawn_debris(br_engine *e, sc_game *g, const sc_tuning *t)
     br_vec2 aim = sc_random_spot(g, t, 120.0f);
     float speed = sc_range(g, t->debris_speed.x, t->debris_speed.y) *
                   SDL_powf(t->debris_speed_scale, (float)(g->level - 1));
-    br_node d = br_prefab_instantiate(e, prefab, g->debris, NULL);
-    br_node_set_position(e, d, at.x, at.y);
+    br_node d = br_prefab_instantiate_at(e, prefab, g->debris, at);
     br_node_set_rotation(e, d, sc_range(g, 0.0f, 2.0f * SC_PI));
     sc_body *body = br_component_get(e, d, g->id.body);
     if (body != NULL) {
@@ -741,9 +748,11 @@ static void sc_hud_system(br_engine *e, float dt, void *user)
             p->base = br_node_scale(e, n);
             p->ready = true;
         }
+        if (p->wave == 0.0f) {
+            continue; /* kick-only: a tween owns the scale (sc_kick) */
+        }
         p->time += dt;
-        p->amount = SDL_max(0.0f, p->amount - p->decay * dt);
-        float s = 1.0f + p->wave * SDL_sinf(p->time * p->speed) + p->kick * p->amount * p->amount;
+        float s = 1.0f + p->wave * SDL_sinf(p->time * p->speed);
         br_node_set_scale(e, n, p->base.x * s, p->base.y * s);
     }
     for (uint32_t i = 0; i < br_component_count(e, g->id.blink); i++) {
