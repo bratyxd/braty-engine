@@ -308,16 +308,54 @@ static void test_rejection(br_engine *e)
     br_free(text);
 }
 
+/* A view3d built from scene JSON: camera, light, a primitive mesh and a glTF child playing a clip. */
+static void test_scene_json(br_engine *e)
+{
+    const char *json = "{ \"type\": \"view3d\", \"label\": \"v\", \"size\": [320, 200],"
+                       "  \"camera\": { \"position\": [0, 1, 5], \"target\": [0, 0, 0], \"fov\": 40 },"
+                       "  \"scene\": ["
+                       "    { \"type\": \"light\", \"kind\": \"spot\", \"label\": \"lamp\", \"outer_angle\": 30, \"position\": [0, 4, 0], \"target\": [0, 0, 0] },"
+                       "    { \"type\": \"mesh\", \"shape\": \"sphere\", \"size\": 2, \"label\": \"ball\", \"material\": { \"color\": \"#ffffff\", \"roughness\": 0.2 } },"
+                       "    { \"type\": \"group\", \"label\": \"g\", \"position\": [1, 0, 0], \"children\": ["
+                       "      { \"type\": \"gltf\", \"label\": \"tiny\", \"source\": \"tiny.gltf\", \"animation\": \"Move\", \"scale\": 2 } ] } ] }";
+    uint32_t errors = br_scene_file_error_count(e);
+    br_node view = br_scene_file_load_json(e, json, SDL_strlen(json), "test.scene.json", br_scene_root(e));
+    BR_CHECK(br_node_valid(e, view) && br_node_type_of(e, view) == br_view3d_type(e));
+    BR_CHECK(br_scene_file_error_count(e) == errors);
+    BR_CHECK(near_eq(br_view3d_size(e, view).x, 320.0f));
+    br_camera3d *cam = br_camera3d_get(e, br_view3d_camera(e, view));
+    BR_CHECK(cam != NULL && near_eq(cam->fov_y, 40.0f * BR_DEG_TO_RAD));
+    br_node3d root = br_view3d_root(e, view);
+    br_light3d *lamp = br_light3d_get(e, br_node3d_find_by_label(e, root, "lamp"));
+    BR_CHECK(lamp != NULL && lamp->kind == BR_LIGHT3D_SPOT && near_eq(lamp->outer_angle, 30.0f * BR_DEG_TO_RAD));
+    BR_CHECK(br_mesh3d_get(e, br_node3d_find_by_label(e, root, "ball")) != NULL);
+    br_node3d tiny = br_node3d_find_by_label(e, root, "tiny");
+    BR_CHECK(br_model3d_model(e, tiny) != NULL);
+    BR_CHECK(vec3_eq(br_node3d_scale(e, tiny), br_vec3_make(2.0f, 2.0f, 2.0f)));
+    br_animator3d *a = br_animator3d_get(e, tiny);
+    BR_CHECK(a != NULL && a->clip == 0);
+    /* bad values report errors and the rest still loads */
+    const char *bad = "{ \"type\": \"view3d\", \"scene\": [ { \"type\": \"mesh\", \"shape\": \"blob\" },"
+                      " { \"type\": \"gltf\", \"source\": \"nope.glb\" }, { \"type\": \"light\", \"label\": \"ok\" } ] }";
+    errors = br_scene_file_error_count(e);
+    br_node view2 = br_scene_file_load_json(e, bad, SDL_strlen(bad), "bad.scene.json", br_scene_root(e));
+    BR_CHECK(br_scene_file_error_count(e) == errors + 2);
+    BR_CHECK(br_light3d_get(e, br_node3d_find_by_label(e, br_view3d_root(e, view2), "ok")) != NULL);
+    br_node_destroy(e, view2);
+    br_node_destroy(e, view);
+}
+
 int main(void)
 {
     test_sampling();
     test_two_bone_skin();
     test_decompose();
-    br_engine *e = br_engine_create("test_gltf", "../../tests/data") /* relative to the exe */;
+    br_engine *e = br_engine_create("test_gltf", "../../tests/data"); /* relative to the exe */
     BR_CHECK(e != NULL);
     if (e != NULL) {
         test_parse(e);
         test_rejection(e);
+        test_scene_json(e);
         br_engine_destroy(e);
     }
     return br_test_finish();
