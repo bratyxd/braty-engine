@@ -73,6 +73,7 @@ typedef struct br_audio_state {
     float            stream_seconds;  /* main thread only (loaders) */
     SDL_AudioStream *device;
     bool             device_failed;
+    double           game_clock_frames; /* no device + deterministic: mixer frames owed to game time */
     /* audio-thread scratch (only br_audio_mix touches these) */
     float            mix_buf[BR_AUDIO_CHUNK_FRAMES * BR_AUDIO_CHANNELS];
     float            stream_buf[BR_AUDIO_CHUNK_FRAMES * BR_AUDIO_CHANNELS];
@@ -799,9 +800,24 @@ typedef struct br_audio_done {
 
 static void br_audio_update(br_engine *e, float dt, void *user)
 {
-    (void)dt;
     (void)user;
     br_audio_state *s = e->audio;
+    /* Without a device (headless, or it failed to open) nothing pulls samples, so instances
+     * never finished: a headless soak kept every sound "playing" until the 64 slots ran out.
+     * Under --deterministic they advance by game time here instead, so they end (and call back)
+     * on the same frame every run. Other headless engines keep driving br_audio_mix themselves. */
+    // ponytail: a deterministic run *with* a device still plays on the wall clock (fast-forwarded
+    // runs leave sounds playing); mute the device and use this path if that ever matters.
+    if (s->device == NULL && br_app_deterministic(e) && dt > 0.0f) {
+        s->game_clock_frames += (double)dt * BR_AUDIO_RATE;
+        uint32_t frames = (uint32_t)s->game_clock_frames;
+        s->game_clock_frames -= (double)frames;
+        while (frames > 0) {
+            uint32_t chunk = frames < BR_AUDIO_CHUNK_FRAMES ? frames : BR_AUDIO_CHUNK_FRAMES;
+            br_audio_mix(e, s->mix_buf, chunk); /* no audio thread: the scratch is free */
+            frames -= chunk;
+        }
+    }
     br_audio_done done[BR_AUDIO_MAX_INSTANCES];
     uint32_t count = 0;
     SDL_LockMutex(s->lock);

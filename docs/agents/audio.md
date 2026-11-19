@@ -16,7 +16,10 @@ Test: `tests/test_audio.c` (headless mixer). Example: `examples/audio_demo.c`.
 - The mixer `br_audio_mix` runs on SDL's audio thread. All state it shares with the main thread
   sits behind one mutex. Completion callbacks run on the main thread (`audio.update`, UPDATE).
 - The device opens on the first `br_audio_play` when the engine has a window. Headless engines
-  never open one; tests call `br_audio_mix` directly.
+  never open one; tests call `br_audio_mix` directly. Under `--deterministic` (play-tests,
+  goldens) an engine without a device mixes by game time in `audio.update`, so instances end and
+  call back on the same frame every run (a windowed deterministic run plays on the device's
+  wall clock).
 
 ## Functions you actually need
 

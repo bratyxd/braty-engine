@@ -228,6 +228,31 @@ static void test_loaders(void)
     br_engine_destroy(e);                            /* asset unload after audio shutdown is safe */
 }
 
+/* Headless + deterministic: no device mixes, so instances advance by game time and finish
+ * (a headless soak used to keep every sound "playing" until the 64 slots ran out). */
+static void test_deterministic_game_clock(void)
+{
+    br_engine *e = br_engine_create("test_audio_clock", NULL);
+    br_app_set_deterministic(e, true, 1);
+    br_sound *ramp = make_ramp(e);
+    g_completed = 0;
+    br_audio_play_desc play = br_audio_play_defaults();
+    play.on_complete = on_complete;
+    play.user = &g_completed;
+    for (int i = 0; i < 100; i++) { /* more than BR_AUDIO_MAX_INSTANCES over the run */
+        BR_CHECK(br_audio_play(e, ramp, &play).generation != 0);
+        br_engine_step(e, 1.0f / 60.0f);
+    }
+    float seconds = br_sound_duration(ramp);
+    int frames = (int)(seconds * 60.0f) + 2;
+    for (int i = 0; i < frames; i++) {
+        br_engine_step(e, 1.0f / 60.0f);
+    }
+    BR_CHECK(br_audio_instance_count(e) == 0);
+    BR_CHECK(g_completed == 100);
+    br_engine_destroy(e);
+}
+
 int main(void)
 {
     br_engine *e = br_engine_create("test_audio", NULL);
@@ -242,5 +267,6 @@ int main(void)
     BR_CHECK(!br_audio_device_open(e));   /* headless: never opened */
     br_engine_destroy(e);
     test_loaders();
+    test_deterministic_game_clock();
     return br_test_finish();
 }
