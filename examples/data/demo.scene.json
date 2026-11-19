@@ -1,0 +1,83 @@
+{
+  "type": "container",
+  "label": "demo",
+  "assets": ["data/atlas.json", "fonts/pixel5x7.fnt"],
+  "children": [
+    { "type": "text", "label": "title", "text": "Everything on screen comes from data/demo.scene.json",
+      "position": [640, 28], "anchor": [0.5, 0.5],
+      "style": { "font_size": 26, "fill": "white", "stroke": { "width": 3, "color": "#202840" },
+                 "drop_shadow": { "color": "#00000099", "distance": 3, "angle": 0.8 } } },
+
+    { "type": "container", "label": "row_sprites", "position": [0, 90], "children": [
+      { "type": "sprite", "label": "hero", "texture": "data/atlas.json#hero.png", "position": [80, 60], "scale": 2,
+        "components": { "mover": { "velocity": [0, 0], "spin": 1.5 } } },
+      { "type": "animated_sprite", "label": "walker", "animation": "data/atlas.json#walk", "fps": 8,
+        "position": [190, 60], "scale": 4, "anchor": [0.5, 0.5] },
+      { "type": "nine_slice_sprite", "label": "panel", "texture": "data/atlas.json#panel.png",
+        "position": [260, 10], "width": 160, "height": 100, "edge_fill": "stretch" },
+      { "type": "tiling_sprite", "label": "tiles", "texture": "data/stripes.png", "position": [440, 10],
+        "width": 160, "height": 100, "tile_scale": [0.75, 0.75], "tile_rotation": 0.3, "tile_position": [5, 0] },
+      { "type": "graphics", "label": "shapes", "position": [620, 10], "commands": [
+          ["round_rect", 0, 0, 100, 100, 14],
+          ["fill", { "linear": [0, 0, 1, 1], "stops": [[0, "#ff5577"], [1, "#5533ff"]] }],
+          ["stroke", { "width": 4, "color": "white", "join": "round" }],
+          ["circle", 50, 50, 20], ["cut"],
+          ["star", 150, 50, 5, 45, 20], ["fill", "gold"],
+          ["move_to", 210, 10], ["bezier_curve_to", 240, 100, 260, 0, 290, 90],
+          ["stroke", { "width": 5, "color": "#7fdcff", "cap": "round", "dash": [12, 8] }] ] },
+      { "type": "graphics", "label": "svg_arrow", "position": [930, 10],
+        "svg": "M 0 40 L 60 40 L 60 15 L 110 55 L 60 95 L 60 70 L 0 70 Z",
+        "fill": "#64e08a", "stroke": { "width": 3, "color": "#1f5f33" } },
+      { "type": "rich_text", "label": "rich", "position": [1060, 20],
+        "text": "<b>Rich</b> text with\n<warn>tag styles</warn> and\n<color=#7fdcff>colours</color>",
+        "style": { "font_size": 18, "fill": "white", "line_height": 24 },
+        "tag_styles": { "warn": { "color": "#ff8844", "bold": true } } }
+    ] },
+
+    { "type": "container", "label": "row_meshes", "position": [0, 250], "children": [
+      { "type": "mesh", "label": "plane", "texture": "data/stripes.png", "plane": [6, 6],
+        "position": [40, 10], "scale": 3 },
+      { "type": "mesh", "label": "perspective", "texture": "data/stripes.png",
+        "perspective": { "verts": [8, 8], "corners": [[0, 10], [120, 0], [140, 100], [10, 90]] },
+        "position": [200, 10] },
+      { "type": "mesh", "label": "rope", "texture": "data/stripes.png",
+        "rope": { "points": [0, 50, 40, 20, 80, 70, 120, 30, 160, 60], "width": 20 }, "position": [380, 10] },
+      { "type": "mesh", "label": "rgb_triangle", "position": [580, 10],
+        "positions": [50, 0, 100, 100, 0, 100], "colors": ["red", "lime", "blue"] },
+      { "type": "particle_container", "label": "sparks", "texture": "data/atlas.json#spark.png",
+        "position": [720, 10], "blend": "add", "dynamic": ["position"],
+        "particles": [
+          { "position": [20, 20], "scale": 2, "tint": "#ff8844" },
+          { "position": [60, 50], "scale": 3, "tint": "#ffdd55" },
+          { "position": [100, 20], "scale": 2.5, "tint": "#55ddff" },
+          { "position": [140, 60], "scale": 2, "tint": "#ff55cc", "alpha": 0.7 } ] },
+      { "type": "bitmap_text", "label": "score", "text": "SCORE 01234", "font": "fonts/pixel5x7.fnt",
+        "size": 28, "position": [920, 30], "tint": "#ffe080" }
+    ] },
+
+    { "type": "container", "label": "row_effects", "position": [0, 430], "children": [
+      { "type": "sprite", "label": "blurred", "texture": "gem.png", "position": [60, 20], "scale": 3,
+        "filters": [{ "type": "blur", "params": { "strength": 4, "quality": 3 } }] },
+      { "type": "sprite", "label": "sepia", "texture": "hero.png", "position": [180, 20], "scale": 3,
+        "filters": [{ "type": "color_matrix", "presets": ["sepia", { "name": "contrast", "value": 0.4 }] }] },
+      { "type": "graphics", "label": "window", "position": [400, 70], "renderable": true,
+        "commands": [["circle", 0, 0, 60], ["fill", "white"]] },
+      { "type": "tiling_sprite", "label": "masked", "texture": "data/stripes.png", "position": [330, 0],
+        "width": 140, "height": 140, "mask": { "node": "window", "kind": "stencil" } },
+      { "type": "graphics", "label": "multiply_box", "position": [520, 10], "blend": "multiply",
+        "commands": [["rect", 0, 0, 120, 120], ["fill", "#88ccff"]] },
+      { "type": "text", "label": "wrapped", "position": [680, 10],
+        "text": "Word-wrapped text, centred, with letter spacing and a vertical gradient fill.",
+        "style": { "font_size": 20, "word_wrap": true, "wrap_width": 260, "align": "center",
+                   "letter_spacing": 1, "gradient": { "stops": [[0, "#ffffff"], [1, "#88aaff"]] } } }
+    ] },
+
+    { "type": "container", "label": "coins", "position": [0, 640], "children": [
+      { "prefab": "data/coin.prefab.json", "position": [100, 0] },
+      { "prefab": "data/coin.prefab.json", "position": [400, 0],
+        "components": { "mover": { "velocity": [-90, 0] } }, "tint": "#ffb0b0" },
+      { "prefab": "data/coin.prefab.json", "position": [800, 0],
+        "components": { "mover": { "velocity": [140, 0], "spin": 2 } } }
+    ] }
+  ]
+}

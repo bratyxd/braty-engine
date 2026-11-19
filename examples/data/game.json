@@ -1,0 +1,14 @@
+{
+  "window": { "title": "Braty - data demo", "width": 1280, "height": 720, "vsync": true, "resizable": true },
+  "asset_root": "../../examples",
+  "start_scene": "data/demo.scene.json",
+  "clear_color": "#1b1e2b",
+  "ticker": { "max_fps": 0, "min_fps": 10, "speed": 1 },
+  "input": {
+    "left": { "keys": ["Left", "A"], "axes": ["-leftx"] },
+    "right": { "keys": ["Right", "D"], "axes": ["+leftx"] }
+  },
+  "audio": { "master_volume": 0.8, "buses": { "music": 0.5, "sfx": { "volume": 1.0 } } },
+  "debug": { "overlay": false, "toggle_key": "F1", "hot_reload": true },
+  "game": { "coins_to_win": 3 }
+}
