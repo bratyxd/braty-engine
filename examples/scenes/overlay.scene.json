@@ -1,0 +1,8 @@
+{ "type": "container", "label": "overlay",
+  "children": [
+    { "type": "graphics", "position": [40, 600], "alpha": 0.85,
+      "commands": [["round_rect", 0, 0, 420, 90, 12], ["fill", "#101420"], ["stroke", { "width": 3, "color": "#ffd76a" }]] },
+    { "type": "text", "text": "OVERLAY (additive scene)", "position": [64, 618],
+      "style": { "font_size": 24, "fill": "#ffd76a" } },
+    { "type": "text", "text": "its own nodes and assets, on top of level A", "position": [64, 652],
+      "style": { "font_size": 18, "fill": "white" } } ] }

@@ -1,0 +1,7 @@
+{ "type": "container", "label": "loading",
+  "children": [
+    { "type": "text", "label": "loading_text", "text": "LOADING", "position": [640, 320], "anchor": [0.5, 0.5],
+      "style": { "font_size": 40, "fill": "white" } },
+    { "type": "graphics", "position": [340, 370], "commands": [["round_rect", 0, 0, 600, 28, 6], ["fill", "#2a2f3c"]] },
+    { "type": "graphics", "label": "bar", "position": [344, 374],
+      "commands": [["round_rect", 0, 0, 592, 20, 4], ["fill", "#58c4ff"]] } ] }

@@ -1,0 +1,13 @@
+{
+  "window": { "title": "Braty - scenes demo", "width": 1280, "height": 720, "vsync": true, "resizable": true },
+  "start_scene": "menu",
+  "scenes": {
+    "menu": "scenes/menu.scene.json",
+    "loading": "scenes/loading.scene.json",
+    "level_a": "scenes/level_a.scene.json",
+    "overlay": "scenes/overlay.scene.json",
+    "level_b": "scenes/level_b.scene.json"
+  },
+  "clear_color": "#101218",
+  "input": { "next": { "keys": ["Return", "Space"], "buttons": ["a"] } }
+}

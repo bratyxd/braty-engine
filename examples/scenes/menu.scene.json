@@ -1,0 +1,9 @@
+{ "type": "container", "label": "menu",
+  "children": [
+    { "type": "sprite", "texture": "scenes/bg_b.png", "width": 1280, "height": 720 },
+    { "type": "text", "text": "SCENES DEMO", "position": [640, 250], "anchor": [0.5, 0.5],
+      "style": { "font_size": 72, "fill": "white", "stroke": { "width": 5, "color": "#2a1830" } } },
+    { "type": "text", "text": "menu -> loading -> level A -> overlay (additive) -> level B",
+      "position": [640, 340], "anchor": [0.5, 0.5], "style": { "font_size": 24, "fill": "#e8c0e0" } },
+    { "type": "text", "label": "hint", "text": "press Enter", "position": [640, 440], "anchor": [0.5, 0.5],
+      "style": { "font_size": 28, "fill": "#ffd76a" } } ] }
