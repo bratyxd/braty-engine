@@ -22,8 +22,8 @@ void br_render_ctx_changed(br_render_ctx *rc)
 static void br_render_update_transform(br_render_ctx *rc)
 {
     br_rect a = rc->area;
-    br_mat4 ortho = br_mat4_ortho(a.x, a.x + a.width, a.y + a.height, a.y, -1.0f, 1.0f);
-    rc->transform = br_mat4_mul(ortho, br_mat4_from_mat3(rc->space));
+    br_mat4 base = rc->has_projection ? rc->projection : br_mat4_ortho(a.x, a.x + a.width, a.y + a.height, a.y, -1.0f, 1.0f);
+    rc->transform = br_mat4_mul(base, br_mat4_from_mat3(rc->space));
     br_render_ctx_changed(rc);
 }
 
@@ -145,6 +145,30 @@ typedef struct br_mask_saved {
     SDL_Rect     scissor;
 } br_mask_saved;
 
+/* Target-pixel rect covering a world rect seen through a view's projection (rotated cameras
+ * give the bounding box of the projected corners). */
+static br_rect br_render_view_scissor(br_render_ctx *rc, br_rect world)
+{
+    float x0 = 1e30f;
+    float y0 = 1e30f;
+    float x1 = -1e30f;
+    float y1 = -1e30f;
+    for (int i = 0; i < 4; i++) {
+        float wx = (i & 1) ? world.x + world.width : world.x;
+        float wy = (i & 2) ? world.y + world.height : world.y;
+        br_vec3 clip = br_mat4_transform_point(rc->projection, br_vec3_make(wx, wy, 0.0f));
+        float px = (clip.x + 1.0f) * 0.5f * rc->target_width;
+        float py = (1.0f - clip.y) * 0.5f * rc->target_height;
+        x0 = SDL_min(x0, px);
+        y0 = SDL_min(y0, py);
+        x1 = SDL_max(x1, px);
+        y1 = SDL_max(y1, py);
+    }
+    x0 = SDL_floorf(x0);
+    y0 = SDL_floorf(y0);
+    return br_rect_make(x0, y0, SDL_ceilf(x1) - x0, SDL_ceilf(y1) - y0);
+}
+
 /* Stencil levels: content inside d nested masks is drawn where stencil == d.
  * Normal:  INCR the mask where == d; content == d+1; DECR the mask where == d+1.
  * Inverse: INCR the whole target, DECR the mask (so outside = d+1); undo in reverse order. */
@@ -167,13 +191,22 @@ static bool br_render_push_mask(br_render_ctx *rc, uint32_t index, br_mask_saved
         br_rect bounds = br_rect_make(0.0f, 0.0f, 0.0f, 0.0f);
         bool has = false;
         br_scene_bounds(s, e, saved->mask_index, br_scene_chain_transform(s, saved->mask_index, false), &bounds, &has);
-        float sx = rc->pixel_width / rc->area.width;
-        float sy = rc->pixel_height / rc->area.height;
-        float x0 = SDL_floorf((bounds.x - rc->area.x) * sx);
-        float y0 = SDL_floorf((bounds.y - rc->area.y) * sy);
-        float x1 = SDL_ceilf((bounds.x + bounds.width - rc->area.x) * sx);
-        float y1 = SDL_ceilf((bounds.y + bounds.height - rc->area.y) * sy);
-        br_rect px = br_rect_make(x0, y0, x1 - x0, y1 - y0);
+        br_rect px;
+        if (rc->has_projection) {
+            if (rc->target_width <= 0.0f) {
+                saved->kind = BR_MASK_NONE; /* captured for 3D (canvas3d): no pixels to clip */
+                return true;
+            }
+            px = br_render_view_scissor(rc, bounds);
+        } else {
+            float sx = rc->pixel_width / rc->area.width;
+            float sy = rc->pixel_height / rc->area.height;
+            float x0 = SDL_floorf((bounds.x - rc->area.x) * sx);
+            float y0 = SDL_floorf((bounds.y - rc->area.y) * sy);
+            float x1 = SDL_ceilf((bounds.x + bounds.width - rc->area.x) * sx);
+            float y1 = SDL_ceilf((bounds.y + bounds.height - rc->area.y) * sy);
+            px = br_rect_make(x0, y0, x1 - x0, y1 - y0);
+        }
         px = br_rect_intersection(px, br_rect_make(0.0f, 0.0f, rc->pixel_width, rc->pixel_height));
         if (rc->scissor_on) {
             br_rect old = br_rect_make((float)rc->scissor.x, (float)rc->scissor.y, (float)rc->scissor.w,
@@ -269,6 +302,9 @@ static void br_render_walk(br_render_ctx *rc, uint32_t index, br_blend_mode inhe
     if (!as_mask && (!rec->visible || !rec->renderable || hidden_mask)) {
         return;
     }
+    if (!as_mask && (rec->layer_bits & rc->culling_mask) == 0) {
+        return; /* not on a layer the camera draws */
+    }
     if ((flags & BR_WALK_FROM_LAYER) == 0 && rec->layer.generation != 0 && br_scene_record(e, rec->layer) != NULL) {
         return; /* its render layer draws it */
     }
@@ -339,6 +375,9 @@ static void br_render_ctx_set_target(br_render_ctx *rc, br_texture target, br_re
     rc->stencil_ref = 0;
     rc->stencil_depth = 0;
     rc->scissor_on = false;
+    rc->has_projection = false;
+    rc->target_width = pixel_width;
+    rc->target_height = pixel_height;
     rc->space = br_mat3_identity();
     br_render_update_transform(rc);
 }
@@ -377,6 +416,41 @@ void br_render_subtree_to_texture(br_render_ctx *rc, br_node n, br_texture targe
     br_render_ctx_changed(rc);
 }
 
+bool br_render_capture_subtree(br_engine *e, br_node n, br_mat4 projection, br_rect area, float pixel_ratio,
+                               br_array *out)
+{
+    br_render_state *r = e->render;
+    br_scene_state *s = e->scene;
+    if (r == NULL || br_scene_record(e, n) == NULL || br_engine_gpu(e) == NULL || area.width <= 0.0f ||
+        area.height <= 0.0f) {
+        return false;
+    }
+    if (!br_render_is_on_stage(s, n.index)) {
+        br_scene_refresh_subtree(s, n.index);
+    }
+    br_render_ctx rc;
+    SDL_zero(rc);
+    rc.e = e;
+    rc.open_batch = -1;
+    rc.blend = BR_BLEND_NORMAL;
+    rc.culling_mask = 0xFFFFFFFFu;
+    br_texture none = { 0, 0 };
+    float ratio = pixel_ratio > 0.0f ? pixel_ratio : 1.0f;
+    br_render_ctx_set_target(&rc, none, area, area.width * ratio, area.height * ratio, false);
+    rc.has_projection = true;
+    rc.projection = projection;
+    rc.target_width = 0.0f; /* no pixels: scissor masks are skipped */
+    rc.target_height = 0.0f;
+    br_render_set_space(&rc, br_scene_group_space(s, n.index));
+    uint32_t first = r->cmds.count;
+    br_render_walk(&rc, n.index, BR_BLEND_NORMAL, BR_WALK_SKIP_EFFECTS);
+    for (uint32_t i = first; i < r->cmds.count; i++) {
+        br_array_push(out, br_array_at(&r->cmds, i));
+    }
+    r->cmds.count = first; /* the stage replay never sees them */
+    return true;
+}
+
 void br_render_to_texture(br_engine *e, br_node n, br_texture target)
 {
     br_rtt_job job = { n, target };
@@ -405,12 +479,100 @@ void br_render_add_overlay(br_engine *e, br_render_overlay_fn fn, void *user)
     br_array_push(&e->render->overlays, &entry);
 }
 
+void br_render_set_views(br_engine *e, const br_render_view *views, uint32_t count)
+{
+    br_render_state *r = e->render;
+    br_array_clear(&r->views);
+    if (views != NULL && count > 0) {
+        br_array_push_n(&r->views, views, count);
+    }
+}
+
 void br_render_get_stats(br_engine *e, br_render_stats *out)
 {
     *out = e->render->stats;
 }
 
 /* ---- systems */
+
+/* Draws every view of br_render_set_views (cameras), in order. */
+static void br_render_draw_views(br_render_ctx *rc, float window_w, float window_h, float pixel_w, float pixel_h)
+{
+    br_engine *e = rc->e;
+    br_render_state *r = e->render;
+    br_scene_state *s = e->scene;
+    bool pass_open = false;
+    br_texture current = { 0, 0 };
+    for (uint32_t i = 0; i < r->views.count; i++) {
+        const br_render_view *view = br_array_at(&r->views, i);
+        /* target size in units and pixels */
+        float units_w = window_w;
+        float units_h = window_h;
+        float target_w = pixel_w;
+        float target_h = pixel_h;
+        bool has_stencil = true;
+        if (view->target.generation != 0) {
+            br_render_target *rt = br_texture_render_target(e, view->target);
+            br_texture_info info;
+            if (rt == NULL || !br_texture_get_info(e, view->target, &info) || info.width <= 0.0f || info.height <= 0.0f) {
+                continue;
+            }
+            units_w = info.width;
+            units_h = info.height;
+            target_w = (float)rt->width;
+            target_h = (float)rt->height;
+            has_stencil = rt->depth_stencil != NULL;
+        }
+        br_node root = br_node_valid(e, view->root) ? view->root : s->root;
+        if (br_scene_record(e, root) == NULL) {
+            continue;
+        }
+        if (!pass_open || current.index != view->target.index || current.generation != view->target.generation) {
+            br_batch_push_pass(rc, view->target, false, br_color_make(0, 0, 0, 0));
+            pass_open = true;
+            current = view->target;
+        }
+        float sx = target_w / units_w;
+        float sy = target_h / units_h;
+        br_rect px = br_rect_make(SDL_roundf(view->viewport.x * sx), SDL_roundf(view->viewport.y * sy),
+                                  SDL_roundf(view->viewport.width * sx), SDL_roundf(view->viewport.height * sy));
+        px = br_rect_intersection(px, br_rect_make(0.0f, 0.0f, target_w, target_h));
+        if (br_rect_is_empty(px)) {
+            continue;
+        }
+        br_render_ctx_set_target(rc, view->target, view->area, px.width, px.height, has_stencil);
+        rc->target_width = target_w;
+        rc->target_height = target_h;
+        rc->scissor_on = true;
+        rc->scissor.x = (int)px.x;
+        rc->scissor.y = (int)px.y;
+        rc->scissor.w = (int)px.width;
+        rc->scissor.h = (int)px.height;
+        rc->has_projection = true;
+        if (view->clear) {
+            /* a quad over the viewport, written without blending (the pass keeps the rest) */
+            rc->projection = br_mat4_ortho(0.0f, units_w, units_h, 0.0f, -1.0f, 1.0f);
+            br_render_update_transform(rc);
+            br_rect v = view->viewport;
+            uint32_t c = br_render_pack_color(view->clear_color, 1.0f);
+            br_vertex2d q[4] = { { v.x, v.y, 0.0f, 0.0f, c },
+                                 { v.x + v.width, v.y, 1.0f, 0.0f, c },
+                                 { v.x + v.width, v.y + v.height, 1.0f, 1.0f, c },
+                                 { v.x, v.y + v.height, 0.0f, 1.0f, c } };
+            rc->blend = BR_BLEND_NONE;
+            br_render_push_quad(rc, br_texture_white(e), q);
+        }
+        rc->projection = view->projection;
+        rc->culling_mask = view->culling_mask;
+        rc->blend = BR_BLEND_NORMAL;
+        if (root.index != s->root.index && !br_render_is_on_stage(s, root.index)) {
+            br_scene_refresh_subtree(s, root.index);
+        }
+        br_render_set_space(rc, br_scene_group_space(s, root.index)); /* also applies the projection */
+        br_render_walk(rc, root.index, BR_BLEND_NORMAL, 0);
+        rc->culling_mask = 0xFFFFFFFFu;
+    }
+}
 
 static void br_render_collect_system(br_engine *e, float dt, void *user)
 {
@@ -433,6 +595,7 @@ static void br_render_collect_system(br_engine *e, float dt, void *user)
     rc.e = e;
     rc.open_batch = -1;
     rc.blend = BR_BLEND_NORMAL;
+    rc.culling_mask = 0xFFFFFFFFu;
     br_rect window_area = br_rect_make(0.0f, 0.0f, (float)w, (float)h);
     br_render_ctx_set_target(&rc, frame, window_area, (float)pw, (float)ph, true);
 
@@ -446,8 +609,14 @@ static void br_render_collect_system(br_engine *e, float dt, void *user)
     }
     br_array_clear(&r->rtt_jobs);
 
-    br_batch_push_pass(&rc, frame, false, br_color_make(0, 0, 0, 0));
-    br_render_walk(&rc, e->scene->root.index, BR_BLEND_NORMAL, 0);
+    if (r->views.count == 0) {
+        br_batch_push_pass(&rc, frame, false, br_color_make(0, 0, 0, 0));
+        br_render_walk(&rc, e->scene->root.index, BR_BLEND_NORMAL, 0);
+    } else {
+        br_render_draw_views(&rc, (float)w, (float)h, (float)pw, (float)ph);
+        br_render_ctx_set_target(&rc, frame, window_area, (float)pw, (float)ph, true);
+        br_batch_push_pass(&rc, frame, false, br_color_make(0, 0, 0, 0)); /* overlays go to the window */
+    }
     for (uint32_t i = 0; i < r->overlays.count; i++) {
         br_overlay_entry *o = br_array_at(&r->overlays, i);
         br_render_set_space(&rc, br_mat3_identity());
@@ -480,6 +649,7 @@ static void br_render_shutdown(br_engine *e, void *user)
     br_array_free(&r->uniforms);
     br_array_free(&r->rtt_jobs);
     br_array_free(&r->overlays);
+    br_array_free(&r->views);
     br_free(r);
     e->render = NULL;
 }
@@ -498,6 +668,7 @@ void br_render_register(br_engine *e)
     br_array_init(&r->uniforms, 1);
     br_array_init(&r->rtt_jobs, sizeof(br_rtt_job));
     br_array_init(&r->overlays, sizeof(br_overlay_entry));
+    br_array_init(&r->views, sizeof(br_render_view));
     br_engine_on_shutdown(e, br_render_shutdown, NULL);
     br_sprite_register(e);
     br_system_add(e, "render.collect", BR_PHASE_PRE_RENDER, 1000, br_render_collect_system, NULL);

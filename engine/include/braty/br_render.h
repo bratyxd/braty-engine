@@ -152,6 +152,23 @@ void br_render_add_overlay(br_engine *e, br_render_overlay_fn fn, void *user);
  * n's world transform; texture pixel (0,0) is world (0,0). Clears the texture first. */
 void br_render_to_texture(br_engine *e, br_node n, br_texture target);
 
+/* ---- views: cameras (br_camera.h) draw the stage through these */
+
+/* One way to draw the stage (or another 2D subtree) this frame. */
+typedef struct br_render_view {
+    br_node    root;           /* zero handle = the stage (br_scene_root) */
+    br_texture target;         /* zero handle = the window */
+    br_mat4    projection;     /* root-space -> clip space of the WHOLE target */
+    br_rect    area;           /* root-space rect the view shows (br_render_area, inverse masks) */
+    br_rect    viewport;       /* part of the target drawn into, in target units (window units) */
+    uint32_t   culling_mask;   /* nodes with (layer bits & mask) == 0 are skipped with their subtree */
+    bool       clear;          /* fill the viewport with clear_color first */
+    br_color   clear_color;
+} br_render_view;
+/* Draws these views, in order, instead of the default pixel stage (copied; kept until the next
+ * call). count = 0 goes back to the default: the stage in window coordinates. */
+void br_render_set_views(br_engine *e, const br_render_view *views, uint32_t count);
+
 /* Last frame's numbers. */
 typedef struct br_render_stats {
     uint32_t draw_calls;    /* batches + custom draws */
