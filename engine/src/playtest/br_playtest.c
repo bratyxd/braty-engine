@@ -527,7 +527,8 @@ static br_pt_result br_pt_exec(br_engine *e, const cJSON *cmd, cJSON *reply)
     }
     if (SDL_strcmp(name, "screenshot") == 0) {
         const char *file = br_pt_string(cmd, "file");
-        if (!br_engine_screenshot(e, file)) {
+        uint32_t downsample = (uint32_t)br_pt_number(cmd, "downsample", 1.0);
+        if (!br_engine_screenshot_downsampled(e, file, downsample > 0 ? downsample : 1)) {
             return br_pt_ok(br_playtest_fail(e, "screenshot '%s' failed (headless, or nothing rendered yet?)", file));
         }
         br_pt_reply_add(reply, "file", cJSON_CreateString(file));

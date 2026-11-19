@@ -68,7 +68,37 @@ static void br_png_write_callback(void *context, void *data, int size)
     SDL_WriteIO(io, data, (size_t)size);
 }
 
+/* Averages each n x n block of RGBA pixels into one, in place. Returns the new size. */
+static void br_app_downsample(uint8_t *pixels, uint32_t *width, uint32_t *height, uint32_t n)
+{
+    uint32_t w = *width / n;
+    uint32_t h = *height / n;
+    for (uint32_t y = 0; y < h; y++) {
+        for (uint32_t x = 0; x < w; x++) {
+            uint32_t sum[4] = { 0, 0, 0, 0 };
+            for (uint32_t dy = 0; dy < n; dy++) {
+                const uint8_t *row = pixels + ((size_t)(y * n + dy) * *width + x * n) * 4;
+                for (uint32_t dx = 0; dx < n * 4; dx++) {
+                    sum[dx % 4] += row[dx];
+                }
+            }
+            /* the output index is never ahead of the blocks still to be read */
+            uint8_t *out = pixels + ((size_t)y * w + x) * 4;
+            for (uint32_t c = 0; c < 4; c++) {
+                out[c] = (uint8_t)((sum[c] + n * n / 2) / (n * n));
+            }
+        }
+    }
+    *width = w;
+    *height = h;
+}
+
 bool br_engine_screenshot(br_engine *e, const char *path)
+{
+    return br_engine_screenshot_downsampled(e, path, 1);
+}
+
+bool br_engine_screenshot_downsampled(br_engine *e, const char *path, uint32_t downsample)
 {
     if (e->gpu == NULL) {
         br_log_error("screenshot: headless, nothing is rendered");
@@ -87,16 +117,20 @@ bool br_engine_screenshot(br_engine *e, const char *path)
     for (uint32_t i = 0; i < rt->width * rt->height; i++) {
         pixels[i * 4 + 3] = 255;
     }
+    uint32_t width = rt->width;
+    uint32_t height = rt->height;
+    if (downsample > 1 && width >= downsample && height >= downsample) {
+        br_app_downsample(pixels, &width, &height, downsample);
+    }
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     bool ok = false;
     if (io == NULL) {
         br_log_error("screenshot: cannot open '%s': %s", path, SDL_GetError());
     } else {
-        ok = stbi_write_png_to_func(br_png_write_callback, io, (int)rt->width, (int)rt->height, 4, pixels,
-                                    (int)rt->width * 4) != 0;
+        ok = stbi_write_png_to_func(br_png_write_callback, io, (int)width, (int)height, 4, pixels, (int)width * 4) != 0;
         ok = SDL_CloseIO(io) && ok;
         if (ok) {
-            br_log_info("screenshot: wrote %ux%u to '%s'", rt->width, rt->height, path);
+            br_log_info("screenshot: wrote %ux%u to '%s'", width, height, path);
         } else {
             br_log_error("screenshot: cannot write '%s'", path);
         }

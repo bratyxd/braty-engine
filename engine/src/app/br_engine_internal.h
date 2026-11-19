@@ -114,6 +114,9 @@ struct br_engine {
 /* FPS cap: waits until the next frame's deadline (br_pacing.c). No-op when uncapped. */
 void br_app_pace_frame(br_engine *e);
 
+/* br_engine_screenshot, averaging n x n pixel blocks first (golden images stay small). */
+bool br_engine_screenshot_downsampled(br_engine *e, const char *path, uint32_t downsample);
+
 /* Registers every built-in module. Defined in br_builtin.c (owned by Task 2). */
 void br_builtin_register(br_engine *e);
 
