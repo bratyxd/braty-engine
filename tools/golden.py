@@ -41,6 +41,7 @@ CASES = [
     ("audio_demo", "audio_demo", 30, [], None),
     ("filters_demo", "filters_demo", 60, [], None),
     ("data_demo", "data_demo", 60, [], None),
+    ("scenes_demo", "scenes_demo", 190, [], None),
     ("view3d_demo", "view3d_demo", 60, [], None),
     ("gltf_demo", "gltf_demo", 90, [], None),
     ("star_courier_title", STAR_COURIER, 60, [], ROUND),
