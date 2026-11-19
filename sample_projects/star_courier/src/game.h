@@ -157,6 +157,7 @@ typedef struct sc_ids {
 typedef struct sc_game {
     sc_ids    id;
     sc_state  state;
+    char      state_name[BR_FIELD_STRING_SIZE]; /* "title" / "play" / "dying" / "gameover", for play-tests */
     bool      paused;
     float     state_time;    /* seconds in this state, pauses excluded */
     float     wall_time;     /* seconds in this state, pauses included */
@@ -182,10 +183,6 @@ typedef struct sc_game {
     br_sound_instance music_instance;
     int               sfx_bus, music_bus;
 
-    /* --autoplay: scripted input for screenshots and soak tests */
-    bool      autoplay;
-    uint32_t  bot_keys;      /* steering keys currently held (bit per key) */
-    SDL_Scancode bot_tap;    /* key pressed last frame, released this frame */
 } sc_game;
 
 /* components.c */

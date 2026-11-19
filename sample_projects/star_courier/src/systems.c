@@ -15,12 +15,13 @@
 
 /* The scene of each state, by name in game.json "game.scenes" (dying keeps the play scene). */
 static const char *sc_scene_keys[] = { "title", "play", "", "gameover" };
+static const char *sc_state_names[] = { "title", "play", "dying", "gameover" };
 
 /* ---- small helpers */
 
 float sc_random(sc_game *g)
 {
-    /* xorshift32: deterministic, so --autoplay runs give identical screenshots */
+    /* xorshift32: deterministic, so play-test runs give identical screenshots */
     g->rng ^= g->rng << 13;
     g->rng ^= g->rng >> 17;
     g->rng ^= g->rng << 5;
@@ -86,10 +87,13 @@ static br_vec2 sc_random_spot(sc_game *g, const sc_tuning *t, float margin)
 
 void sc_log_stats(br_engine *e, const char *when)
 {
+    br_memory_stats heap;
+    br_memory_get_stats(&heap);
     br_log_info("star_courier stats (%s): nodes %u, textures %u, assets %u (atlas refs %u), sounds playing %u, "
-                "heap allocations %d, data errors %u",
+                "heap %llu blocks / %llu KB, data errors %u",
                 when, br_scene_node_count(e), br_texture_count(e), br_assets_count(e),
-                br_assets_ref_count(e, "sprites/atlas.json"), br_audio_instance_count(e), SDL_GetNumAllocations(),
+                br_assets_ref_count(e, "sprites/atlas.json"), br_audio_instance_count(e),
+                (unsigned long long)heap.live_allocations, (unsigned long long)(heap.live_bytes / 1024),
                 br_scene_file_error_count(e));
 }
 
@@ -174,8 +178,8 @@ static void sc_lookup(br_engine *e, sc_game *g)
 
 static void sc_save_best(br_engine *e, sc_game *g)
 {
-    if (g->autoplay) {
-        return; /* scripted runs must not change what the next run shows */
+    if (br_app_deterministic(e)) {
+        return; /* play-test runs must not change what the next run shows */
     }
     char text[32];
     SDL_snprintf(text, sizeof(text), "%d\n", (int)g->best);
@@ -194,6 +198,7 @@ void sc_enter_state(br_engine *e, sc_game *g, sc_state state)
         sc_lookup(e, g);
     }
     g->state = state;
+    br_str_copy(g->state_name, sizeof(g->state_name), sc_state_names[state]);
     g->state_time = 0.0f;
     g->wall_time = 0.0f;
     g->paused = false;
@@ -202,6 +207,7 @@ void sc_enter_state(br_engine *e, sc_game *g, sc_state state)
 
     char text[64];
     if (state == SC_STATE_PLAY) {
+        sc_log_stats(e, "round start"); /* the soak script compares these between rounds */
         g->round++;
         g->score = 0;
         g->lives = t->lives;

@@ -24,3 +24,9 @@ target_link_libraries(star_courier PRIVATE braty)
 add_custom_command(TARGET star_courier POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/data $<TARGET_FILE_DIR:star_courier>
     COMMENT "star_courier: copying data/ next to the executable")
+
+# The committed play-test (one round: score, lives, state checked with "expect"). Headless, so it
+# needs no GPU: ctest -L playtest. playtest/soak.json is the 60-second soak (run it by hand).
+add_test(NAME star_courier_round
+    COMMAND star_courier --headless --playtest ${CMAKE_CURRENT_SOURCE_DIR}/playtest/round.json)
+set_tests_properties(star_courier_round PROPERTIES LABELS playtest)
