@@ -2,7 +2,7 @@
 
 Everything a designer tweaks is JSON. This file documents every format the engine reads:
 
-1. [game.json](#1-gamejson) - window, asset root, start scene, ticker, input, audio, debug
+1. [game.json](#1-gamejson) - window, asset root, start scene, ticker, input, audio, debug, profiler
 2. [Scene files](#2-scene-files-scenejson) (`*.scene.json`) - node trees
 3. [Prefabs](#3-prefabs-prefabjson) (`*.prefab.json`) - reusable node trees with overrides
 4. [Values](#4-values-used-everywhere) shared by all of them: colours, vectors, textures, enums
@@ -32,7 +32,7 @@ Every key is optional; the values below are the defaults unless noted.
 ```json
 {
   "window": { "title": "My Game", "width": 1280, "height": 720,
-              "fullscreen": false, "vsync": true, "resizable": true },
+              "fullscreen": false, "vsync": true, "resizable": true, "logical_size": [1280, 720] },
   "asset_root": "assets",
   "manifest": "manifest.json",
   "start_scene": "title",
@@ -50,17 +50,20 @@ Every key is optional; the values below are the defaults unless noted.
     "sprites": { "sounds/sfx.wav": { "jump": [0.0, 0.25], "coin": [0.3, 0.2] } }
   },
   "debug": { "overlay": false, "toggle_key": "F1", "hot_reload": true },
+  "profiler": { "hud": false, "panel": false },
   "game": { "lives": 3 }
 }
 ```
 
 Defaults: title `"braty"`, 1280 x 720, not fullscreen, vsync on, resizable, asset root = the
 executable directory, no manifest, no start scene, the GPU module's clear colour, ticker 0 / 10 / 1,
-overlay closed, F1, hot reload on in debug builds.
+overlay closed, F1, hot reload on in debug builds, no logical size (the example's
+`logical_size` is not a default), profiler HUD and panel off.
 
 | Key | Meaning |
 |---|---|
 | `window.*` | Window title and size (in `br_app_desc`), fullscreen / resizable (applied). |
+| `window.logical_size` | `[width, height]`: a fixed design resolution. Applied as `br_camera_create_logical(e, w, h)`, a letterbox 2D camera under the stage: the stage is always w x h units, scaled to fit the window with bars, and pointer events map through it (`docs/agents/camera.md`). Absent = no camera, the stage is the window. |
 | `window.vsync` | `true` / `false`, or `"on"`, `"off"`, `"mailbox"`, `"adaptive"` (`br_app_set_vsync`; unsupported modes fall back with a log line; SDL GPU has no adaptive mode, it becomes on). |
 | `asset_root` | Directory of all other paths, relative to the executable directory. |
 | `manifest` | Added with `br_assets_load_manifest` (aliases and bundles). |
@@ -73,6 +76,7 @@ overlay closed, F1, hot reload on in debug builds.
 | `debug.overlay` | Debug overlay open at start (`--debug` on the command line does the same). |
 | `debug.toggle_key` | SDL key name toggling the overlay (`"F1"`, `"F12"`, `"Grave"`). |
 | `debug.hot_reload` | Poll loaded scene files and reload them when they change (default: on in debug builds, off with `NDEBUG`). |
+| `profiler.hud` / `profiler.panel` | Profiler corner readout / panel (F2) shown at start (`br_profiler_set_hud`, `br_profiler_set_open`). `false` leaves the command line (`--profiler-hud`, `--profiler`) in charge. |
 | `game` | Anything the game wants: `br_game_config_json(e)` returns the whole document. Other unknown keys log a warning. |
 
 Command line (`br_game_config_args`): `--debug` opens the overlay, `--scene path` replaces

@@ -34,6 +34,7 @@ typedef struct br_game_config {
     bool     fullscreen;                           /* false */
     br_vsync vsync;                                /* BR_VSYNC_ON; JSON true/false or "off"/"on"/"adaptive"/"mailbox" */
     bool     resizable;                            /* true */
+    float    logical_width, logical_height;        /* window.logical_size [w, h]: a letterbox camera; 0 = none */
     char     asset_root[BR_GAME_CONFIG_PATH_SIZE]; /* relative to the executable dir; "" = exe dir */
     char     manifest[BR_GAME_CONFIG_PATH_SIZE];   /* asset manifest added at apply; "" = none */
     char     start_scene[BR_GAME_CONFIG_PATH_SIZE];/* scene loaded under the stage at apply; "" = none */
@@ -46,6 +47,8 @@ typedef struct br_game_config {
     bool     debug_overlay;                        /* debug overlay open at start (false) */
     char     debug_key[32];                        /* SDL key name toggling it, "F1" */
     bool     hot_reload;                           /* scene hot reload (debug builds: true) */
+    bool     profiler_hud;                         /* profiler.hud: corner readout at start (false) */
+    bool     profiler_panel;                       /* profiler.panel: profiler panel open at start (false) */
     cJSON   *json;                                 /* the whole document (owned) */
 } br_game_config;
 
@@ -66,8 +69,9 @@ bool br_game_config_load(br_engine *e, const char *path, br_game_config *config)
 void br_game_config_args(br_game_config *config, int argc, char **argv);
 /* A br_app_desc with title, size and asset root pointing into config (keep config alive). */
 br_app_desc br_game_config_app_desc(const br_game_config *config);
-/* Applies everything else to a running engine: vsync, fullscreen, resizable, ticker, clear
- * colour, input actions, audio, manifest, debug overlay, hot reload; then loads the start scene
+/* Applies everything else to a running engine: vsync, fullscreen, resizable, logical size
+ * (br_camera_create_logical), ticker, clear colour, input actions, audio, manifest, debug
+ * overlay, profiler HUD / panel, hot reload; then loads the start scene
  * under the stage and returns its root (zero handle if none or it failed). The engine takes
  * over config->json (it is set to NULL). */
 br_node br_game_config_apply(br_engine *e, br_game_config *config);

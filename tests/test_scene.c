@@ -426,6 +426,39 @@ static void test_game_config_keys(void)
     br_engine_destroy(e);
 }
 
+/* ---- game.json "profiler" and "window.logical_size" */
+
+static void test_game_config_profiler_logical(void)
+{
+    const char *json = "{ \"window\": { \"logical_size\": [640, 360] },"
+                       "  \"profiler\": { \"hud\": true, \"panel\": true } }";
+    g_unknown_key_warnings = 0;
+    SDL_GetLogOutputFunction(&g_default_log, &g_default_log_user);
+    SDL_SetLogOutputFunction(count_warnings, NULL);
+    br_game_config config;
+    BR_CHECK(br_game_config_parse(json, strlen(json), "game.json", &config));
+    SDL_SetLogOutputFunction(g_default_log, g_default_log_user);
+    BR_CHECK(g_unknown_key_warnings == 0);
+    BR_CHECK(config.logical_width == 640.0f && config.logical_height == 360.0f);
+
+    br_engine *e = br_engine_create("test_scene_config_logical", "../../tests/data");
+    br_camera_set_headless_screen(e, 1280.0f, 720.0f);
+    br_game_config_apply(e, &config);
+    BR_CHECK(br_profiler_hud(e) && br_profiler_is_open(e));
+    br_engine_step(e, DT);
+    /* a 640 x 360 design shown 2x in a 1280 x 720 window: window centre = design centre */
+    br_vec2 p = br_camera_screen_to_stage(e, br_vec2_make(640.0f, 360.0f));
+    BR_CHECK(SDL_fabsf(p.x - 320.0f) < 0.01f && SDL_fabsf(p.y - 180.0f) < 0.01f);
+    p = br_camera_screen_to_stage(e, br_vec2_make(0.0f, 0.0f));
+    BR_CHECK(SDL_fabsf(p.x) < 0.01f && SDL_fabsf(p.y) < 0.01f);
+    br_engine_destroy(e);
+
+    const char *bad = "{ \"window\": { \"logical_size\": [640] } }";
+    BR_CHECK(br_game_config_parse(bad, strlen(bad), "game.json", &config));
+    BR_CHECK(config.logical_width == 0.0f);
+    br_game_config_free(&config);
+}
+
 /* ---- deterministic mode: async loads finish one asset per frame, in file order */
 
 static void test_deterministic_order(void)
@@ -465,6 +498,7 @@ int main(void)
     test_collect(e);
     br_engine_destroy(e);
     test_game_config_keys();
+    test_game_config_profiler_logical();
     test_deterministic_order();
     return br_test_finish();
 }

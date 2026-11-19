@@ -124,10 +124,10 @@ static void br_config_warn_keys(const char *source, const char *section, const c
 static void br_config_check_keys(const char *source, const cJSON *doc)
 {
     br_config_warn_keys(source, "", doc,
-                        " window asset_root manifest start_scene scenes clear_color ticker input audio debug game ");
-    const char *sections[] = { "window", "ticker", "debug", "audio" };
-    const char *keys[] = { " title width height fullscreen vsync resizable ", " max_fps min_fps speed fixed_hz ",
-                           " overlay toggle_key hot_reload ", " master_volume muted buses sprites " };
+                        " window asset_root manifest start_scene scenes clear_color ticker input audio debug profiler game ");
+    const char *sections[] = { "window", "ticker", "debug", "audio", "profiler" };
+    const char *keys[] = { " title width height fullscreen vsync resizable logical_size ", " max_fps min_fps speed fixed_hz ",
+                           " overlay toggle_key hot_reload ", " master_volume muted buses sprites ", " hud panel " };
     for (uint32_t i = 0; i < BR_ARRAY_COUNT(sections); i++) {
         const cJSON *section = cJSON_GetObjectItemCaseSensitive(doc, sections[i]);
         if (cJSON_IsObject(section)) {
@@ -184,6 +184,18 @@ bool br_game_config_parse(const char *json, size_t size, const char *source_name
         br_config_error(&r, "vsync", "expected true, false, \"off\", \"on\", \"adaptive\" or \"mailbox\"");
     }
     br_config_bool(&r, window, "resizable", &config->resizable);
+    const cJSON *logical = cJSON_GetObjectItemCaseSensitive(window, "logical_size");
+    if (logical != NULL) {
+        const cJSON *lw = cJSON_GetArrayItem(logical, 0);
+        const cJSON *lh = cJSON_GetArrayItem(logical, 1);
+        if (cJSON_IsArray(logical) && cJSON_GetArraySize(logical) == 2 && cJSON_IsNumber(lw) && cJSON_IsNumber(lh) &&
+            lw->valuedouble > 0.0 && lh->valuedouble > 0.0) {
+            config->logical_width = (float)lw->valuedouble;
+            config->logical_height = (float)lh->valuedouble;
+        } else {
+            br_config_error(&r, "logical_size", "expected [width, height] (positive numbers)");
+        }
+    }
 
     const cJSON *ticker = br_config_section(&r, doc, "ticker");
     br_config_float(&r, ticker, "max_fps", &config->max_fps);
@@ -195,6 +207,10 @@ bool br_game_config_parse(const char *json, size_t size, const char *source_name
     br_config_bool(&r, debug, "overlay", &config->debug_overlay);
     br_config_string(&r, debug, "toggle_key", config->debug_key, sizeof(config->debug_key));
     br_config_bool(&r, debug, "hot_reload", &config->hot_reload);
+
+    const cJSON *profiler = br_config_section(&r, doc, "profiler");
+    br_config_bool(&r, profiler, "hud", &config->profiler_hud);
+    br_config_bool(&r, profiler, "panel", &config->profiler_panel);
 
     r.section = "";
     const cJSON *input = cJSON_GetObjectItemCaseSensitive(doc, "input");
@@ -338,6 +354,16 @@ void br_game_config_apply_settings(br_engine *e, br_game_config *config)
         br_debug_set_toggle_key(e, key);
     }
     br_debug_set_open(e, config->debug_overlay);
+    /* only switched on: false is the default, and must not undo --profiler / --profiler-hud */
+    if (config->profiler_hud) {
+        br_profiler_set_hud(e, true);
+    }
+    if (config->profiler_panel) {
+        br_profiler_set_open(e, true);
+    }
+    if (config->logical_width > 0.0f && config->logical_height > 0.0f) {
+        br_camera_create_logical(e, config->logical_width, config->logical_height);
+    }
 
     const cJSON *input = cJSON_GetObjectItemCaseSensitive(config->json, "input");
     if (cJSON_IsObject(input)) {
