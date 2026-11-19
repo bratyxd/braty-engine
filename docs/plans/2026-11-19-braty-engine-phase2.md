@@ -80,7 +80,7 @@ User request, condensed, with the decision taken for each:
 
 ## Tasks
 
-Order: 14 -> {15, 16, 17 in parallel} -> 18 -> 19 -> 20.
+Order: 14 -> {15, 16, 17, 18b in parallel} -> 18 -> 19 -> 20.
 
 ### Task 14: Arenas, frame pacing, regression-test harness
 
@@ -279,6 +279,50 @@ takes over `engine/src/three_d/br_anim3d*.c`, `tests/test_animation.c`, `tests/t
       extension (no C decoders; deferred).
 - [ ] Tests: extras -> component values, sub-asset lookup, instance batching count, a fixture
       `.gltf` written by hand in `tests/data/`.
+
+### Task 18b: Profiler (runs in parallel with Tasks 15-17)
+
+User requirement: "see the game's rendering rate for both GPU and CPU and see if there is a
+bottleneck, similar to Unity's profiler but simpler and leaner", built on the UI library already
+in the engine (microui debug overlay).
+
+**Owns:** `engine/src/profiler/**`, `engine/include/braty/br_profiler.h`, the profiler panel in
+`engine/src/debug/**`, `docs/agents/profiler.md`, `docs/PROFILING.md`, `tests/test_profiler.c`,
+`examples/profiler_demo.c`, golden.
+
+- [ ] **CPU scopes:** `br_profile_begin(e, "name")` / `br_profile_end(e)` pairs (plain functions,
+      no macros needed; nesting gives a hierarchy). Every engine system and the main render
+      steps (transform, cull, collect, batch build, upload, each render pass, present) are
+      wrapped by the engine automatically; games add their own. Samples go into a fixed ring
+      buffer of the last N frames (no per-frame allocation); compiled to no-ops when
+      `BRATY_PROFILER=OFF`, cheap enough to leave on in dev builds.
+- [ ] **GPU time:** SDL_GPU has no timer queries, so measure what is portable and say what it
+      is: (a) CPU time spent submitting, (b) time blocked in swapchain acquire / present, and
+      (c) with vsync off, GPU frame time estimated from fence completion
+      (`SDL_SubmitGPUCommandBufferAndAcquireFence` + `SDL_QueryGPUFence` polled, so the game
+      never stalls). Label the number "GPU (estimated)" in the UI and document its limits.
+- [ ] **Bottleneck verdict:** one line computed each frame from those numbers — `CPU bound
+      (update)`, `CPU bound (render submit)`, `GPU bound`, `vsync limited`, `FPS cap limited` —
+      with the top three most expensive scopes. Same rule documented in `docs/PROFILING.md`.
+- [ ] **Counters per frame:** draw calls, batches, batch-break reasons (texture / blend / mask /
+      shader), vertices, triangles, pipeline switches, render-target switches, texture uploads
+      and bytes, 2D nodes visited vs culled, 3D draw items vs culled, shadow casters, animators
+      and tweens sampled, particles, audio voices, heap bytes and allocation count per frame,
+      per-arena used/peak, asset memory by type, asset loads in flight.
+- [ ] **Profiler panel (F2):** frame-time graph with CPU and GPU lines and 16.6/33.3 ms guides;
+      stacked bar of the frame split by top-level scope; expandable scope tree with
+      self/total ms, calls, and min/avg/max over the window; counters table with sparklines;
+      memory tab; pause, step back through the captured frames, and click a spike in the graph
+      to inspect that frame. A compact always-on corner readout (FPS, CPU ms, GPU ms, verdict).
+- [ ] **Capture to file:** `--profile out.json` or `br_profiler_save(e, path)` writes the ring
+      buffer as Chrome trace-event JSON (opens in chrome://tracing / Perfetto) plus a short
+      text summary (avg/95th/99th percentile frame time, verdict, top scopes) that an agent can
+      read. Exposed to play-testing as `{"cmd":"profile","frames":300}` returning the summary,
+      so an agent can check performance after a change.
+- [ ] Budget checks: `br_profiler_set_budget(e, "scope", ms)` logs once when exceeded; a
+      play-test `expect` can assert `frame_ms_p95 < X` for performance regression tests.
+- [ ] Tests: nesting and self/total maths, ring wrap-around, verdict rule on synthetic numbers,
+      trace JSON is valid; profiler overhead measured and reported (target < 1% at 200 scopes).
 
 ### Task 19: Second sample game, docs
 
