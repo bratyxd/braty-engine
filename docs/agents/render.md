@@ -172,5 +172,9 @@ window coordinates, same push functions. Overlays added later draw on top.
 - `br_render_pack_color(c, alpha)` premultiplies; do not premultiply twice.
 - Callback `user` pointers must live until RENDER of the same frame.
 - Headless engines skip collect entirely (no GPU).
-- Stats for 100k rotating sprites (examples/sprites.c, RTX 3060 Ti): 31 batches, ~22-30 ms/frame
-  in a Release build; per-node trig for rotation and the walk dominate.
+- Performance (examples/sprites.c `--count 100000 --novsync --profile [--static]`, Release,
+  RTX 3060 Ti, best of 5): 31 batches; rotating ~12 ms/frame (the example's own bunny system
+  5 ms, scene.transform 1.6, render.collect 4.0, submit 0.8), static ~4.3 ms (collect 3.5).
+  No engine allocations per frame once warmed up. Batched vertices are written straight into
+  the GPU transient buffer: anything else that allocates transient vertices mid-walk just
+  starts a new batch.
