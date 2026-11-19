@@ -11,6 +11,7 @@
 
 void br_builtin_register(br_engine *e)
 {
+    br_arena_register(e);          /* frame arena first: freed last at shutdown */
     br_scene_register(e);          /* node table, components, transform/sort/cull systems */
     br_render_register(e);         /* textures, sprite type, batcher, collect/submit systems */
     br_assets_register(e);         /* asset cache (after render: unloads textures before render frees them) */

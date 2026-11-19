@@ -83,7 +83,7 @@ static const SDL_AudioSpec br_audio_mixer_spec = { SDL_AUDIO_F32, BR_AUDIO_CHANN
 
 /* ---- sounds */
 
-/* Converts any PCM to the mixer format; returns an SDL-allocated buffer (br_free is SDL_free). */
+/* Converts any PCM to the mixer format; sound->samples is SDL-allocated (free with SDL_free). */
 static br_sound *br_sound_from_pcm(const SDL_AudioSpec *spec, const void *data, int bytes)
 {
     Uint8 *out = NULL;
@@ -138,7 +138,7 @@ static void br_sound_free(br_engine *e, br_sound *sound)
         }
         SDL_UnlockMutex(s->lock);
     }
-    br_free(sound->samples);
+    SDL_free(sound->samples); /* from SDL_ConvertAudioSamples, not br_alloc */
     br_free(sound->ogg);
     br_free(sound);
 }

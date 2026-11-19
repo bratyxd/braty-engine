@@ -1,4 +1,4 @@
-/* br_debug_panels: the overlay's windows (stats, scene tree, inspector, systems, log). */
+/* br_debug_panels: the overlay's windows (stats + memory, scene tree, inspector, systems, log). */
 #include "debug/br_debug_internal.h"
 
 #include <stdarg.h>
@@ -59,6 +59,18 @@ static void br_debug_stats(br_engine *e, br_debug_state *s)
     br_debug_labelf(ui, "nodes %u   textures %u   assets %u", br_scene_node_count(e), br_texture_count(e),
                     br_assets_count(e));
     br_debug_labelf(ui, "render-target pool %u   systems %u", br_filters_pool_count(e), br_system_count(e));
+    br_memory_stats mem;
+    br_memory_get_stats(&mem);
+    br_debug_labelf(ui, "heap %llu KB in %llu blocks   peak %llu KB", (unsigned long long)(mem.live_bytes / 1024),
+                    (unsigned long long)mem.live_allocations, (unsigned long long)(mem.peak_bytes / 1024));
+    if (mu_header_ex(ui, "Arenas", MU_OPT_EXPANDED)) {
+        uint32_t count = br_arena_count(e);
+        for (uint32_t i = 0; i < count; i++) {
+            const br_arena_stats *a = br_arena_at(e, i);
+            br_debug_labelf(ui, "%s: %u / %u KB, peak %u KB", a->name, (unsigned)(a->used / 1024),
+                            (unsigned)(a->capacity / 1024), (unsigned)(a->peak / 1024));
+        }
+    }
     if (mu_header_ex(ui, "Assets", 0)) {
         br_asset_info list[BR_DEBUG_ASSET_ROWS];
         uint32_t total = br_assets_list(e, list, BR_DEBUG_ASSET_ROWS);

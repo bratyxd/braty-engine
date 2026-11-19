@@ -1,30 +1,106 @@
-/* Memory and logging: thin wrappers so every allocation and message goes through SDL. */
+/* Memory and logging: thin wrappers so every allocation and message goes through SDL.
+ * br_alloc counts blocks and bytes (br_memory_get_stats); br_allocator dispatch lives here too. */
 #include "braty/br_core.h"
 
 #include <SDL3/SDL.h>
 #include <stdarg.h>
 
+/* Every heap block starts with this header so br_free knows how many bytes leave.
+ * max_align_t keeps the user pointer as aligned as SDL_malloc's. */
+typedef union br_alloc_header {
+    size_t      size;
+    max_align_t align;
+} br_alloc_header;
+
+// ponytail: process-wide counters under one spinlock (the heap itself is process-wide);
+// per-engine budgets would need an engine pointer in every br_alloc call.
+static SDL_SpinLock br_memory_lock;
+static br_memory_stats br_memory_counters;
+
+static void br_memory_count(size_t added, size_t removed, int64_t blocks, bool new_block)
+{
+    SDL_LockSpinlock(&br_memory_lock);
+    br_memory_counters.live_bytes += added;
+    br_memory_counters.live_bytes -= removed;
+    br_memory_counters.live_allocations = (uint64_t)((int64_t)br_memory_counters.live_allocations + blocks);
+    if (new_block) {
+        br_memory_counters.total_allocations += 1;
+    }
+    if (br_memory_counters.live_bytes > br_memory_counters.peak_bytes) {
+        br_memory_counters.peak_bytes = br_memory_counters.live_bytes;
+    }
+    SDL_UnlockSpinlock(&br_memory_lock);
+}
+
+void br_memory_get_stats(br_memory_stats *out)
+{
+    SDL_LockSpinlock(&br_memory_lock);
+    *out = br_memory_counters;
+    SDL_UnlockSpinlock(&br_memory_lock);
+}
+
 void *br_alloc(size_t size)
 {
-    void *p = SDL_calloc(1, size > 0 ? size : 1);
-    if (p == NULL) {
-        br_log_error("out of memory allocating %zu bytes", size);
+    br_alloc_header *h = NULL;
+    if (size <= SIZE_MAX - sizeof(br_alloc_header)) {
+        h = SDL_calloc(1, sizeof(br_alloc_header) + size);
     }
-    return p;
+    if (h == NULL) {
+        br_log_error("out of memory allocating %zu bytes", size);
+        return NULL;
+    }
+    h->size = size;
+    br_memory_count(size, 0, 1, true);
+    return h + 1;
 }
 
 void *br_realloc(void *ptr, size_t size)
 {
-    void *p = SDL_realloc(ptr, size > 0 ? size : 1);
-    if (p == NULL) {
-        br_log_error("out of memory reallocating %zu bytes", size);
+    if (ptr == NULL) {
+        return br_alloc(size);
     }
-    return p;
+    br_alloc_header *old = (br_alloc_header *)ptr - 1;
+    size_t old_size = old->size;
+    br_alloc_header *h = NULL;
+    if (size <= SIZE_MAX - sizeof(br_alloc_header)) {
+        h = SDL_realloc(old, sizeof(br_alloc_header) + size);
+    }
+    if (h == NULL) {
+        br_log_error("out of memory reallocating %zu bytes", size);
+        return NULL;
+    }
+    h->size = size;
+    br_memory_count(size, old_size, 0, false);
+    return h + 1;
 }
 
 void br_free(void *ptr)
 {
-    SDL_free(ptr);
+    if (ptr == NULL) {
+        return;
+    }
+    br_alloc_header *h = (br_alloc_header *)ptr - 1;
+    br_memory_count(0, h->size, -1, false);
+    SDL_free(h);
+}
+
+void *br_allocator_alloc(const br_allocator *a, size_t size)
+{
+    return a != NULL ? a->alloc(a->user, size) : br_alloc(size);
+}
+
+void *br_allocator_realloc(const br_allocator *a, void *ptr, size_t old_size, size_t new_size)
+{
+    return a != NULL ? a->realloc(a->user, ptr, old_size, new_size) : br_realloc(ptr, new_size);
+}
+
+void br_allocator_free(const br_allocator *a, void *ptr)
+{
+    if (a != NULL) {
+        a->free(a->user, ptr);
+    } else {
+        br_free(ptr);
+    }
 }
 
 static void br_log_v(SDL_LogPriority priority, const char *fmt, va_list args)

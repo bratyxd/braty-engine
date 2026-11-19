@@ -23,13 +23,27 @@ bool br_file_read_all(br_engine *e, const char *path, void **bytes, size_t *size
     if (!br_file_resolve(e, path, full, sizeof(full))) {
         return false;
     }
-    /* SDL_LoadFile NUL-terminates the data, so text formats can be parsed in place. */
-    void *data = SDL_LoadFile(full, size);
-    if (data == NULL) {
+    /* Read into a br_alloc block (callers br_free it); NUL-terminated so text parses in place. */
+    SDL_IOStream *io = SDL_IOFromFile(full, "rb");
+    Sint64 length = io != NULL ? SDL_GetIOSize(io) : -1;
+    if (length < 0) {
         br_log_error("cannot read '%s': %s", full, SDL_GetError());
+        if (io != NULL) {
+            SDL_CloseIO(io);
+        }
         return false;
     }
+    uint8_t *data = br_alloc((size_t)length + 1);
+    size_t got = data != NULL ? SDL_ReadIO(io, data, (size_t)length) : 0;
+    SDL_CloseIO(io);
+    if (data == NULL || got != (size_t)length) {
+        br_log_error("cannot read '%s': %s", full, SDL_GetError());
+        br_free(data);
+        return false;
+    }
+    data[length] = 0;
     *bytes = data;
+    *size = (size_t)length;
     return true;
 }
 

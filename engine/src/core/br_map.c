@@ -10,23 +10,39 @@ static uint8_t *br_map_value_at(const br_map *m, uint32_t slot)
 
 void br_map_init(br_map *m, uint32_t value_size)
 {
+    br_map_init_with_allocator(m, value_size, NULL);
+}
+
+void br_map_init_with_allocator(br_map *m, uint32_t value_size, const br_allocator *allocator)
+{
     m->keys = NULL;
     m->hashes = NULL;
     m->values = NULL;
     m->capacity = 0;
     m->count = 0;
     m->value_size = value_size;
+    m->allocator = allocator;
+}
+
+static char *br_map_copy_key(const br_map *m, const char *key)
+{
+    size_t len = SDL_strlen(key);
+    char *copy = br_allocator_alloc(m->allocator, len + 1);
+    if (copy != NULL) {
+        SDL_memcpy(copy, key, len + 1);
+    }
+    return copy;
 }
 
 void br_map_free(br_map *m)
 {
     for (uint32_t i = 0; i < m->capacity; i++) {
-        br_free(m->keys[i]);
+        br_allocator_free(m->allocator, m->keys[i]);
     }
-    br_free(m->keys);
-    br_free(m->hashes);
-    br_free(m->values);
-    br_map_init(m, m->value_size);
+    br_allocator_free(m->allocator, m->keys);
+    br_allocator_free(m->allocator, m->hashes);
+    br_allocator_free(m->allocator, m->values);
+    br_map_init_with_allocator(m, m->value_size, m->allocator);
 }
 
 /* Returns the slot holding `key`, or the empty slot where it would go. Capacity must be > 0. */
@@ -47,14 +63,14 @@ static bool br_map_grow(br_map *m)
 {
     uint32_t new_capacity = m->capacity > 0 ? m->capacity * 2 : 16;
     br_map bigger;
-    br_map_init(&bigger, m->value_size);
-    bigger.keys = br_alloc(sizeof(char *) * new_capacity);
-    bigger.hashes = br_alloc(sizeof(uint32_t) * new_capacity);
-    bigger.values = br_alloc((size_t)new_capacity * m->value_size);
+    br_map_init_with_allocator(&bigger, m->value_size, m->allocator);
+    bigger.keys = br_allocator_alloc(m->allocator, sizeof(char *) * new_capacity);
+    bigger.hashes = br_allocator_alloc(m->allocator, sizeof(uint32_t) * new_capacity);
+    bigger.values = br_allocator_alloc(m->allocator, (size_t)new_capacity * m->value_size);
     if (bigger.keys == NULL || bigger.hashes == NULL || bigger.values == NULL) {
-        br_free(bigger.keys);
-        br_free(bigger.hashes);
-        br_free(bigger.values);
+        br_allocator_free(m->allocator, bigger.keys);
+        br_allocator_free(m->allocator, bigger.hashes);
+        br_allocator_free(m->allocator, bigger.values);
         return false;
     }
     bigger.capacity = new_capacity;
@@ -68,9 +84,9 @@ static bool br_map_grow(br_map *m)
         SDL_memcpy(br_map_value_at(&bigger, slot), br_map_value_at(m, i), m->value_size);
         bigger.count += 1;
     }
-    br_free(m->keys);
-    br_free(m->hashes);
-    br_free(m->values);
+    br_allocator_free(m->allocator, m->keys);
+    br_allocator_free(m->allocator, m->hashes);
+    br_allocator_free(m->allocator, m->values);
     *m = bigger;
     return true;
 }
@@ -86,7 +102,7 @@ void *br_map_set(br_map *m, const char *key, const void *value)
     uint32_t hash = br_str_hash(key);
     uint32_t slot = br_map_find_slot(m, key, hash);
     if (m->keys[slot] == NULL) {
-        m->keys[slot] = br_strdup(key);
+        m->keys[slot] = br_map_copy_key(m, key);
         if (m->keys[slot] == NULL) {
             return NULL;
         }
@@ -124,7 +140,7 @@ bool br_map_remove(br_map *m, const char *key)
     if (m->keys[hole] == NULL) {
         return false;
     }
-    br_free(m->keys[hole]);
+    br_allocator_free(m->allocator, m->keys[hole]);
     m->keys[hole] = NULL;
     m->count -= 1;
     /* Backward shift: pull later entries of the same probe run into the hole. */
@@ -149,7 +165,7 @@ bool br_map_remove(br_map *m, const char *key)
 void br_map_clear(br_map *m)
 {
     for (uint32_t i = 0; i < m->capacity; i++) {
-        br_free(m->keys[i]);
+        br_allocator_free(m->allocator, m->keys[i]);
         m->keys[i] = NULL;
     }
     m->count = 0;

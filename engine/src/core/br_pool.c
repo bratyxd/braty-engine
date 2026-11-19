@@ -5,10 +5,15 @@
 
 void br_pool_init(br_pool *p, uint32_t elem_size)
 {
-    br_array_init(&p->items, elem_size);
-    br_array_init(&p->generations, sizeof(uint32_t));
-    br_array_init(&p->alive, sizeof(uint8_t));
-    br_array_init(&p->free_slots, sizeof(uint32_t));
+    br_pool_init_with_allocator(p, elem_size, NULL);
+}
+
+void br_pool_init_with_allocator(br_pool *p, uint32_t elem_size, const br_allocator *allocator)
+{
+    br_array_init_with_allocator(&p->items, elem_size, allocator);
+    br_array_init_with_allocator(&p->generations, sizeof(uint32_t), allocator);
+    br_array_init_with_allocator(&p->alive, sizeof(uint8_t), allocator);
+    br_array_init_with_allocator(&p->free_slots, sizeof(uint32_t), allocator);
     p->alive_count = 0;
 }
 

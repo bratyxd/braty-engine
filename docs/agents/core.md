@@ -2,14 +2,17 @@
 
 Header: `engine/include/braty/br_core.h`. Source: `engine/src/core/`. Test: `tests/test_core.c`.
 
-Plain C over SDL. No window or GPU needed. Containers own their memory and are freed by their
+Plain C over SDL. No window or GPU needed. Arenas (linear, stack, pool, scratch, per-frame):
+`docs/agents/arena.md`. Containers own their memory and are freed by their
 `*_free` function.
 
 ## Functions you actually need
 
 | Function | What for |
 |---|---|
-| `br_alloc(size)` / `br_free(p)` | Zeroed allocation / free (SDL allocator). |
+| `br_alloc(size)` / `br_free(p)` | Zeroed allocation / free (SDL allocator, counted). |
+| `br_memory_get_stats(&s)` | Heap counters (live blocks/bytes, total allocations, peak). |
+| `br_array/pool/map_init_with_allocator(..., alloc)` | Container on a `br_allocator` (an arena); NULL = heap. Arenas: `docs/agents/arena.md`. |
 | `br_log_info/warn/error(fmt, ...)` | Logging. Call `br_log_error` before returning failure. |
 | `br_array_init/push/at/remove_swap/free` | Growable array of fixed-size elements. |
 | `br_pool_alloc/get/release` | Slots addressed by (index, generation); stale handles return NULL. |
@@ -54,3 +57,5 @@ if (br_file_read_all(e, "data/level1.json", &bytes, &size)) {
   through. Never use `fopen`: files go through SDL so consoles work.
 - `br_save_*` blocks until the storage is ready (instant on desktop; see the `ponytail:` note).
 - `BR_ARRAY_COUNT(a)` is the only helper macro.
+- `br_alloc` blocks carry a size header (for the stats): pair `br_alloc`/`br_realloc`/`br_strdup`/
+  `br_file_read_all`/`br_save_read` with `br_free` only, and SDL/third-party memory with its own free.
