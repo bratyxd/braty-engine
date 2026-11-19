@@ -106,6 +106,10 @@ typedef struct br_render_callback_info {
     br_blend_mode         blend;
     bool                  stencil_test;  /* inside a stencil mask: test EQUAL stencil_ref */
     uint8_t               stencil_ref;
+    bool                  scissor_on;    /* inside a scissor mask: clip to `scissor` */
+    SDL_Rect              scissor;       /* target pixels, clamped to the target (whole target if !scissor_on).
+                                          * In-pass callbacks start with it set; reset it after
+                                          * SDL_SetGPUScissor calls of your own. */
 } br_render_callback_info;
 typedef void (*br_render_callback_fn)(br_engine *e, const br_render_callback_info *info, void *user);
 /* Pushes a callback run during replay. own_passes = false: draw into info->pass.

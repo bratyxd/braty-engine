@@ -80,6 +80,8 @@ br_render_push_custom(rc, &draw);
 `own_passes = true`: the engine ends its pass, you run any passes on `info->cmd` (3D scene into an
 HDR target, ping-pong blurs), the engine reopens its target with contents kept.
 Allocate transient vertices during collect (in the render callback), never in the callback.
+Scissor masks: `info->scissor_on` / `info->scissor` (target pixels, clamped). In-pass callbacks
+start with that scissor already set; if you call `SDL_SetGPUScissor` yourself, pass `&info->scissor`.
 
 ```c
 /* in the node's render callback (PRE_RENDER) */

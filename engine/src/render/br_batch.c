@@ -536,6 +536,18 @@ static void br_replay_callback(br_replay *rp, const br_draw_cmd *c)
     info.blend = c->state.blend;
     info.stencil_test = c->state.stencil == BR_STENCIL_TEST;
     info.stencil_ref = c->state.stencil_ref;
+    SDL_Rect full = { 0, 0, (int)rp->rt->width, (int)rp->rt->height };
+    info.scissor = full;
+    if (c->state.scissor_on) {
+        /* clamp like batches do; an empty clip leaves nothing for an in-pass callback to draw */
+        info.scissor_on = true;
+        if (!SDL_GetRectIntersection(&c->state.scissor, &full, &info.scissor)) {
+            SDL_zero(info.scissor);
+            if (!c->own_passes) {
+                return;
+            }
+        }
+    }
     if (c->own_passes) {
         if (rp->pass != NULL) {
             SDL_EndGPURenderPass(rp->pass);
@@ -545,6 +557,7 @@ static void br_replay_callback(br_replay *rp, const br_draw_cmd *c)
         br_replay_begin(rp, rp->target, false, br_color_make(0, 0, 0, 0)); /* reopen, keeping contents */
     } else {
         info.pass = rp->pass;
+        SDL_SetGPUScissor(rp->pass, &info.scissor);
         c->fn(rp->e, &info, c->user);
         rp->bound = NULL; /* the callback may have bound its own pipeline */
     }
