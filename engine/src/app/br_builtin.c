@@ -1,8 +1,20 @@
-/* Registers the built-in modules (node types, loaders, engine systems) on every new engine.
- * Task 1 has none yet; Task 2 owns this file and adds one br_<module>_register(e) call per module. */
+/* Registers the built-in modules on every new engine, in dependency order.
+ *
+ * Owned by Task 2. Each later module fills its own br_<module>_register; nobody edits this
+ * list again. Shutdown callbacks run in reverse order of registration, so a module may use
+ * any module registered before it until its own shutdown runs.
+ */
 #include "app/br_engine_internal.h"
+#include "braty/braty.h"
+#include "render/br_render_internal.h"
+#include "scene/br_scene_internal.h"
 
 void br_builtin_register(br_engine *e)
 {
-    (void)e;
+    br_scene_register(e);          /* node table, components, transform/sort/cull systems */
+    br_render_register(e);         /* textures, sprite type, batcher, collect/submit systems */
+    br_assets_register(e);         /* asset cache (after render: unloads textures before render frees them) */
+    br_texture_register_loader(e); /* png/jpg/... -> br_texture */
+    /* registered last so it runs first at shutdown: every node's on_destroy still sees its module */
+    br_engine_on_shutdown(e, br_scene_shutdown_nodes, NULL);
 }
