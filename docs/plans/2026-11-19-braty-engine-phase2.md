@@ -49,6 +49,8 @@ User request, condensed, with the decision taken for each:
 9. **Intuitive, performant animation for 2D and 3D.** One clip format, one animator, plus
    one-line tweens.
 10. **Second sample game using the new features**, Kenney assets allowed.
+11. **Agents can play-test games:** scripted and interactive input, screenshots, state queries,
+    documented in the README (Task 14 `br_playtest`; both sample games ship a playtest script).
 
 ## Global Constraints (additions to Phase 1's)
 
@@ -110,6 +112,42 @@ Order: 14 -> {15, 16, 17 in parallel} -> 18 -> 19 -> 20.
       RNG) and compares the PNG with `tests/golden/<example>.png` within a per-pixel tolerance;
       writes a diff image on failure. Registered in CTest with label `golden`; skipped (not
       failed) when no GPU device can be created. Commit goldens for every existing example.
+- [ ] **Agent playtesting** (user requirement: agents must be able to play-test a game easily —
+      enter input, take screenshots, read state). Module `br_playtest`
+      (`engine/src/playtest/**`, `br_playtest.h`, `docs/agents/playtest.md`, `docs/PLAYTESTING.md`,
+      `tests/test_playtest.c`), available in every `br_app` executable, off unless requested:
+      - **Script mode:** `game --playtest script.json`. Steps run in order on deterministic
+        frames: `wait` (frames or seconds), `key` / `mouse` / `touch` / `gamepad` (down, up, tap,
+        move, axis), `action` (press a named input action), `text` (type a string), `click`
+        (by node label, engine resolves its screen position), `screenshot` (file),
+        `dump` (scene tree + components + chosen engine stats to JSON), `expect` (assert a node
+        property / component field / log line; failure = non-zero exit with a clear message),
+        `wait_until` (condition with timeout), `log`, `quit`. Input goes through the same
+        `br_input_inject_*` path as real devices.
+      - **Interactive mode:** `game --playtest-stdin`. The same commands, one JSON object per
+        line on stdin, one JSON reply per line on stdout (`{"ok":true,"frame":120,...}`); the
+        game advances only when told (`{"cmd":"step","frames":10}`), so an agent can look at a
+        screenshot, decide, and send the next input. Desktop-only stdin code isolated in one
+        file behind a CMake option `BRATY_PLAYTEST_STDIN` (on by default on desktop).
+      - **Queries:** `{"cmd":"find","label":"player"}`, `get` / `set` any node property or
+        component field by path (`"player:velocity.x"`), `list` nodes by type/component, read
+        the last N log lines, current scene name, FPS, draw-call stats. `set` lets an agent
+        force states that are hard to reach by playing.
+      - **Record and replay:** `--record out.json` writes real input of a human session as a
+        script; replaying it under `--deterministic` reproduces the run, so a bug report or a
+        golden test is one file.
+      - **C API** for the same things (`br_playtest_run_script`, `br_playtest_step`,
+        `br_playtest_screenshot`, `br_playtest_dump_json`, `br_playtest_get/set`), so tests
+        written in C can drive a game headless.
+      - `tools/playtest.py`: small stdlib-only helper that launches a game in interactive mode
+        and exposes `step()`, `key()`, `click()`, `screenshot()`, `get()`; usable from a shell
+        one-liner. The golden-image harness is built on script mode.
+      - `docs/PLAYTESTING.md` and a "Play-testing a game" section in `README.md` and
+        `AGENTS.md`: a copy-paste recipe ("build, run 60 frames, press Space, screenshot, read
+        the player's position"), the full command reference, and how to turn a session into a
+        regression test.
+      - Tests: script parse errors with line/step number, `expect` failure exit code, record ->
+        replay gives identical dumps, interactive protocol round trip through the C API.
 - [ ] `docs/TESTING.md` + `AGENTS.md` rule: how to run all tests, how to add a unit test, how to
       add/update a golden, when an update is legitimate.
 - [ ] Tests: each arena type (alignment, overflow, reset, marker order, pool reuse); pacing
@@ -257,7 +295,8 @@ takes over `engine/src/three_d/br_anim3d*.c`, `tests/test_animation.c`, `tests/t
       area, scene switching with asset groups and a loading scene, a frame arena and a
       level-lifetime arena, vsync + FPS-cap options in a settings menu, keyboard + gamepad.
 - [ ] C code is components + systems only; everything else is data files.
-- [ ] Golden-image test of the menu and of a deterministic gameplay frame.
+- [ ] Golden-image test of the menu and of a deterministic gameplay frame, driven by a
+      committed playtest script that plays a full short round; add one for `star_courier` too.
 - [ ] Docs updated; `AGENTS.md` gains "how to make a game with Braty" walkthrough pointing at
       both samples.
 
