@@ -155,6 +155,19 @@ uint64_t br_engine_skipped_frames(br_engine *e)
     return e->skipped_frames;
 }
 
+void *br_engine_app_user(br_engine *e)
+{
+    return e->app_user;
+}
+
+char **br_engine_args(br_engine *e, int *argc)
+{
+    if (argc != NULL) {
+        *argc = e->argc;
+    }
+    return e->argv;
+}
+
 void br_engine_add_event_handler(br_engine *e, br_event_fn fn, void *user)
 {
     br_event_handler_entry entry = { fn, user };

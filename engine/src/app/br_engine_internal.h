@@ -65,6 +65,9 @@ struct br_engine {
     uint64_t frame_limit;
     char    *screenshot_path;
     void   (*game_shutdown)(br_engine *e);
+    void    *app_user;              /* br_app_desc.user */
+    int      argc;                  /* the app's command line (SDL owns argv) */
+    char   **argv;
 
     /* module state: one pointer per later module, NULL until that module registers */
     struct br_scene_state     *scene;

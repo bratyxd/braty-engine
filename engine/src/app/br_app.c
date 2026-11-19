@@ -7,6 +7,7 @@ typedef struct br_app_args {
     uint64_t    frames;
     const char *screenshot;
     const char *gpu_driver;
+    bool        headless;
 } br_app_args;
 
 static void br_app_parse_args(int argc, char **argv, br_app_args *out)
@@ -20,6 +21,8 @@ static void br_app_parse_args(int argc, char **argv, br_app_args *out)
             out->screenshot = argv[++i];
         } else if (SDL_strcmp(argv[i], "--gpu-driver") == 0 && has_value) {
             out->gpu_driver = argv[++i];
+        } else if (SDL_strcmp(argv[i], "--headless") == 0) {
+            out->headless = true;
         }
         /* anything else belongs to the game (it sees argv in br_main) */
     }
@@ -82,7 +85,10 @@ SDL_AppResult br_app_init(void **appstate, const br_app_desc *desc, int argc, ch
     *appstate = e;
     e->frame_limit = args.frames;
     e->screenshot_path = br_strdup(args.screenshot);
-    if (!br_engine_open_window(e, width, height, args.gpu_driver)) {
+    e->app_user = desc->user;
+    e->argc = argc;
+    e->argv = argv;
+    if (!args.headless && !br_engine_open_window(e, width, height, args.gpu_driver)) {
         return SDL_APP_FAILURE;
     }
     if (desc->init != NULL && !desc->init(e)) {
@@ -111,7 +117,7 @@ SDL_AppResult br_app_iterate(void *appstate)
         dt = br_ticker_compute_delta(1.0f / 60.0f, e->ticker.min_fps, e->ticker.speed);
     }
     bool presented = br_engine_step(e, dt);
-    if (!presented) {
+    if (!presented && e->window != NULL) {
         // ponytail: fixed 16 ms nap while minimised so we do not spin a core; wake on SDL_EVENT_WINDOW_RESTORED if latency matters.
         SDL_Delay(16);
     }

@@ -14,6 +14,8 @@
  *   --frames N            run N frames, then exit 0
  *   --screenshot out.png  with --frames: write the last frame as PNG before exiting
  *   --gpu-driver NAME     vulkan | direct3d12 | metal (default: SDL's choice)
+ *   --headless            no window and no GPU: systems run, nothing is drawn
+ * The game reads the whole command line with br_engine_args (or in br_main).
  */
 #ifndef BR_APP_H
 #define BR_APP_H
@@ -37,6 +39,7 @@ typedef struct br_app_desc {
     const char *asset_root;               /* relative to the executable directory, or absolute */
     bool (*init)(br_engine *e);           /* register components, systems, load first scene */
     void (*shutdown)(br_engine *e);
+    void *user;                           /* for the game: br_engine_app_user(e) in init and later */
 } br_app_desc;
 
 /* The only function a game must define (include braty_main.h once in that file). */
@@ -104,6 +107,10 @@ float br_engine_pixel_density(br_engine *e);
 const char *br_engine_asset_root(br_engine *e);
 /* Frames that were stepped but not rendered because no swapchain texture was available. */
 uint64_t br_engine_skipped_frames(br_engine *e);
+/* br_app_desc.user of the running app (NULL for engines made with br_engine_create). */
+void *br_engine_app_user(br_engine *e);
+/* The app's command line, argv[0] included (NULL / 0 for br_engine_create). argc may be NULL. */
+char **br_engine_args(br_engine *e, int *argc);
 
 /* Callback for every SDL event (input modules use this). */
 typedef void (*br_event_fn)(br_engine *e, const SDL_Event *event, void *user);
