@@ -10,11 +10,15 @@
  * layer 4 that only it draws. The UI camera (depth 10, layer 2, clear nothing) shows panels
  * anchored to the corners (camera.anchor) and the minimap sprite at the top centre.
  * Every camera keeps its vertical extent at any window size; the horizontal extent follows.
+ *
+ *   --mode3d   the same UI over 3D cameras instead: a perspective camera (camera.orbit) and an
+ *              orthographic top-down camera in a corner viewport, both showing one 3D scene.
  */
 #include "braty/braty_main.h"
 
 static int g_width = 1280;
 static int g_height = 720;
+static bool g_mode3d = false;
 
 enum { WORLD_W = 2400, WORLD_H = 1400, TILE = 100 };
 #define LAYER_WORLD 1u
@@ -163,6 +167,15 @@ static void build_ui(demo_state *s, br_engine *e)
     br_node_set_position(e, s->ui_camera, 640.0f, 360.0f);
     br_node_add_child(e, br_scene_root(e), s->ui_camera);
 
+    char size[64];
+    SDL_snprintf(size, sizeof(size), "%d x %d", g_width, g_height);
+    if (g_mode3d) {
+        make_panel(e, s, "3D camera", br_vec2_make(0.0f, 0.0f), 150.0f, 44.0f);
+        make_panel(e, s, "drag: orbit", br_vec2_make(1.0f, 0.0f), 150.0f, 44.0f);
+        make_panel(e, s, "ortho map", br_vec2_make(0.0f, 1.0f), 170.0f, 44.0f);
+        make_panel(e, s, size, br_vec2_make(1.0f, 1.0f), 170.0f, 44.0f);
+        return;
+    }
     /* split line: anchored to the top centre, 720 units tall = the whole UI height */
     br_node line = br_graphics_create(e, NULL);
     br_graphics_rect(br_graphics_context_of(e, line), -3.0f, 0.0f, 6.0f, 720.0f);
@@ -173,8 +186,6 @@ static void build_ui(demo_state *s, br_engine *e)
     a->camera = s->ui_camera;
     a->anchor = br_vec2_make(0.5f, 0.0f);
 
-    char size[64];
-    SDL_snprintf(size, sizeof(size), "%d x %d", g_width, g_height);
     make_panel(e, s, "Player 1", br_vec2_make(0.0f, 0.0f), 150.0f, 44.0f);
     make_panel(e, s, "Player 2", br_vec2_make(1.0f, 0.0f), 150.0f, 44.0f);
     make_panel(e, s, "split screen", br_vec2_make(0.0f, 1.0f), 170.0f, 44.0f);
@@ -191,11 +202,61 @@ static void build_ui(demo_state *s, br_engine *e)
     a->offset = br_vec2_make(0.0f, 12.0f);
 }
 
+/* --mode3d: one 3D scene, two 3D cameras sharing it. */
+static void build_3d(br_engine *e)
+{
+    br_node3d root = br_node3d_create_group(e);
+    br_material3d_desc md = br_material3d_default(BR_MATERIAL3D_PBR);
+    md.base_color = br_color_srgb_to_linear(hex(0x6E9C55));
+    br_node3d ground = br_mesh3d_create(e, br_geometry3d_plane(e, 30.0f, 30.0f, 1, 1), br_material3d_create(e, &md));
+    br_mesh3d_get(e, ground)->cast_shadows = false;
+    br_node3d_add_child(e, root, ground);
+    uint32_t colors[3] = { 0xE63946, 0x3A86FF, 0xF4A261 };
+    for (int i = 0; i < 9; i++) {
+        md.base_color = br_color_srgb_to_linear(hex(colors[i % 3]));
+        br_node3d cube = br_mesh3d_create(e, br_geometry3d_cube(e, br_vec3_make(1.0f, 1.0f + (float)(i % 3), 1.0f)),
+                                          br_material3d_create(e, &md));
+        br_node3d_set_position(e, cube, br_vec3_make((float)(i % 3) * 3.0f - 3.0f, 0.5f + (float)(i % 3) * 0.5f,
+                                                     (float)(i / 3) * 3.0f - 3.0f));
+        br_node3d_add_child(e, root, cube);
+    }
+    br_light3d sun = br_light3d_default(BR_LIGHT3D_DIRECTIONAL);
+    sun.intensity = 2.0f;
+    sun.cast_shadows = true;
+    br_node3d sun_node = br_light3d_create(e, &sun);
+    br_node3d_add_child(e, root, sun_node);
+    br_node3d_set_position(e, sun_node, br_vec3_make(-5.0f, 10.0f, 6.0f));
+    br_node3d_look_at(e, sun_node, br_vec3_make(0.0f, 0.0f, 0.0f), br_vec3_make(0.0f, 1.0f, 0.0f));
+
+    br_camera main3d = br_camera_default_3d();         /* 50 degrees vertical at any aspect */
+    main3d.field_of_view = 50.0f * BR_DEG_TO_RAD;
+    main3d.background_color = hex(0x8EC5F0);
+    br_node cam = br_camera_create_3d(e, root, &main3d);
+    br_view3d_set_environment(e, br_camera_view3d(e, cam), br_color_srgb_to_linear(hex(0xBFD9F2)),
+                              br_color_srgb_to_linear(hex(0x5A4A3A)), 0.4f);
+    br_orbit_camera *orbit = br_component_add(e, cam, br_camera_orbit_component(e));
+    *orbit = br_orbit_camera_make(br_vec3_make(0.0f, 0.5f, 0.0f), 14.0f, 0.6f, 0.5f);
+
+    br_camera top = br_camera_default_3d();            /* top-down map, 8 world units half height */
+    top.projection = BR_CAMERA_ORTHOGRAPHIC;
+    top.orthographic_size = 8.0f;
+    top.viewport_rect = br_rect_make(0.02f, 0.3f, 0.3f, 0.34f);
+    top.depth = 1.0f;
+    top.background_color = hex(0x10131C);
+    br_node map = br_camera_create_3d(e, root, &top);
+    br_node3d rig = br_camera_node3d(e, map);
+    br_node3d_set_position(e, rig, br_vec3_make(0.0f, 20.0f, 0.0f));
+    br_node3d_look_at(e, rig, br_vec3_make(0.0f, 0.0f, 0.0f), br_vec3_make(0.0f, 0.0f, -1.0f));
+}
+
 static void demo_system(br_engine *e, float dt, void *user)
 {
     demo_state *s = user;
     s->time += dt;
     s->frame++;
+    if (g_mode3d) {
+        return;
+    }
     for (int i = 0; i < 2; i++) {
         br_vec2 p = player_position(i, s->time);
         br_node_set_position(e, s->players[i], p.x, p.y);
@@ -220,6 +281,12 @@ static bool demo_init(br_engine *e)
         return false;
     }
     br_engine_on_shutdown(e, demo_shutdown, s);
+    if (g_mode3d) {
+        build_3d(e);
+        build_ui(s, e);
+        br_system_add(e, "demo.move", BR_PHASE_UPDATE, 0, demo_system, s);
+        return true;
+    }
     build_world(s, e);
     for (int i = 0; i < 2; i++) {
         br_vec2 p = player_position(i, 0.0f);
@@ -247,7 +314,9 @@ static bool demo_init(br_engine *e)
 br_app_desc br_main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
-        if (SDL_strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
+        if (SDL_strcmp(argv[i], "--mode3d") == 0) {
+            g_mode3d = true;
+        } else if (SDL_strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
             int w = 0;
             int h = 0;
             if (SDL_sscanf(argv[++i], "%dx%d", &w, &h) == 2 && w > 0 && h > 0) {
