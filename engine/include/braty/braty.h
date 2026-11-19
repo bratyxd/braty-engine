@@ -65,4 +65,11 @@
 #include "braty/br_gltf.h"
 #include "braty/br_anim3d.h"
 
+/* easing, random, noise, splines, component queries (Task 14c) */
+#include "braty/br_ease.h"
+#include "braty/br_random.h"
+#include "braty/br_noise.h"
+#include "braty/br_spline.h"
+#include "braty/br_query.h"
+
 #endif
