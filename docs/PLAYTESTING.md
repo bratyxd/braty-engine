@@ -133,9 +133,12 @@ so `connect` is only needed for a specific family. A pad of a recorded session c
 | `ship:pilot.carrying` | Component `pilot` of node `ship`, field `carrying` (fields listed in the game's `br_field_desc`). |
 | `ship:position.x` | One element: `.x .y .z .w` (or `.0 .1 ...`). Works for `get` and `set`. |
 | `game:score` | A struct the game exposed with `br_playtest_expose(e, "game", fields, count, &state)`. |
+| `json_view/json_fox:position` | 3D node `json_fox` inside the `view3d` labelled `json_view` (`*/json_fox` = any view; an unlabelled view is `/json_fox`). Properties: `position`, `scale`, `rotation` (quaternion [x, y, z, w]), `euler` (radians, X then Y then Z), `visible`, `world_position`, `screen_position` (window coordinates, `null` behind the camera), `label`, `type`, `children`, `exists`; `.x` elements as above. |
 
-`type`, `children`, `world_position`, `bounds` and `exists` are read-only. 3D nodes inside a
-`view3d` are not addressable yet.
+`type`, `children`, `world_position`, `bounds`, `screen_position` and `exists` are read-only.
+3D nodes work with `get`, `set`, `expect`, `wait_until`, `find` and `click` (`{"cmd": "click",
+"label": "/torus"}` clicks where the node's origin is on screen, so the view's 3D pointer events
+fire); `dump` lists the 3D subtree of every view under `"views3d"`.
 
 ## A game's side: exposing state
 

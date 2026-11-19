@@ -28,7 +28,9 @@
  * Paths: "label:property" (position, x, y, scale, rotation, alpha, visible, tint, z_index,
  * world_position, bounds, type, children, exists, or any key the node's scene-file form has,
  * e.g. "text"), "label:component.field", a trailing ".x"/".y"/".z"/".w" or ".0", ".1"... picks
- * one element, and "name:field" for structs a game exposes with br_playtest_expose.
+ * one element, "name:field" for structs a game exposes with br_playtest_expose, and
+ * "view/node:property" for a 3D node inside the view3d labelled `view` ("*" = any view; position,
+ * scale, rotation, euler, visible, world_position, screen_position...).
  */
 #ifndef BR_PLAYTEST_H
 #define BR_PLAYTEST_H

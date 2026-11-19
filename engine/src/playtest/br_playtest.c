@@ -573,14 +573,16 @@ static void br_pt_reply_add(cJSON *reply, const char *key, cJSON *value)
 static br_pt_result br_pt_exec_find(br_engine *e, const cJSON *cmd, cJSON *reply)
 {
     const char *label = br_pt_string(cmd, "label");
-    const char *props[] = { "type", "position", "world_position", "bounds", "visible" };
+    const char *props2d[] = { "type", "position", "world_position", "bounds", "visible" };
+    const char *props3d[] = { "type", "position", "world_position", "screen_position", "visible" };
+    const char **props = SDL_strchr(label, '/') != NULL ? props3d : props2d; /* "view/node": a 3D node */
     char path[256];
     SDL_snprintf(path, sizeof(path), "%s:exists", label);
     cJSON *exists = br_playtest_query_get(e, path);
     bool found = cJSON_IsTrue(exists);
     cJSON_Delete(exists);
     br_pt_reply_add(reply, "found", cJSON_CreateBool(found));
-    for (uint32_t i = 0; found && i < BR_ARRAY_COUNT(props); i++) {
+    for (uint32_t i = 0; found && i < BR_ARRAY_COUNT(props2d); i++) {
         SDL_snprintf(path, sizeof(path), "%s:%s", label, props[i]);
         cJSON *v = br_playtest_query_get(e, path);
         if (v != NULL) {

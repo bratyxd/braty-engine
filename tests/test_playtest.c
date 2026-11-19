@@ -335,6 +335,65 @@ static void test_gamepad(void)
     br_engine_destroy(e);
 }
 
+/* ---- 3D nodes inside a view3d: "view/node:property" for get, set, expect, find, click, dump */
+
+static int s_cube_clicks;
+
+static void on_cube_click(br_engine *e, br_event3d *ev, void *user)
+{
+    (void)e;
+    (void)ev;
+    (void)user;
+    s_cube_clicks++;
+}
+
+static void test_3d_paths(void)
+{
+    br_engine *e = make_game();
+    br_node view = br_view3d_create(e, 200.0f, 200.0f);
+    br_node_set_label(e, view, "world");
+    br_node_add_child(e, br_scene_root(e), view);
+    br_node3d cam = br_view3d_camera(e, view);
+    br_node3d_set_position(e, cam, br_vec3_make(0.0f, 0.0f, 10.0f));
+    br_node3d_look_at(e, cam, br_vec3_make(0.0f, 0.0f, 0.0f), br_vec3_make(0.0f, 1.0f, 0.0f));
+    br_material3d_desc md = br_material3d_default(BR_MATERIAL3D_PBR);
+    br_node3d group = br_node3d_create_group(e);
+    br_node3d_set_label(e, group, "props");
+    br_node3d_add_child(e, br_view3d_root(e, view), group);
+    br_node3d cube = br_mesh3d_create(e, br_geometry3d_cube(e, br_vec3_make(2.0f, 2.0f, 2.0f)), br_material3d_create(e, &md));
+    br_node3d_set_label(e, cube, "cube");
+    br_node3d_set_position(e, cube, br_vec3_make(1.0f, 2.0f, 3.0f));
+    br_node3d_add_child(e, group, cube);
+    br_node3d_on(e, cube, BR_EVENT_CLICK, on_cube_click, NULL);
+
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"world/cube:position\"}", "\"value\":[1,2,3]"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"*/cube:position.z\"}", "\"value\":3")); /* any view */
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"world/props:children\"}", "\"value\":1"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"set\",\"path\":\"world/cube:position.y\",\"value\":5}", "\"ok\":true"));
+    BR_CHECK(br_node3d_position(e, cube).y == 5.0f && br_node3d_position(e, cube).x == 1.0f);
+    BR_CHECK(reply_has(e, "{\"cmd\":\"set\",\"path\":\"world/cube:position\",\"value\":[0,0,0]}", "\"ok\":true"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"set\",\"path\":\"world/cube:euler\",\"value\":[0,1.5,0]}", "\"ok\":true"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"expect\",\"path\":\"world/cube:euler.y\",\"value\":1.5}", "\"ok\":true"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"set\",\"path\":\"world/cube:euler\",\"value\":[0,0,0]}", "\"ok\":true"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"set\",\"path\":\"world/props:visible\",\"value\":false}", "\"ok\":true"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"expect\",\"path\":\"world/props:visible\",\"value\":false}", "\"ok\":true"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"set\",\"path\":\"world/props:visible\",\"value\":true}", "\"ok\":true"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"world/cube:screen_position\"}", "\"value\":[100,100]"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"find\",\"label\":\"world/cube\"}", "\"found\":true,\"type\":\"mesh3d\""));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"world/ghost:exists\"}", "\"value\":false"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"world/ghost:position\"}", "no 3D node labelled 'ghost'"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"moon/cube:position\"}", "no view3d labelled 'moon'"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"world/cube:bounds\"}", "unknown 3D property 'bounds'"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"set\",\"path\":\"world/cube:scale\",\"value\":[1,2]}", "expected 3 numbers"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"dump\"}", "\"views3d\":[{\"view\":\"world\",\"root\":{\"label\":\"root\",\"type\":\"group3d\""));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"dump\"}", "\"label\":\"cube\",\"type\":\"mesh3d\",\"position\":[0,0,0]"));
+    /* click: the node's origin through the view's camera, picked as a 3D CLICK */
+    BR_CHECK(reply_has(e, "{\"cmd\":\"click\",\"label\":\"world/cube\"}", "\"ok\":true"));
+    br_playtest_step(e, 2);
+    BR_CHECK(s_cube_clicks == 1);
+    br_engine_destroy(e);
+}
+
 /* ---- "action" drives any action, also code-bound ones without a key, with analogue values */
 
 static void test_action(void)
@@ -391,6 +450,7 @@ int main(void)
     test_parse_errors();
     test_action();
     test_gamepad();
+    test_3d_paths();
     test_interactive();
     test_record_replay();
     test_record_replay_gamepad();

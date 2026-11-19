@@ -66,4 +66,6 @@ br_engine_destroy(e);
   engines in one process must shut down in reverse order (see the `ponytail:`).
 - `action` injects the action (`br_input_inject_action`), not a key: systems polling keys
   directly do not see it.
-- 3D nodes (inside `view3d`) are not addressable by path yet.
+- 3D nodes are addressed as `view/node:property` through the three_d public API
+  (`br_node3d_find_by_label` under `br_view3d_root`, `br_view3d_world_to_screen` for `click` and
+  `screen_position`); labels must not contain `/` or `:`.
