@@ -325,6 +325,8 @@ the game (the workaround is named) and left here with a proposed fix.
     are unreachable. The game added a `camera_distance` tuning value to adjust the camera from a
     script instead. **Fix:** after the colon, match the longest registered component name, then
     the field, then an optional element.
+    **Resolved (full review 2026-11-20):** exactly that (`cam:camera.follow.offset3d.x`; names
+    without a dot read as before). Test: `tests/test_playtest.c`, `test_hardening`.
 37. **friction - 2D labels are global in play-test paths.** `jump_row/value:text` is rejected
     ("no view3d labelled jump_row"); every settings row has a child labelled `value`, so a script
     can only read the first. **Fix:** accept `parent/child` paths for 2D nodes the way 3D paths
@@ -333,6 +335,10 @@ the game (the workaround is named) and left here with a proposed fix.
     output and editing its game.json. **Fix:** a `--window WxH` flag in `br_app` and a play-test
     command `{"cmd": "window", "width": 2520, "height": 1080}` (`SDL_SetWindowSize`, then wait a
     frame), so aspect ratios and resizes can be golden-tested.
+    **Resolved (full review 2026-11-20):** the play-test command `{"cmd": "window", "width",
+    "height"}` (short form `window W H`, 16..16384) resizes the window; headless it sets the
+    screen size every camera sees, so 21:9 / 9:16 layouts are checked in one run. No `--window`
+    flag. Test: `tests/test_playtest.c`, `test_hardening`. Not yet used by a golden.
 39. **friction - golden bases count `wait` frames only** (`tools/golden.py`, `script_for`). A
     script with `wait_until` cannot be a golden base, so Crate Rush keeps a second, wait-only
     input script (`playtest/golden_play.json`). **Fix:** let a base script contain a
@@ -340,7 +346,9 @@ the game (the workaround is named) and left here with a proposed fix.
 40. **friction - `tools/playtest.py` short commands accept anything after the key name.**
     `"key Up frames=40"` became a key command with action `"frames=40"` (an error reply, not a
     40-frame hold). **Fix:** parse `key NAME [tap|down|up] [FRAMES]` and reject unknown words
-    before starting the game.
+    before starting the game. (Still open after the 2026-11-20 review: the engine now rejects
+    unknown argument *names* in JSON commands, but `key Up frames=40` still reaches it as the
+    action `"frames=40"` and gets an error reply.)
 41. **friction - `br_animation_stats` counts an animator only once it has been sampled.** On the
     first frame of a level the count is 0 although `br_animator_add` ran; the soak checks it a few
     frames later. **Fix:** report live animators (pool size) and sampled animators separately.
@@ -368,9 +376,11 @@ the game (the workaround is named) and left here with a proposed fix.
 # Full review 2026-11-20
 
 The whole-engine review (`docs/plans/2026-11-20-engine-review.md`, report R8) read the public
-headers as one API. These are its API findings, ranked: worth fixing first at the top. None is
-implemented yet; each has a recommended resolution. Items 36, 23-25 and 38 above are ranked by the
-same review as the most valuable open ones from the earlier lists.
+headers as one API. These are its API findings, ranked: worth fixing first at the top. Each has a
+recommended resolution; the fix round of the review resolved 36 and 38 above and part of 46
+below, and removed one duplicate the list did not name (`br_gpu_set_vsync`, now only
+`br_app_set_vsync`). Items 23-25 above are ranked by the same review as the most valuable open
+ones from the earlier lists. Summary of the whole review: `docs/REVIEW_2026-11-20.md`.
 
 42. **friction - two ways to do one thing.** (a) `br_animator3d_*` (`br_anim3d.h`) is a legacy
     shim over the unified `br_animator`, still public and still used by scene JSON
@@ -415,6 +425,12 @@ same review as the most valuable open ones from the earlier lists.
     keep running; `br_ticker_set_speed(0)` freezes the UI too, and there is no unscaled delta.
     Crate Rush pauses its animator by hand. **Fix:** an unscaled delta for UI and an
     `unscaled` flag (or a time group) on tweens and animators. Rank 5.
+    **Partly resolved (full review 2026-11-20):** `br_ticker_unscaled_delta(e)` is the frame's dt
+    without the ticker speed, and the app pauses game time and audio by itself while the window
+    is inactive (`br_app_set_pause_when_inactive`, `br_app_on_lifecycle`). Tests:
+    `tests/test_app.c`, `test_unscaled_delta`, `test_pause_when_inactive`. Still open: tweens and
+    animators have no unscaled flag, so they cannot keep animating a pause menu while
+    `br_ticker_set_speed(e, 0)` stops the game.
 47. **friction - two mutation styles.** 2D nodes, audio and input use setters; `br_camera_get`,
     `br_light3d_get`, `br_canvas3d_get`, `br_material3d_params`, `br_view3d_post` and
     `br_animator3d_get` return a mutable struct pointer whose lifetime differs per module. An

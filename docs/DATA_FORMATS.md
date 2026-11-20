@@ -56,7 +56,7 @@ Every key is optional; the values below are the defaults unless noted.
     "buses": { "music": 0.5, "sfx": { "volume": 1, "muted": false } },
     "sprites": { "sounds/sfx.wav": { "jump": [0.0, 0.25], "coin": [0.3, 0.2] } }
   },
-  "debug": { "overlay": false, "toggle_key": "F1", "hot_reload": true },
+  "debug": { "overlay": false, "toggle_key": "F1", "keys": true, "hot_reload": true },
   "profiler": { "hud": false, "panel": false },
   "save": { "org": "my-studio", "app": "My Game" },
   "game": { "lives": 3 }
@@ -430,11 +430,27 @@ and prefabs can start animation without code:
 
 `animator`: `clips` (an anim.json, section 6, loaded through the asset cache), `graph` (optional
 animgraph.json, section 7; its states name clips of `clips`), `play` (optional clip), `loop`, `speed` (0 = 1). `tween`: `property`
-(a property path, section 6), `to` / `from` (a number or `[x, y]`), `to_color` / `from_color`
-(colour properties such as `tint`), `mode` (`"to"` default, `"from"`, `"from_to"`), `duration`,
-`delay`, `ease` (easing name), `repeat` (-1 = forever), `yoyo`. Each row is turned into a real
-animator / tween the first frame after it appears (2D nodes; one tween component per node).
-Details: `docs/agents/animation.md`.
+(a property path, section 6), `to` / `from` (a number or `[x, y]`: float, int, bool and vec2
+properties), `to3` / `from3` (`[x, y, z]`: vec3 properties such as a 3D node's `position` and
+`scale`), `to_color` / `from_color` (colour properties such as `tint`), `mode` (`"to"` default,
+`"from"`, `"from_to"`), `duration`, `delay`, `ease` (easing name), `repeat` (-1 = forever),
+`yoyo`. Rotations (quaternions), morph weights and textures cannot be tweened from the
+component (use code or a clip). Each row is turned into a real animator / tween the first frame
+after it appears; one tween component per node. The asset references the components take are
+released with the node.
+
+Both components work on 3D nodes too: in a view3d's `components` (below) and in glTF node
+extras, nested or flat (`"animator.clips": "animation/door.anim.json", "animator.play":
+"open"`, `docs/agents/gltf.md`). Details: `docs/agents/animation.md`.
+
+<!-- check: scene -->
+```json
+{ "type": "view3d", "size": [320, 180], "scene": [
+  { "type": "mesh", "label": "lift", "shape": "cube", "size": [1, 0.2, 1],
+    "components": { "tween": { "property": "position", "from3": [0, 0, 0], "to3": [0, 2, 0],
+                               "mode": "from_to", "duration": 1.5, "ease": "in_out_sine",
+                               "repeat": -1, "yoyo": true } } } ] }
+```
 
 The camera module registers `camera.follow` (`target` node, `offset`, `damping`, `dead_zone`,
 `use_bounds`, `offset3d`), `camera.shake` (`trauma`, `decay`, `max_offset`, `max_angle`,
@@ -523,7 +539,10 @@ These are read by other modules and only referenced from the files above.
       { "alias": ["tiles", "t"], "src": ["atlas@2x.json", "atlas.json"], "type": "spritesheet" } ] },
     { "name": "level1_sounds", "assets": [ { "alias": "music", "src": "sounds/music.ogg" } ] } ] }
 ```
-Details: `engine/include/braty/br_assets.h`, `docs/agents/assets.md`.
+`{a,b}` patterns expand to every combination, at most 16 names per pattern (more is an error);
+the resolver picks the `@Nx` closest to the preferred resolution, then the preferred format
+(`br_assets_set_preferences`). Details: `engine/include/braty/br_assets.h`,
+`docs/agents/assets.md`.
 
 **Spritesheet** (TexturePacker JSON hash or array; `br_spritesheet.h`): `frames` with `frame`,
 `rotated`, `trimmed`, `spriteSourceSize`, `sourceSize`, optional `anchor`/`pivot` and
@@ -602,6 +621,8 @@ any float / int / bool / vec2 / vec3 / colour component field; more from
   name: 4 floats, sRGB) or a texture reference (`"sheet.json#frame"`, a path, or a frame name of a
   loaded sheet) for `sprite.texture`. Every key of a track has the same number of values.
 - Errors (`file: clips[0].tracks[2].keys[1]: reason`) skip that track or event; the rest loads.
+  Rejected: non-finite numbers, a clip that is not an object, more than 100000 keys in one
+  track, names (clips, events) longer than 31 bytes.
 - 3D rotations are quaternions `[x, y, z, w]`; material colours are sRGB.
 
 ---
@@ -637,3 +658,7 @@ component's `graph`; `br_animator_set_graph` attaches it.
 - `entry`: the first state (default: the first in the list).
 - The animator must have the clips before `br_animator_set_graph`; blend states become blend
   trees named after the state.
+- Limits (each reported with its JSON path): at most 1024 states, 4096 transitions, 4 conditions
+  per transition, 16 parameters, 8 motions per blend state; names at most 31 bytes; numbers
+  finite. A `parameters` value that is not an object, or a parameter of the wrong type, is an
+  error, not a crash.
