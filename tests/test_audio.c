@@ -4,6 +4,7 @@
 #include "br_test.h"
 
 #include <SDL3/SDL_filesystem.h>
+#include <math.h>
 
 #define RAMP_FRAMES 100
 
@@ -253,6 +254,83 @@ static void test_deterministic_game_clock(void)
     br_engine_destroy(e);
 }
 
+static bool all_finite(const float *out, uint32_t count)
+{
+    for (uint32_t i = 0; i < count; i++) {
+        if (SDL_isnan(out[i]) || SDL_isinf(out[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Non-finite / extreme floats from game code: the mixer must neither hang (an INF speed on a
+ * looping voice spun forever with the lock held) nor turn the whole mix into NaN. */
+static void test_bad_floats(void)
+{
+    br_engine *e = br_engine_create("test_audio_floats", NULL);
+    br_sound *ramp = make_ramp(e);
+    float out[2 * 64];
+
+    br_audio_play_desc d = br_audio_play_defaults();
+    d.loop = true;
+    d.speed = INFINITY;
+    br_sound_instance fast = br_audio_play(e, ramp, &d);
+    br_audio_mix(e, out, 64);                       /* returns */
+    BR_CHECK(br_audio_is_playing(e, fast) && all_finite(out, 128));
+    br_audio_set_speed(e, fast, 1e38f);
+    br_audio_mix(e, out, 64);
+    br_audio_set_speed(e, fast, NAN);
+    br_audio_mix(e, out, 64);
+    BR_CHECK(br_audio_is_playing(e, fast) && all_finite(out, 128));
+    br_audio_stop_all(e);
+
+    /* NaN start: the voice still ends */
+    d = br_audio_play_defaults();
+    d.start = NAN;
+    br_sound_instance nan_start = br_audio_play(e, ramp, &d);
+    static float long_out[2 * 6400];
+    br_audio_mix(e, long_out, 6400);
+    BR_CHECK(!br_audio_is_playing(e, nan_start));
+
+    /* NaN volume / pan on one voice leaves the other voice audible and the mix finite */
+    d = br_audio_play_defaults();
+    d.start = 10.0f / BR_AUDIO_RATE;
+    d.loop = true;
+    br_audio_play(e, ramp, &d);                     /* sample 0.1 */
+    d.volume = NAN;
+    d.pan = NAN;
+    br_sound_instance bad = br_audio_play(e, ramp, &d);
+    br_audio_set_volume(e, bad, INFINITY);
+    br_audio_set_pan(e, bad, NAN);
+    br_audio_set_master_volume(e, NAN);
+    br_audio_mix(e, out, 1);
+    BR_CHECK(all_finite(out, 2) && out[0] > 0.09f);
+    br_audio_seek(e, bad, NAN);
+    br_audio_mix(e, out, 64);
+    BR_CHECK(all_finite(out, 128));
+    br_engine_destroy(e);
+}
+
+/* No device open and nobody calling br_audio_mix (a window whose device failed, or a headless
+ * game run): voices advance by game time, finish and call back. */
+static void test_no_device_game_clock(void)
+{
+    br_engine *e = br_engine_create("test_audio_nodev", NULL);
+    br_sound *ramp = make_ramp(e);
+    g_completed = 0;
+    br_audio_play_desc play = br_audio_play_defaults();
+    play.on_complete = on_complete;
+    play.user = &g_completed;
+    for (int i = 0; i < 100; i++) {
+        BR_CHECK(br_audio_play(e, ramp, &play).generation != 0);
+        br_engine_step(e, 1.0f / 60.0f);
+    }
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(br_audio_instance_count(e) == 0 && g_completed == 100);
+    br_engine_destroy(e);
+}
+
 int main(void)
 {
     br_engine *e = br_engine_create("test_audio", NULL);
@@ -268,5 +346,7 @@ int main(void)
     br_engine_destroy(e);
     test_loaders();
     test_deterministic_game_clock();
+    test_no_device_game_clock();
+    test_bad_floats();
     return br_test_finish();
 }

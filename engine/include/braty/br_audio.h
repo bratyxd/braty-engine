@@ -11,7 +11,12 @@
  * behind one mutex, so every function here is safe to call from the main thread at any time.
  *
  * The playback device opens on the first br_audio_play when the engine has a window; headless
- * engines (tests) never open a device and drive the mixer through br_audio_mix.
+ * engines never open one. Without an open device (headless, or opening it failed) instances
+ * advance by game time in "audio.update", so they still finish and call back - unless the code
+ * calls br_audio_mix itself (tests), which then drives the mixer alone.
+ *
+ * Every float argument is sanitized here: NaN / INF become the default, then values are clamped
+ * (volume 0..16, pan -1..1, speed 0.01..16, start / seek within the sound).
  *
  * Volume: sample * instance volume * bus volume * master volume (muted = 0). Pan is a balance:
  * -1 = left only, 0 = unchanged, +1 = right only. Completion callbacks run on the main thread
@@ -83,11 +88,11 @@ void br_audio_stop_all(br_engine *e);
 bool br_audio_is_playing(br_engine *e, br_sound_instance i);
 /* Pauses or resumes an instance. */
 void br_audio_set_paused(br_engine *e, br_sound_instance i, bool paused);
-/* Sets an instance's volume (0..). */
+/* Sets an instance's volume (0..16; non-finite = 1). */
 void br_audio_set_volume(br_engine *e, br_sound_instance i, float volume);
-/* Sets an instance's pan (-1..1). */
+/* Sets an instance's pan (-1..1; non-finite = 0). */
 void br_audio_set_pan(br_engine *e, br_sound_instance i, float pan);
-/* Sets an instance's speed (> 0). */
+/* Sets an instance's speed (0.01..16; non-finite = 1). */
 void br_audio_set_speed(br_engine *e, br_sound_instance i, float speed);
 /* Sets whether an instance loops. */
 void br_audio_set_loop(br_engine *e, br_sound_instance i, bool loop);
@@ -117,8 +122,8 @@ void br_audio_set_muted(br_engine *e, bool muted);
 
 /* ---- mixer and device */
 
-/* Mixes `frames` stereo frames into out (overwritten, float32 interleaved L R). This is what the
- * audio thread calls; tests call it directly on headless engines. */
+/* Mixes `frames` stereo frames into out (overwritten, float32 interleaved L R). What the audio
+ * thread runs; tests call it directly on headless engines (which turns off game-clock mixing). */
 void br_audio_mix(br_engine *e, float *out, uint32_t frames);
 /* Ogg files longer than this many seconds load as streaming sounds (affects later loads). */
 void br_audio_set_stream_threshold(br_engine *e, float seconds);

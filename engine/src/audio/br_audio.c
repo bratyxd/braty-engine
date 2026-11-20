@@ -73,7 +73,8 @@ typedef struct br_audio_state {
     float            stream_seconds;  /* main thread only (loaders) */
     SDL_AudioStream *device;
     bool             device_failed;
-    double           game_clock_frames; /* no device + deterministic: mixer frames owed to game time */
+    bool             manual_mix;      /* someone calls br_audio_mix (tests): no game-clock mixing */
+    double           game_clock_frames; /* no device: mixer frames owed to game time */
     /* audio-thread scratch (only br_audio_mix touches these) */
     float            mix_buf[BR_AUDIO_CHUNK_FRAMES * BR_AUDIO_CHANNELS];
     float            stream_buf[BR_AUDIO_CHUNK_FRAMES * BR_AUDIO_CHANNELS];
@@ -81,6 +82,19 @@ typedef struct br_audio_state {
 } br_audio_state;
 
 static const SDL_AudioSpec br_audio_mixer_spec = { SDL_AUDIO_F32, BR_AUDIO_CHANNELS, BR_AUDIO_RATE };
+
+/* Every float that enters the module goes through here: non-finite -> fallback, then clamped.
+ * One NaN volume used to turn the whole mix into NaN, an INF speed hung the mixer. */
+static float br_audio_float(float value, float fallback, float lo, float hi)
+{
+    if (SDL_isnan(value) || SDL_isinf(value)) {
+        return fallback;
+    }
+    return value < lo ? lo : (value > hi ? hi : value);
+}
+
+#define BR_AUDIO_MAX_SPEED  16.0f
+#define BR_AUDIO_MAX_VOLUME 16.0f
 
 /* ---- sounds */
 
@@ -164,8 +178,8 @@ bool br_sound_is_streaming(const br_sound *sound)
 bool br_sound_add_sprite(br_engine *e, br_sound *sound, const char *name, float start, float duration)
 {
     (void)e;
-    if (sound == NULL || name == NULL || sound->sprite_count == BR_AUDIO_MAX_SPRITES || start < 0.0f ||
-        duration <= 0.0f) {
+    if (sound == NULL || name == NULL || sound->sprite_count == BR_AUDIO_MAX_SPRITES ||
+        br_audio_float(start, -1.0f, -1.0f, 1e6f) < 0.0f || br_audio_float(duration, 0.0f, 0.0f, 1e6f) <= 0.0f) {
         br_log_error("audio: cannot add sprite '%s'", name != NULL ? name : "");
         return false;
     }
@@ -306,9 +320,7 @@ static void br_audio_mix_memory(br_audio_state *s, br_voice *v, float *out, uint
                 v->finished = true;
                 return;
             }
-            while (v->pos >= length) {
-                v->pos -= length;
-            }
+            v->pos = SDL_fmod(v->pos, length);   /* one step, whatever the speed */
         }
     }
 }
@@ -384,13 +396,13 @@ static void br_audio_mix_stream(br_audio_state *s, br_voice *v, float *out, uint
         }
         produced += got_frames;
         v->pos += (double)got_frames * v->speed;
-        while (v->loop && v->pos >= length && length > 0.0) {
-            v->pos -= length;
+        if (v->loop && v->pos >= length && length > 0.0) {
+            v->pos = SDL_fmod(v->pos, length);
         }
     }
 }
 
-void br_audio_mix(br_engine *e, float *out, uint32_t frames)
+static void br_audio_mix_frames(br_engine *e, float *out, uint32_t frames)
 {
     br_audio_state *s = e->audio;
     SDL_memset(out, 0, (size_t)frames * BR_AUDIO_CHANNELS * sizeof(float));
@@ -411,8 +423,16 @@ void br_audio_mix(br_engine *e, float *out, uint32_t frames)
     }
     SDL_UnlockMutex(s->lock);
     for (uint32_t i = 0; i < frames * BR_AUDIO_CHANNELS; i++) {
-        out[i] = br_clampf(out[i], -1.0f, 1.0f);
+        out[i] = br_audio_float(out[i], 0.0f, -1.0f, 1.0f);   /* NaN in PCM data -> silence */
     }
+}
+
+void br_audio_mix(br_engine *e, float *out, uint32_t frames)
+{
+    if (e->audio != NULL) {
+        e->audio->manual_mix = true;
+    }
+    br_audio_mix_frames(e, out, frames);
 }
 
 static void SDLCALL br_audio_device_callback(void *user, SDL_AudioStream *stream, int additional, int total)
@@ -424,7 +444,7 @@ static void SDLCALL br_audio_device_callback(void *user, SDL_AudioStream *stream
     int frames = additional / frame_bytes;
     while (frames > 0) {
         int chunk = frames < BR_AUDIO_CHUNK_FRAMES ? frames : BR_AUDIO_CHUNK_FRAMES;
-        br_audio_mix(e, s->mix_buf, (uint32_t)chunk);
+        br_audio_mix_frames(e, s->mix_buf, (uint32_t)chunk);
         SDL_PutAudioStreamData(stream, s->mix_buf, chunk * frame_bytes);
         frames -= chunk;
     }
@@ -459,7 +479,7 @@ static void br_audio_open_device(br_engine *e)
 
 void br_audio_set_stream_threshold(br_engine *e, float seconds)
 {
-    e->audio->stream_seconds = seconds < 0.0f ? 0.0f : seconds;
+    e->audio->stream_seconds = br_audio_float(seconds, BR_AUDIO_STREAM_SECONDS, 0.0f, 1e6f);
 }
 
 bool br_audio_device_open(br_engine *e)
@@ -535,13 +555,13 @@ br_sound_instance br_audio_play(br_engine *e, br_sound *sound, const br_audio_pl
     fresh.sound = sound;
     fresh.start = start;
     fresh.end = end;
-    fresh.pos = br_clampf(d.start, 0.0f, br_sound_duration(sound)) * (double)BR_AUDIO_RATE;
+    fresh.pos = br_audio_float(d.start, 0.0f, 0.0f, br_sound_duration(sound)) * (double)BR_AUDIO_RATE;
     if (fresh.pos >= (double)(end - start)) {
         fresh.pos = 0.0;
     }
-    fresh.volume = d.volume < 0.0f ? 0.0f : d.volume;
-    fresh.pan = br_clampf(d.pan, -1.0f, 1.0f);
-    fresh.speed = d.speed > 0.01f ? d.speed : 0.01f;
+    fresh.volume = br_audio_float(d.volume, 1.0f, 0.0f, BR_AUDIO_MAX_VOLUME);
+    fresh.pan = br_audio_float(d.pan, 0.0f, -1.0f, 1.0f);
+    fresh.speed = br_audio_float(d.speed, 1.0f, 0.01f, BR_AUDIO_MAX_SPEED);
     fresh.loop = d.loop;
     fresh.paused = d.paused;
     fresh.bus = d.bus > 0 && d.bus < BR_AUDIO_MAX_BUSES && s->buses[d.bus].used ? d.bus : 0;
@@ -620,7 +640,7 @@ void br_audio_set_volume(br_engine *e, br_sound_instance i, float volume)
     SDL_LockMutex(s->lock);
     br_voice *v = br_audio_voice(s, i);
     if (v != NULL) {
-        v->volume = volume < 0.0f ? 0.0f : volume;
+        v->volume = br_audio_float(volume, 1.0f, 0.0f, BR_AUDIO_MAX_VOLUME);
     }
     SDL_UnlockMutex(s->lock);
 }
@@ -631,7 +651,7 @@ void br_audio_set_pan(br_engine *e, br_sound_instance i, float pan)
     SDL_LockMutex(s->lock);
     br_voice *v = br_audio_voice(s, i);
     if (v != NULL) {
-        v->pan = br_clampf(pan, -1.0f, 1.0f);
+        v->pan = br_audio_float(pan, 0.0f, -1.0f, 1.0f);
     }
     SDL_UnlockMutex(s->lock);
 }
@@ -642,7 +662,7 @@ void br_audio_set_speed(br_engine *e, br_sound_instance i, float speed)
     SDL_LockMutex(s->lock);
     br_voice *v = br_audio_voice(s, i);
     if (v != NULL) {
-        v->speed = speed > 0.01f ? speed : 0.01f;
+        v->speed = br_audio_float(speed, 1.0f, 0.01f, BR_AUDIO_MAX_SPEED);
         if (v->convert != NULL) {
             SDL_SetAudioStreamFrequencyRatio(v->convert, v->speed);
         }
@@ -667,7 +687,7 @@ void br_audio_seek(br_engine *e, br_sound_instance i, float seconds)
     SDL_LockMutex(s->lock);
     br_voice *v = br_audio_voice(s, i);
     if (v != NULL) {
-        double frame = (double)(seconds < 0.0f ? 0.0f : seconds) * BR_AUDIO_RATE;
+        double frame = (double)br_audio_float(seconds, 0.0f, 0.0f, 1e6f) * BR_AUDIO_RATE;
         double length = (double)(v->end - v->start);
         v->pos = frame < length ? frame : length - 1.0;
         if (v->vorbis != NULL) {
@@ -747,7 +767,7 @@ void br_audio_bus_set_volume(br_engine *e, int bus, float volume)
     SDL_LockMutex(s->lock);
     br_bus *b = br_audio_bus(s, bus);
     if (b != NULL) {
-        b->volume = volume < 0.0f ? 0.0f : volume;
+        b->volume = br_audio_float(volume, 1.0f, 0.0f, BR_AUDIO_MAX_VOLUME);
     }
     SDL_UnlockMutex(s->lock);
 }
@@ -778,7 +798,7 @@ void br_audio_set_master_volume(br_engine *e, float volume)
 {
     br_audio_state *s = e->audio;
     SDL_LockMutex(s->lock);
-    s->master_volume = volume < 0.0f ? 0.0f : volume;
+    s->master_volume = br_audio_float(volume, 1.0f, 0.0f, BR_AUDIO_MAX_VOLUME);
     SDL_UnlockMutex(s->lock);
 }
 
@@ -802,19 +822,19 @@ static void br_audio_update(br_engine *e, float dt, void *user)
 {
     (void)user;
     br_audio_state *s = e->audio;
-    /* Without a device (headless, or it failed to open) nothing pulls samples, so instances
-     * never finished: a headless soak kept every sound "playing" until the 64 slots ran out.
-     * Under --deterministic they advance by game time here instead, so they end (and call back)
-     * on the same frame every run. Other headless engines keep driving br_audio_mix themselves. */
+    /* Without a device (headless, or it failed to open: no output, RDP, bad driver hint) nothing
+     * pulls samples, so instances never finished, never called back and filled all 64 slots.
+     * They advance by game time here instead (the same frame every --deterministic run). An
+     * engine whose code calls br_audio_mix itself (tests) drives the mixer alone. */
     // ponytail: a deterministic run *with* a device still plays on the wall clock (fast-forwarded
     // runs leave sounds playing); mute the device and use this path if that ever matters.
-    if (s->device == NULL && br_app_deterministic(e) && dt > 0.0f) {
+    if (s->device == NULL && !s->manual_mix && dt > 0.0f) {
         s->game_clock_frames += (double)dt * BR_AUDIO_RATE;
         uint32_t frames = (uint32_t)s->game_clock_frames;
         s->game_clock_frames -= (double)frames;
         while (frames > 0) {
             uint32_t chunk = frames < BR_AUDIO_CHUNK_FRAMES ? frames : BR_AUDIO_CHUNK_FRAMES;
-            br_audio_mix(e, s->mix_buf, chunk); /* no audio thread: the scratch is free */
+            br_audio_mix_frames(e, s->mix_buf, chunk); /* no audio thread: the scratch is free */
             frames -= chunk;
         }
     }
