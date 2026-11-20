@@ -205,6 +205,9 @@ SDL_GPURenderPass *br_gpu_frame_begin_pass(br_gpu *g)
 
 void br_gpu_set_clear_color(br_gpu *g, br_color color)
 {
+    if (g == NULL) {
+        return; /* headless: games set this in init without checking br_engine_gpu */
+    }
     g->clear_color = color;
 }
 

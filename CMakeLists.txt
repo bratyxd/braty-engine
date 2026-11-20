@@ -109,6 +109,11 @@ if(BRATY_BUILD_EXAMPLES)
         target_link_libraries(${name} PRIVATE braty)
         # examples read their data from the source tree, so any build directory works
         target_compile_definitions(${name} PRIVATE BRATY_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples")
+        if(BRATY_BUILD_TESTS)
+            # every example must survive a run without a GPU (br_engine_gpu returns NULL)
+            add_test(NAME headless_${name} COMMAND ${name} --headless --frames 5)
+            set_tests_properties(headless_${name} PROPERTIES LABELS headless TIMEOUT 60)
+        endif()
     endforeach()
 endif()
 

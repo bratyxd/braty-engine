@@ -214,6 +214,9 @@ SDL_GPUGraphicsPipeline *br_gpu_pipeline_get(br_gpu *g, const br_pipeline_desc *
 
 uint32_t br_gpu_pipeline_count(br_gpu *g)
 {
+    if (g == NULL) {
+        return 0; /* headless */
+    }
     return g->pipelines.count;
 }
 

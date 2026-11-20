@@ -137,7 +137,7 @@ typedef struct br_pipeline_desc {
 
 /* Returns the cached pipeline for `desc`, creating it on first use. NULL on failure. */
 SDL_GPUGraphicsPipeline *br_gpu_pipeline_get(br_gpu *g, const br_pipeline_desc *desc);
-/* Number of pipelines in the cache (for stats). */
+/* Number of pipelines in the cache (for stats); 0 for a NULL `g` (headless). */
 uint32_t br_gpu_pipeline_count(br_gpu *g);
 /* Blend state for premultiplied-alpha "normal" blending (src = ONE, dst = ONE_MINUS_SRC_ALPHA). */
 SDL_GPUColorTargetBlendState br_gpu_blend_premultiplied(void);
@@ -254,7 +254,7 @@ br_render_target *br_gpu_frame_target(br_gpu *g);
 /* Begins a render pass on the frame target: the first pass of a frame clears it to the clear
  * colour, later passes load it. End with SDL_EndGPURenderPass. NULL outside RENDER phases. */
 SDL_GPURenderPass *br_gpu_frame_begin_pass(br_gpu *g);
-/* Colour the frame target is cleared to (default opaque black). */
+/* Colour the frame target is cleared to (default opaque black). NULL `g` (headless) is ignored. */
 void br_gpu_set_clear_color(br_gpu *g, br_color color);
 /* Number of frames presented so far. */
 uint64_t br_gpu_frames_presented(br_gpu *g);
