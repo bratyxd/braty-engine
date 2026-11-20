@@ -543,6 +543,7 @@ static void test_overlay_key_release(void)
     br_engine_destroy(e);
 }
 
+#ifndef BRATY_PROFILER_OFF
 /* The GPU estimate (fence thread + a fence per frame) runs only while something uses it. Needs a
  * window and a GPU: skipped where none can be opened. */
 static void test_fence_thread_on_demand(void)
@@ -567,6 +568,8 @@ static void test_fence_thread_on_demand(void)
     BR_CHECK(br_profiler_gpu_estimating(e)); /* started again */
     br_engine_destroy(e);
 }
+
+#endif
 
 #ifndef BRATY_PROFILER_OFF
 /* Counters the animation module feeds: animators and tweens alive this frame. */

@@ -227,7 +227,7 @@ int main(void)
 {
     SDL_GetLogOutputFunction(&g_prev_log, &g_prev_log_user);
     SDL_SetLogOutputFunction(capture_log, NULL);
-    br_engine *e = br_engine_create("test_hostile_gltf", "../../tests/data"); /* relative to the exe */
+    br_engine *e = br_engine_create("test_hostile_gltf", BRATY_SOURCE_DIR "/tests/data");
     BR_CHECK(e != NULL);
     if (e != NULL) {
         test_scene_roots(e);
