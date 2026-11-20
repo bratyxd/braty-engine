@@ -10,6 +10,7 @@ Everything a designer tweaks is JSON. This file documents every format the engin
    spritesheets, bitmap fonts, input actions, glTF, play-test scripts
 6. [Animation clips](#6-animation-clips-animjson) (`*.anim.json`)
 7. [Animation state machines](#7-animation-state-machines-animgraphjson) (`*.animgraph.json`)
+8. [Asset packs](#8-asset-packs-brpack) (`*.brpack`) - the asset root's files in one file
 
 Every JSON example below is loaded by `tests/test_data_formats.c` (the `<!-- check: ... -->`
 line before each one says how), so they stay valid.
@@ -41,6 +42,7 @@ Every key is optional; the values below are the defaults unless noted.
               "fullscreen": false, "vsync": true, "resizable": true, "logical_size": [1280, 720],
               "pause_when_inactive": true },
   "asset_root": "assets",
+  "packs": ["assets.brpack"],
   "manifest": "manifest.json",
   "start_scene": "title",
   "scenes": { "title": "scenes/title.scene.json", "level1": "scenes/level1.scene.json" },
@@ -75,6 +77,7 @@ overlay closed, F1, hot reload on in debug builds, no logical size (the example'
 | `window.pause_when_inactive` | Default `true`: while the window is unfocused, minimised or in the background, game time stops (dt 0) and audio output pauses (`br_app_set_pause_when_inactive`; never in `--deterministic` / `--frames` / headless runs). |
 | `window.vsync` | `true` / `false`, or `"on"`, `"off"`, `"mailbox"`, `"adaptive"` (`br_app_set_vsync`; unsupported modes fall back with a log line; SDL GPU has no adaptive mode, it becomes on). |
 | `asset_root` | Directory of all other paths, relative to the executable directory. |
+| `packs` | `.brpack` files (section 8), relative to the executable directory, mounted before anything is read; the first listed holding a path wins. A missing pack is logged (info) and skipped, so a development folder with loose files runs unchanged; a broken one is logged with the pack and entry and skipped. `--pack FILE` (repeatable, working-directory relative) mounts packs before these. |
 | `manifest` | Added with `br_assets_load_manifest` (aliases and bundles). |
 | `start_scene` | A `"scenes"` key or a path; loaded as a `br_scene` (single) after `init` (`br_game_config_main`), or by `br_game_config_apply`, which returns the file's root. |
 | `scenes` | Names for scene files: `br_scene_load(e, "level1", ...)`, `br_scene_switch(e, "level1", ...)` (`docs/agents/scenes.md`). |
@@ -662,3 +665,36 @@ component's `graph`; `br_animator_set_graph` attaches it.
   per transition, 16 parameters, 8 motions per blend state; names at most 31 bytes; numbers
   finite. A `parameters` value that is not an object, or a parameter of the wrong type, is an
   error, not a crash.
+
+---
+
+## 8. Asset packs (`*.brpack`)
+
+One file holding the asset root's files, mounted with game.json `"packs"`, `--pack FILE` or
+`br_file_mount_pack(e, path)`; every engine read (`br_file_read_all`, assets, scenes, prefabs,
+async loads on the worker thread) then finds the entries under their paths. Built by
+`python tools/pack_assets.py <data folder> <out.brpack>` (standard library only, deterministic:
+entries sorted, no timestamps; `--list PACK` prints the entries and checks their hashes).
+`braty_install_game(<target> <data dir>)` in a game's CMakeLists makes a shippable folder with
+`cmake --install` (exe, game.json, assets.brpack, SDL runtime).
+
+Little endian, no compression, no alignment:
+
+| Part | Bytes |
+|---|---|
+| header | `"BRPK"`, u32 version (1), u32 entry count, u32 table-of-contents size in bytes |
+| table of contents | per entry: u64 offset (from the start of the file), u64 size, u64 FNV-1a 64 hash of the entry's bytes, u16 path length, the path bytes (UTF-8, no NUL) |
+| data | the entries' bytes |
+
+Rules, checked when the pack is mounted (any failure: nothing is mounted, the log names the pack
+and the entry, loose files keep working): the table fits in the file, every entry fits in the
+table, at most `size / 27` entries; paths 1..255 bytes, already normalised (forward slashes,
+relative, no `.` / `..` / empty parts, no `:`, no control characters or NUL); entries sorted by
+path bytes with no duplicates; `offset + size` inside the file (checked without overflow). Each
+read checks the hash (`hash mismatch (corrupt pack)`) and the bytes read (a pack truncated after
+mounting).
+
+Lookups normalise the requested path the same way (`br_file_normalize`: `\` becomes `/`,
+`a/../b` is `b`, nothing climbs above the asset root) and are case-sensitive. Loose files win over
+packs in debug builds and packs win in release builds (`br_file_set_loose_first`). Paths that
+differ only in case are refused by the tool (they collide on Windows and macOS).

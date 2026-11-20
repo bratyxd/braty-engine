@@ -25,6 +25,10 @@ add_custom_command(TARGET crate_rush POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/data $<TARGET_FILE_DIR:crate_rush>
     COMMENT "crate_rush: copying data/ next to the executable")
 
+# Shippable folder <folder>/crate_rush/ (exe + game.json + assets.brpack + SDL runtime if shared):
+#   cmake --install <build dir> --prefix <folder>
+braty_install_game(crate_rush ${CMAKE_CURRENT_SOURCE_DIR}/data)
+
 # The committed play-test: menu -> level 1 -> crates -> results -> menu, checked with "expect".
 # Headless, so it needs no GPU: ctest -L playtest. playtest/soak.json cycles every level several
 # times and checks that counts return to their baseline (run it by hand; it also profiles).
