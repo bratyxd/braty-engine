@@ -32,13 +32,16 @@ typedef struct br_gfx_instruction {
     br_vec2         quad[4];   /* TEXTURE: corners top-left, top-right, bottom-right, bottom-left */
 } br_gfx_instruction;
 
-/* Consecutive triangles sharing one texture, at most 65535 vertices. */
+/* Consecutive triangles sharing one texture (at most 65535 vertices), or consecutive pixel
+ * lines (line_count > 0). Groups are drawn in instruction order. */
 typedef struct br_gfx_group {
     br_texture texture;
     uint32_t   first_vertex;
     uint32_t   vertex_count;
     uint32_t   first_index;
     uint32_t   index_count;   /* indices are relative to first_vertex */
+    uint32_t   first_line;    /* pixel lines: vertices [first_line, + line_count) of `lines` */
+    uint32_t   line_count;
 } br_gfx_group;
 
 struct br_graphics_context {
@@ -63,6 +66,9 @@ struct br_graphics_context {
     br_array    lines;           /* br_vertex2d pairs (pixel lines) */
     br_rect     bounds;
     bool        has_bounds;
+    bool        bad_point_logged;   /* a non-finite / huge point was dropped (logged once) */
+    bool        full_logged;        /* a sub-path hit BR_GFX_MAX_SUBPATH_POINTS (logged once) */
+    bool        after_close;        /* close_path ran: line_to continues from the sub-path start */
 };
 
 typedef struct br_graphics_state {
@@ -70,6 +76,20 @@ typedef struct br_graphics_state {
     br_array contexts;   /* br_graphics_context*, every live context (freed at shutdown) */
     br_array scratch;    /* br_vertex2d, per-node transformed vertices */
 } br_graphics_state;
+
+/* Limits that keep bad data (scene JSON, SVG strings) from hanging or exhausting memory.
+ * Points outside +-BR_GFX_MAX_COORD or not finite are dropped where they enter (add_point). */
+#define BR_GFX_MAX_COORD 1.0e7f
+#define BR_GFX_MAX_SUBPATH_POINTS 65536u   /* points per sub-path; more are dropped */
+#define BR_GFX_MAX_SIDES 4096u             /* regular_poly / round_poly sides, star points */
+#define BR_GFX_MAX_EAR_CLIP_POINTS 8192u   /* concave fills (ear clipping is about O(n^2)) */
+#define BR_GFX_MAX_DASH_PIECES 100000u     /* dash pieces per stroke */
+
+/* True for a finite float (false for NaN and +-inf). */
+bool br_gfx_finite(float v);
+/* Parses one SVG-grammar number at *s (leading separators skipped): sign, digits, '.',
+ * digits, exponent. No nan / inf / hex, independent of the C locale. Advances *s. */
+bool br_gfx_parse_number(const char **s, float *out);
 
 /* Path helpers. */
 void br_gfx_path_init(br_gfx_path *p);

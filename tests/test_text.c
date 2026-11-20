@@ -2,6 +2,11 @@
 #include "braty/braty.h"
 #include "br_test.h"
 
+#include <SDL3/SDL.h>
+#include <math.h>
+
+#include "stb/stb_image_write.h"
+
 /* A monospace bitmap font: every glyph advances 10, one kerning pair (a b = -2). */
 static const char *k_fnt_text =
     "info face=\"Test\" size=16 bold=0 italic=0\n"
@@ -281,6 +286,338 @@ static void test_split(br_engine *e, br_font *f)
     br_node_destroy(e, chars);
     br_node_destroy(e, words);
     br_node_destroy(e, lines);
+
+    /* pieces of any length (a long line or URL was dropped from 1024 bytes on) */
+    char *long_line = SDL_malloc(2001);
+    for (int i = 0; i < 2000; i++) {
+        long_line[i] = i % 7 == 6 ? ' ' : 'a';
+    }
+    long_line[1999] = 'b';
+    long_line[2000] = 0;
+    lines = br_split_text_create(e, long_line, &st, BR_SPLIT_LINES);
+    BR_CHECK(br_node_child_count(e, lines) == 1);
+    BR_CHECK(SDL_strcmp(br_text_get_text(e, br_node_child_at(e, lines, 0)), long_line) == 0);
+    for (int i = 0; i < 2000; i++) {
+        long_line[i] = 'c';
+    }
+    words = br_split_text_create(e, long_line, &st, BR_SPLIT_WORDS);
+    BR_CHECK(br_node_child_count(e, words) == 1);
+    BR_CHECK(SDL_strlen(br_text_get_text(e, br_node_child_at(e, words, 0))) == 2000);
+    br_node_destroy(e, lines);
+    br_node_destroy(e, words);
+    SDL_free(long_line);
+}
+
+static uint32_t be16(const uint8_t *p)
+{
+    return (uint32_t)p[0] << 8 | p[1];
+}
+
+static uint32_t be32(const uint8_t *p)
+{
+    return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
+}
+
+static void put16(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)(v >> 8);
+    p[1] = (uint8_t)v;
+}
+
+static void put32(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)(v >> 24);
+    p[1] = (uint8_t)(v >> 16);
+    p[2] = (uint8_t)(v >> 8);
+    p[3] = (uint8_t)v;
+}
+
+/* The table directory record of `tag` in a font file (NULL if missing). */
+static uint8_t *font_record(uint8_t *font, const char *tag)
+{
+    uint32_t n = be16(font + 4);
+    for (uint32_t i = 0; i < n; i++) {
+        uint8_t *rec = font + 12 + 16 * i;
+        if (SDL_memcmp(rec, tag, 4) == 0) {
+            return rec;
+        }
+    }
+    return NULL;
+}
+
+/* Truncated and corrupted TTF files fail cleanly instead of reading past the buffer. */
+static void test_bad_fonts(br_engine *e)
+{
+    size_t size = 0;
+    const uint8_t *data = br_font_default_data(&size);
+    BR_CHECK(br_font_create(e, data, 300, NULL) == NULL);
+    BR_CHECK(br_font_create(e, data, 4096, NULL) == NULL);
+    BR_CHECK(br_font_create(e, data, size / 2, NULL) == NULL);
+    BR_CHECK(br_font_create(e, data, size - 1, NULL) == NULL);
+
+    uint8_t *copy = SDL_malloc(size);
+    BR_CHECK(copy != NULL);
+    if (copy == NULL) {
+        return;
+    }
+    br_font *ok = br_font_create(e, data, size, NULL);
+    BR_CHECK(ok != NULL); /* the real font passes the checks */
+    br_font_destroy(e, ok);
+
+    /* table directory: cmap far past the end; head length past the end */
+    SDL_memcpy(copy, data, size);
+    put32(font_record(copy, "cmap") + 8, 0x7FFFFF00u);
+    BR_CHECK(br_font_create(e, copy, size, NULL) == NULL);
+    SDL_memcpy(copy, data, size);
+    put32(font_record(copy, "head") + 12, 0x7FFFFFFFu);
+    BR_CHECK(br_font_create(e, copy, size, NULL) == NULL);
+
+    /* a cmap encoding record pointing outside cmap */
+    SDL_memcpy(copy, data, size);
+    uint8_t *cmap = copy + be32(font_record(copy, "cmap") + 8);
+    uint32_t encodings = be16(cmap + 2);
+    for (uint32_t i = 0; i < encodings; i++) {
+        put32(cmap + 4 + 8 * i + 4, 0x7FFFFF00u);
+    }
+    BR_CHECK(br_font_create(e, copy, size, NULL) == NULL);
+
+    /* format 4 binary-search fields that walk off the subtable */
+    SDL_memcpy(copy, data, size);
+    cmap = copy + be32(font_record(copy, "cmap") + 8);
+    bool patched = false;
+    for (uint32_t i = 0; i < encodings; i++) {
+        uint8_t *sub = cmap + be32(cmap + 4 + 8 * i + 4);
+        if (be16(sub) == 4) {
+            put16(sub + 12, 0xFFFE); /* rangeShift */
+            put16(sub + 10, 15);     /* entrySelector */
+            patched = true;
+        }
+    }
+    BR_CHECK(patched);
+    BR_CHECK(br_font_create(e, copy, size, NULL) == NULL);
+
+    /* no long horizontal metrics (stb reads hmtx[-1]); more glyphs than loca has entries */
+    SDL_memcpy(copy, data, size);
+    put16(copy + be32(font_record(copy, "hhea") + 8) + 34, 0);
+    BR_CHECK(br_font_create(e, copy, size, NULL) == NULL);
+    SDL_memcpy(copy, data, size);
+    put16(copy + be32(font_record(copy, "maxp") + 8) + 4, 0xFFFF);
+    BR_CHECK(br_font_create(e, copy, size, NULL) == NULL);
+    SDL_free(copy);
+}
+
+/* Freeing a font that text nodes use: the nodes drop it and fall back, never keep the pointer. */
+static void test_font_lifetime(br_engine *e)
+{
+    br_text_style src = br_text_style_default(); /* the default TTF font */
+    src.font_size = 20.0f;
+    br_bitmap_font_options digits;
+    SDL_zero(digits);
+    digits.chars = "0123456789";
+    br_font *a = br_bitmap_font_install(e, "score", &src, &digits);
+    BR_CHECK(a != NULL);
+
+    br_text_style st = br_text_style_default();
+    br_text_style_set_family(&st, "score");
+    br_node by_family = br_text_create(e, "11", &st);
+    br_node direct = br_bitmap_text_create(e, "11", a, 0.0f);
+    float wide = br_text_size(e, by_family).x;
+    BR_CHECK(wide > 0.0f && br_text_size(e, direct).x > 0.0f);
+    br_rich_char_style cs;
+    BR_CHECK(br_rich_text_char_style(e, by_family, 0, &cs) && cs.font == a);
+
+    /* reinstall under the same name: the family node follows the new font (no '1', no space:
+     * zero width), the node that held the old font directly falls back to the default font */
+    digits.chars = "AB";
+    br_font *b = br_bitmap_font_install(e, "score", &src, &digits);
+    BR_CHECK(b != NULL);
+    BR_CHECK(br_text_size(e, by_family).x == 0.0f);
+    BR_CHECK(br_rich_text_char_style(e, by_family, 0, &cs) && cs.font == b);
+    BR_CHECK(br_rich_text_char_style(e, direct, 0, &cs) && cs.font == br_font_default(e));
+    BR_CHECK(br_text_size(e, direct).x != wide);
+
+    /* uninstall: the family node falls back to the default font */
+    br_bitmap_font_uninstall(e, "score");
+    BR_CHECK(br_rich_text_char_style(e, by_family, 0, &cs) && cs.font == br_font_default(e));
+    br_text_style got;
+    BR_CHECK(br_text_get_style(e, direct, &got) && got.font == NULL);
+
+    /* a font asset unloaded while a node uses it */
+    const char *fnt = "test_text_data/lifetime.fnt";
+    BR_CHECK(br_file_write_all(e, fnt, k_fnt_text, SDL_strlen(k_fnt_text)));
+    br_font *asset = br_bitmap_font_load(e, fnt);
+    BR_CHECK(asset != NULL);
+    br_node from_asset = br_bitmap_text_create(e, "ab", asset, 16.0f);
+    BR_CHECK(near(br_text_size(e, from_asset).x, 18.0f)); /* kerned */
+    br_assets_unload(e, fnt);
+    BR_CHECK(br_assets_get(e, fnt) == NULL);
+    BR_CHECK(br_rich_text_char_style(e, from_asset, 0, &cs) && cs.font == br_font_default(e));
+
+    br_node_destroy(e, by_family);
+    br_node_destroy(e, direct);
+    br_node_destroy(e, from_asset);
+}
+
+/* The glyph atlas through br_text_prepare (the rasterise pass of a draw). */
+static void test_atlas(br_engine *e)
+{
+    size_t size = 0;
+    const void *data = br_font_default_data(&size);
+    br_font *font = br_font_create(e, data, size, NULL);
+    br_text_style st = br_text_style_default();
+    st.font = font;
+    st.font_size = 32.0f;
+    uint32_t w, h;
+
+    /* growth: glyphs are added on demand and the atlas doubles when full */
+    br_node n = br_text_create(e, "abc", &st);
+    br_text_set_resolution(e, n, 1.0f);
+    br_text_prepare(e, n);
+    br_font_atlas_size(font, &w, &h);
+    BR_CHECK(w == 256 && h == 256 && br_font_cached_glyph_count(font) == 3);
+    br_text_prepare(e, n);
+    BR_CHECK(br_font_cached_glyph_count(font) == 3); /* cached */
+    st.font_size = 96.0f;
+    br_text_set_style(e, n, &st);
+    br_text_set_text(e, n, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789");
+    br_text_prepare(e, n);
+    br_font_atlas_size(font, &w, &h);
+    BR_CHECK(w * h > 256 * 256 && br_font_cached_glyph_count(font) == 3 + 62);
+
+    /* a huge font size is rasterised at most at 1024 px (scaled when drawn), not at 4095:
+     * the atlas does not jump to its 4096 maximum for one glyph */
+    st.font_size = 4095.0f;
+    br_text_set_style(e, n, &st);
+    br_text_set_text(e, n, "|");
+    br_text_prepare(e, n);
+    br_font_atlas_size(font, &w, &h);
+    BR_CHECK(w < 4096 || h < 4096);
+    st.font_size = NAN;
+    br_text_set_style(e, n, &st);
+    br_text_prepare(e, n); /* NaN: the default size, no undefined float-to-int conversion */
+    BR_CHECK(br_text_size(e, n).y > 0.0f && br_text_size(e, n).y < 100.0f);
+
+    /* a stroke / shadow far wider than the glyph is clamped: no seconds-long SDF per glyph */
+    st.font_size = 26.0f;
+    st.stroke_width = 1.0e4f;
+    st.drop_shadow = true;
+    st.shadow_blur = 1.0e4f;
+    br_text_set_style(e, n, &st);
+    br_text_set_text(e, n, "W");
+    uint64_t t0 = SDL_GetTicks();
+    br_text_prepare(e, n);
+    BR_CHECK(SDL_GetTicks() - t0 < 500);
+    br_node_destroy(e, n);
+    br_font_destroy(e, font);
+
+    /* a full atlas: glyphs that do not fit are remembered, not rasterised again every frame */
+    font = br_font_create(e, data, size, NULL);
+    st = br_text_style_default();
+    st.font = font;
+    st.font_size = 1024.0f;
+    n = br_text_create(e, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", &st);
+    br_text_set_resolution(e, n, 1.0f);
+    br_text_prepare(e, n);
+    br_font_atlas_size(font, &w, &h);
+    BR_CHECK(w == 4096 && h == 4096);
+    BR_CHECK(br_font_cached_glyph_count(font) == 36); /* placed or remembered as missing */
+    t0 = SDL_GetTicks();
+    br_text_prepare(e, n);
+    BR_CHECK(br_font_cached_glyph_count(font) == 36);
+    BR_CHECK(SDL_GetTicks() - t0 < 20);
+    br_node_destroy(e, n);
+    br_font_destroy(e, font);
+
+    /* SDF font: one distance field per glyph whatever the drawn size */
+    br_font_options opts;
+    SDL_zero(opts);
+    opts.sdf = true;
+    font = br_font_create(e, data, size, &opts);
+    BR_CHECK(br_font_is_sdf(font));
+    st = br_text_style_default();
+    st.font = font;
+    st.font_size = 20.0f;
+    st.stroke_width = 4.0f;
+    n = br_text_create(e, "Hi", &st);
+    br_text_prepare(e, n);
+    BR_CHECK(br_font_cached_glyph_count(font) == 2); /* stroke and fill share the field */
+    st.font_size = 200.0f;
+    br_text_set_style(e, n, &st);
+    br_text_prepare(e, n);
+    BR_CHECK(br_font_cached_glyph_count(font) == 2);
+    br_node_destroy(e, n);
+    br_font_destroy(e, font);
+}
+
+typedef struct png_buffer {
+    uint8_t data[4096];
+    size_t  size;
+} png_buffer;
+
+static void png_append(void *context, void *data, int size)
+{
+    png_buffer *b = context;
+    if (b->size + (size_t)size <= sizeof(b->data)) {
+        SDL_memcpy(b->data + b->size, data, (size_t)size);
+        b->size += (size_t)size;
+    }
+}
+
+/* AngelCode loading through the assets module: pages, .xml claims, bad numbers. */
+static void test_fnt_assets(br_engine *e)
+{
+    uint8_t pixels[8 * 8 * 4];
+    SDL_memset(pixels, 255, sizeof(pixels));
+    png_buffer png;
+    png.size = 0;
+    stbi_write_png_to_func(png_append, &png, 8, 8, 4, pixels, 8 * 4);
+    BR_CHECK(br_file_write_all(e, "test_text_data/test page.png", png.data, png.size));
+    BR_CHECK(br_file_write_all(e, "test_text_data/paged.fnt", k_fnt_text, SDL_strlen(k_fnt_text)));
+
+    /* the page textures are released with the font */
+    br_font *f = br_bitmap_font_load(e, "test_text_data/paged.fnt");
+    BR_CHECK(f != NULL && br_bitmap_font_page_texture(f, 0).generation != 0);
+    BR_CHECK(br_assets_ref_count(e, "test_text_data/test page.png") == 1);
+    br_assets_unload(e, "test_text_data/paged.fnt");
+    BR_CHECK(br_assets_get(e, "test_text_data/test page.png") == NULL);
+
+    /* .xml: an AngelCode font loads; any other XML is not claimed by the font loader */
+    BR_CHECK(br_file_write_all(e, "test_text_data/font.xml", k_fnt_xml, SDL_strlen(k_fnt_xml)));
+    const char *settings = "<?xml version=\"1.0\"?><settings volume=\"3\"/>";
+    BR_CHECK(br_file_write_all(e, "test_text_data/settings.xml", settings, SDL_strlen(settings)));
+    f = br_bitmap_font_load(e, "test_text_data/font.xml");
+    BR_CHECK(f != NULL && br_bitmap_font_char_count(f) == 3);
+    br_assets_unload(e, "test_text_data/font.xml");
+    BR_CHECK(br_assets_load(e, "test_text_data/settings.xml") == NULL);
+
+    /* numbers: strict (no nan / hex), integers in range, distanceRange > 0 */
+    const char *bad =
+        "common lineHeight=20 base=16\n"
+        "distanceField fieldType=sdf distanceRange=0\n"
+        "char id=97 width=8 height=10 xadvance=10\n"
+        "char id=-5 width=8 height=10 xadvance=10\n"
+        "char id=1e20 width=8 height=10 xadvance=10\n"
+        "char id=0x62 width=8 height=10 xadvance=10\n"
+        "char id=99 width=nan height=10 xadvance=inf\n";
+    f = br_bitmap_font_parse(e, bad, SDL_strlen(bad), "", false);
+    BR_CHECK(f != NULL);
+    br_bitmap_char c;
+    BR_CHECK(br_bitmap_font_char_count(f) == 2); /* 97 and 99 */
+    BR_CHECK(br_bitmap_font_get_char(f, 99, &c) && c.width == 0.0f && c.xadvance == 0.0f);
+    br_text_style st = br_text_style_default();
+    st.font = f;
+    st.font_size = 20.0f;
+    BR_CHECK(br_text_measure(e, "ac", &st).width < 1000.0f);
+    br_font_destroy(e, f);
+
+    /* rich <size=...>: the same number grammar */
+    br_text_style rs = br_text_style_default();
+    br_node n = br_rich_text_create(e, "<size=0x20>a</size><size=nan>b</size><size=1e9>c</size>", &rs);
+    BR_CHECK(SDL_strcmp(br_rich_text_plain(e, n), "<size=0x20>a<size=nan>bc") == 0);
+    br_rich_char_style cs;
+    uint32_t last = br_text_char_count(e, n) - 1;
+    BR_CHECK(br_rich_text_char_style(e, n, last, &cs) && cs.font_size <= 4096.0f);
+    br_node_destroy(e, n);
 }
 
 int main(void)
@@ -291,9 +628,16 @@ int main(void)
     if (e == NULL) {
         return br_test_finish();
     }
+    char dir[512]; /* fixtures written at startup: <executable dir>/test_text_data/ */
+    BR_CHECK(br_file_resolve(e, "test_text_data", dir, sizeof(dir)));
+    SDL_CreateDirectory(dir);
     br_font *f = br_bitmap_font_parse(e, k_fnt_text, SDL_strlen(k_fnt_text), "", false);
     test_fnt_text(e, f);
     test_fnt_xml(e);
+    test_bad_fonts(e);
+    test_font_lifetime(e);
+    test_atlas(e);
+    test_fnt_assets(e);
     if (f != NULL) {
         test_measure(e, f);
         test_wrap(e, f);

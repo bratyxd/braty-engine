@@ -56,6 +56,172 @@ static void br_font_untrack(br_engine *e, br_font *font)
     }
 }
 
+/* ---- validation (stb_truetype trusts every offset in the file) */
+
+static uint32_t br_font_u16(const unsigned char *p)
+{
+    return (uint32_t)p[0] << 8 | (uint32_t)p[1];
+}
+
+static uint32_t br_font_u32(const unsigned char *p)
+{
+    return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | (uint32_t)p[3];
+}
+
+/* A table of the font at fontstart: false if missing (or, in which case it logs, if it is
+ * shorter than min_len). The directory was checked against the file size already. */
+static bool br_font_table(const unsigned char *d, uint32_t fontstart, const char *tag, uint32_t min_len,
+                          uint32_t *off, uint32_t *len)
+{
+    uint32_t n = br_font_u16(d + fontstart + 4);
+    for (uint32_t i = 0; i < n; i++) {
+        const unsigned char *rec = d + fontstart + 12 + 16 * i;
+        if (SDL_memcmp(rec, tag, 4) == 0) {
+            *off = br_font_u32(rec + 8);
+            *len = br_font_u32(rec + 12);
+            if (*len < min_len) {
+                br_log_error("br_font_create: table '%s' is too short", tag);
+                return false;
+            }
+            return true;
+        }
+    }
+    *off = 0;
+    *len = 0;
+    return false;
+}
+
+/* The cmap subtable formats stb_truetype reads: every read it can make stays inside `len`. */
+static bool br_font_check_cmap_subtable(const unsigned char *s, uint64_t len)
+{
+    if (len < 4) {
+        return false;
+    }
+    uint32_t format = br_font_u16(s);
+    if (format == 0) {
+        return br_font_u16(s + 2) <= len && len >= 6 + 256;
+    }
+    if (format == 6) {
+        return len >= 10 && br_font_u16(s + 2) <= len && 10 + 2 * (uint64_t)br_font_u16(s + 8) <= len;
+    }
+    if (format == 12 || format == 13) {
+        return len >= 16 && br_font_u32(s + 4) <= len && 16 + 12 * (uint64_t)br_font_u32(s + 12) <= len;
+    }
+    if (format != 4) {
+        return true; /* stb ignores other formats */
+    }
+    if (len < 14 || br_font_u16(s + 2) > len) {
+        return false;
+    }
+    uint64_t sub_len = br_font_u16(s + 2);
+    uint32_t segcount = br_font_u16(s + 6) / 2;
+    uint32_t range = br_font_u16(s + 8) / 2;
+    uint32_t selector = br_font_u16(s + 10);
+    uint32_t shift = br_font_u16(s + 12) / 2;
+    /* the binary search (stbtt_FindGlyphIndex) can reach segment rangeShift + the halves */
+    uint64_t item_max = shift;
+    for (uint32_t k = 0; k < selector && k < 16; k++) {
+        range /= 2;
+        item_max += range;
+    }
+    if (selector > 16 || segcount == 0 || 16 + 6 * (uint64_t)segcount + 2 * item_max + 2 > sub_len) {
+        return false;
+    }
+    /* glyph id array reads: idRangeOffset[i] + 2 * (code - start) from that entry */
+    for (uint64_t i = 0; i <= item_max; i++) {
+        uint64_t end = br_font_u16(s + 14 + 2 * i);
+        uint64_t start = br_font_u16(s + 16 + 2 * segcount + 2 * i);
+        uint64_t at = 16 + 6 * (uint64_t)segcount + 2 * i;
+        uint64_t ro = br_font_u16(s + at);
+        if (ro != 0 && end >= start && at + ro + 2 * (end - start) + 2 > sub_len) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Checks what stb_truetype reads without bounds checks: the table directory, the fixed-size
+ * tables, the cmap subtables it picks, loca, hmtx and kern. Glyph outlines, GPOS and CFF data
+ * are trusted (br_font.h). */
+static bool br_font_check(const unsigned char *d, size_t size, int offset)
+{
+    if (offset < 0 || (uint64_t)offset + 12 > size) {
+        return false;
+    }
+    uint32_t start = (uint32_t)offset;
+    uint32_t tables = br_font_u16(d + start + 4);
+    if ((uint64_t)start + 12 + 16 * (uint64_t)tables > size) {
+        br_log_error("br_font_create: the table directory is cut off");
+        return false;
+    }
+    for (uint32_t i = 0; i < tables; i++) {
+        const unsigned char *rec = d + start + 12 + 16 * i;
+        if ((uint64_t)br_font_u32(rec + 8) + br_font_u32(rec + 12) > size) {
+            br_log_error("br_font_create: table '%.4s' lies past the end of the file (truncated?)", (const char *)rec);
+            return false;
+        }
+    }
+    uint32_t cmap, cmap_len, head, head_len, maxp, maxp_len, hhea, hhea_len, hmtx, hmtx_len;
+    if (!br_font_table(d, start, "cmap", 4, &cmap, &cmap_len) || !br_font_table(d, start, "head", 54, &head, &head_len) ||
+        !br_font_table(d, start, "maxp", 6, &maxp, &maxp_len) || !br_font_table(d, start, "hhea", 36, &hhea, &hhea_len) ||
+        !br_font_table(d, start, "hmtx", 0, &hmtx, &hmtx_len)) {
+        return false;
+    }
+    uint32_t glyphs = br_font_u16(d + maxp + 4);
+    uint32_t long_metrics = br_font_u16(d + hhea + 34);
+    if (long_metrics == 0 || 4 * (uint64_t)long_metrics > hmtx_len) {
+        br_log_error("br_font_create: bad horizontal metrics");
+        return false;
+    }
+    uint32_t encodings = br_font_u16(d + cmap + 2);
+    if (4 + 8 * (uint64_t)encodings > cmap_len) {
+        return false;
+    }
+    for (uint32_t i = 0; i < encodings; i++) {
+        const unsigned char *rec = d + cmap + 4 + 8 * i;
+        uint32_t platform = br_font_u16(rec);
+        uint32_t encoding = br_font_u16(rec + 2);
+        if (platform != 0 && !(platform == 3 && (encoding == 1 || encoding == 10))) {
+            continue; /* stb only reads Unicode subtables */
+        }
+        uint64_t sub = br_font_u32(rec + 4);
+        if (sub >= cmap_len || !br_font_check_cmap_subtable(d + cmap + sub, cmap_len - sub)) {
+            br_log_error("br_font_create: bad cmap subtable");
+            return false;
+        }
+    }
+    uint32_t glyf, glyf_len, loca, loca_len;
+    if (br_font_table(d, start, "glyf", 0, &glyf, &glyf_len)) {
+        bool long_loca = br_font_u16(d + head + 50) != 0;
+        uint64_t entry = long_loca ? 4 : 2;
+        if (!br_font_table(d, start, "loca", 0, &loca, &loca_len) || ((uint64_t)glyphs + 1) * entry > loca_len) {
+            br_log_error("br_font_create: loca is shorter than the glyph count");
+            return false;
+        }
+        uint64_t prev = 0;
+        for (uint32_t g = 0; g <= glyphs; g++) {
+            const unsigned char *p = d + loca + g * entry;
+            uint64_t at = long_loca ? br_font_u32(p) : 2 * (uint64_t)br_font_u16(p);
+            /* a non-empty glyph needs its 10-byte header inside glyf */
+            if (at > glyf_len || at < prev || (g > 0 && at > prev && at - prev < 10)) {
+                br_log_error("br_font_create: bad glyph offsets (loca)");
+                return false;
+            }
+            prev = at;
+        }
+    }
+    uint32_t kern, kern_len;
+    if (br_font_table(d, start, "kern", 0, &kern, &kern_len)) {
+        if (kern_len < 4 || (br_font_u16(d + kern + 2) >= 1 && kern_len < 18) ||
+            (kern_len >= 18 && 18 + 6 * (uint64_t)br_font_u16(d + kern + 10) > kern_len &&
+             br_font_u16(d + kern + 8) == 1)) {
+            br_log_error("br_font_create: bad kern table");
+            return false;
+        }
+    }
+    return true;
+}
+
 /* ---- creation */
 
 static br_font *br_font_create_ttf(br_engine *e, const unsigned char *data, size_t size, bool copy,
@@ -63,6 +229,15 @@ static br_font *br_font_create_ttf(br_engine *e, const unsigned char *data, size
 {
     if (data == NULL || size < 12) {
         br_log_error("br_font_create: no font data");
+        return NULL;
+    }
+    /* a collection header needs 16 bytes before stb reads the first font's offset */
+    if (SDL_memcmp(data, "ttcf", 4) == 0 && size < 16) {
+        br_log_error("br_font_create: truncated font collection");
+        return NULL;
+    }
+    if (!br_font_check(data, size, stbtt_GetFontOffsetForIndex(data, 0))) {
+        br_log_error("br_font_create: not a valid TrueType/OpenType font (%u bytes)", (unsigned)size);
         return NULL;
     }
     br_font *f = br_alloc(sizeof(br_font));
@@ -94,11 +269,17 @@ static br_font *br_font_create_ttf(br_engine *e, const unsigned char *data, size
     if (opts != NULL) {
         f->opts = *opts;
     }
-    if (f->opts.sdf_size <= 0.0f) {
+    if (!(f->opts.sdf_size > 0.0f)) { /* NaN too */
         f->opts.sdf_size = 64.0f;
+    }
+    if (f->opts.sdf_size > 256.0f) { /* one distance field per glyph: keep it atlas-sized */
+        f->opts.sdf_size = 256.0f;
     }
     if (f->opts.sdf_padding <= 0) {
         f->opts.sdf_padding = 12;
+    }
+    if (f->opts.sdf_padding > 64) {
+        f->opts.sdf_padding = 64;
     }
     br_array_init(&f->glyphs, sizeof(br_atlas_glyph));
     br_array_init(&f->chars, sizeof(br_bitmap_char));
@@ -130,6 +311,7 @@ void br_font_free(br_engine *e, br_font *font)
     if (font == NULL) {
         return;
     }
+    br_text_forget_font(e, font);
     br_font_untrack(e, font);
     if (e->render != NULL) {
         if (font->atlas_texture.generation != 0) {
@@ -139,6 +321,11 @@ void br_font_free(br_engine *e, br_font *font)
             for (uint32_t i = 0; i < font->page_count; i++) {
                 br_texture_destroy(e, font->pages[i]);
             }
+        }
+    }
+    for (uint32_t i = 0; i < font->page_count && e->assets != NULL; i++) {
+        if (font->page_paths[i][0] != 0) {
+            br_assets_unload(e, font->page_paths[i]); /* the page references of a loaded .fnt */
         }
     }
     if (font->owns_ttf) {
@@ -392,6 +579,14 @@ static bool br_font_atlas_place(br_engine *e, br_font *f, int w, int h, int *x, 
     if (f->pack_nodes == NULL) {
         return false; /* an earlier resize ran out of memory */
     }
+    if (w + 1 > BR_ATLAS_MAX_SIZE || h + 1 > BR_ATLAS_MAX_SIZE) {
+        /* can never fit: do not grow the atlas to its maximum for nothing */
+        if (!f->too_big_logged) {
+            br_log_error("font: a glyph image of %dx%d px is too large for the atlas; it is not drawn", w, h);
+            f->too_big_logged = true;
+        }
+        return false;
+    }
     for (;;) {
         stbrp_rect r;
         SDL_zero(r);
@@ -459,11 +654,14 @@ const br_atlas_glyph *br_font_atlas_glyph(br_engine *e, br_font *font, uint32_t 
     entry.key = key;
     uint8_t *image = br_font_render_glyph(font, codepoint, raster_size, effect, p1, p2, &entry.w, &entry.h,
                                           &entry.left, &entry.top);
+    if (image != NULL && !br_font_atlas_place(e, font, entry.w, entry.h, &entry.x, &entry.y)) {
+        /* remembered as an empty glyph so it is not rasterised again every frame */
+        br_free(image);
+        image = NULL;
+        entry.w = 0;
+        entry.h = 0;
+    }
     if (image != NULL) {
-        if (!br_font_atlas_place(e, font, entry.w, entry.h, &entry.x, &entry.y)) {
-            br_free(image);
-            return NULL;
-        }
         for (int y = 0; y < entry.h; y++) {
             SDL_memcpy(&font->atlas[(size_t)(entry.y + y) * font->atlas_w + (size_t)entry.x],
                        &image[(size_t)y * (size_t)entry.w], (size_t)entry.w);
@@ -563,8 +761,10 @@ float br_font_advance(br_font *font, uint32_t codepoint, float size)
         }
         return c != NULL ? c->xadvance * br_font_bitmap_scale(font, size) : 0.0f;
     }
-    int advance, lsb;
-    stbtt_GetCodepointHMetrics(&font->info, (int)codepoint, &advance, &lsb);
+    /* advance only: the left side bearing of a glyph id past the font's glyph count would be
+     * read past hmtx (br_font_check bounds only the advances) */
+    int advance = 0;
+    stbtt_GetGlyphHMetrics(&font->info, stbtt_FindGlyphIndex(&font->info, (int)codepoint), &advance, NULL);
     return (float)advance * br_font_ttf_scale(font, size);
 }
 

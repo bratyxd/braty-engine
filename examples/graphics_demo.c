@@ -9,7 +9,7 @@
  *                 texture pattern, pattern with a rotate/scale matrix, holes (cut), ring (cut + stroke).
  * Row 4, strokes: caps butt/round/square (pixel guides at the path ends), joins miter, bevel,
  *                 round, alignment inner/centre/outer (pixel guide = the path), dashes, dashed
- *                 circle + dashed svg curve, pixel lines.
+ *                 circle + dashed svg curve, pixel lines (grid, a fill over it, a star over both).
  * Row 5:          one context shared by two nodes (cells 1 and 2: second node tinted, rotated,
  *                 scaled), transform stack, arc_to_svg flag combinations, miter limit 10 vs 2,
  *                 translucent and gradient strokes, texture(), a node scaled 3x whose pixel
@@ -337,6 +337,8 @@ static void row_strokes(br_engine *e)
     br_stroke_style grid = guide;
     grid.fill.color = hex(0x4a5578);
     br_graphics_stroke(g, &grid);
+    br_graphics_rect(g, 36, 36, 64, 48); /* covers the grid, under the star: instruction order */
+    br_graphics_fill_color(g, hex(0x3a86ff));
     br_graphics_star(g, 68, 62, 5, 52, 22, 0);
     br_graphics_stroke(g, &guide);
 }

@@ -66,7 +66,28 @@ st.font = s->sdf_font;
 
 ## Scene JSON
 
-Type names `"text"`, `"bitmap_text"`, `"rich_text"`; their `from_json` is written by Task 10.
+Type names `"text"`, `"bitmap_text"`, `"rich_text"`:
+`{ "type": "text", "text": "Hello", "style": { "font_size": 32, "fill": "white" } }`,
+`{ "type": "bitmap_text", "text": "SCORE 0", "font": "fonts/pixel.fnt", "size": 24 }`,
+`{ "type": "rich_text", "text": "<b>Bold</b> <warn>red</warn>", "tag_styles": { "warn": { "color": "red" } } }`.
+All style keys: `docs/DATA_FORMATS.md` ("text, bitmap_text, rich_text") and
+`engine/src/data/br_node_json_text.c`.
+
+## Limits (bad data must not freeze the game)
+
+Checked inside the module whatever the caller passes (`br_text_create`, `br_text_set_style`,
+`br_text_measure`, split text, `br_bitmap_font_install`):
+
+- Non-finite style numbers fall back to 0 (`font_size` 0 = the default 26 px / native size);
+  `font_size`, `stroke_width`, `shadow_blur` and rich `<size=>` are capped at 4096; spacing,
+  leading, padding, wrap width and shadow distance at +-1e6.
+- Coverage glyphs are rasterised at an em size of at most 1024 pixels; bigger text is scaled up
+  from that (use an SDF font for huge titles).
+- Stroke and shadow growth / blur are capped at 64 raster pixels (their distance field costs grow
+  with the square of the size; logged once). Wider effects: an SDF font or a filter.
+- A glyph that does not fit the atlas (full, or larger than 4096) is remembered as empty: drawn
+  as nothing, rasterised once. SDF fonts: `sdf_size` <= 256, `sdf_padding` <= 64.
+- `br_text_prepare(e, node)` runs the rasterise pass of a draw now (warm the atlas at load time).
 
 ## Gotchas
 
@@ -80,12 +101,19 @@ Type names `"text"`, `"bitmap_text"`, `"rich_text"`; their `from_json` is writte
   style fill; installed fonts with colours baked in draw as baked (tint with the node).
   Stroke on a non-SDF bitmap font is ignored (bake it with `br_bitmap_font_install`).
 - `br_bitmap_font_install` registers the name as a font family, so `<font=Name>` and
-  `style.font_family` find it. Uninstalling or destroying a font that text still uses is a bug.
+  `style.font_family` find it. Installing again under the same name frees the old font.
+- Fonts can be freed while text uses them (`br_font_destroy`, asset unload, uninstall,
+  reinstall): every text node holding the font in `style.font` drops it and every node whose
+  layout used it lays out again, falling back to its family or the default font. Pointers
+  kept elsewhere (your own structs) are yours to clear.
 - Gradients are over the whole text box (`start`/`end` as fractions). Vertical and horizontal
   gradients are exact; diagonal ones are sampled at glyph corners. Split pieces get their own box.
 - Rich-text line info offsets (`br_text_get_line`) refer to `br_rich_text_plain`, not the markup.
 - Fake bold/italic is used when a family has no such face (outline growth / 0.2 shear).
-- Asset loaders: `ttf,otf` -> `"font"`, `fnt,xml` -> `"bitmap_font"` (an XML file that is not an
-  AngelCode font fails to load with an error).
+- Asset loaders: `ttf,otf` -> `"font"`, `fnt,xml` -> `"bitmap_font"` (an `.xml` is claimed only
+  when it contains `<font`, so other XML goes to other loaders). A loaded `.fnt` holds one
+  asset reference per page texture and releases them when it is freed. Numbers in `.fnt` files
+  follow the SVG number grammar; ids out of range drop the char, `distanceRange <= 0` becomes 4.
 - Not done: complex shaping (Arabic, Indic, ligatures; stb_truetype has no shaper), bidi,
-  colour emoji, and atlas eviction (a full 4096 atlas stops caching new glyphs, logged once).
+  colour emoji, and atlas eviction (a full 4096 atlas stops caching new glyphs: they are
+  remembered as empty and not drawn; logged once).

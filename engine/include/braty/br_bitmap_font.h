@@ -46,10 +46,11 @@ br_font *br_bitmap_font_parse(br_engine *e, const char *data, size_t size, const
 
 /* Rasterises `chars` of style->font (or its family) with the style's fill/gradient, stroke and
  * drop shadow into pages, registers the result as family `name` and returns it. The engine
- * owns it (br_bitmap_font_uninstall or shutdown frees it). NULL on failure. */
+ * owns it (br_bitmap_font_uninstall or shutdown frees it). An older font installed under the
+ * same name is freed (text using it by family switches to the new one). NULL on failure. */
 br_font *br_bitmap_font_install(br_engine *e, const char *name, const br_text_style *style,
                                 const br_bitmap_font_options *opts);
-/* Frees an installed font (text still using it must be changed first). */
+/* Frees an installed font. Text nodes using it fall back to the default font (br_font.h). */
 void br_bitmap_font_uninstall(br_engine *e, const char *name);
 
 /* ---- queries */

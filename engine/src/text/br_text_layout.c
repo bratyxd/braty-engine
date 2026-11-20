@@ -159,8 +159,11 @@ br_text_span br_text_span_from_style(br_engine *e, const br_text_style *style)
         s.font = br_font_find(e, style->font_family, style->bold, style->italic, &s.synth_bold, &s.synth_italic);
     }
     s.size = style->font_size;
-    if (s.size <= 0.0f) {
+    if (!(s.size > 0.0f)) { /* NaN too */
         s.size = s.font != NULL && s.font->is_bitmap ? s.font->native_size : 26.0f;
+    }
+    if (s.size > BR_TEXT_MAX_FONT_SIZE) { /* rich <size=...> and tag sizes come through here */
+        s.size = BR_TEXT_MAX_FONT_SIZE;
     }
     s.color = style->fill;
     s.use_gradient = style->use_gradient;
@@ -370,6 +373,7 @@ br_text_metrics br_text_measure(br_engine *e, const char *utf8, const br_text_st
     br_text_metrics m;
     SDL_zero(m);
     br_text_style st = style != NULL ? *style : br_text_style_default();
+    br_text_style_sanitize(&st);
     br_array chars;
     br_array_init(&chars, sizeof(br_layout_char));
     br_text_decode(utf8, st.white_space, &chars);

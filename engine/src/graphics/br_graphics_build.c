@@ -32,12 +32,12 @@ uint32_t br_gfx_arc_segments(float radius, float sweep)
     /* chord error of at most a quarter unit */
     float r = SDL_fabsf(radius);
     float tolerance = 0.25f;
-    if (r <= tolerance) {
+    if (!(r > tolerance)) { /* NaN too */
         return 1;
     }
     float step = 2.0f * SDL_acosf(1.0f - tolerance / r);
     float n = SDL_ceilf(SDL_fabsf(sweep) / step);
-    if (n < 1.0f) {
+    if (!(n >= 1.0f)) { /* NaN too: (uint32_t)NaN is undefined */
         n = 1.0f;
     }
     if (n > 256.0f) {
@@ -256,7 +256,8 @@ static void ear_clip(const br_vec2 *pt, uint32_t n, br_array *out_indices)
     }
     br_rect b = br_polygon_bounds((br_polygon){ pt, n });
     float eps = (b.width * b.width + b.height * b.height) * 1e-9f;
-    /* ponytail: O(n^2) per ear (O(n^3) total); z-order hashing like earcut for big polygons */
+    /* ponytail: about O(n^2) in practice (O(n^3) worst case), hence BR_GFX_MAX_EAR_CLIP_POINTS;
+     * z-order hashing like earcut for big polygons */
     uint32_t remaining = n;
     uint32_t i = 0;
     uint32_t misses = 0;
@@ -349,11 +350,21 @@ void br_gfx_triangulate(const br_vec2 *outer, uint32_t outer_count, const br_gfx
     br_array_init(&hole_points, sizeof(br_vec2));
     br_array_init(&hole_list, sizeof(br_gfx_hole));
     br_array_init(&tmp, sizeof(br_vec2));
-    if (clean_ring(outer, outer_count, &ring) >= 3) {
+    uint32_t n = clean_ring(outer, outer_count, &ring);
+    if (n >= 3) {
+        collect_holes(outer, outer_count, holes, &hole_points, &hole_list, &tmp);
+    }
+    /* ponytail: ear clipping (and hole bridging) is about O(n^2), so big concave fills are
+     * refused; earcut's z-order hash would lift the cap */
+    if (n + hole_points.count > BR_GFX_MAX_EAR_CLIP_POINTS) {
+        br_log_error("graphics: a concave fill with %u points (max %u) is not filled", n + hole_points.count,
+                     BR_GFX_MAX_EAR_CLIP_POINTS);
+        n = 0;
+    }
+    if (n >= 3) {
         if (ring_area(ring.data, ring.count) < 0.0f) {
             reverse_points(ring.data, ring.count);
         }
-        collect_holes(outer, outer_count, holes, &hole_points, &hole_list, &tmp);
         for (uint32_t h = 0; h < hole_list.count; h++) {
             const br_gfx_hole *hole = br_array_at(&hole_list, h);
             const br_vec2 *hp = br_array_at(&hole_points, hole->first);
@@ -539,7 +550,7 @@ void br_gfx_stroke_polyline(const br_vec2 *points, uint32_t count, bool closed, 
         br_array_push(&ring, &points[0]); /* an open path that ends where it started */
         n = ring.count;
     }
-    if (n < 2 || style->width <= 0.0f) {
+    if (n < 2 || !(style->width > 0.0f)) {
         br_array_free(&ring);
         return;
     }
@@ -617,10 +628,10 @@ void br_gfx_dash_polyline(const br_vec2 *points, uint32_t count, bool closed, co
         m *= 2;
         total *= 2.0f;
     }
-    if (count < 2 || total <= 1e-4f) {
+    if (count < 2 || !(total > 1e-4f) || !br_gfx_finite(total)) {
         return;
     }
-    float offset = SDL_fmodf(style->dash_offset, total);
+    float offset = SDL_fmodf(br_gfx_finite(style->dash_offset) ? style->dash_offset : 0.0f, total);
     if (offset < 0.0f) {
         offset += total;
     }
@@ -629,7 +640,8 @@ void br_gfx_dash_polyline(const br_vec2 *points, uint32_t count, bool closed, co
         offset -= dash[idx];
         idx = (idx + 1) % m;
     }
-    float rem = dash[idx] - offset;
+    /* distances in double: a float `t` stops growing once t + rem == t (a hang on long lines) */
+    double rem = (double)dash[idx] - (double)offset;
     bool on = idx % 2 == 0;
     if (on) {
         dash_point(out, points[0], true);
@@ -638,15 +650,21 @@ void br_gfx_dash_polyline(const br_vec2 *points, uint32_t count, bool closed, co
     for (uint32_t i = 0; i < segs; i++) {
         br_vec2 a = points[i];
         br_vec2 b = points[(i + 1) % count];
-        float len = br_vec2_distance(a, b);
-        if (len <= 0.0f) {
+        double len = (double)br_vec2_distance(a, b);
+        if (!(len > 0.0) || !br_gfx_finite((float)len)) {
             continue;
         }
-        br_vec2 d = br_vec2_scale(br_vec2_sub(b, a), 1.0f / len);
-        float t = 0.0f;
+        br_vec2 d = br_vec2_scale(br_vec2_sub(b, a), (float)(1.0 / len));
+        double t = 0.0;
         while (len - t > rem) {
+            /* each pass adds one point: the cap bounds time and memory per stroke */
+            if (out->points.count >= 2u * BR_GFX_MAX_DASH_PIECES) {
+                br_log_error("graphics: a dashed stroke needs more than %u dash pieces; the rest is not drawn",
+                             BR_GFX_MAX_DASH_PIECES);
+                return;
+            }
             t += rem;
-            br_vec2 p = br_vec2_add(a, br_vec2_scale(d, t));
+            br_vec2 p = br_vec2_add(a, br_vec2_scale(d, (float)t));
             dash_point(out, p, !on);
             on = !on;
             idx = (idx + 1) % m;
@@ -706,16 +724,35 @@ static br_gfx_group *group_for(br_graphics_context *ctx, br_texture texture, uin
     if (ctx->groups.count > 0) {
         br_gfx_group *g = br_array_at(&ctx->groups, ctx->groups.count - 1);
         bool same = g->texture.index == texture.index && g->texture.generation == texture.generation;
-        if (same && g->vertex_count + count <= BR_RENDER_MAX_BATCH_VERTICES) {
+        if (same && g->line_count == 0 && g->vertex_count + count <= BR_RENDER_MAX_BATCH_VERTICES) {
             return g;
         }
     }
     br_gfx_group g;
+    SDL_zero(g);
     g.texture = texture;
     g.first_vertex = ctx->vertices.count;
     g.vertex_count = 0;
     g.first_index = ctx->indices.count;
     g.index_count = 0;
+    return br_array_push(&ctx->groups, &g);
+}
+
+/* The pixel-line group at the end of the group list (a new one after triangles), so lines keep
+ * their place between the triangles of earlier and later instructions. */
+static br_gfx_group *line_group(br_graphics_context *ctx)
+{
+    if (ctx->groups.count > 0) {
+        br_gfx_group *g = br_array_at(&ctx->groups, ctx->groups.count - 1);
+        if (g->line_count > 0) {
+            return g;
+        }
+    }
+    br_gfx_group g;
+    SDL_zero(g);
+    g.first_vertex = ctx->vertices.count;
+    g.first_index = ctx->indices.count;
+    g.first_line = ctx->lines.count;
     return br_array_push(&ctx->groups, &g);
 }
 
@@ -816,6 +853,11 @@ static void stroke_path(br_graphics_context *ctx, const br_gfx_instruction *in, 
                 br_vec2 b = p[(i + 1) % sp->count];
                 br_vertex2d va = { a.x, a.y, 0.5f, 0.5f, color };
                 br_vertex2d vb = { b.x, b.y, 0.5f, 0.5f, color };
+                br_gfx_group *lines = line_group(ctx);
+                if (lines == NULL) {
+                    break;
+                }
+                lines->line_count += 2;
                 br_array_push(&ctx->lines, &va);
                 br_array_push(&ctx->lines, &vb);
                 grow_bounds(ctx, a);

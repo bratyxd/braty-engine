@@ -121,8 +121,8 @@ static bool br_rich_apply_tag(br_rich_parser *p, const char *tag, size_t len)
         }
         next.set_color = true;
     } else if (value != NULL && SDL_strcmp(buf, "size") == 0) {
-        next.size = (float)SDL_atof(value);
-        if (next.size <= 0.0f) {
+        const char *p = value; /* the SVG number grammar: no nan / inf / hex, any locale */
+        if (!br_gfx_parse_number(&p, &next.size) || *p != 0 || !(next.size > 0.0f)) {
             return false;
         }
     } else if (value != NULL && SDL_strcmp(buf, "font") == 0) {
@@ -317,14 +317,15 @@ bool br_rich_text_char_style(br_engine *e, br_node n, uint32_t i, br_rich_char_s
 static void br_split_add_piece(br_engine *e, br_node container, const char *text, uint32_t start, uint32_t end,
                                const br_text_style *style, float x, float y, float w, float h)
 {
-    char buf[1024];
     uint32_t len = end - start;
-    if (len == 0 || len >= sizeof(buf)) {
+    char *buf = len > 0 ? br_alloc((size_t)len + 1) : NULL;
+    if (buf == NULL) {
         return;
     }
     SDL_memcpy(buf, text + start, len);
     buf[len] = 0;
     br_node piece = br_text_create(e, buf, style);
+    br_free(buf);
     br_text_set_anchor(e, piece, 0.5f, 0.5f);
     br_node_set_position(e, piece, x + w * 0.5f, y + h * 0.5f);
     br_node_add_child(e, container, piece);
@@ -337,6 +338,7 @@ br_node br_split_text_create(br_engine *e, const char *utf8, const br_text_style
         return container;
     }
     br_text_style st = style != NULL ? *style : br_text_style_default();
+    br_text_style_sanitize(&st);
     br_array chars;
     br_array_init(&chars, sizeof(br_layout_char));
     br_text_decode(utf8, st.white_space, &chars);
