@@ -210,9 +210,14 @@ plus checks on state, score, best score, lives, pause and the final score text.
 Crate Rush's `playtest/round.json` is hand-written instead, and walks to waypoints rather than
 counting frames: hold a key (or a virtual pad's stick), `wait_until` the player's position passes
 a coordinate (`*/player:position.x`), release, `expect` the crate count. Such a script survives
-tuning changes. Its `playtest/soak.json` (written by `make_soak.py`) plays all three levels three
-times and `expect`s node, 3D node, asset, animator, tween and sound counts back at their menu
-baseline, and `profile:frame_ms_p95` under a budget.
+tuning changes. It also switches the language row to German and back (`engine:locale`,
+`settings_title:text`, `loc:menu.play`), checks the pause (`game:speed` 0, `game:sfx_paused`, the
+pause panel's unscaled tween) and types a name into the results screen's text field (`type`,
+`key Return`, then the menu's greeting). CTest runs it twice: from loose files and from a
+`.brpack` with an empty asset root (`crate_rush_from_pack`). Its `playtest/soak.json` (written by
+`make_soak.py`) plays all three levels three times and `expect`s node, 3D node, asset, animator,
+tween and sound counts back at their menu baseline, the saved name in every results screen's
+field, and `profile:frame_ms_p95` under a budget.
 
 A recorded session replays exactly only against the same game code and data. When gameplay
 changes on purpose, record it again.

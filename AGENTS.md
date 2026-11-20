@@ -17,7 +17,7 @@ Plans and feature maps: `docs/plans/2026-11-19-braty-engine.md` (Phase 1),
 ```sh
 cmake --preset windows-gcc [-DCMAKE_PREFIX_PATH=<SDL3 prefix>]   # default prefix: .deps/sdl3
 cmake --build --preset windows-gcc                                  # engine, tests, examples, both samples
-ctest --preset windows-gcc                                          # 62 entries: unit tests, headless examples, play-tests, golden images
+ctest --preset windows-gcc                                          # 75 entries: unit tests, headless examples, play-tests, packs, golden images
 build/windows-gcc/hello_quad.exe --frames 3 --screenshot build/out.png [--gpu-driver vulkan|direct3d12]
 build/windows-gcc/sample_projects/crate_rush/crate_rush.exe --level level1 --frames 120 --screenshot build/crate.png
 build/windows-gcc/sample_projects/crate_rush/crate_rush.exe --headless --playtest sample_projects/crate_rush/playtest/round.json
@@ -28,10 +28,12 @@ cmake --preset windows-gcc-release && cmake --build --preset windows-gcc-release
 ctest --preset windows-gcc-release                                  # the same tests in the release build
 ```
 
-CTest runs 35 `tests/test_*.c` programs (headless; `test_gpu`, `test_debug` and one profiler case
+CTest runs 41 `tests/test_*.c` programs (headless; `test_gpu`, `test_debug` and one profiler case
 open a window and skip without a GPU), every example with `--headless --frames 5` (label
 `headless`: `br_engine_gpu(e)` is NULL there, so code must not assume a GPU), both samples'
-`round.json` and 27 golden images (`-L` / `-LE golden|headless|playtest` select).
+`round.json` (Crate Rush's also from a `.brpack` with an empty asset root), the pack round trip
+(`pack_build`, `pack_matches_loose`), `tools/playtest.py`'s parser and 29 golden images
+(`-L` / `-LE golden|headless|playtest` select).
 
 Every app built on `br_app` takes `--frames N --screenshot out.png` (fixed 1/60 s steps, exits 0),
 plus `--vsync`, `--max-fps`, `--deterministic`, `--headless`, `--assets DIR` and the play-test
@@ -59,6 +61,7 @@ Then open the PNG. Commands: `step N`, `key Space`, `action start`, `click
 <label>`, `get <label>:<property>` / `<label>:<component>.<field>` / `game:<field>` /
 `engine:scene`, `set <path> <json>`, `dump`, `profile [N]` (then `profile:frame_ms_p95`...),
 `window W H` (resize; headless: the screen size cameras see, to check 21:9 / 9:16 layouts),
+`type <label> "text"` (focuses a text field and types), `get loc:<key>`, `set engine:locale "de"`,
 `screenshot FILE`, `quit`. A component name with a dot works in paths
 (`cam:camera.follow.offset3d.x`: the longest registered name wins); unknown argument names are
 errors. Scripts (`--playtest file.json`) add `expect` and
@@ -127,6 +130,18 @@ Your own code: `br_profile_begin(e, "name")` / `br_profile_end(e)`. `docs/PROFIL
    - **Controllers:** stick dead zone 0.15 / 0.95 and a separate trigger dead zone (default
      0.05, `br_input_gamepad_set_trigger_deadzone`); `br_input_gamepad_joined` / `_left` edges
      for "press to join"; buttons held when a pad disconnects report their release.
+   - **Localisation:** every player-visible text in `strings/strings.<locale>.json` (game.json
+     `"locale"`), scene texts with `"text_key"`, code texts with `br_loc_get` / `br_loc_format`;
+     a language setting calls `br_loc_set_locale` and saves the name (`docs/agents/loc.md`). Font
+     fallback chains (game.json `"fonts"`) cover glyphs the main font lacks.
+   - **Packs and install:** `braty_install_game(<target> <data dir>)` in the game's CMakeLists,
+     then `cmake --install <build> --prefix <folder>` gives exe + game.json + `assets.brpack`
+     (`tools/pack_assets.py`); game.json `"packs": ["assets.brpack"]` (a missing pack is skipped,
+     so the loose development folder still runs); `--pack FILE` mounts one by hand. A failed
+     start shows a message box; release builds write `log.txt` to user storage.
+   - **Text entry:** `br_text_field_create` (or `"type": "text_field"`) and a listener for
+     SUBMITTED; while a field has focus game actions do not see typed keys; menus call
+     `br_text_field_focus` themselves (`docs/agents/text_field.md`).
    - **Hostile data:** loaders log and refuse or clamp instead of crashing; the limits (2048
      render levels, 16 prefab levels, 16 names per `{a,b}` pattern, 8192-point concave fills,
      glTF counts, text sizes) are in README "Limits" and `docs/DATA_FORMATS.md`.
@@ -201,6 +216,10 @@ The contracts are fixed in the plan under "Core contracts".
   and `engine/src/canvas3d/br_canvas3d.c` (a custom-draw type).
 - **A component**: a plain struct + a `br_field_desc` array + `br_component_register`; it can then
   be filled by scene files (`"components"`), prefabs and glTF node extras (`"crate.value": 10`).
+  Field types: bool, int, float, vec2 / vec3 / vec4, quat, color, string (`char[64]`), text
+  (`char *` of any length, `br_component_set_text`), asset, node, node3d, enum and array. Enum and
+  array fields need one more call after registering: `br_component_set_enum(e, id, "mode", names,
+  n)` and `br_component_set_array(e, id, "points", BR_FIELD_VEC2, capacity, count_offset)`.
 - **An asset loader**: fill `br_asset_loader_desc` (type name, extensions, load,
   unload) and call `br_assets_register_loader`. See `docs/agents/assets.md`.
 - **A shader**: `engine/shaders/<name>.<vert|frag>.hlsl`, run `python tools/compile_shaders.py`,
@@ -237,7 +256,7 @@ Read the guide, then the module's public header (headers are the API reference).
 
 | Module | Guide | Status |
 |---|---|---|
-| core | `docs/agents/core.md` | done (Task 1) |
+| core | `docs/agents/core.md` | done (Task 1; storage layer, `.brpack` packs, log file: Phase 3 B3) |
 | arena | `docs/agents/arena.md` | done (Phase 2 Task 14) |
 | math | `docs/agents/math.md` | done (Task 1; audit, geometry, easing, random, noise, splines: Phase 2 Task 14c) |
 | gpu | `docs/agents/gpu.md` | done (Task 1) |
@@ -246,7 +265,9 @@ Read the guide, then the module's public header (headers are the API reference).
 | render | `docs/agents/render.md` | done (Task 2) |
 | assets | `docs/agents/assets.md` | done (Tasks 2, 5, 16) |
 | graphics | `docs/agents/graphics.md` | done (Task 3) |
-| text | `docs/agents/text.md` | done (Task 4) |
+| text | `docs/agents/text.md` | done (Task 4; fallback chains, quad cache: Phase 3 B2) |
+| loc | `docs/agents/loc.md` | done (Phase 3 B1: string tables, locales, plurals, `"text_key"`) |
+| text_field | `docs/agents/text_field.md` | done (Phase 3 B6) |
 | sprites | `docs/agents/sprites.md` | done (Task 6) |
 | mesh | `docs/agents/mesh.md` | done (Task 6) |
 | particles | `docs/agents/particles.md` | done (Task 6) |
@@ -279,6 +300,15 @@ larger changes left for the owner: `docs/REVIEW_2026-11-20.md`. Notable API chan
 `br_data_get_int_range`; `br_text_prepare`; `br_animator_rebind`; gamepad trigger dead zone and
 join / leave edges.
 
+Phase 3 (`docs/plans/2026-11-20-braty-engine-phase3.md`) made the review's larger changes: one
+API (Task A: duplicates removed, 2D and 3D node verbs aligned; old names in the migration table
+of `docs/API_REVIEW.md`), then component field types and localisation (B1), font fallback and
+the text quad cache (B2), the storage layer, packs and install rule (B3), the headless draw-list
+harness and light selection (B4), glTF cameras as `br_camera`, View3D getters and unscaled
+tweens / animators (B5) and the text field (B6). Task C moved both samples and the
+getting-started guide onto them (Crate Rush in English and German); what that taught is
+`docs/API_REVIEW.md` items 53-62. Open: Task D (integration review).
+
 ## Layout
 
 ```
@@ -286,7 +316,8 @@ engine/include/braty/   public headers; braty.h includes them all, braty_main.h 
 engine/src/<module>/    sources; private headers *_internal.h
 engine/shaders/         HLSL sources + compiled/ generated headers (committed)
 third_party/            stb, cgltf, cJSON, microui (+ licences, see third_party/README.md)
-tools/                  compile_shaders.py, playtest.py, golden.py, check_getting_started.py
+tools/                  compile_shaders.py, playtest.py, golden.py, check_getting_started.py,
+                        pack_assets.py (an asset folder -> .brpack), install_game.cmake
 sample_projects/        star_courier (2D) and crate_rush (3D); each builds standalone or from the root project
 tests/  examples/  docs/   docs: BUILDING, GETTING_STARTED, TESTING, PLAYTESTING, PLATFORMS, DATA_FORMATS,
                            API_REVIEW, REVIEW_2026-11-20, agents/; tests/golden/ holds the reference images

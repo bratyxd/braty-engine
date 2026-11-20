@@ -7,7 +7,7 @@ ever been built and run.** Everything else below is configured, written down, an
 
 | Platform | Preset | GPU backend | Status |
 |---|---|---|---|
-| Windows 10/11, MinGW-w64 GCC | `windows-gcc`, `windows-gcc-release` | Direct3D 12, Vulkan | **Tested**: all tests (Debug and release presets), every example, both sample games. Goldens are D3D12; Vulkan screenshots differ by a few edge pixels in 10 of 27 cases (`docs/TESTING.md`) |
+| Windows 10/11, MinGW-w64 GCC | `windows-gcc`, `windows-gcc-release` | Direct3D 12, Vulkan | **Tested**: all tests (Debug and release presets), every example, both sample games. Goldens are D3D12; Vulkan screenshots differ by a few edge pixels in 11 of 29 cases (`docs/TESTING.md`) |
 | Windows, MSVC | `windows-msvc` | Direct3D 12, Vulkan | **Never built, never run** (no MSVC on the dev machine). The CI workflow has a `windows-msvc` job, but the workflow itself has never run |
 | Linux (GCC/Clang) | `linux` | Vulkan | Configured, never built. CI builds it once the workflow runs |
 | macOS (Apple Clang) | `macos` | Metal | Configured, never built. **MSL shaders are generated but have never run** |

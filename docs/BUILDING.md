@@ -71,13 +71,32 @@ A release preset is its platform preset plus:
 | `BRATY_PROFILER` | ON | OFF | profiler scopes and counters compile to nothing; `--profiler-hud`, F2 and `--profile` show nothing |
 | `BRATY_PLAYTEST_STDIN` | ON (desktop) | OFF | no `--playtest-stdin` (scripts with `--playtest` still work) |
 
-What a release build does **not** do yet (ship around it or wait for the fixes): executables are
-console-subsystem programs on Windows (a console window opens next to the game; add
-`WIN32_EXECUTABLE` to your game target), logs go to stderr only (no log file), a failed start-up
-shows no message box, the debug overlay (F1 / F2) is still compiled in (game.json
-`"debug": {"keys": false}` or `br_debug_set_keys_enabled` switches its keys off), and nothing installs or packs
-the assets (`data/` is copied next to the executable as loose files; no `install()` rules). For
+What a release build does on its own: packs win over loose files (`br_file_set_loose_first`), the
+log is mirrored into `log.txt` in user storage for interactive runs (written at shutdown and on a
+failed start), and a failed start-up shows an SDL message box with the last error (never in
+`--headless`, `--frames`, `--deterministic` or play-test runs). What it does **not** do yet:
+executables are console-subsystem programs on Windows (a console window opens next to the game;
+add `WIN32_EXECUTABLE` to your game target), and the debug overlay (F1 / F2) is still compiled in
+(game.json `"debug": {"keys": false}` or `br_debug_set_keys_enabled` switches its keys off). For
 profiling numbers use a Release build with `-DBRATY_PROFILER=ON`.
+
+## Shipping a game folder
+
+`braty_install_game(<target> <data dir>)` in the game's CMakeLists (both samples call it) adds an
+install rule; `cmake --install` then writes one folder per game:
+
+```sh
+cmake --install build/windows-gcc-release --prefix dist
+# dist/crate_rush/: crate_rush.exe, game.json, assets.brpack (+ SDL3.dll when SDL is shared)
+dist/crate_rush/crate_rush.exe --headless --playtest sample_projects/crate_rush/playtest/round.json
+```
+
+The pack is `<data dir>/assets` packed by `tools/pack_assets.py` (Python 3 at install time; no
+compression, paths case-sensitive and at most 255 bytes); game.json is copied with
+`"packs": ["assets.brpack"]` added when it lists none. During development a listed pack that is
+missing is skipped with an info line, so the build folder's loose files keep working.
+`--pack FILE` mounts a pack by hand (before game.json's). Format and rules:
+`docs/DATA_FORMATS.md` section 8.
 
 ## GPU drivers
 
@@ -90,7 +109,7 @@ hello_quad --gpu-driver vulkan     --frames 3 --screenshot vulkan.png
 
 Verified on the dev machine (RTX 3060 Ti): both drivers run every example and both games, but
 the screenshots are not identical: Vulkan differs from the Direct3D 12 goldens by a few edge
-pixels in 10 of 27 golden cases (`docs/TESTING.md`, "Driver"). `metal` is not testable here.
+pixels in 11 of 29 golden cases (`docs/TESTING.md`, "Driver"). `metal` is not testable here.
 
 Debug builds create the device with SDL's debug mode on (D3D12 debug layer / Vulkan validation
 if installed). Release builds (`NDEBUG`, the release presets) turn it off.

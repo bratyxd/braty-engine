@@ -15,8 +15,10 @@ ctest --preset windows-gcc -L headless  # only the examples run with --headless 
 |---|---|---|
 | Unit tests | `tests/test_<module>.c`, one CTest each | nothing (headless engine); `test_gpu`, `test_debug` and one `test_profiler` case open a window and skip without a GPU |
 | Headless examples | every `examples/*.c` as `headless_<name>` (`--headless --frames 5`), label `headless` | nothing: catches code that assumes a GPU (`br_engine_gpu` is NULL headless) |
-| Play-test scripts | `sample_projects/<game>/playtest/*.json`, label `playtest` | nothing (`--headless`) |
-| Getting-started guide | `python tools/check_getting_started.py` (by hand, not in CTest: builds 13 programs) | a GPU for the screenshots |
+| Play-test scripts | `sample_projects/<game>/playtest/*.json`, label `playtest` (Crate Rush's round twice: from loose files and, `crate_rush_from_pack`, from a `.brpack` with an empty asset root) | nothing (`--headless`) |
+| Packs | `pack_build` (`tools/pack_assets.py` packs Crate Rush's assets), `pack_matches_loose` (`test_pack` reads every entry through the pack and compares it with the loose file) | Python 3 |
+| Tools | `test_playtest_tool` (`tools/playtest.py`'s short-command parser and UTF-8 pipes) | Python 3 |
+| Getting-started guide | `python tools/check_getting_started.py` (by hand, not in CTest: builds 16 programs, installs step 13 with `cmake --install` and runs the installed copy, runs step 14's play-test) | a GPU for the screenshots |
 | Golden images | `tools/golden.py` + `tests/golden/*.png`, test `golden`, label `golden` | a GPU; reported **skipped** without one |
 
 **Rule (AGENTS.md):** every behaviour change ships with a test that fails without it. Logic gets
@@ -93,13 +95,15 @@ whatever SDL picks. Vulkan screenshots are *not* identical; Vulkan runs are info
 gating, and other GPUs and drivers may need goldens of their own.
 
 **Tolerance, measured 2026-11-20** (downsampled pixels, worst channel difference; the 24 cases of
-the first measurement, re-run with all 27):
+the first measurement, re-run with all 27, then all 29 after Phase 3):
 
 | Run against the goldens | Worst difference | Cases with a pixel off by more than 2 |
 |---|---|---|
 | Direct3D 12, three runs | 0 (one run: 1 in `canvas3d_demo`) | none (after updating `profiler_demo`, below) |
 | Direct3D 12, one run of all 27 cases | 0 | none |
 | Vulkan, one run (27 cases) | up to 29 | 10: `view3d_demo` 993 px, `filters_demo` 303, `canvas3d_demo` 141, `graphics_demo` 128, `crate_rush_play` 52, `gltf_demo` 50, `animation_demo` 6, `gltf_scene_demo` 5, `text_demo` 2, `crate_rush_menu` 2 |
+| Direct3D 12, one run of all 29 cases (Phase 3 Task C) | 0 | none |
+| Vulkan, one run (29 cases, Phase 3 Task C) | up to 29 | 11: the same 10 with the same counts, and `font_fallback_demo` 11 |
 
 Direct3D 12 is deterministic, so the check is the tightest value that is stable there: channel
 tolerance 2, zero pixels over it. The previous rule (6 per channel, 0.2 % = 115 pixels per case)
@@ -110,7 +114,7 @@ bloom around thin lines), not missing content. If a driver update makes D3D12 dr
 two, look at the diff, then raise `MAX_BAD_PIXELS` in `tools/golden.py` by that much, not the
 channel tolerance.
 
-**Size.** 27 PNGs, RGB, 320 x 180, about 790 KB in total. Keep new ones at this size.
+**Size.** 29 PNGs, RGB, 320 x 180, about 810 KB in total. Keep new ones at this size.
 
 ## Determinism
 

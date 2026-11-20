@@ -19,12 +19,18 @@ Phase 1 (Tasks 1-12 of `docs/plans/2026-11-19-braty-engine.md`) and Phase 2 Task
 (14c); cameras and 2D in 3D (15); scenes and asset groups (16); animation and tweens (17); the
 profiler (18b); glTF as scene content (18); the second sample game, Crate Rush (19). Task 20
 (integration review) is open. A full code review on 2026-11-20 (eight slices, every engine
-file) and its fixes are summarised in `docs/REVIEW_2026-11-20.md`.
+file) and its fixes are summarised in `docs/REVIEW_2026-11-20.md`. Phase 3
+(`docs/plans/2026-11-20-braty-engine-phase3.md`) made one API out of the duplicates (Task A) and
+added what a shipped game was missing (Tasks B1-B6): component fields of any length, enums by
+name, arrays, vec4 / quat / 3D node references; string tables and locales; font fallback chains;
+a storage layer with `.brpack` packs and an install rule; a text-field node; glTF cameras as
+`br_camera`; a headless draw-list harness. Both sample games use them (Task C).
 
-`ctest` runs 35 test programs (headless; `test_gpu`, `test_debug` and one profiler case open a
+`ctest` runs 41 test programs (headless; `test_gpu`, `test_debug` and one profiler case open a
 window and skip without a GPU), every example once with `--headless --frames 5`, the two sample
-games' play-test scripts (headless) and 27 golden images (Direct3D 12; Vulkan differs by a few
-edge pixels in 10 of them): 62 CTest entries. 24 examples and two sample games run on **Windows 11 + MinGW-w64 GCC with Direct3D 12 and Vulkan** (RTX 3060 Ti) -
+games' play-test scripts (headless; Crate Rush's also from a `.brpack` with no loose files), the
+pack round trip and 29 golden images (Direct3D 12; Vulkan differs by a few edge pixels in some of
+them, `docs/TESTING.md`): 75 CTest entries. 27 examples and two sample games run on **Windows 11 + MinGW-w64 GCC with Direct3D 12 and Vulkan** (RTX 3060 Ti) -
 the only tested platform, in Debug and with the `windows-gcc-release` preset. Linux, macOS, iOS,
 Android and MSVC presets exist but have never been built; Metal shaders are generated but have
 never run. Details: `docs/PLATFORMS.md`. What is not there yet: "Not implemented yet" below.
@@ -33,7 +39,10 @@ never run. Details: `docs/PLATFORMS.md`. What is not there yet: "Not implemented
 |---|---|---|---|
 | Core, app loop | handles + dense tables, systems in phases, vsync modes, FPS cap, fixed timestep with render interpolation, `--deterministic` | core, app, math | Done |
 | Memory | linear / stack / pool / scratch arenas, per-frame arena, arenas listed in the profiler | arena | Done |
-| 2D | sprites, nine-slice, tiling, graphics, text (TTF, bitmap, SDF, rich), meshes, particles, filters, masks, blend modes | gpu, scene, render, graphics, text, sprites, mesh, particles, filters | Done |
+| 2D | sprites, nine-slice, tiling, graphics, text (TTF, bitmap, SDF, rich; font fallback chains and a missing-glyph box), meshes, particles, filters, masks, blend modes | gpu, scene, render, graphics, text, sprites, mesh, particles, filters | Done |
+| Localisation | `strings.<locale>.json` tables, system locale with fallbacks, `{name}` placeholders, zero / one / other plurals, `"text_key"` nodes that follow the locale | loc | Done (Phase 3 B1) |
+| Text entry | `text_field` node: caret, selection, clipboard, undo, max length, password, multi-line, IME composition; game actions do not see typed keys | text_field | Done (Phase 3 B6) |
+| Files, shipping | one storage layer (asset root, packs, executable folder, working directory, user storage), `.brpack` packs (`tools/pack_assets.py`, game.json `"packs"`, `--pack`), `braty_install_game` + `cmake --install`, start-up error dialog, release `log.txt` | core, data | Done (Phase 3 B3) |
 | 3D | View3D, PBR / Phong / flat / toon materials, cascaded shadows, HDR + bloom + tone mapping, picking, instancing, skinning, morph targets | three_d | Done |
 | glTF-first | a `.glb` is a scene, a prefab, a scene-file node or a kit (`kit.glb#Node`); node extras become components; collider / trigger / no-render name conventions; automatic batching | gltf, data | Done |
 | 2D in 3D | canvas3d: sprites, nine-slice, SDF text and buttons in the world, billboards | canvas3d | Done |
@@ -44,7 +53,7 @@ never run. Details: `docs/PLATFORMS.md`. What is not there yet: "Not implemented
 | Audio | wav / ogg, streaming, buses, sound sprites | audio | Done |
 | Play-testing | scripts, interactive stdin, record / replay, `expect` / `wait_until`, state queries, `profile` | playtest | Done |
 | Profiler | CPU scopes, GPU estimate, counters, bottleneck verdict, F2 panel, HUD, Chrome trace | profiler | Done |
-| Tests | 35 test programs, headless runs of every example, play-test scripts, 27 golden images (`docs/TESTING.md`) | tests, tools | Done |
+| Tests | 41 test programs, headless runs of every example, play-test scripts, pack round trip, 29 golden images (`docs/TESTING.md`) | tests, tools | Done |
 | Platforms | presets for Linux, macOS, iOS, Android, MSVC; a `-release` preset for each | - | Configured, untested (only `windows-gcc` / `windows-gcc-release` built) |
 
 ## Quick start
@@ -113,7 +122,7 @@ Everything the numbers mean: `docs/PROFILING.md`.
 Both build from the root project or on their own (`cmake -S sample_projects/<name> -B
 build/<name> -G Ninja -DCMAKE_PREFIX_PATH=<SDL3>`), copy their `data/` next to the executable,
 and ship a `playtest/round.json` that CTest runs headless. What writing them taught us about the
-API: `docs/API_REVIEW.md` (Star Courier: items 1-22, Crate Rush: 23-41; the full review: 42-52;
+API: `docs/API_REVIEW.md` (Star Courier: items 1-22, Crate Rush: 23-41; the full review: 42-52; the Phase 3 port: 53-62;
 renamed and removed functions: its migration table).
 
 ### Crate Rush (3D)
@@ -121,8 +130,9 @@ renamed and removed functions: its migration table).
 `sample_projects/crate_rush/`: a worker in a hard hat runs around three small islands (Meadow
 Isle, Frost Ridge, Sawmill Bay) collecting every crate before the clock runs out; spikes and saws
 cost time and knock you back, falling in the water costs more. Menu with a 3D diorama, level
-select with best scores, loading screen, pause, settings (vsync, FPS cap, volume, profiler HUD,
-jump rebinding; saved), results with stars. Keyboard, mouse, Xbox and PlayStation pads (prompts
+select with best scores, loading screen, pause, settings (language, vsync, FPS cap, volume,
+profiler HUD, jump rebinding; saved), results with stars and a name field. English and German
+(every text from `data/assets/strings/`). Keyboard, mouse, Xbox and PlayStation pads (prompts
 follow the device). It is the Phase 2 showcase:
 
 - levels are `.glb` files loaded directly as scenes; their nodes carry `spawn_point`, `crate`,
@@ -132,12 +142,14 @@ follow the device). It is the Phase 2 showcase:
 - a skinned character driven by `animation/character.animgraph.json` (idle, walk / sprint blend,
   jump, fall), footstep sounds from animation events, movement and box collision on a 60 Hz
   fixed timestep with render interpolation (level arena + frame arena);
-- a `br_camera` with follow and shake over the level, a second (2D) camera for every screen and
+- the level's own camera as a `br_camera` (`camera_as_br_camera`) with follow and shake, a second (2D) camera for every screen and
   the HUD anchored to the safe area; canvas3d name plates that react to the player and "+10"
   popups; tweens with named easings for pops, counters and menus;
 - scenes and asset groups: shared assets in a persistent group, per-level assets owned by the
   level scene; `playtest/soak.json` checks node / 3D node / asset / animator / tween / sound counts
-  return to baseline over nine level runs and profiles against a frame budget.
+  return to baseline over nine level runs and profiles against a frame budget;
+- shipping: `cmake --install` gives exe + game.json + `assets.brpack` (`braty_install_game`);
+  the pause stops the ticker (unscaled UI tweens) and holds the gameplay sound bus.
 
 ```sh
 build/windows-gcc/sample_projects/crate_rush/crate_rush.exe                      # menu
@@ -156,7 +168,8 @@ station that moves after every delivery, dodge debris that gets faster and dense
 deliveries. Title -> play (pause with P / Esc / Start) -> game over -> restart. Keyboard,
 gamepad, mouse and touch. Everything is data: `game.json` (window, input actions, sound sprites),
 a manifest bundle (atlas, starfield, music), three scenes, nine prefabs, and `tuning.json` with
-every gameplay number. C is ten component structs with field lists and eight systems. All art and
+every gameplay number, and `strings/strings.en.json` with every text. C is ten component structs
+with field lists and eight systems. All art and
 sound are generated by `tools/make_assets.py` (stdlib Python). It builds from the root project
 or on its own. `playtest/round.json` plays a round and checks score, lives and state;
 `playtest/soak.json` is the 60-second soak.
@@ -178,7 +191,8 @@ Done = implemented and shown in an example. Differs = same capability, different
 | (no Pixi equivalent) scenes | `br_scene_load` / `_switch` (single, additive, async, fade transitions, persistent nodes, scene-scoped systems), `br_asset_group` | Done (Phase 2 Task 16) |
 | Animation (Pixi has none built in; GSAP-style tweens) | `br_animator` (2D + 3D clips, layers, blend trees, state machines, events, root motion), `*.anim.json`, `*.animgraph.json`, `br_tween` (+ sequences) | Done (Phase 2 Task 17) |
 | Graphics, GraphicsContext, fills, gradients, patterns, strokes, dashes, SVG paths | `br_graphics_*` | Done. Deferred: SVG *file* import (only path data). |
-| Text, TextStyle, BitmapText, BitmapFont (+install), HTMLText, SplitText | `br_text`, `br_bitmap_font`, `br_rich_text` (tags + tag styles), `br_split_text`; SDF/MSDF | Done. Differs: HTMLText is tagged rich text. Missing: complex shaping (Arabic, Indic, ligatures), bidi, colour emoji. |
+| Text, TextStyle, BitmapText, BitmapFont (+install), HTMLText, SplitText | `br_text`, `br_bitmap_font`, `br_rich_text` (tags + tag styles), `br_split_text`; SDF/MSDF; font fallback chains | Done. Differs: HTMLText is tagged rich text. Missing: complex shaping (Arabic, Indic, ligatures), bidi, colour emoji. |
+| (no Pixi equivalent) localisation, text input | `br_loc` (string tables, plurals, `"text_key"`), `br_text_field` (editable text node) | Done (Phase 3) |
 | Assets, resolver, manifests, bundles, background loading, Spritesheet | `br_assets_*` (ref-counted cache, worker threads), `br_spritesheet` (TexturePacker hash/array, multipack, 9-slice borders) | Done |
 | Compressed textures | DDS (BC1-7), KTX 1 (BCn/ASTC/ETC2 when the GPU supports them) | Done. Deferred: KTX2 / Basis transcoding. |
 | EventSystem, federated pointer events, hit areas, cursors | `br_events` (`br_node_on`, capture/target/bubble), `br_input` (keyboard, mouse, touch, pen, gamepads with rumble, actions, injection) | Done. Differs: polled input and named actions (data) next to the event system. |
@@ -204,23 +218,16 @@ Draco / meshopt glTF compression (no C decoders; compressed files fail with the 
 point-light shadows, environment reflections (IBL), shadows from canvas3d content, a web target,
 SVG file import beyond path data, GPU compute culling.
 
-**Not implemented yet** (a shipped game needs these; found by the 2026-11-20 review, none started):
+**Not implemented yet** (found by the 2026-11-20 review; the rest of that list was done in Phase 3):
 
-- **Localisation:** no string tables, no `SDL_GetPreferredLocales`, text in scene files is
-  literal; **no font fallback chain** (a CJK or emoji glyph missing from the font is not drawn);
-  no bidi or complex shaping.
-- **Component fields:** strings are `char[64]` (63 UTF-8 bytes: a translated sign text does not
-  fit); no arrays, enums by name, vec4 / quat (`docs/API_REVIEW.md`, "Full review 2026-11-20").
+- **Bidi and complex shaping:** Arabic, Hebrew and Indic scripts lay out as isolated code points
+  left to right; no ligatures, no colour emoji.
 - **Window modes at runtime:** fullscreen only from game.json at start; no API to switch
   fullscreen / borderless / resolution / display while running (call SDL on `br_engine_window`).
-- **Asset packaging:** data ships as loose files copied next to the executable; no pack / archive
-  format, no SDL title storage, no app-bundle / APK copy step, no `install()` rules.
-- **Shipping build polish:** no log file, no error message box on a failed start, console window
-  on Windows (`docs/BUILDING.md`, "Release builds").
-- **A text-field node:** `br_input_text*` and IME composition exist, but caret, selection and
-  clipboard UI are up to the game.
-- **glTF cameras as `br_camera`:** a camera in a `.glb` imports as a `camera3d` node, not a
-  Unity-style `br_camera` (API_REVIEW 23); following needs the hide-the-view workaround.
+- **Platform packaging:** packs and `cmake --install` exist, but loose files are read with
+  `SDL_IOFromFile` (not SDL title storage) and there is no app-bundle / APK copy step.
+- **Windows subsystem:** executables are console programs (a console window opens next to the
+  game; add `WIN32_EXECUTABLE` to your target, `docs/BUILDING.md`).
 - **Aspect-ratio goldens:** one 16:9 golden per case; nothing checks 21:9 or 9:16 automatically.
 
 ## Limits
@@ -248,6 +255,22 @@ SVG file import beyond path data, GPU compute culling.
   1024 states and 4096 transitions, clips 100000 keys per track; render textures at most 16384
   px a side (`BR_RENDER_TEXTURE_MAX_SIZE`). `docs/DATA_FORMATS.md` lists the value ranges.
 - **Physics:** none in the engine. Crate Rush does box collision itself (`src/player.c`).
+- **Localisation:** plural forms are zero / one / other only (no ICU: "few" / "many" languages use
+  `other`); no bidirectional text and no shaping; locale names are at most 31 bytes (letters,
+  digits, `-`, `_`); string tables are not hot-reloaded. Glyphs missing from a font come from
+  its fallback chain (up to 8 fonts), else a missing-glyph box.
+- **Packs:** no compression; paths are case-sensitive (loose files follow the OS) and 1..255
+  bytes; loose files win in debug builds, packs in release builds.
+- **3D lights:** 16 per view (`BR_LIGHT3D_MAX`); beyond that directional lights are kept, then
+  the point / spot lights with the largest `intensity / (1 + distance^2)` to the camera.
+- **Text field:** caret and Backspace step over code points, not grapheme clusters (a combining
+  accent or an emoji sequence takes several presses); on a canvas3d it needs texture mode and the
+  IME candidate window is placed in canvas coordinates (wrong place on screen); there is no
+  engine focus ring (menus call `br_text_field_focus`).
+- **Start-up errors and the log:** an interactive run that fails to start shows an SDL message
+  box with the last error (never in `--headless`, `--frames`, `--deterministic` or play-test
+  runs; no test sees the dialog). Release builds mirror the log into `log.txt` in user storage,
+  written at shutdown and on a failed start (first 1 MB), so a crash loses it.
 - Open API rough edges and their proposed fixes: `docs/API_REVIEW.md`.
 
 ## Deliberate shortcuts (`ponytail:` comments)
@@ -277,7 +300,10 @@ Each is a known ceiling with its upgrade path written next to it in the code
 | text | Kerning pairs only for sets up to 256 glyphs; a full 4096 atlas stops caching new glyphs (no eviction); diagonal gradients sampled at glyph corners. |
 | three_d / gltf | Skinned bounds = bind pose grown 2x; batched meshes culled as one box; batching only inside one instance (kit parts placed separately stay separate draws); one depth bias per light; per-triangle tangents (not MikkTSpace); smooth generated normals; points / lines skipped; one sampler filter / wrap mode; transmission as alpha; light units unscaled; infinite far planes become 1000 units. |
 | data (glTF) | Every collider is a box from the mesh bounds; extras are parsed per instance; a view using a glTF camera reloads through its scene. |
-| crate_rush | Box-only collision, no slopes or steps; a linear scan of the level's colliders; the level's own View3D is hidden instead of adopted by the follow camera. |
+| crate_rush | Box-only collision, no slopes or steps; a linear scan of the level's colliders. |
+| loc | String tables are not hot-reloaded (an edited table is read again once no locale holds it). |
+| text_field | Caret stops are rebuilt every frame (O(text length) per field); editing steps over code points, not graphemes. |
+| core (files) | Loose files are opened with `SDL_IOFromFile`, not SDL title storage; the log file keeps the first 1 MB of a run. |
 
 ## Repository layout
 
@@ -291,7 +317,8 @@ examples/               one program per module (+ generated demo data)
 sample_projects/        star_courier (2D) and crate_rush (3D) sample games (build standalone too)
 tests/                  headless CTest programs (tests/test_<module>.c), golden/ (reference images)
 tools/                  compile_shaders.py, playtest.py (drive a game), golden.py (image tests),
-                        check_getting_started.py (builds every step of the guide)
+                        check_getting_started.py (builds every step of the guide),
+                        pack_assets.py (an asset folder -> .brpack), install_game.cmake
 docs/                   BUILDING, GETTING_STARTED, TESTING, PLAYTESTING, PLATFORMS, DATA_FORMATS, API_REVIEW,
                         agents/<module>.md (module guides), plans/
 .github/workflows/      CI (Windows MinGW + release, MSVC, Linux, macOS; never run)

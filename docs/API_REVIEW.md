@@ -487,6 +487,64 @@ ones from the earlier lists. Summary of the whole review: `docs/REVIEW_2026-11-2
     instance call), a flag separate from the device pause so the two compose. Test: `test_audio`
     `test_getters_and_global_pause`.
 
+# Phase 3 Task C: porting the samples to the new APIs
+
+Crate Rush moved to string tables (English + German), enum and text component fields, a name
+field, a pack and the ticker-speed pause; Star Courier to a string table; the getting-started
+guide gained the same three steps. What that taught us, ranked. Two small gaps were fixed on the
+way (54, 62); the rest are open.
+
+53. **friction - the game's audio pause also silences the pause menu**
+    (`br_audio_set_global_paused`). It stops the mixer, so the menu's focus and confirm clicks
+    (played while paused) are held until the game resumes. Crate Rush does not use it: gameplay
+    sounds play on an `sfx` bus that the pause holds (`br_audio_bus_set_paused`) and menu sounds
+    on a `ui` bus. **Fix:** let a bus opt out of the global pause
+    (`br_audio_bus_set_pausable(e, bus, false)`), or document the two-bus recipe as the way to
+    pause.
+54. **gap - no getter for the ticker speed or a bus's pause.** A pause that sets the speed to 0
+    could not put back game.json's `ticker.speed`, and a play-test could not check that the bus
+    is held. **Resolved (Phase 3 Task C):** `br_ticker_speed`, `br_audio_bus_paused`. Tests:
+    `test_core` (ticker), `test_audio` `test_getters_and_global_pause`.
+55. **friction - formatted texts do not follow a language change.** `"text_key"` and
+    `br_loc_bind_text` re-set plain keys, but anything made with `br_loc_format` ("BEST {score}",
+    "HELLO, {name}!", "-{seconds} SEC") is a plain string: every screen that shows one needs its
+    own refresh after `br_loc_set_locale` (Crate Rush re-fills the menu from its settings code;
+    texts made every frame are fine). **Fix:** `br_loc_bind_format(e, n, key, args, count)` that
+    keeps copies of the arguments, or a locale-change callback (`br_loc_on_change`).
+56. **friction - a bound node and `br_text_set_text` fight.** A node with `"text_key"` that code
+    later changes with `br_text_set_text` keeps its binding, so the next locale change sets it
+    back to the key's text (Star Courier's hint switches between two keys; it has to call
+    `br_loc_bind_text` instead). **Fix:** `br_text_set_text` unbinds the node (and says so in the
+    header), or logs once in debug builds.
+57. **gap - input glyph labels are English only.** `br_input_glyph` labels and
+    `br_input_format_prompt` give "Left", "Return", "Escape", "Space" whatever the locale, so the
+    German settings hint reads "LEFT RIGHT ÄNDERN RETURN WÄHLEN". **Fix:** look up
+    `input.<label>` (for example `input.Space`) in the string tables before the built-in label.
+58. **friction - no layout for text that grows.** A translation longer than the English word
+    (SPRINGEN for JUMP) runs into whatever sits next to it at a fixed position; Crate Rush measures
+    the text and moves its jump prompt in C (`cr_hud_system`). **Fix:** a horizontal / vertical
+    row container (`"layout": { "direction": "row", "gap": 24 }`) that places children by their
+    measured size each frame.
+59. **friction - display text in component fields is a key the game resolves itself.** Level
+    titles and sign texts come from glTF extras; nodes have `"text_key"`, fields do not, so the
+    game stores keys in `BR_FIELD_STRING` / `BR_FIELD_TEXT` fields and calls `br_loc_get` where it
+    shows them. **Fix:** document the pattern, or a field flag that resolves a key when a text node
+    is filled from it.
+60. **friction - a text field from a scene file still needs code.** The listener can only be set
+    from C, and the placeholder is literal text (no `"placeholder_key"`), so Crate Rush finds its
+    `player_name` field after the results scene loads to set both. **Fix:** `"placeholder_key"`
+    bound like `"text_key"`, and `"on": { "submit": "<handler>" }` through
+    `br_scene_file_add_handler`.
+61. **friction - easing names as an enum field are hand-built.** Each game that wants
+    `"pickup_ease": "out_back"` checked at load time builds a `br_ease_name(i)` table for
+    `br_component_set_enum` (Crate Rush: four calls). An enum field also rejects `""`, so a prefab
+    default needs an explicit `"none"` name. **Fix:** `br_ease_names(&count)`, or a
+    `BR_FIELD_EASE` type.
+62. **bug - `tools/playtest.py` mangled non-ASCII replies and string `set` values.** On Windows
+    its pipes used the console code page ("JÃ¼rgen"), and `set engine:locale "de"` lost the quotes
+    to `shlex` and failed with a JSON error. **Resolved (Phase 3 Task C):** UTF-8 pipes, the value
+    parsed from the text as written. Test: `tests/test_playtest_tool.py`.
+
 ## Migration table (Phase 3 Task A)
 
 Every name below was removed without an alias: a game that still uses one gets a compiler
