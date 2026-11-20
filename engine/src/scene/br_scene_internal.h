@@ -29,7 +29,7 @@ typedef struct br_node_record {
     void    *filters;            /* opaque, owned by the filters module */
     uint32_t mask_users;         /* nodes using this node as their mask: not drawn as content */
     br_mask_kind mask_kind;
-    int      blend_mode;         /* br_blend_mode or >= BR_BLEND_ADVANCED_FIRST */
+    br_blend_mode blend_mode;
 
     bool destroyed;              /* waiting for the flush at the start of the next frame */
     bool transform_dirty;        /* local fields changed since the last transform update */

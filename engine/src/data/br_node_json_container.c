@@ -485,7 +485,7 @@ void br_node_json_container_read(br_engine *e, br_node n, const cJSON *json)
         br_node_set_sortable_children(e, n, b);
     }
     if (br_data_get_enum(e, json, "blend", br_blend_names, BR_ARRAY_COUNT(br_blend_names), &i)) {
-        br_node_set_blend_mode(e, n, i);
+        br_node_set_blend_mode(e, n, (br_blend_mode)i);
     }
     if (br_data_get_bool(e, json, "cullable", &b)) {
         br_node_set_cullable(e, n, b);
@@ -557,7 +557,7 @@ void br_node_json_container_write(br_engine *e, br_node n, cJSON *out)
     int z = br_node_z_index(e, n);
     br_data_put(out, "z_index", z != 0, cJSON_CreateNumber(z));
     br_data_put(out, "sortable_children", br_node_sortable_children(e, n), cJSON_CreateTrue());
-    int blend = br_node_blend_mode(e, n);
+    br_blend_mode blend = br_node_blend_mode(e, n);
     const char *blend_name = br_data_enum_name(br_blend_names, BR_ARRAY_COUNT(br_blend_names), blend);
     br_data_put(out, "blend", blend != BR_BLEND_INHERIT && blend_name != NULL, cJSON_CreateString(blend_name ? blend_name : ""));
     br_data_put(out, "cullable", br_node_cullable(e, n), cJSON_CreateTrue());

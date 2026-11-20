@@ -262,7 +262,7 @@ static void build_blend_row(br_engine *e, demo_state *d)
         float y = top + 50.0f + (float)(i % 2) * 100.0f;
         br_node card = make_card(e, d, d->stage, x, y);
         br_node_set_scale(e, card, br_vec2_make(0.6f, 0.6f));
-        br_node_set_blend_mode(e, card, BR_BLEND_ADVANCED_FIRST + i);
+        br_node_set_blend_mode(e, card, (br_blend_mode)(BR_BLEND_ADVANCED_FIRST + i));
     }
 }
 

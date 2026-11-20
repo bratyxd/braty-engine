@@ -9,7 +9,7 @@
 
 cbuffer Blend : register(b0, space3)
 {
-    float4 u_mode; // x = mode index (br_blend_advanced - BR_BLEND_ADVANCED_FIRST)
+    float4 u_mode; // x = mode index (br_blend_mode - BR_BLEND_ADVANCED_FIRST)
 };
 
 // Must match textured.vert.hlsl's Output exactly.

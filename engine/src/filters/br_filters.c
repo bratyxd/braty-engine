@@ -654,7 +654,7 @@ static bool br_fx_hook(br_engine *e, br_node n, br_render_ctx *rc, void *user)
     bool mask_inverse = false;
     br_node mask = br_node_mask(e, n, &mask_kind, &mask_inverse);
     bool has_mask = (mask_kind == BR_MASK_ALPHA || mask_kind == BR_MASK_COLOR) && br_node_valid(e, mask);
-    int blend = br_node_blend_mode(e, n);
+    br_blend_mode blend = br_node_blend_mode(e, n);
     bool advanced = blend >= BR_BLEND_ADVANCED_FIRST && blend < BR_BLEND_ADVANCED_END;
     bool cached = br_node_cache_as_texture(e, n);
     if (active == 0 && !has_mask && !advanced && !cached) {

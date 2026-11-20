@@ -21,7 +21,8 @@
  *   b0 (space3)    : one cbuffer: first the 64 bytes of br_filter_globals, then your uniforms
  * Output: premultiplied colour for that pixel (blending is off; the pass overwrites).
  *
- * Advanced blend modes (pixi.js/advanced-blend-modes): br_node_set_blend_mode(e, n, BR_BLEND_OVERLAY).
+ * Advanced blend modes (pixi.js/advanced-blend-modes, br_blend_mode in br_node.h):
+ * br_node_set_blend_mode(e, n, BR_BLEND_OVERLAY).
  * The node is drawn offscreen, the target region under it is copied to a pooled texture, and a
  * blend shader composites the two.
  *
@@ -174,32 +175,5 @@ uint32_t br_filters_pool_count(br_engine *e);
 
 /* Re-renders n's cached texture next frame (after its content changed). */
 void br_cache_update_texture(br_engine *e, br_node n);
-
-/* ---- advanced blend modes: values for br_node_set_blend_mode */
-
-typedef enum br_blend_advanced {
-    BR_BLEND_COLOR = BR_BLEND_ADVANCED_FIRST,
-    BR_BLEND_COLOR_BURN,
-    BR_BLEND_COLOR_DODGE,
-    BR_BLEND_DARKEN,
-    BR_BLEND_DIFFERENCE,
-    BR_BLEND_DIVIDE,
-    BR_BLEND_EXCLUSION,
-    BR_BLEND_HARD_LIGHT,
-    BR_BLEND_HARD_MIX,
-    BR_BLEND_LIGHTEN,
-    BR_BLEND_LINEAR_BURN,
-    BR_BLEND_LINEAR_DODGE,
-    BR_BLEND_LINEAR_LIGHT,
-    BR_BLEND_LUMINOSITY,
-    BR_BLEND_NEGATION,
-    BR_BLEND_OVERLAY,
-    BR_BLEND_PIN_LIGHT,
-    BR_BLEND_SATURATION,
-    BR_BLEND_SOFT_LIGHT,
-    BR_BLEND_SUBTRACT,
-    BR_BLEND_VIVID_LIGHT,
-    BR_BLEND_ADVANCED_END
-} br_blend_advanced;
 
 #endif

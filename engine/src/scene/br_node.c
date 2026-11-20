@@ -970,7 +970,7 @@ bool br_node_sortable_children(br_engine *e, br_node n)
     return rec != NULL && rec->sortable_children;
 }
 
-void br_node_set_blend_mode(br_engine *e, br_node n, int blend_mode)
+void br_node_set_blend_mode(br_engine *e, br_node n, br_blend_mode blend_mode)
 {
     br_node_record *rec = br_scene_record(e, n);
     if (rec != NULL) {
@@ -978,7 +978,7 @@ void br_node_set_blend_mode(br_engine *e, br_node n, int blend_mode)
     }
 }
 
-int br_node_blend_mode(br_engine *e, br_node n)
+br_blend_mode br_node_blend_mode(br_engine *e, br_node n)
 {
     br_node_record *rec = br_scene_record(e, n);
     return rec != NULL ? rec->blend_mode : BR_BLEND_INHERIT;

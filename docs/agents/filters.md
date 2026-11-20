@@ -33,7 +33,7 @@ destroyed when the window pixel size changes.
 | `br_filters_set_resolution(e, n, r)` / `br_filters_set_area(e, n, &local_rect)` | Cheaper filters / fixed filter area. |
 | `br_node_set_mask(e, n, mask, BR_MASK_ALPHA or BR_MASK_COLOR, inverse)` | Alpha / colour masks. |
 | `br_node_set_cache_as_texture(e, n, true)`, `br_cache_update_texture(e, n)` | Render once, reuse. |
-| `br_node_set_blend_mode(e, n, BR_BLEND_OVERLAY)` | Any of the 21 advanced modes (`br_blend_advanced`). |
+| `br_node_set_blend_mode(e, n, BR_BLEND_OVERLAY)` | Any of the 21 advanced modes (`br_blend_mode`, `br_node.h`). |
 | `br_generate_texture(e, n, opts)`, `br_extract_pixels`, `br_extract_image_png` | Node -> texture -> pixels/PNG. |
 | `br_filters_pool_acquire(e, w, h)` | A pooled render texture for your own effects (free next frame). |
 

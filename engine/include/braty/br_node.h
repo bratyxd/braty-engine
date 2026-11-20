@@ -159,7 +159,9 @@ br_vec2 br_node_to_local(br_engine *e, br_node n, br_vec2 world_point);
 /* ---- appearance */
 
 /* Blend modes. Textures and vertex colours are premultiplied; *_NPM are for straight-alpha
- * sources (custom shaders). INHERIT (default) takes the parent's mode. */
+ * sources (custom shaders). INHERIT (default) takes the parent's mode. The advanced modes
+ * (pixi.js advanced-blend-modes) are drawn by the filters module through the effects hook
+ * (br_render_set_effects_hook): the node offscreen, then a blend shader over what is under it. */
 typedef enum br_blend_mode {
     BR_BLEND_INHERIT,
     BR_BLEND_NORMAL,
@@ -171,11 +173,31 @@ typedef enum br_blend_mode {
     BR_BLEND_NORMAL_NPM,
     BR_BLEND_ADD_NPM,
     BR_BLEND_SCREEN_NPM,
-    BR_BLEND_BUILTIN_COUNT
+    BR_BLEND_BUILTIN_COUNT,
+    BR_BLEND_ADVANCED_FIRST = 32,
+    BR_BLEND_COLOR = BR_BLEND_ADVANCED_FIRST,
+    BR_BLEND_COLOR_BURN,
+    BR_BLEND_COLOR_DODGE,
+    BR_BLEND_DARKEN,
+    BR_BLEND_DIFFERENCE,
+    BR_BLEND_DIVIDE,
+    BR_BLEND_EXCLUSION,
+    BR_BLEND_HARD_LIGHT,
+    BR_BLEND_HARD_MIX,
+    BR_BLEND_LIGHTEN,
+    BR_BLEND_LINEAR_BURN,
+    BR_BLEND_LINEAR_DODGE,
+    BR_BLEND_LINEAR_LIGHT,
+    BR_BLEND_LUMINOSITY,
+    BR_BLEND_NEGATION,
+    BR_BLEND_OVERLAY,
+    BR_BLEND_PIN_LIGHT,
+    BR_BLEND_SATURATION,
+    BR_BLEND_SOFT_LIGHT,
+    BR_BLEND_SUBTRACT,
+    BR_BLEND_VIVID_LIGHT,
+    BR_BLEND_ADVANCED_END
 } br_blend_mode;
-/* Values >= this are advanced blend modes owned by the filters module (Task 8): nodes using
- * them are drawn through the effects hook (br_render_set_effects_hook). */
-#define BR_BLEND_ADVANCED_FIRST 32
 
 /* Sets alpha (0..1), multiplied down the hierarchy. */
 void br_node_set_alpha(br_engine *e, br_node n, float alpha);
@@ -205,10 +227,10 @@ int br_node_z_index(br_engine *e, br_node n);
 void br_node_set_sortable_children(br_engine *e, br_node n, bool sortable);
 /* True if children are sorted by z-index. */
 bool br_node_sortable_children(br_engine *e, br_node n);
-/* Sets the blend mode (br_blend_mode, or >= BR_BLEND_ADVANCED_FIRST for Task 8 modes). */
-void br_node_set_blend_mode(br_engine *e, br_node n, int blend_mode);
+/* Sets the blend mode (built-in or advanced). */
+void br_node_set_blend_mode(br_engine *e, br_node n, br_blend_mode blend_mode);
 /* The blend mode as set (BR_BLEND_INHERIT by default). */
-int br_node_blend_mode(br_engine *e, br_node n);
+br_blend_mode br_node_blend_mode(br_engine *e, br_node n);
 
 /* ---- bounds and culling (PixiJS getBounds, Culler) */
 

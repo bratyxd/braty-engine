@@ -234,7 +234,7 @@ static void setup_blend_panel(br_engine *e, demo_state *s)
     br_node panel = add_panel(e, s, 0);
     br_node strip = add_sprite(e, panel, s->gradient, 10.0f, 10.0f);
     br_node_set_scale(e, strip, br_vec2_make((PANEL_W - 20) / 256.0f, 80.0f));
-    int modes[6] = { BR_BLEND_NORMAL, BR_BLEND_ADD, BR_BLEND_MULTIPLY, BR_BLEND_SCREEN, BR_BLEND_ERASE, BR_BLEND_NONE };
+    br_blend_mode modes[6] = { BR_BLEND_NORMAL, BR_BLEND_ADD, BR_BLEND_MULTIPLY, BR_BLEND_SCREEN, BR_BLEND_ERASE, BR_BLEND_NONE };
     for (int i = 0; i < 6; i++) {
         br_node c = add_sprite(e, panel, s->circle, 15.0f + (float)i * 45.0f, 30.0f);
         br_node_set_scale(e, c, br_vec2_make(0.62f, 0.62f));
