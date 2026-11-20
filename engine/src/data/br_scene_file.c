@@ -616,9 +616,9 @@ static const br_data_known_keys br_data_type_keys[] = {
     { "perspective_mesh", " texture positions uvs colors indices plane perspective rope " },
     { "mesh_rope", " texture positions uvs colors indices plane perspective rope " },
     { "particle_container", " texture dynamic particles " },
-    { "text", " text font size style anchor resolution " },
-    { "bitmap_text", " text font size style anchor resolution " },
-    { "rich_text", " text font size style anchor resolution tag_styles " },
+    { "text", " text text_key font size style anchor resolution " },
+    { "bitmap_text", " text text_key font size style anchor resolution " },
+    { "rich_text", " text text_key font size style anchor resolution tag_styles " },
 };
 
 static const char *br_data_text_style_keys =

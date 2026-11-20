@@ -578,7 +578,8 @@ static cJSON *br_pt_dump3d(br_engine *e, br_node3d n)
 }
 
 /* "profile:<key>" (a key of br_profiler_summary_json over the last "profile" command's frames;
- * "profile:*" = the whole object) and "engine:scene" (the active scene's name). Only used when
+ * "profile:*" = the whole object), "engine:scene" (the active scene's name) and "engine:locale"
+ * (br_loc_locale). Only used when
  * the game exposes no struct of that name. NULL with *handled false for any other path. */
 static cJSON *br_pt_get_builtin(br_engine *e, const br_pt_path *p, const char *path, bool *handled)
 {
@@ -590,6 +591,10 @@ static cJSON *br_pt_get_builtin(br_engine *e, const br_pt_path *p, const char *p
         *handled = true;
         const char *name = br_scene_active_name(e);
         return cJSON_CreateString(name != NULL ? name : "");
+    }
+    if (SDL_strcmp(p->target, "engine") == 0 && SDL_strcmp(p->parts[0], "locale") == 0) {
+        *handled = true;
+        return cJSON_CreateString(br_loc_locale(e));
     }
     if (SDL_strcmp(p->target, "profile") != 0) {
         return NULL;
@@ -616,6 +621,10 @@ static cJSON *br_pt_get_builtin(br_engine *e, const br_pt_path *p, const char *p
 
 cJSON *br_playtest_query_get(br_engine *e, const char *path)
 {
+    /* "loc:<key>": the text of a string table key; the key is taken whole (dots and all) */
+    if (path != NULL && SDL_strncmp(path, "loc:", 4) == 0 && path[4] != '\0' && br_pt_find_exposed(e, "loc") == NULL) {
+        return cJSON_CreateString(br_loc_get(e, path + 4));
+    }
     br_pt_path p;
     if (!br_pt_parse_path(e, path, &p)) {
         return NULL;
@@ -692,6 +701,13 @@ bool br_playtest_query_set(br_engine *e, const char *path, const cJSON *value)
     }
     if (SDL_strchr(p.target, '/') != NULL) {
         return br_pt_set3d(e, &p, path, value);
+    }
+    if (SDL_strcmp(p.target, "engine") == 0 && p.part_count == 1 && SDL_strcmp(p.parts[0], "locale") == 0 &&
+        br_pt_find_exposed(e, "engine") == NULL) {
+        if (!cJSON_IsString(value) || !br_loc_set_locale(e, value->valuestring)) {
+            return br_playtest_fail(e, "set '%s': expected the name of a locale with a string table (see the log)", path);
+        }
+        return true;
     }
     const br_field_desc *field = NULL;
     void *base = NULL;

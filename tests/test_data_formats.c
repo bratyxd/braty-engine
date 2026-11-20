@@ -224,6 +224,10 @@ static void check_example(br_engine *e, const example *x)
         br_anim_library *lib = br_anim_library_parse(e, source, x->text, len);
         BR_CHECK(lib != NULL);
         br_anim_library_free(lib);
+    } else if (strcmp(x->kind, "strings") == 0) {
+        /* the table was written to its path: make it the current one (later text_key examples use it) */
+        BR_CHECK(br_loc_setup(e, "strings", "en", NULL, 0));
+        BR_CHECK(br_loc_has(e, "menu.play") && br_loc_has(e, "hud.crates"));
     } else if (strcmp(x->kind, "animgraph") == 0) {
         br_anim_graph *graph = br_anim_graph_parse(e, source, x->text, len);
         BR_CHECK(graph != NULL);
