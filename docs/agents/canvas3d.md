@@ -14,7 +14,10 @@ Header: `engine/include/braty/br_canvas3d.h`. Source: `engine/src/canvas3d/`, sh
   other transparents), or in the **opaque** pass with depth write when `alpha_cutoff > 0`
   (alpha-tested). Depth tested, sRGB -> linear, `tint`, optional `lit` (view ambient + lights,
   Lambert, no shadows). Batches and SDF text are drawn; other custom 2D draws (tiling sprites)
-  and filters/masks need texture mode.
+  and effects need texture mode: a node with filters, `cache_as_texture`, an alpha / colour mask
+  or an advanced blend mode inside a geometry-mode canvas is drawn without them and logs one
+  error per engine naming it (`test_canvas3d` `test_effects_in_canvas`). Stencil masks are
+  skipped too (no pixels to clip).
 - **Texture mode**: the subtree is rendered into a render texture every frame
   (`resolution` pixels per 2D unit) and that texture is drawn on the plane. Filters and masks
   work (put them on children of the root: the root's own effects are skipped).

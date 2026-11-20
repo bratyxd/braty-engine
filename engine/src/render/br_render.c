@@ -348,7 +348,19 @@ static void br_render_walk_node(br_render_ctx *rc, uint32_t index, br_blend_mode
     }
     /* a node on a layer this camera does not draw: skip its own drawing, keep walking children */
     bool drawn = as_mask || (rc->layer_bits & rc->culling_mask) != 0;
-    if (drawn && (flags & BR_WALK_SKIP_EFFECTS) == 0 && r->effects_fn != NULL && br_render_record_needs_effects(rc, rec)) {
+    bool capturing = rc->target_width <= 0.0f; /* br_render_capture_subtree: no pixels, replayed in 3D */
+    if (drawn && capturing && (flags & BR_WALK_SKIP_EFFECTS) == 0 && br_render_record_needs_effects(rc, rec)) {
+        // ponytail: effects render offscreen passes that a geometry-mode canvas3d replay cannot run; the node is drawn plainly. Running them would need per-node render textures inside the capture.
+        if (!r->warned_capture_effects) {
+            const char *label = br_node_label(e, n);
+            /* short: the debug log keeps 160 characters a line */
+            br_log_error("canvas3d: '%.32s' has effects in a geometry-mode canvas3d: drawn without; use "
+                         "BR_CANVAS3D_TEXTURE",
+                         label != NULL ? label : "");
+            r->warned_capture_effects = true;
+        }
+    } else if (drawn && (flags & BR_WALK_SKIP_EFFECTS) == 0 && r->effects_fn != NULL &&
+               br_render_record_needs_effects(rc, rec)) {
         rc->blend = blend;
         if (r->effects_fn(e, n, rc, r->effects_user)) {
             rc->layer_bits = saved_bits;
