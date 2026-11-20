@@ -26,6 +26,7 @@
  */
 #include "data/br_gltf_scene_internal.h"
 #include "three_d/br_gltf_internal.h"
+#include "animation/br_animation_internal.h"
 
 /* A 3D node's "components" object, applied once the view's scene is built (forward references). */
 typedef struct br_json3d_pending {
@@ -247,21 +248,37 @@ static br_node3d br_json3d_gltf(br_engine *e, const cJSON *json)
         br_data_error(e, "source", "model (or its #node) could not be loaded; skipped");
         return none;
     }
-    /* "animation": a clip name, or a clip index for unnamed clips */
+    /* "animation": a clip name, or a clip index for unnamed clips (played by the unified animator) */
     const cJSON *anim = cJSON_GetObjectItemCaseSensitive(json, "animation");
+    const br_model *model = br_model3d_model(e, n);
     char clip[BR_DATA_NAME_SIZE];
     if (cJSON_IsNumber(anim)) {
-        if (anim->valueint < 0 || !br_animator3d_play_index(e, n, (uint32_t)anim->valueint)) {
+        if (anim->valueint < 0 || model == NULL || (uint32_t)anim->valueint >= model->clip_count) {
             br_data_error(e, "animation", "clip index out of range");
+        } else {
+            br_animator_play_index(e, br_animator_for_model(e, n), (uint32_t)anim->valueint);
         }
-    } else if (br_data_get_string(e, json, "animation", clip, sizeof(clip)) && !br_animator3d_play(e, n, clip)) {
-        br_data_error(e, "animation", "no clip with that name in the model");
+    } else if (br_data_get_string(e, json, "animation", clip, sizeof(clip))) {
+        if (model == NULL || br_model_find_clip(model, clip) < 0) {
+            br_data_error(e, "animation", "no clip with that name in the model");
+        } else {
+            br_animator_play(e, br_animator_for_model(e, n), clip);
+        }
     }
-    br_animator3d *a = br_animator3d_get(e, n);
-    if (a != NULL) {
-        br_data_get_float(e, json, "speed", &a->speed);
-        br_data_get_bool(e, json, "loop", &a->loop);
-        br_data_get_float(e, json, "time", &a->time);
+    br_animator a = br_animator_get(e, br_anim_target_3d(n)); /* this clip or the model's autoplay */
+    if (a.generation != 0) {
+        float speed = 1.0f;
+        bool loop = true;
+        float time = 0.0f;
+        if (br_data_get_float(e, json, "speed", &speed)) {
+            br_animator_set_speed(e, a, speed);
+        }
+        if (br_data_get_bool(e, json, "loop", &loop)) {
+            br_animator_set_loop(e, a, 0, loop ? BR_ANIM_LOOP : BR_ANIM_CLAMP);
+        }
+        if (br_data_get_float(e, json, "time", &time)) {
+            br_animator_set_time(e, a, 0, time);
+        }
     }
     return n;
 }

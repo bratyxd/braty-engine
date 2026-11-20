@@ -181,7 +181,7 @@ Per frame; summed over the frame or sampled at its end.
 | target switches | render passes begun (every pass: 2D, filters, 3D, shadow) |
 | uploads, upload bytes | `br_gpu` copy-pass uploads: textures, buffers, per-frame geometry |
 | nodes, nodes culled | 2D nodes alive; subtrees skipped by culling in the stage walk |
-| 3D nodes, 3D animators | `br_node3d_count`, `br_animator3d_count` |
+| 3D nodes, 3D models | `br_node3d_count`; glTF model instances alive |
 | audio voices | `br_audio_instance_count` |
 | heap bytes, heap allocs | `br_memory_get_stats`: live bytes, `br_alloc` calls this frame (whole process) |
 | assets, assets loading | `br_assets_count`, `br_assets_pending` |

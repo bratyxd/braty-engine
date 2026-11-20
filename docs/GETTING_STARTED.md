@@ -743,9 +743,10 @@ typedef struct spawn_point {
 } spawn_point;
 
 typedef struct game {
-    uint32_t  crate_id, spawn_id;
-    br_node3d player;
-    bool      running;
+    uint32_t    crate_id, spawn_id;
+    br_node3d   player;
+    br_animator anim;
+    bool        running;
 } game;
 
 static void crate_spin_system(br_engine *e, float dt, void *user)
@@ -771,7 +772,9 @@ static void spawn(br_engine *e, game *g)
     }
     g->player = br_gltf_instantiate(e, "models/character/character-worker.glb", root, NULL);
     br_node3d_set_position(e, g->player, at);
-    br_animator3d_play(e, g->player, "idle");
+    g->anim = br_animator_add(e, br_anim_target_3d(g->player)); /* plays the model's clips */
+    br_animator_add_model_clips(e, g->anim, br_model3d_model(e, g->player));
+    br_animator_play(e, g->anim, "idle");
 
     br_camera c = br_camera_default_3d();
     c.field_of_view = 50.0f * BR_DEG_TO_RAD;           /* vertical, at any window shape */
@@ -805,7 +808,7 @@ static void player_system(br_engine *e, float dt, void *user)
                                                                      SDL_atan2f(stick.x, stick.y)));
     }
     if (running != g->running) {
-        br_animator3d_cross_fade(e, g->player, running ? "sprint" : "idle", 0.15f);
+        br_animator_cross_fade(e, g->anim, running ? "sprint" : "idle", 0.15f);
         g->running = running;
     }
 }
@@ -864,11 +867,12 @@ typedef struct spawn_point {
 } spawn_point;
 
 typedef struct game {
-    uint32_t  crate_id, spawn_id;
-    br_node3d player;
-    br_node3d label;
-    bool      running;
-    int32_t   score;
+    uint32_t    crate_id, spawn_id;
+    br_node3d   player;
+    br_animator anim;
+    br_node3d   label;
+    bool        running;
+    int32_t     score;
 } game;
 
 static void crate_system(br_engine *e, float dt, void *user)
@@ -904,7 +908,9 @@ static void spawn(br_engine *e, game *g)
     }
     g->player = br_gltf_instantiate(e, "models/character/character-worker.glb", root, NULL);
     br_node3d_set_position(e, g->player, at);
-    br_animator3d_play(e, g->player, "idle");
+    g->anim = br_animator_add(e, br_anim_target_3d(g->player)); /* plays the model's clips */
+    br_animator_add_model_clips(e, g->anim, br_model3d_model(e, g->player));
+    br_animator_play(e, g->anim, "idle");
 
     /* "SCORE 0" over the character's head: SDF text on a billboarded canvas */
     br_text_style style = br_text_style_default();
@@ -948,7 +954,7 @@ static void player_system(br_engine *e, float dt, void *user)
                                                                      SDL_atan2f(stick.x, stick.y)));
     }
     if (running != g->running) {
-        br_animator3d_cross_fade(e, g->player, running ? "sprint" : "idle", 0.15f);
+        br_animator_cross_fade(e, g->anim, running ? "sprint" : "idle", 0.15f);
         g->running = running;
     }
 }

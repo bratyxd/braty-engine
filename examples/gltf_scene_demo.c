@@ -66,7 +66,9 @@ static void place_props(br_engine *e, demo *d)
             br_node3d_set_scale(e, n, br_vec3_make(k, k, k));
         }
         if (cJSON_IsString(anim)) {
-            br_animator3d_play(e, n, anim->valuestring);
+            br_animator a = br_animator_add(e, br_anim_target_3d(n));
+            br_animator_add_model_clips(e, a, br_model3d_model(e, n));
+            br_animator_play(e, a, anim->valuestring);
         }
     }
     cJSON_Delete(doc);

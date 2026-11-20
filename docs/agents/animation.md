@@ -1,9 +1,8 @@
 # animation - clips, animators, blend trees, state machines, tweens (2D and 3D)
 
 Headers: `engine/include/braty/br_animation.h` (clips, property registry, animators, graphs,
-events), `br_tween.h` (tweens, sequences). Source: `engine/src/animation/`; the Phase 1 glTF
-animator API (`br_animator3d_*`, `br_anim3d.h`) lives on in `engine/src/three_d/br_anim3d.c` on
-top of this module. Tests: `tests/test_animation.c`, `tests/test_tween.c`. Example:
+events), `br_tween.h` (tweens, sequences). Source: `engine/src/animation/`; glTF clips play
+through the same animator (`br_animator_add_model_clips`). Tests: `tests/test_animation.c`, `tests/test_tween.c`. Example:
 `examples/animation_demo.c` + `examples/animation/` (`hero.anim.json`, `props.anim.json`,
 `fox.animgraph.json`); flags `--bench-foxes N`, `--bench-tweens N` (use with `--vsync off`).
 
@@ -268,8 +267,4 @@ D3D12, 0.460-0.469 ms on Vulkan, so no regression. "animation" = `animation.upda
 - Blend tree markers come from the heaviest child; 2D trees use inverse-distance weights
   (`ponytail:` in br_animator.c), not gradient bands.
 - Root motion and markers over more than 8 loop passes in one step skip the extra passes.
-- `br_animator3d_*` (Phase 1) still works: it puts a unified animator on the instance, copies
-  `speed`, `loop`, `paused` and edited `time` in before sampling, writes `time` and the fade state
-  back after, and fires its LOOP / END callbacks. Do not mix it with `br_animator_*` on the same
-  instance.
 - Tweens animate up to 8 floats, not textures. One `"tween"` component per node.

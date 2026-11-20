@@ -759,6 +759,32 @@ static bool br_animator_play_on(br_engine *e, br_animator a, uint32_t layer, con
     return br_animator_start(e, d, layer, m, fade);
 }
 
+br_animator br_animator_for_model(br_engine *e, br_node3d n)
+{
+    br_model *model = br_model3d_model(e, n);
+    if (model == NULL) {
+        br_animator none = { 0, 0 };
+        return none;
+    }
+    br_anim_target t = br_anim_target_3d(n);
+    br_animator a = br_animator_get(e, t);
+    if (a.generation == 0) {
+        a = br_animator_add(e, t);
+        br_animator_add_model_clips(e, a, model);
+    }
+    return a;
+}
+
+bool br_animator_play_index(br_engine *e, br_animator a, uint32_t index)
+{
+    br_animator_data *d = br_animator_data_get(e, a);
+    if (d == NULL || index >= d->clips.count) {
+        return false;
+    }
+    d->layers[0].queue_count = 0;
+    return br_animator_start(e, d, 0, (int32_t)index, 0.0f);
+}
+
 bool br_animator_play(br_engine *e, br_animator a, const char *motion)
 {
     return br_animator_play_on(e, a, 0, motion, 0.0f, true);
@@ -1663,7 +1689,6 @@ void br_animator_system(br_engine *e, float dt, void *user)
 {
     (void)user;
     br_animation_state *s = e->animation;
-    br_anim3d_sync_in(e);
     br_array_clear(&s->events);
     br_animator_free_dead(e); /* the last update's events pointed into these */
     s->stat_animators = 0;
@@ -1688,7 +1713,6 @@ void br_animator_system(br_engine *e, float dt, void *user)
             br_animator_remove_at(e, i - 1);
         }
     }
-    br_anim3d_sync_out(e);
     /* callbacks last: they may play clips or add animators (the pool may move) */
     for (uint32_t i = 0; i < s->events.count; i++) {
         br_anim_event ev = *(br_anim_event *)br_array_at(&s->events, i);

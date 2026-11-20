@@ -1,4 +1,4 @@
-/* br_gltf_internal.h - state shared by the glTF loader, model instances and the 3D animator. */
+/* br_gltf_internal.h - state shared by the glTF loader, model instances and the skinning pass. */
 #ifndef BR_GLTF_INTERNAL_H
 #define BR_GLTF_INTERNAL_H
 
@@ -39,17 +39,19 @@ typedef struct br_gltf_instance {
     br_mat4      *model_world;     /* scratch: node matrices relative to the instance */
     br_gltf_pose  pose;            /* the playing clip */
     br_gltf_pose  fade_pose;       /* the clip fading out */
-    uint32_t      anim_index;      /* slot in the animator pool */
+    uint32_t      anim_index;      /* slot in the skinning pool */
     int32_t       sub_root;        /* model node of a sub-asset instance ("kit.glb#Tree"), -1 = whole scene */
     br_gltf_batch_slot *batch_slots; /* batched copies, follow their group's destroy / visibility */
     uint32_t      batch_slot_count;
 } br_gltf_instance;
 
-/* One entry of the dense animator pool. */
+/* One entry of the dense skinning pool (every model instance). */
 typedef struct br_gltf_anim {
-    br_animator3d     animator;
     br_gltf_instance *instance;
 } br_gltf_anim;
+
+/* Model instances alive (the profiler's "3D models"). */
+uint32_t br_gltf_instance_count(br_engine *e);
 
 /* The 3D rows of one component kind (sparse set: 3D node index -> dense row + 1). */
 typedef struct br_component3d_set {

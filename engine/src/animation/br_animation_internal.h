@@ -112,12 +112,6 @@ typedef struct br_anim_param {
     bool               warned;    /* a setter of another type was reported */
 } br_anim_param;
 
-/* Legacy br_animator3d shadow (the gltf.animate API drives a unified animator). */
-typedef struct br_anim_legacy {
-    bool  active;
-    float time;        /* time written back last frame: a different value = the user moved it */
-} br_anim_legacy;
-
 /* One animator (dense pool entry). */
 typedef struct br_animator_data {
     br_anim_target         root;
@@ -144,7 +138,6 @@ typedef struct br_animator_data {
     br_anim_event_fn       on_event;
     void                  *event_user;
     const br_model        *model;         /* model clip cache reference, NULL if none */
-    br_anim_legacy         legacy;
     uint32_t               destroy_epoch; /* s->destroy_epoch when the targets were last checked */
 } br_animator_data;
 
@@ -263,8 +256,11 @@ void br_tween_free_all(br_engine *e);
 void br_anim_components_register(br_engine *e);
 void br_anim_components_system(br_engine *e, float dt, void *user);
 
-/* ---- three_d/br_anim3d.c: the legacy br_animator3d API on top of the animator */
-void br_anim3d_sync_in(br_engine *e);
-void br_anim3d_sync_out(br_engine *e);
+/* ---- glTF instances (scene files, autoplay) */
+/* The animator of a model3d node holding the model's clips, added on first use (zero handle if n
+ * is not a model instance). */
+br_animator br_animator_for_model(br_engine *e, br_node3d n);
+/* Plays clip `index` on the base layer at once (glTF clips may be unnamed). */
+bool br_animator_play_index(br_engine *e, br_animator a, uint32_t index);
 
 #endif

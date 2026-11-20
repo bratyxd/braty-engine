@@ -68,7 +68,7 @@ typedef enum br_profiler_counter {
     BR_PROFILER_NODES_DRAWN,       /* 2D nodes whose render callback ran */
     BR_PROFILER_NODES_CULLED,      /* 2D subtrees skipped by culling */
     BR_PROFILER_NODES_3D,          /* 3D nodes alive */
-    BR_PROFILER_ANIMATORS_3D,
+    BR_PROFILER_MODELS_3D,         /* glTF model instances alive */
     BR_PROFILER_AUDIO_VOICES,      /* playing sound instances */
     BR_PROFILER_HEAP_BYTES,        /* live br_alloc bytes (whole process) */
     BR_PROFILER_HEAP_ALLOCS,       /* br_alloc calls this frame (whole process) */

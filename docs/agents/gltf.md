@@ -128,8 +128,8 @@ Graph) writes EXT_mesh_gpu_instancing for linked duplicates.
 | `br_model_load(e, path)` / `br_assets_load_async(e, path, NULL, fn, user)` | Load (cached, ref counted). Async: `fn` gets the `br_model *`. |
 | `br_model_instantiate(e, model)` + `br_node3d_add_child(e, root, n)` | Put a copy in a view. |
 | `br_view3d_from_model(e, model, w, h)` | PixiJS `View3D.from`: view + instance + sun + framing camera. |
-| `br_animator3d_play(e, n, "Run")`, `_play_index`, `_cross_fade(e, n, "Walk", 0.5f)`, `_stop` | Playback. |
-| `br_animator3d_get(e, n)` | Edit `speed`, `loop`, `paused`, `time`, `on_event` (LOOP / END callback). |
+| `br_animator_add(e, br_anim_target_3d(n))` + `br_animator_add_model_clips(e, a, model)` | An animator holding the model's clips (`br_animation.h`). |
+| `br_animator_play(e, a, "Run")`, `br_animator_cross_fade(e, a, "Walk", 0.5f)`, `_stop`, `_set_speed`, `_set_loop`, `_set_time` | Playback. |
 | `br_model3d_node(e, n, i)`, `br_node3d_find_by_label(e, n, "Head")` | Reach a glTF node of an instance (attach props, IK, ...). |
 | `br_model_find_clip`, `br_model_find_node`, `model->nodes[i].extras` | Inspect the parsed data (names, extras for gameplay). |
 | `br_anim3d_sample`, `br_anim3d_joint_matrices`, `br_anim3d_decompose` | Pure maths (tests, tools, your own animation code). |
@@ -176,8 +176,10 @@ br_node3d_add_child(e, s->root, s->fox);
 br_node3d_set_scale(e, s->fox, br_vec3_make(0.025f, 0.025f, 0.025f));
 br_node3d_set_position(e, s->fox, br_vec3_make(g_row_x[6], 0.0f, 2.6f));
 br_node3d_set_euler(e, s->fox, 0.0f, 0.9f, 0.0f);
-br_animator3d_play(e, s->fox, "Survey");
-/* later, every 3 s: br_animator3d_cross_fade(e, s->fox, "Walk", 2.0f); */
+s->fox_anim = br_animator_add(e, br_anim_target_3d(s->fox));  /* plays the model's clips */
+br_animator_add_model_clips(e, s->fox_anim, fox);
+br_animator_play(e, s->fox_anim, "Survey");
+/* later, every 3 s: br_animator_cross_fade(e, s->fox_anim, "Walk", 2.0f); */
 ```
 
 (`fox` is the `br_model *` handed to the `br_assets_load_async` completion callback.)
@@ -237,7 +239,6 @@ animator. Task 18 keys: `"source": "kit.glb#Node"`, `"camera"` (true / node name
   imported lights do not cast shadows until you set `cast_shadows`.
 - A cross-fade blends nodes the new clip does not animate towards their rest pose.
 - Skinned meshes are culled with the core's bind-pose box grown 2x.
-- `br_animator3d_get` returns a pointer into the dense pool: do not keep it across frames.
 - Scene-JSON meshes create their own geometry/material; model references belong to the scene /
   scene-file root / instance that loaded them and are released with it.
 

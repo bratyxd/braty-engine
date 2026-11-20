@@ -2,6 +2,7 @@
  * smoothing, budgets, UI flags. GPU fences: br_profiler_gpu.c. Files: br_profiler_save.c. */
 #include "profiler/br_profiler_internal.h"
 #include "gpu/br_gpu_internal.h"
+#include "three_d/br_gltf_internal.h"
 
 /* Frames the raw verdict must hold before the shown one changes (no flicker). */
 #define BR_PROFILER_VERDICT_HOLD 15
@@ -15,7 +16,7 @@ static const char *const br_profiler_counter_names[BR_PROFILER_COUNTER_COUNT] = 
     "draw calls",       "batches",          "vertices",        "triangles",       "passes",
     "break: texture",   "break: blend",     "break: state",    "break: shader",   "break: other",
     "pipeline switches", "target switches", "uploads",         "upload bytes",    "nodes",
-    "nodes drawn",      "nodes culled",     "3D nodes",        "3D animators",    "audio voices",
+    "nodes drawn",      "nodes culled",     "3D nodes",        "3D models",       "audio voices",
     "heap bytes",       "heap allocs",      "assets",          "assets loading",  "animators",
     "tweens",           "particles drawn",  "3D items",        "3D items culled", "3D shadow casters",
 };
@@ -345,7 +346,7 @@ static void br_profiler_gather_counters(br_engine *e, br_profiler_state *p)
         c[BR_PROFILER_NODES] += br_scene_node_count(e);
     }
     c[BR_PROFILER_NODES_3D] += br_node3d_count(e);
-    c[BR_PROFILER_ANIMATORS_3D] += br_animator3d_count(e);
+    c[BR_PROFILER_MODELS_3D] += br_gltf_instance_count(e);
     c[BR_PROFILER_ANIMATORS] += br_animator_count(e);
     c[BR_PROFILER_TWEENS] += br_tween_count(e);
     if (e->audio != NULL) {

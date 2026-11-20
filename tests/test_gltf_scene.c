@@ -241,8 +241,8 @@ static void test_import(br_engine *e, br_model *model, br_node3d inst)
     br_light3d *lamp = br_light3d_get(e, br_node3d_first_child(e, find(e, inst, "Lamp")));
     BR_CHECK(lamp != NULL && lamp->kind == BR_LIGHT3D_POINT && near_eq(lamp->range, 8.0f) && !lamp->cast_shadows);
     /* the scene extras' autoplay started "Spin" on the instance's animator */
-    br_animator3d *a = br_animator3d_get(e, inst);
-    BR_CHECK(a != NULL && a->clip == br_model_find_clip(model, "Spin"));
+    const char *playing = br_animator_current(e, br_animator_get(e, br_anim_target_3d(inst)), 0);
+    BR_CHECK(playing != NULL && SDL_strcmp(playing, "Spin") == 0);
     br_quat before = br_node3d_rotation(e, find(e, inst, "Blades"));
     br_engine_step(e, 0.5f);
     br_quat after = br_node3d_rotation(e, find(e, inst, "Blades"));
@@ -315,7 +315,7 @@ typedef struct counts {
 static counts take_counts(br_engine *e)
 {
     counts c = { br_scene_node_count(e), br_node3d_count(e), br_assets_ref_count(e, "level.gltf"),
-                 br_component3d_count(e, g_spin), br_animator3d_count(e) };
+                 br_component3d_count(e, g_spin), br_animator_count(e) };
     return c;
 }
 
@@ -368,7 +368,7 @@ static void test_as_scene(br_engine *e)
         inst = br_node3d_next_sibling(e, inst);
     }
     BR_CHECK(count_children(e, inst, br_batched_mesh3d_type(e), NULL) == 0);
-    BR_CHECK(br_animator3d_get(e, inst) != NULL && br_animator3d_get(e, inst)->clip == -1);
+    BR_CHECK(br_animator_get(e, br_anim_target_3d(inst)).generation == 0); /* nothing autoplayed */
     br_scene_unload(e, s);
     br_engine_step(e, 1.0f / 60.0f);
     br_engine_step(e, 1.0f / 60.0f);

@@ -1,5 +1,6 @@
 /* br_gltf_instance: the "model3d" node type, br_model_instantiate and br_view3d_from_model. */
 #include "three_d/br_gltf_internal.h"
+#include "animation/br_animation_internal.h"
 
 #include "assets/br_assets_internal.h" /* reference capture: an instance owns what it loads */
 
@@ -38,7 +39,7 @@ static void br_gltf_instance_free(br_engine *e, br_gltf_instance *inst)
     br_free(inst);
 }
 
-/* model3d on_destroy: leave the animator pool (swap-remove), free the instance. */
+/* model3d on_destroy: leave the skinning pool (swap-remove), free the instance. */
 static void br_gltf_model3d_destroy(br_engine *e, br_node3d n, void *data)
 {
     (void)n;
@@ -349,11 +350,21 @@ static void br_gltf_autoplay(br_engine *e, br_gltf_instance *inst, const br_gltf
     if (m->clip_count == 0 || (!first && (name == NULL || name[0] == '\0'))) {
         return;
     }
-    if (first) {
-        br_animator3d_play_index(e, inst->self, 0);
-    } else if (!br_animator3d_play(e, inst->self, name)) {
+    if (!first && br_model_find_clip(m, name) < 0) {
         br_log_warn("glTF '%s': autoplay clip '%s' not found", m->path != NULL ? m->path : "", name);
+        return;
     }
+    br_animator a = br_animator_for_model(e, inst->self);
+    if (first) {
+        br_animator_play_index(e, a, 0);
+    } else {
+        br_animator_play(e, a, name);
+    }
+}
+
+uint32_t br_gltf_instance_count(br_engine *e)
+{
+    return e->gltf != NULL ? e->gltf->anims.count : 0;
 }
 
 br_node3d br_model_instantiate(br_engine *e, br_model *model)
@@ -480,10 +491,6 @@ br_node3d br_model_instantiate_ex(br_engine *e, br_model *model, const br_gltf_o
 
     br_gltf_anim slot;
     SDL_zero(slot);
-    slot.animator.clip = -1;
-    slot.animator.fade_clip = -1;
-    slot.animator.speed = 1.0f;
-    slot.animator.loop = true;
     slot.instance = inst;
     if (br_array_push(&s->anims, &slot) != NULL) {
         inst->anim_index = s->anims.count - 1;

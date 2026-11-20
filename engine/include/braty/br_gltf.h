@@ -4,7 +4,9 @@
  *   br_model *m = br_model_load(e, "models/Fox/Fox.glb");      (asset cache, ref counted)
  *   br_node3d fox = br_model_instantiate(e, m);                 (a detached "model3d" node)
  *   br_node3d_add_child(e, br_view3d_root(e, view), fox);
- *   br_animator3d_play(e, fox, "Run");                          (br_anim3d.h)
+ *   br_animator a = br_animator_add(e, br_anim_target_3d(fox)); (br_animation.h)
+ *   br_animator_add_model_clips(e, a, m);
+ *   br_animator_play(e, a, "Run");
  *
  * Loading (asset loader "model", extensions gltf/glb): the file, its buffers (GLB chunk, data
  * URIs, external .bin) and its images (bufferView, data URI, external file, decoded by

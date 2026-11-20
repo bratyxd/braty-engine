@@ -25,12 +25,15 @@ static int g_focus = -1;
 /* x of the row models (left to right), then the fox */
 static const float g_row_x[7] = { -5.4f, -3.3f, -1.1f, 1.1f, 3.2f, 5.2f, -1.0f };
 
+static const char *const g_fox_clips[3] = { "Survey", "Walk", "Run" };
+
 typedef struct demo_state {
     br_node         view;
     br_node3d       root;
     br_node3d       camera;
     br_orbit_camera orbit;
     br_node3d       fox;
+    br_animator     fox_anim;
     uint32_t        fox_clip;
     float           next_fade;
     br_node         json_view;
@@ -79,8 +82,10 @@ static void on_fox_loaded(br_engine *e, const char *path, void *asset, void *use
     br_node3d_set_scale(e, s->fox, br_vec3_make(0.025f, 0.025f, 0.025f));
     br_node3d_set_position(e, s->fox, br_vec3_make(g_row_x[6], 0.0f, 2.6f));
     br_node3d_set_euler(e, s->fox, 0.0f, 0.9f, 0.0f);
-    br_animator3d_play(e, s->fox, "Survey");
-    /* later, every 3 s: br_animator3d_cross_fade(e, s->fox, "Walk", 2.0f); */
+    s->fox_anim = br_animator_add(e, br_anim_target_3d(s->fox));  /* plays the model's clips */
+    br_animator_add_model_clips(e, s->fox_anim, fox);
+    br_animator_play(e, s->fox_anim, "Survey");
+    /* later, every 3 s: br_animator_cross_fade(e, s->fox_anim, "Walk", 2.0f); */
     /* --- end snippet --- */
     br_node3d_set_visible(e, s->fox, g_focus < 0 || g_focus == 6); /* close-ups of the row: out of the way */
     s->fox_clip = 0;
@@ -94,8 +99,21 @@ static void on_fox_loaded(br_engine *e, const char *path, void *asset, void *use
         float gz = -4.0f - (float)(i / 20) * 1.6f;
         br_node3d_set_scale(e, f, br_vec3_make(0.01f, 0.01f, 0.01f));
         br_node3d_set_position(e, f, br_vec3_make(gx * 1.1f, 0.0f, gz));
-        br_animator3d_play_index(e, f, (uint32_t)(i % 3));
-        br_animator3d_get(e, f)->time = (float)i * 0.137f; /* desynchronise */
+        br_animator a = br_animator_add(e, br_anim_target_3d(f));
+        br_animator_add_model_clips(e, a, fox);
+        br_animator_play(e, a, g_fox_clips[i % 3]);
+        br_animator_set_time(e, a, 0, (float)i * 0.137f); /* desynchronise */
+    }
+}
+
+/* Plays a model's first clip (BoxAnimated's clip has no name). */
+static void play_first_clip(br_engine *e, br_node3d n)
+{
+    br_model *m = br_model3d_model(e, n);
+    if (m != NULL && m->clip_count > 0) {
+        br_animator a = br_animator_add(e, br_anim_target_3d(n));
+        br_animator_add_model_clips(e, a, m);
+        br_animator_play(e, a, m->clips[0].name);
     }
 }
 
@@ -146,9 +164,11 @@ static void setup_main_view(br_engine *e, demo_state *s)
     load_and_place(e, s, "OrientationTest/OrientationTest.glb", g_row_x[2], 0.0f, 1.8f);
     load_and_place(e, s, "TextureTransformTest/TextureTransformTest.gltf", g_row_x[3], 0.0f, 1.8f);
     br_node3d box = load_and_place(e, s, "BoxAnimated/BoxAnimated.glb", g_row_x[4], 0.0f, 1.3f);
-    br_animator3d_play_index(e, box, 0);
+    play_first_clip(e, box);
     br_node3d cube = load_and_place(e, s, "AnimatedMorphCube/AnimatedMorphCube.glb", g_row_x[5], 0.0f, 1.2f);
-    br_animator3d_play(e, cube, "Square");
+    br_animator cube_anim = br_animator_add(e, br_anim_target_3d(cube));
+    br_animator_add_model_clips(e, cube_anim, br_model3d_model(e, cube));
+    br_animator_play(e, cube_anim, "Square");
 
     /* the skinned fox: background load, instantiated in the completion callback */
     br_assets_load_async(e, "Fox/Fox.glb", NULL, on_fox_loaded, s);
@@ -172,12 +192,11 @@ static void setup_2d(br_engine *e, demo_state *s)
 static void demo_update(br_engine *e, float dt, void *user)
 {
     demo_state *s = user;
-    static const char *const clips[3] = { "Survey", "Walk", "Run" };
     s->time += dt;
     br_orbit_camera_update(e, &s->orbit, s->camera);
     if (br_node3d_valid(e, s->fox) && s->time >= s->next_fade) {
         s->fox_clip = (s->fox_clip + 1) % 3;
-        br_animator3d_cross_fade(e, s->fox, clips[s->fox_clip], 2.0f);
+        br_animator_cross_fade(e, s->fox_anim, g_fox_clips[s->fox_clip], 2.0f);
         s->next_fade += 3.0f;
     }
 
@@ -200,15 +219,15 @@ static void demo_update(br_engine *e, float dt, void *user)
     s->last_ns = now;
 
     char line[256];
-    br_animator3d *a = br_animator3d_get(e, s->fox);
-    if (a != NULL && a->fade_clip >= 0) {
+    float fade = br_animator_fade_progress(e, s->fox_anim, 0);
+    const char *current = br_animator_current(e, s->fox_anim, 0);
+    if (current != NULL && fade < 1.0f) {
         SDL_snprintf(line, sizeof(line), "Fox: %s -> %s (fade %.0f%%)   animators %u   gltf.animate %.3f ms",
-                     clips[a->fade_clip], clips[a->clip], 100.0f * a->fade_elapsed / a->fade_duration,
-                     br_animator3d_count(e), (double)animate_ns / 1e6);
+                     g_fox_clips[(s->fox_clip + 2) % 3], current, 100.0f * fade, br_animator_count(e),
+                     (double)animate_ns / 1e6);
     } else {
         SDL_snprintf(line, sizeof(line), "Fox: %s   animators %u   gltf.animate %.3f ms",
-                     a != NULL && a->clip >= 0 ? clips[a->clip] : "loading...", br_animator3d_count(e),
-                     (double)animate_ns / 1e6);
+                     current != NULL ? current : "loading...", br_animator_count(e), (double)animate_ns / 1e6);
     }
     br_text_set_text(e, s->info, line);
 }
@@ -219,7 +238,7 @@ static void demo_shutdown(br_engine *e, void *user)
     (void)e;
     double n = s->frame_count > 0 ? (double)s->frame_count : 1.0;
     br_log_info("gltf_demo: %d extra foxes, %u animators: avg frame %.3f ms, gltf.animate %.3f ms over %llu frames (%s)",
-                g_foxes, br_animator3d_count(e), (double)s->frame_ns_sum / n / 1e6, (double)s->animate_ns_sum / n / 1e6,
+                g_foxes, br_animator_count(e), (double)s->frame_ns_sum / n / 1e6, (double)s->animate_ns_sum / n / 1e6,
                 (unsigned long long)s->frame_count, g_no_vsync ? "vsync off" : "vsync on");
     br_free(s);
 }

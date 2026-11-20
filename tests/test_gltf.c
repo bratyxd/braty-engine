@@ -230,30 +230,32 @@ static void test_parse(br_engine *e)
     br_node3d inst = br_model_instantiate(e, m);
     BR_CHECK(br_node3d_valid(e, inst) && br_node3d_type_of(e, inst) == br_model3d_type(e));
     BR_CHECK(br_model3d_model(e, inst) == m && m->refs == 2);
-    BR_CHECK(br_animator3d_count(e) == 1);
+    BR_CHECK(br_animator_get(e, br_anim_target_3d(inst)).generation == 0); /* animators come on demand */
     br_node3d tri = br_model3d_node(e, inst, 1);
     BR_CHECK(SDL_strcmp(br_node3d_label(e, tri), "Tri") == 0);
     BR_CHECK(br_node3d_find_by_label(e, inst, "Turned").index == br_model3d_node(e, inst, 2).index);
     BR_CHECK(br_mesh3d_get(e, br_node3d_first_child(e, tri)) != NULL);
     BR_CHECK(br_camera3d_get(e, br_node3d_first_child(e, br_model3d_node(e, inst, 3))) != NULL);
     BR_CHECK(br_light3d_get(e, br_node3d_first_child(e, br_model3d_node(e, inst, 4))) != NULL);
-    BR_CHECK(!br_animator3d_play(e, inst, "Run"));
-    BR_CHECK(br_animator3d_play(e, inst, "Move"));
+    br_animator a = br_animator_add(e, br_anim_target_3d(inst));
+    BR_CHECK(br_animator_add_model_clips(e, a, m) == m->clip_count);
+    BR_CHECK(!br_animator_play(e, a, "Run"));
+    BR_CHECK(br_animator_play(e, a, "Move"));
     br_engine_step(e, 0.25f);
     BR_CHECK(vec3_eq(br_node3d_position(e, tri), br_vec3_make(0.5f, 0.0f, 0.0f)));
-    br_animator3d *a = br_animator3d_get(e, inst);
-    BR_CHECK(a != NULL && near_eq(a->time, 0.25f));
+    BR_CHECK(near_eq(br_animator_time(e, a, 0), 0.25f));
     br_engine_step(e, 1.0f); /* loops: 1.25 -> 0.25 */
     BR_CHECK(vec3_eq(br_node3d_position(e, tri), br_vec3_make(0.5f, 0.0f, 0.0f)));
-    a = br_animator3d_get(e, inst);
-    a->loop = false;
+    br_animator_set_loop(e, a, 0, BR_ANIM_CLAMP);
     br_engine_step(e, 5.0f); /* clamps at the end */
     BR_CHECK(vec3_eq(br_node3d_position(e, tri), br_vec3_make(2.0f, 0.0f, 0.0f)));
     /* a second instance animates independently */
     br_node3d inst2 = br_model_instantiate(e, m);
-    BR_CHECK(m->refs == 3 && br_animator3d_count(e) == 2);
-    br_animator3d_play(e, inst2, "Move");
-    br_animator3d_get(e, inst2)->speed = 0.5f;
+    br_animator a2 = br_animator_add(e, br_anim_target_3d(inst2));
+    br_animator_add_model_clips(e, a2, m);
+    BR_CHECK(m->refs == 3 && br_animator_count(e) == 2);
+    br_animator_play(e, a2, "Move");
+    br_animator_set_speed(e, a2, 0.5f);
     br_engine_step(e, 1.0f);
     BR_CHECK(vec3_eq(br_node3d_position(e, br_model3d_node(e, inst2, 1)), br_vec3_make(1.0f, 0.0f, 0.0f)));
     BR_CHECK(vec3_eq(br_node3d_position(e, tri), br_vec3_make(2.0f, 0.0f, 0.0f)));
@@ -262,12 +264,14 @@ static void test_parse(br_engine *e)
     br_assets_unload(e, "tiny.gltf");
     BR_CHECK(br_assets_ref_count(e, "tiny.gltf") == 0 && br_assets_get(e, "tiny.gltf") == NULL);
     BR_CHECK(m->refs == 2 && br_model3d_model(e, inst2) == m);
-    br_node3d_destroy(e, inst); /* outside a frame: freed now; the moved animator keeps working */
-    BR_CHECK(br_animator3d_count(e) == 1 && m->refs == 1);
+    br_node3d_destroy(e, inst); /* outside a frame: freed now; the other animator keeps working */
+    BR_CHECK(m->refs == 1);
     br_engine_step(e, 0.5f);
+    BR_CHECK(br_animator_count(e) == 1);
     BR_CHECK(vec3_eq(br_node3d_position(e, br_model3d_node(e, inst2, 1)), br_vec3_make(1.5f, 0.0f, 0.0f)));
     br_node3d_destroy(e, inst2); /* last reference: the model is freed */
-    BR_CHECK(br_animator3d_count(e) == 0);
+    br_engine_step(e, 0.0f);
+    BR_CHECK(br_animator_count(e) == 0);
 }
 
 /* Same document from memory with one more extension listed: compressed ones must fail. */
@@ -402,8 +406,8 @@ static void test_scene_json(br_engine *e)
     br_node3d tiny = br_node3d_find_by_label(e, root, "tiny");
     BR_CHECK(br_model3d_model(e, tiny) != NULL);
     BR_CHECK(vec3_eq(br_node3d_scale(e, tiny), br_vec3_make(2.0f, 2.0f, 2.0f)));
-    br_animator3d *a = br_animator3d_get(e, tiny);
-    BR_CHECK(a != NULL && a->clip == 0);
+    const char *playing = br_animator_current(e, br_animator_get(e, br_anim_target_3d(tiny)), 0);
+    BR_CHECK(playing != NULL && SDL_strcmp(playing, br_model3d_model(e, tiny)->clips[0].name) == 0);
     /* bad values report errors and the rest still loads */
     const char *bad = "{ \"type\": \"view3d\", \"scene\": [ { \"type\": \"mesh\", \"shape\": \"blob\" },"
                       " { \"type\": \"gltf\", \"source\": \"nope.glb\" }, { \"type\": \"light\", \"label\": \"ok\" } ] }";
