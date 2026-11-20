@@ -24,7 +24,7 @@ cbuffer Material : register(b1, space3)
     float4 u_pbr;                 // metallic, roughness, normal scale, occlusion strength
     float4 u_specular;            // rgb, w = shininess
     float4 u_alpha;               // x cutoff, y double sided, z receive shadows
-    uint4 u_flags;                // x model, y toon bands, z texture bits, w alpha mode
+    uint4 u_flags;                // x model, y toon bands, z texture bits (8 + slot: sRGB), w alpha mode
     float4 u_uv[10];              // per slot: (a, c, tx, uv set), (b, d, ty, 0)
 };
 
@@ -55,6 +55,18 @@ float3 srgb_to_linear(float3 c)
 float4 unpremultiply(float4 t)
 {
     return t.a > 0.0 ? float4(t.rgb / t.a, t.a) : t;
+}
+
+// A colour texel as linear straight alpha. sRGB-format textures (glTF colour slots) come out of
+// the sampler linear and premultiplied in linear space; others (br_texture_load) hold sRGB
+// values premultiplied in gamma space.
+float4 colour_texel(int slot, float4 t)
+{
+    t = unpremultiply(t);
+    if ((u_flags.z & (1u << (8 + slot))) != 0) {
+        return t;
+    }
+    return float4(srgb_to_linear(t.rgb), t.a);
 }
 
 // One 2x2 bilinear depth comparison around uv (GatherRed: w = (0,0), z = (1,0), x = (0,1), y = (1,1)).
@@ -139,8 +151,7 @@ float4 main(Mesh3dVaryings input) : SV_Target0
 {
     float4 base = u_base_color * input.color;
     if (has_texture(0)) {
-        float4 t = unpremultiply(u_base_tex.Sample(u_base_smp, slot_uv(0, input.uv)));
-        base *= float4(srgb_to_linear(t.rgb), t.a);
+        base *= colour_texel(0, u_base_tex.Sample(u_base_smp, slot_uv(0, input.uv)));
     }
     if (u_flags.w == 1 && base.a < u_alpha.x) {
         discard;
@@ -149,7 +160,7 @@ float4 main(Mesh3dVaryings input) : SV_Target0
 
     float3 emissive = u_emissive.rgb;
     if (has_texture(4)) {
-        emissive *= srgb_to_linear(unpremultiply(u_emissive_tex.Sample(u_emissive_smp, slot_uv(4, input.uv))).rgb);
+        emissive *= colour_texel(4, u_emissive_tex.Sample(u_emissive_smp, slot_uv(4, input.uv))).rgb;
     }
     if (u_flags.x == MODEL_FLAT) {
         float3 flat = base.rgb + emissive;

@@ -86,8 +86,10 @@ typedef struct br_model {
     char              **material_names;
     uint32_t            material_count;
     br_material3d       default_material;
-    br_texture         *textures;       /* one per glTF image */
-    uint32_t            texture_count;
+    br_texture         *textures;       /* two per glTF image i: [2i] colour (sRGB, straight alpha; also
+                                           made for unused images), [2i + 1] data (linear, straight
+                                           alpha); zero when the image does not feed such a slot */
+    uint32_t            texture_count;  /* 2 * image count */
     br_model_skin      *skins;
     uint32_t            skin_count;
     br_camera3d        *cameras;

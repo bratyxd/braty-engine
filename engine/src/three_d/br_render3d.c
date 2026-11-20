@@ -719,6 +719,11 @@ static void br_render3d_draw_item(br_engine *e, br_view3d_state *v, SDL_GPURende
             bool present = false;
             bindings[s] = br_slot_binding(e, g, &mat->textures[s], &present);
             bits |= present ? (1u << s) : 0u;
+            /* bit 8 + slot: an sRGB-format texture (glTF colour slots): the sampler decodes it */
+            br_gpu_texture *gt = present ? br_texture_gpu(e, mat->textures[s].texture) : NULL;
+            if (gt != NULL && gt->format == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB) {
+                bits |= 1u << (8 + s);
+            }
         }
         br_render_target *atlas = v->shadow_tiles != 0 ? v->shadow_atlas : NULL;
         br_gpu_texture *shadow = atlas != NULL ? atlas->color : br_texture_gpu(e, br_texture_white(e));

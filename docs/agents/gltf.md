@@ -218,9 +218,13 @@ animator. Task 18 keys: `"source": "kit.glb#Node"`, `"camera"` (true / node name
 - Batching merges repeated meshes inside one instance; kit parts placed as separate instances
   are separate draws (`ponytail:` limit; a cross-instance merge pass would remove it).
 - A 3D component's `BR_FIELD_NODE` field holds a `br_node3d`; extras are parsed per instance.
-- Base colour / emissive textures are decoded from sRGB in the shader; textures are
-  premultiplied on upload (the 3D core undoes it for colour slots), so non-colour maps with
-  alpha < 1 would lose RGB precision.
+- Texture colour spaces per slot: an image feeding base colour / emissive becomes an
+  `R8G8B8A8_UNORM_SRGB` texture premultiplied in linear space (the sampler decodes before
+  filtering and mip generation; the shader unpremultiplies); one feeding normal /
+  metallic-roughness / occlusion becomes a plain UNORM texture, not premultiplied (an alpha
+  channel holding height or a mask leaves RGB alone). An image used both ways gets both:
+  `model->textures[2i]` (colour) and `[2i + 1]` (data). Textures you set on a material yourself
+  (`br_texture_load`, premultiplied UNORM) still work: the shader tells them apart by format.
 - Missing normals are generated smooth (glTF says flat); missing tangents use per-triangle
   accumulation, not MikkTSpace. Only triangle primitives (lists, strips, fans) are drawn.
 - 8 morph targets per mesh (extra ones are dropped with a warning). One filter and one wrap mode

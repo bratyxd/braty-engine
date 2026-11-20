@@ -912,7 +912,7 @@ static bool br_gltf_convert(br_engine *e, const char *path, const cgltf_options 
     for (uint32_t i = 0; ok && i < d->image_count; i++) {
         br_gltf_decode_image(e, path, options, &data->images[i], &d->images[i]);
     }
-    m->texture_count = d->image_count;
+    m->texture_count = d->image_count * 2; /* [2i] colour (sRGB), [2i + 1] data (linear) */
     m->textures = br_gltf_alloc_array(m->texture_count, sizeof(br_texture), &ok);
 
     /* materials */
@@ -1153,6 +1153,74 @@ static void *br_gltf_decode(br_engine *e, const char *path, const void *bytes, s
 
 /* ---- finish: GPU resources (main thread) */
 
+static bool br_gltf_colour_slot(int slot)
+{
+    return slot == BR_MATERIAL3D_BASE_COLOR || slot == BR_MATERIAL3D_EMISSIVE;
+}
+
+/* Premultiplies sRGB RGBA8 pixels in linear space and re-encodes them as sRGB, so a sampler of
+ * an sRGB-format texture returns linear premultiplied colour (filtered without dark fringes). */
+static void br_gltf_premultiply_linear(uint8_t *pixels, size_t pixel_count)
+{
+    float to_linear[256];
+    for (int i = 0; i < 256; i++) {
+        float c = (float)i / 255.0f;
+        to_linear[i] = c <= 0.04045f ? c / 12.92f : SDL_powf((c + 0.055f) / 1.055f, 2.4f);
+    }
+    for (size_t i = 0; i < pixel_count; i++) {
+        uint8_t *p = pixels + i * 4;
+        if (p[3] == 255) {
+            continue;
+        }
+        float a = (float)p[3] / 255.0f;
+        for (int k = 0; k < 3; k++) {
+            float l = to_linear[p[k]] * a;
+            float c = l <= 0.0031308f ? l * 12.92f : 1.055f * SDL_powf(l, 1.0f / 2.4f) - 0.055f;
+            p[k] = (uint8_t)(c * 255.0f + 0.5f);
+        }
+    }
+}
+
+/* One texture of a decoded image. Colour (base, emissive): sRGB format, so the sampler decodes
+ * to linear before filtering and mip generation, premultiplied in linear space. Data (normal,
+ * metallic-roughness, occlusion): plain UNORM, not premultiplied, so RGB never gets scaled by an
+ * alpha channel that means something else (a height or mask). */
+static br_texture br_gltf_texture(br_engine *e, const br_gltf_image *img, bool colour, const br_texture_style *style)
+{
+    br_texture none = { 0, 0 };
+    if (img->pixels == NULL) {
+        return none;
+    }
+    uint32_t w = (uint32_t)img->width;
+    uint32_t h = (uint32_t)img->height;
+    br_gpu *g = br_engine_gpu(e);
+    if (g == NULL) {
+        return br_texture_create_rgba8(e, w, h, img->pixels, style); /* headless: a CPU record only */
+    }
+    size_t bytes = (size_t)w * h * 4;
+    uint8_t *texels = colour ? br_alloc(bytes) : NULL;
+    if (texels != NULL) {
+        SDL_memcpy(texels, img->pixels, bytes);
+        br_gltf_premultiply_linear(texels, (size_t)w * h);
+    }
+    SDL_GPUTextureFormat format = colour ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    br_gpu_texture *t = br_gpu_texture_create(g, w, h, format, SDL_GPU_TEXTUREUSAGE_SAMPLER, true);
+    bool ok = t != NULL && (!colour || texels != NULL) &&
+              br_gpu_texture_upload(g, t, 0, 0, w, h, texels != NULL ? texels : img->pixels);
+    br_free(texels);
+    if (!ok) {
+        br_gpu_texture_destroy(g, t);
+        return none;
+    }
+    br_texture tex = br_texture_wrap_gpu(e, t, true);
+    if (tex.generation == 0) {
+        br_gpu_texture_destroy(g, t);
+        return none;
+    }
+    br_texture_set_style(e, tex, style);
+    return tex;
+}
+
 static void *br_gltf_finish(br_engine *e, const char *path, void *decoded)
 {
     br_gltf_decoded *d = decoded;
@@ -1170,22 +1238,37 @@ static void *br_gltf_finish(br_engine *e, const char *path, void *decoded)
         }
     }
 
+    /* which images feed colour slots and which data slots (an image can feed both) */
+    uint8_t *use = br_alloc(d->image_count > 0 ? d->image_count : 1);
+    for (uint32_t i = 0; use != NULL && i < m->material_count; i++) {
+        for (int slot = 0; slot < BR_MATERIAL3D_SLOT_COUNT; slot++) {
+            int32_t img = d->mats[i].image[slot];
+            if (img >= 0) {
+                use[img] |= br_gltf_colour_slot(slot) ? 1u : 2u;
+            }
+        }
+    }
     br_texture_style style;
     SDL_zero(style);
     style.address_mode = BR_ADDRESS_REPEAT;
     style.mipmaps = true; /* generates the mip chain; material slots pick their own sampler */
     style.max_anisotropy = 4.0f;
     for (uint32_t i = 0; i < d->image_count; i++) {
-        const br_gltf_image *img = &d->images[i];
-        if (img->pixels != NULL) {
-            m->textures[i] = br_texture_create_rgba8(e, (uint32_t)img->width, (uint32_t)img->height, img->pixels, &style);
+        uint8_t u = use != NULL ? use[i] : 1u;
+        if (u & 1u || u == 0) { /* an unused image still gets its colour texture */
+            m->textures[2 * i] = br_gltf_texture(e, &d->images[i], true, &style);
+        }
+        if (u & 2u) {
+            m->textures[2 * i + 1] = br_gltf_texture(e, &d->images[i], false, &style);
         }
     }
+    br_free(use);
     for (uint32_t i = 0; i < m->material_count; i++) {
         br_gltf_material_data *md = &d->mats[i];
         for (int slot = 0; slot < BR_MATERIAL3D_SLOT_COUNT; slot++) {
             if (md->image[slot] >= 0) {
-                md->desc.textures[slot].texture = m->textures[md->image[slot]];
+                uint32_t variant = br_gltf_colour_slot(slot) ? 0u : 1u;
+                md->desc.textures[slot].texture = m->textures[2 * (uint32_t)md->image[slot] + variant];
             }
         }
         m->materials[i] = br_material3d_create(e, &md->desc);
