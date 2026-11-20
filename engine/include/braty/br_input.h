@@ -267,6 +267,13 @@ const char *br_input_text(br_engine *e);
 const char *br_input_text_composition(br_engine *e, int *cursor, int *selection_length);
 /* Tells the IME where the text field is (window coordinates) so its candidate list appears next to it. */
 void br_input_text_set_area(br_engine *e, br_rect area, int cursor);
+/* Keyboard capture (a focused text field, br_text_field.h): while captured, actions read their
+ * key bindings as up (mouse and gamepad bindings stay live), and an action whose key is still
+ * held when the capture ends stays up until that key is released, so the Enter that submits a
+ * field does not also press "confirm". Raw queries (br_input_key_down...) are not filtered. */
+void br_input_set_keyboard_captured(br_engine *e, bool captured);
+/* True while the keyboard is captured. */
+bool br_input_keyboard_captured(br_engine *e);
 
 /* ---- actions (named, data-driven bindings) */
 
@@ -416,8 +423,11 @@ void br_input_inject_wheel(br_engine *e, float dx, float dy);
 void br_input_inject_key(br_engine *e, SDL_Scancode key, bool down);
 /* Finger goes down / moves / goes up (type = SDL_EVENT_FINGER_DOWN/MOTION/UP), window coordinates. */
 void br_input_inject_touch(br_engine *e, SDL_EventType type, uint64_t finger, float x, float y);
-/* Types UTF-8 text (as SDL_EVENT_TEXT_INPUT). */
+/* Types UTF-8 text (as SDL_EVENT_TEXT_INPUT; an IME commit is the same event). */
 void br_input_inject_text(br_engine *e, const char *utf8);
+/* IME composition update (as SDL_EVENT_TEXT_EDITING): the pre-edit text, its cursor (code points)
+ * and selected length (-1 = not set). "" ends the composition without committing (cancel). */
+void br_input_inject_text_editing(br_engine *e, const char *utf8, int cursor, int length);
 /* Gamepad button in a slot. A press on an empty slot gets an injected generic pad first (no SDL
  * device); a release on an empty slot is dropped (it must not bring a disconnected pad back). */
 void br_input_inject_gamepad_button(br_engine *e, int slot, SDL_GamepadButton button, bool down);

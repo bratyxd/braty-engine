@@ -58,6 +58,7 @@ CASES = [
     ("render_views_demo", "render_views_demo", 10, [], None),
     ("sdf_fonts_demo", "sdf_fonts_demo", 10, [], None),
     ("backface_normal_demo", "backface_normal_demo", 10, [], None),
+    ("text_field_demo", "text_field_demo", 20, [], None),  # caret on (< 0.5 s after the last move), selection
     ("star_courier_title", STAR_COURIER, 60, [], ROUND),
     ("star_courier_play", STAR_COURIER, 700, [], ROUND),
     ("crate_rush_menu", CRATE_RUSH, 60, [], None),

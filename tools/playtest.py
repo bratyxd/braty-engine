@@ -20,7 +20,7 @@ From a shell (each command is one argument; replies are printed one JSON line ea
 Short commands: step [N], key NAME [down|up|tap] [FRAMES], action NAME [tap|down|up [VALUE]],
 gamepad connect TYPE [SLOT] | disconnect [SLOT] | tap|down|up BUTTON [SLOT] [FRAMES] |
 axis AXIS VALUE [SLOT], click LABEL,
-text "...", screenshot FILE, get PATH, set PATH JSON, find LABEL, dump [FILE], window W H,
+text "...", type LABEL "...", screenshot FILE, get PATH, set PATH JSON, find LABEL, dump [FILE], window W H,
 stats, profile [N], logs [N], help, quit. Anything starting with "{" is sent as raw JSON.
 Extra or unknown words ("key Up frames=40") are rejected before the game starts.
 A failed command raises PlaytestError with the engine's message; the game process is ended when
@@ -145,6 +145,10 @@ class Playtest:
 
     def text(self, text):
         return self.send({"cmd": "text", "text": text})
+
+    def type(self, label, text):
+        """Focuses the text field labelled `label` and types text into it."""
+        return self.send({"cmd": "type", "label": label, "text": text})
 
     # ---- looking at the game
     def screenshot(self, path):
@@ -304,6 +308,9 @@ def parse_words(text, words):
         return {"cmd": name, key: rest[0]}
     if name == "text":
         return {"cmd": "text", "text": " ".join(rest)}
+    if name == "type":
+        arity(name, rest, 1, len(rest))
+        return {"cmd": "type", "label": rest[0], "text": " ".join(rest[1:])}
     if name == "set":
         arity(name, rest, 2, len(rest))
         return {"cmd": "set", "path": rest[0], "value": json.loads(" ".join(rest[1:]))}

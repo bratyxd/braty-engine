@@ -325,6 +325,32 @@ and is saved with the node.
 `font` loads a file: `.fnt`/`.xml` = bitmap font, others = TTF/OTF. `align`: `left center right
 justify`; `white_space`: `pre normal pre_line`; `baseline`: `top alphabetic middle bottom`.
 
+**text_field** (an editable text box, `br_text_field.h`)
+
+<!-- check: scene -->
+```json
+{ "type": "text_field", "label": "player_name", "position": [40, 40], "size": [320, 44],
+  "text": "", "placeholder": "Your name", "max_length": 16, "padding": 8,
+  "multiline": false, "password": false,
+  "style": { "font_size": 22, "fill": "#202020" },
+  "colors": { "background": "white", "border": "#8a8f99", "focus_border": "#2f7fe0",
+              "selection": "#9cc4ff", "caret": "#111111", "placeholder": "#9097a0" } }
+```
+| Key | Meaning |
+|---|---|
+| `size` | Box size [w, h], each 1..16384 (default [200, 40]). |
+| `text` | Initial text (invalid UTF-8 becomes U+FFFD, control characters are dropped, cut to `max_length`). |
+| `placeholder` | Shown (in the placeholder colour) while the text is empty. |
+| `max_length` | Code points, 1..65536 (default 256). |
+| `padding` | Space between the box edge and the text, 0..1000 (default 8). |
+| `multiline` | Wrap at the width, Enter inserts a new line, Ctrl+Enter submits (default false). |
+| `password` | Show bullets, no copy / cut, no IME (default false). |
+| `style` | Text style keys as for `text`; `align`, `word_wrap`, `white_space` and `baseline` are the field's own. |
+| `colors` | `background`, `border`, `focus_border`, `selection`, `caret`, `placeholder`. |
+
+Saving writes the live `text`. The field's two internal children (`text_field.text`,
+`text_field.clip`) are saved too and dropped again when the saved file is loaded.
+
 **3D views** (`"type": "view3d"`, read by `engine/src/data/br_node_json_view3d.c`): a 2D node
 that renders a 3D scene into its rectangle. Container fields apply to the view itself; the 3D
 content is the `scene` array.
@@ -383,6 +409,7 @@ mesh node is destroyed (with its view). Example in use: `examples/gltf_demo.c` (
 | `mesh`, `mesh_simple`, `mesh_plane`, `perspective_mesh`, `mesh_rope` | `"mesh"` | the matching `br_mesh_*_create` |
 | `particle_container` | `"particle_container"` | `br_node_create` |
 | `text`, `bitmap_text`, `rich_text` | same names | `br_text_create` / `br_bitmap_text_create` / `br_rich_text_create` |
+| `text_field` | `"text_field"` | `br_node_create` (as `br_text_field_create`) |
 | any other registered type | that type | `br_node_create`, then its `from_json` |
 
 Your own node types: register them, then `br_node_type_set_from_json(e, type_id, fn)`; inside

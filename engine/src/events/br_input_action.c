@@ -49,6 +49,9 @@ static float br_input_binding_value(br_input_state *s, const br_input_binding *b
             return 0.0f;
         }
         if (b->kind == BR_INPUT_BINDING_KEY) {
+            if (s->keyboard_captured) {
+                return 0.0f;
+            }
             return s->keys[b->code] || (s->key_frame_edges[b->code] & BR_EDGE_PRESSED) ? 1.0f : 0.0f;
         }
         return s->mouse_buttons[b->code] || (s->mouse_frame_edges[b->code] & BR_EDGE_PRESSED) ? 1.0f : 0.0f;
@@ -128,6 +131,19 @@ void br_input_update_actions(br_engine *e)
         a->down = a->value > 0.0f && a->value >= a->threshold;
         if (a->value > 0.0f && pad >= 0) {
             a->last_gamepad = pad;
+        }
+    }
+}
+
+void br_input_block_held_keys(br_input_state *s)
+{
+    for (uint32_t i = 0; i < s->actions.count; i++) {
+        br_action *a = (br_action *)s->actions.data + i;
+        for (uint32_t j = 0; j < a->bindings.count; j++) {
+            const br_input_binding *b = (const br_input_binding *)a->bindings.data + j;
+            if (b->kind == BR_INPUT_BINDING_KEY && (s->keys[b->code] || (s->key_edges[b->code] & BR_EDGE_PRESSED))) {
+                a->blocked = true;
+            }
         }
     }
 }

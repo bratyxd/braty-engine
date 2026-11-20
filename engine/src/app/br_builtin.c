@@ -39,6 +39,7 @@ void br_builtin_register(br_engine *e)
     br_profiler_register(e);
     br_playtest_register(e);
     br_loc_register(e);
+    br_text_field_register(e);
     /* nodes are destroyed by br_engine_destroy before any shutdown callback runs, so every
      * on_destroy and destroy listener (animation, canvas3d, data, the game...) sees its state */
 }

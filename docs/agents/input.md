@@ -75,6 +75,7 @@ Pointer events on nodes are in `events.md`.
 | `br_input_keycode_down`, `br_input_key_mods`, `br_input_key_name` | Layout keys, modifiers, names. |
 | `br_input_mouse_set_relative/_confined`, `_show_cursor`, `_set_cursor_image`, `_wheel_ticks` | Mouse. |
 | `br_input_text_start`, `br_input_text`, `br_input_text_composition`, `_set_area` | Text + IME. |
+| `br_input_set_keyboard_captured`, `br_input_inject_text_editing` | A focused text field captures the keyboard (key bindings of actions read as up; a key still held when the capture ends stays up until released); IME composition injected for tests. |
 | `br_input_inject_*`, `br_input_inject_gamepad_connect`, `br_input_gamepad_attach_virtual` | Tests and scripted play. |
 
 Action JSON (also the save format of `br_input_bindings_save`):

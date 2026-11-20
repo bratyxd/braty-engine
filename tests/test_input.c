@@ -100,6 +100,77 @@ static void test_keyboard_mouse_text(br_engine *e)
     br_input_inject_text(e, "\xE6\xBC\xA2");
     BR_CHECK(br_input_text_composition(e, NULL, NULL)[0] == '\0');   /* committed text ends composition */
     step(e);
+
+    /* injected composition, cut on a code point boundary when longer than the buffer */
+    br_input_inject_text_editing(e, "\xE3\x81\x8B", 1, -1);
+    int length = 0;
+    BR_CHECK(SDL_strcmp(br_input_text_composition(e, &cursor, &length), "\xE3\x81\x8B") == 0 && cursor == 1 &&
+             length == -1);
+    char long_text[400];
+    for (int i = 0; i < 399; i++) {
+        long_text[i] = (i % 3) == 0 ? '\xE3' : (i % 3) == 1 ? '\x81' : '\x8B';
+    }
+    long_text[399] = '\0';
+    br_input_inject_text_editing(e, long_text, 0, 0);
+    size_t comp_len = SDL_strlen(br_input_text_composition(e, NULL, NULL));
+    BR_CHECK(comp_len > 0 && comp_len % 3 == 0);
+    br_input_inject_text_editing(e, "", 0, 0);   /* cancel */
+    BR_CHECK(br_input_text_composition(e, NULL, NULL)[0] == '\0');
+}
+
+static SDL_Keymod g_key_mod = 0;
+
+static void record_key_mod(br_engine *e, const SDL_Event *ev, void *user)
+{
+    (void)e;
+    (void)user;
+    if (ev->type == SDL_EVENT_KEY_DOWN && ev->key.scancode == SDL_SCANCODE_V) {
+        g_key_mod = ev->key.mod;
+    }
+}
+
+/* A focused text field captures the keyboard: key bindings read as up, and a key still held when
+ * the capture ends does not press its action. */
+static void test_keyboard_capture(br_engine *e)
+{
+    br_engine_add_event_handler(e, record_key_mod, NULL);
+    br_input_inject_key(e, SDL_SCANCODE_LSHIFT, true);
+    br_input_inject_key(e, SDL_SCANCODE_V, true);
+    BR_CHECK((g_key_mod & SDL_KMOD_LSHIFT) != 0);
+    br_input_inject_key(e, SDL_SCANCODE_V, false);
+    br_input_inject_key(e, SDL_SCANCODE_LSHIFT, false);
+    step(e);
+
+    br_input_action_bind_key(e, "cap.jump", SDL_SCANCODE_J);
+    br_input_action_bind_mouse(e, "cap.fire", SDL_BUTTON_LEFT);
+    br_input_set_keyboard_captured(e, true);
+    BR_CHECK(br_input_keyboard_captured(e));
+    br_input_inject_key(e, SDL_SCANCODE_J, true);
+    br_input_inject_pointer_down(e, 10, 10, SDL_BUTTON_LEFT);
+    step(e);
+    BR_CHECK(!br_input_action_down(e, "cap.jump") && !br_input_action_pressed(e, "cap.jump"));
+    BR_CHECK(br_input_action_pressed(e, "cap.fire"));   /* the mouse is not captured */
+    BR_CHECK(br_input_key_down(e, SDL_SCANCODE_J));     /* raw queries are not filtered */
+    br_input_set_keyboard_captured(e, false);
+    step(e);
+    BR_CHECK(!br_input_action_down(e, "cap.jump") && !br_input_action_pressed(e, "cap.jump"));
+    br_input_inject_key(e, SDL_SCANCODE_J, false);
+    br_input_inject_pointer_up(e, 10, 10, SDL_BUTTON_LEFT);
+    step(e);
+    br_input_inject_key(e, SDL_SCANCODE_J, true);
+    step(e);
+    BR_CHECK(br_input_action_pressed(e, "cap.jump"));   /* a fresh press works again */
+
+    /* a key pressed and released inside the capture leaves nothing behind */
+    br_input_inject_key(e, SDL_SCANCODE_J, false);
+    step(e);
+    br_input_set_keyboard_captured(e, true);
+    br_input_inject_key(e, SDL_SCANCODE_J, true);
+    br_input_inject_key(e, SDL_SCANCODE_J, false);
+    br_input_set_keyboard_captured(e, false);
+    step(e);
+    BR_CHECK(!br_input_action_pressed(e, "cap.jump"));
+    br_input_actions_clear(e);
 }
 
 static void test_injected_gamepad(br_engine *e)
@@ -609,6 +680,7 @@ int main(void)
     }
     test_latch_priority(e);
     test_keyboard_mouse_text(e);
+    test_keyboard_capture(e);
     test_injected_gamepad(e);
     test_gamepad_hotplug(e);
     test_actions(e);

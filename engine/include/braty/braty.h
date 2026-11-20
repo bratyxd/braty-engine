@@ -85,5 +85,6 @@
 #include "braty/br_tween.h"
 #include "braty/br_profiler.h"
 #include "braty/br_loc.h"
+#include "braty/br_text_field.h"
 
 #endif

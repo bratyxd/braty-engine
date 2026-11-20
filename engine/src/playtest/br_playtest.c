@@ -275,6 +275,19 @@ static void br_pt_cmd_text(br_engine *e, const char *text)
     e->playtest->injecting = false;
 }
 
+/* Focuses a text field by label and types into it (the same text event real typing sends). */
+static bool br_pt_cmd_type(br_engine *e, const cJSON *cmd)
+{
+    const char *label = br_pt_string(cmd, "label");
+    br_node n = br_node_find_by_label(e, br_stage_root(e), label, true);
+    if (br_node_type_of(e, n) != br_text_field_type(e)) {
+        return br_playtest_fail(e, "type: no text field labelled '%s'", label);
+    }
+    br_text_field_focus(e, n);
+    br_pt_cmd_text(e, br_pt_string(cmd, "text"));
+    return true;
+}
+
 /* Resizes the window (SDL_SetWindowSize; the next frame renders at the new size). Headless, it
  * sets the screen size the cameras see (br_camera_set_headless_screen), so aspect ratios and
  * letterboxing can be checked in one run. */
@@ -459,6 +472,7 @@ static const br_pt_command_info br_pt_commands[] = {
       "action move (default), down, up, tap or wheel; window coordinates" },
     { "touch", "action:string finger?:number x?:number y?:number", "action down, move or up" },
     { "text", "text:string", "type text" },
+    { "type", "label:string text:string", "focus the text field with this label and type text into it" },
     { "click", "label:string button?:number", "click a node by label (\"view/node\" for a 3D node)" },
     { "gamepad",
       "action:string type?:string slot?:number button?:string axis?:string value?:number frames?:number injected?:bool",
@@ -798,6 +812,9 @@ static br_pt_result br_pt_exec(br_engine *e, const cJSON *cmd, cJSON *reply)
     }
     if (SDL_strcmp(name, "click") == 0) {
         return br_pt_ok(br_pt_cmd_click(e, cmd));
+    }
+    if (SDL_strcmp(name, "type") == 0) {
+        return br_pt_ok(br_pt_cmd_type(e, cmd));
     }
     if (SDL_strcmp(name, "gamepad") == 0) {
         return br_pt_ok(br_pt_cmd_gamepad(e, cmd, reply));

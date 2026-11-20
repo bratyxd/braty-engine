@@ -627,6 +627,22 @@ static void test_action(void)
     br_engine_destroy(e);
 }
 
+/* type: focuses a text field by label and types; get label:text reads it back */
+static void test_type(void)
+{
+    br_engine *e = make_game();
+    br_node field = br_text_field_create(e, br_vec2_make(200, 40), NULL);
+    br_node_set_label(e, field, "name");
+    br_node_add_child(e, br_stage_root(e), field);
+    br_playtest_step(e, 1);
+    BR_CHECK(reply_has(e, "{\"cmd\":\"type\",\"label\":\"name\",\"text\":\"Ada \\u00e9\"}", "\"ok\":true"));
+    BR_CHECK(br_node_equal(br_text_field_focused(e), field));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"name:text\"}", "\"value\":\"Ada \xC3\xA9\""));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"type\",\"label\":\"hero\",\"text\":\"x\"}", "no text field labelled 'hero'"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"type\",\"label\":\"name\"}", "missing \\\"text\\\""));
+    br_engine_destroy(e);
+}
+
 /* ---- examples that talk to the GPU directly still run (and exit 0) under --headless, the mode
  * play-test scripts run in on CI */
 
@@ -739,6 +755,7 @@ int main(void)
     test_parse_errors();
     test_stdin_session();
     test_action();
+    test_type();
     test_gamepad();
     test_hardening();
     test_log_threads();

@@ -144,7 +144,7 @@ static void br_input_event(br_engine *e, const SDL_Event *ev, void *user)
         s->composition[0] = '\0';
         break;
     case SDL_EVENT_TEXT_EDITING:
-        SDL_strlcpy(s->composition, ev->edit.text != NULL ? ev->edit.text : "", sizeof(s->composition));
+        SDL_utf8strlcpy(s->composition, ev->edit.text != NULL ? ev->edit.text : "", sizeof(s->composition));
         s->composition_cursor = ev->edit.start;
         s->composition_length = ev->edit.length;
         break;
@@ -463,6 +463,20 @@ void br_input_text_set_area(br_engine *e, br_rect area, int cursor)
     SDL_SetTextInputArea(br_engine_window(e), &r, cursor);
 }
 
+void br_input_set_keyboard_captured(br_engine *e, bool captured)
+{
+    br_input_state *s = e->input;
+    if (s->keyboard_captured && !captured) {
+        br_input_block_held_keys(s);
+    }
+    s->keyboard_captured = captured;
+}
+
+bool br_input_keyboard_captured(br_engine *e)
+{
+    return e->input->keyboard_captured;
+}
+
 /* ---- injection */
 
 static SDL_WindowID br_input_window_id(br_engine *e)
@@ -542,6 +556,7 @@ void br_input_inject_key(br_engine *e, SDL_Scancode key, bool down)
     ev.key.windowID = br_input_window_id(e);
     ev.key.scancode = key;
     ev.key.key = SDL_GetKeyFromScancode(key, SDL_KMOD_NONE, false);
+    ev.key.mod = br_input_key_mods(e);   /* held before this key, as SDL reports it */
     ev.key.down = down;
     br_input_send(e, &ev);
 }
@@ -573,5 +588,17 @@ void br_input_inject_text(br_engine *e, const char *utf8)
     ev.type = SDL_EVENT_TEXT_INPUT;
     ev.text.windowID = br_input_window_id(e);
     ev.text.text = utf8;   /* read synchronously by the handlers */
+    br_input_send(e, &ev);
+}
+
+void br_input_inject_text_editing(br_engine *e, const char *utf8, int cursor, int length)
+{
+    SDL_Event ev;
+    SDL_zero(ev);
+    ev.type = SDL_EVENT_TEXT_EDITING;
+    ev.edit.windowID = br_input_window_id(e);
+    ev.edit.text = utf8 != NULL ? utf8 : "";
+    ev.edit.start = cursor;
+    ev.edit.length = length;
     br_input_send(e, &ev);
 }
