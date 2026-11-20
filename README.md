@@ -18,11 +18,13 @@ Phase 1 (Tasks 1-12 of `docs/plans/2026-11-19-braty-engine.md`) and Phase 2 Task
 `--deterministic`, play-testing and golden images (14); input, math audit, component queries
 (14c); cameras and 2D in 3D (15); scenes and asset groups (16); animation and tweens (17); the
 profiler (18b); glTF as scene content (18); the second sample game, Crate Rush (19). Task 20
-(integration review) is open.
+(integration review) is open. A full code review on 2026-11-20 (eight slices, every engine
+file) and its fixes are summarised in `docs/REVIEW_2026-11-20.md`.
 
-`ctest` runs 31 headless test programs, the two sample games' play-test scripts (headless) and
-24 golden images (Direct3D 12; Vulkan differs by a few edge pixels in 9 of them); 21 examples and
-two sample games run on **Windows 11 + MinGW-w64 GCC with Direct3D 12 and Vulkan** (RTX 3060 Ti) -
+`ctest` runs 35 test programs (headless; `test_gpu`, `test_debug` and one profiler case open a
+window and skip without a GPU), every example once with `--headless --frames 5`, the two sample
+games' play-test scripts (headless) and 27 golden images (Direct3D 12; Vulkan differs by a few
+edge pixels in 10 of them): 62 CTest entries. 24 examples and two sample games run on **Windows 11 + MinGW-w64 GCC with Direct3D 12 and Vulkan** (RTX 3060 Ti) -
 the only tested platform, in Debug and with the `windows-gcc-release` preset. Linux, macOS, iOS,
 Android and MSVC presets exist but have never been built; Metal shaders are generated but have
 never run. Details: `docs/PLATFORMS.md`. What is not there yet: "Not implemented yet" below.
@@ -42,7 +44,7 @@ never run. Details: `docs/PLATFORMS.md`. What is not there yet: "Not implemented
 | Audio | wav / ogg, streaming, buses, sound sprites | audio | Done |
 | Play-testing | scripts, interactive stdin, record / replay, `expect` / `wait_until`, state queries, `profile` | playtest | Done |
 | Profiler | CPU scopes, GPU estimate, counters, bottleneck verdict, F2 panel, HUD, Chrome trace | profiler | Done |
-| Tests | 31 unit test programs, play-test scripts, 24 golden images (`docs/TESTING.md`) | tests, tools | Done |
+| Tests | 35 test programs, headless runs of every example, play-test scripts, 27 golden images (`docs/TESTING.md`) | tests, tools | Done |
 | Platforms | presets for Linux, macOS, iOS, Android, MSVC; a `-release` preset for each | - | Configured, untested (only `windows-gcc` / `windows-gcc-release` built) |
 
 ## Quick start
@@ -232,7 +234,18 @@ SVG file import beyond path data, GPU compute culling.
 - **Real controllers untested:** gamepad families, glyphs and rebinding are verified with SDL
   virtual pads only; rumble, LEDs and touchpads on real hardware are not (`docs/agents/input.md`).
 - **Runtime window resizing** is handled by the cameras (verified by starting at 16:9, 21:9 and
-  9:16), but no automated test resizes a live window (API_REVIEW 38).
+  9:16); the play-test `window` command resizes a running game, but the automated tests use it
+  only headless (the screen size cameras see), not on a live window.
+- **Hostile data is bounded, not unlimited** (each limit logs and refuses or clamps): the 2D
+  render walk and hit tests stop at 2048 levels (deeper nodes are neither drawn nor hit); event
+  propagation paths stop at 64 ancestors; prefabs nest at most 16 deep and scene-file
+  `"children"` 256 levels; a `{a,b}` asset pattern expands to at most 16 names; a concave
+  graphics fill has at most 8192 points, a sub-path 65536, polygons and stars 4096 sides (1024
+  from data files); text sizes, strokes and blurs are capped at 4096 (glyphs
+  rasterise at most at 1024 px, effects grow at most 64 px); glTF accessors hold at most 2^24
+  elements (2^20 without a buffer view) and 2^20 GPU instances per node; animation graphs hold
+  1024 states and 4096 transitions, clips 100000 keys per track; render textures at most 16384
+  px a side (`BR_RENDER_TEXTURE_MAX_SIZE`). `docs/DATA_FORMATS.md` lists the value ranges.
 - **Physics:** none in the engine. Crate Rush does box collision itself (`src/player.c`).
 - Open API rough edges and their proposed fixes: `docs/API_REVIEW.md`.
 
@@ -243,19 +256,19 @@ Each is a known ceiling with its upgrade path written next to it in the code
 
 | Module | Shortcut |
 |---|---|
-| app | Sleeps a fixed 16 ms while minimised instead of waiting for the restore event. |
+| app | Sleeps a fixed 16 ms while minimised or paused (inactive) instead of waiting for the restore event. |
 | assets | A spritesheet's image loads synchronously inside the sheet load (also for async loads); texture loaders are assumed to return `br_texture *`. |
-| core | Save data busy-waits until SDL storage is ready (instant on desktop; consoles may want a callback); heap statistics are process-wide counters under one spinlock; no double-free check in `br_free`. |
-| animation | 2D blend trees use inverse-distance weights; a step of more than ~8 loop passes skips the extra markers; root motion reports nothing on the frame a loop wraps. |
+| core | Save data busy-waits until SDL storage is ready (instant on desktop; consoles may want a callback); heap statistics are process-wide counters under one spinlock; no double-free check in `br_free` (pool arenas do check). |
+| animation | 2D blend trees use inverse-distance weights; a step of more than ~8 loop passes skips the extra markers; on layers 1-3 an interrupted fade drops the older fading motion (the base layer fades from a snapshot of the pose on screen). |
 | audio | A deterministic run with a device plays on the wall clock (without one, sounds advance by game time). |
 | canvas3d | Only SDF text is re-shaded for 3D (other custom 2D shaders need texture mode); canvas hit tests ignore z-index, render layers and masks. |
 | data | Masks, filters, hit areas and handlers are saved as loaded, not read back; edited prefab files reload only when a scene using them changes. |
-| debug | Overlay glyphs are rasterised at 1 pixel per unit (soft on HiDPI); log capture is process-wide (one engine per process). |
+| debug | Overlay glyphs are rasterised at 1 pixel per unit (soft on HiDPI); log capture and the input event filter are process-wide (one engine per process; injected input skips the filter). |
 | events | Event paths stop at 64 ancestors; hit tests walk the ancestor chain per node; headless touch coordinates pass through unscaled; the hover ticker replays the stored stage point (a camera moving under a still mouse is not re-mapped). |
 | filters | Rotated atlas frames are returned as stored by extract; huge filter areas drop resolution at 4096 px; a cached node with filters re-renders when its bounds change. |
 | gpu | Pipeline/sampler caches are linear arrays; readback handles 8-bit RGBA/BGRA only. |
-| graphics | Ear clipping is O(n^2) per ear, hole bridging O(ring * edges), hit tests scan cached triangles linearly. |
-| math | Collinear overlapping segments report no intersection. |
+| graphics | Ear clipping is about O(n^2) (so concave fills over 8192 points are refused), hole bridging O(ring * edges), hit tests scan cached triangles linearly. |
+| math | Collinear overlapping segments report no intersection; the spring helper's implicit Euler damps a little at large dt. |
 | particles | Scratch memory keeps its peak size; a container drawn twice in a frame uses the last matrix for both. |
 | playtest | Every mouse motion is recorded; the log hook is process-wide; a node property read builds the node's whole JSON. |
 | profiler | A single frame longer than 4.29 s is clamped; the GPU estimate polls fences every 0.1 ms. |

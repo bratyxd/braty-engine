@@ -17,7 +17,7 @@ Plans and feature maps: `docs/plans/2026-11-19-braty-engine.md` (Phase 1),
 ```sh
 cmake --preset windows-gcc [-DCMAKE_PREFIX_PATH=<SDL3 prefix>]   # default prefix: .deps/sdl3
 cmake --build --preset windows-gcc                                  # engine, tests, examples, both samples
-ctest --preset windows-gcc                                          # unit + play-test + golden images
+ctest --preset windows-gcc                                          # 62 entries: unit tests, headless examples, play-tests, golden images
 build/windows-gcc/hello_quad.exe --frames 3 --screenshot build/out.png [--gpu-driver vulkan|direct3d12]
 build/windows-gcc/sample_projects/crate_rush/crate_rush.exe --level level1 --frames 120 --screenshot build/crate.png
 build/windows-gcc/sample_projects/crate_rush/crate_rush.exe --headless --playtest sample_projects/crate_rush/playtest/round.json
@@ -25,7 +25,13 @@ build/windows-gcc/sample_projects/star_courier/star_courier.exe --playtest sampl
 python tools/golden.py run --only crate_rush_play                   # one golden image (docs/TESTING.md)
 python tools/check_getting_started.py                               # builds and runs every step of the guide
 cmake --preset windows-gcc-release && cmake --build --preset windows-gcc-release   # optimised, profiler off (docs/BUILDING.md)
+ctest --preset windows-gcc-release                                  # the same tests in the release build
 ```
+
+CTest runs 35 `tests/test_*.c` programs (headless; `test_gpu`, `test_debug` and one profiler case
+open a window and skip without a GPU), every example with `--headless --frames 5` (label
+`headless`: `br_engine_gpu(e)` is NULL there, so code must not assume a GPU), both samples'
+`round.json` and 27 golden images (`-L` / `-LE golden|headless|playtest` select).
 
 Every app built on `br_app` takes `--frames N --screenshot out.png` (fixed 1/60 s steps, exits 0),
 plus `--vsync`, `--max-fps`, `--deterministic`, `--headless`, `--assets DIR` and the play-test
@@ -52,7 +58,10 @@ python tools/playtest.py build/windows-gcc/sample_projects/crate_rush/crate_rush
 Then open the PNG. Commands: `step N`, `key Space`, `action start`, `click
 <label>`, `get <label>:<property>` / `<label>:<component>.<field>` / `game:<field>` /
 `engine:scene`, `set <path> <json>`, `dump`, `profile [N]` (then `profile:frame_ms_p95`...),
-`screenshot FILE`, `quit`; scripts (`--playtest file.json`) add `expect` and
+`window W H` (resize; headless: the screen size cameras see, to check 21:9 / 9:16 layouts),
+`screenshot FILE`, `quit`. A component name with a dot works in paths
+(`cam:camera.follow.offset3d.x`: the longest registered name wins); unknown argument names are
+errors. Scripts (`--playtest file.json`) add `expect` and
 `wait_until` and exit 1 on failure; `--record file.json` turns a played session into a script.
 Everything, with the Python class: `docs/PLAYTESTING.md`.
 
@@ -103,6 +112,24 @@ Your own code: `br_profile_begin(e, "name")` / `br_profile_end(e)`. `docs/PROFIL
 5. **Test it like the samples:** a `round.json` with `expect` (state, score, positions,
    `engine:scene`), a soak that checks counts return to baseline, a golden image of a
    deterministic frame (`tools/golden.py`), and look at screenshots on both GPU drivers.
+6. **Ship it** (what the engine already does; `docs/agents/app.md`, `core.md`, `input.md`):
+   - **Lifecycle:** by default game time stops (dt 0) and audio pauses while the window is
+     unfocused, minimised or in the background (game.json `window.pause_when_inactive`,
+     `br_app_set_pause_when_inactive`; never in `--deterministic`, `--frames` or headless runs).
+     `br_app_is_active` / `br_app_is_paused`, `br_app_on_lifecycle` (DEACTIVATED, ACTIVATED,
+     LOW_MEMORY, TERMINATING). A pause menu sets `br_ticker_set_speed(e, 0)` and animates with
+     `br_ticker_unscaled_delta(e)`.
+   - **Saves:** `br_save_write` / `br_save_read` live under an org + app identity (game.json
+     `"save": {"org", "app"}`, `br_engine_set_save_name`; default `"braty"` + the sanitised
+     window title) and are written atomically (`<path>.tmp`, then renamed over the old file).
+   - **Release:** the `<preset>-release` presets (profiler and `--playtest-stdin` off,
+     `NDEBUG`); switch the F1 / F2 keys off with game.json `"debug": {"keys": false}`.
+   - **Controllers:** stick dead zone 0.15 / 0.95 and a separate trigger dead zone (default
+     0.05, `br_input_gamepad_set_trigger_deadzone`); `br_input_gamepad_joined` / `_left` edges
+     for "press to join"; buttons held when a pad disconnects report their release.
+   - **Hostile data:** loaders log and refuse or clamp instead of crashing; the limits (2048
+     render levels, 16 prefab levels, 16 names per `{a,b}` pattern, 8192-point concave fills,
+     glTF counts, text sizes) are in README "Limits" and `docs/DATA_FORMATS.md`.
 
 Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
 
@@ -133,7 +160,8 @@ Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
 
 ## The data-driven model
 
-- **Systems** (`br_app.h`): `br_system_add(e, name, phase, priority, fn, user)`. Phases: INPUT,
+- **Systems** (`br_app.h`): `br_system_add(e, name, phase, priority, fn, user)` (returns false,
+  logged, on a duplicate name or a bad phase). Phases: INPUT,
   FIXED_UPDATE (0..N times per frame at `ticker.fixed_hz`; `br_app_fixed_alpha` interpolates),
   UPDATE, LATE_UPDATE, PRE_RENDER (always run) then RENDER, POST_RENDER (only when a frame can be
   drawn). Groups (`br_system_set_group`, `br_system_group_set_enabled`) pause sets of systems.
@@ -238,6 +266,15 @@ play-testing), 14c (input, math, queries), 15 (cameras, canvas3d), 16 (scenes, a
 (animation, tweens), 18b (profiler), 18 (glTF scene content), 19 (Crate Rush, docs). Open: Task 20
 (integration review).
 
+Full code review 2026-11-20 (`docs/plans/2026-11-20-engine-review.md`): every module was read
+in eight slices and its findings fixed with tests; what changed, what was not fixed and the
+larger changes left for the owner: `docs/REVIEW_2026-11-20.md`. Notable API changes from it:
+`br_system_add` returns bool; `br_gpu_set_vsync` is gone (`br_app_set_vsync`);
+`br_debug_log_line` copies into a caller buffer; app lifecycle (`br_app_on_lifecycle`,
+`br_ticker_unscaled_delta`); save identity (`br_engine_set_save_name`); `br_data_get_count` /
+`br_data_get_int_range`; `br_text_prepare`; `br_animator_rebind`; gamepad trigger dead zone and
+join / leave edges.
+
 ## Layout
 
 ```
@@ -248,5 +285,5 @@ third_party/            stb, cgltf, cJSON, microui (+ licences, see third_party/
 tools/                  compile_shaders.py, playtest.py, golden.py, check_getting_started.py
 sample_projects/        star_courier (2D) and crate_rush (3D); each builds standalone or from the root project
 tests/  examples/  docs/   docs: BUILDING, GETTING_STARTED, TESTING, PLAYTESTING, PLATFORMS, DATA_FORMATS,
-                           API_REVIEW, agents/; tests/golden/ holds the reference images
+                           API_REVIEW, REVIEW_2026-11-20, agents/; tests/golden/ holds the reference images
 ```
