@@ -91,6 +91,21 @@ static uint32_t count_children(br_engine *e, br_node3d n, uint32_t type, uint32_
     return count;
 }
 
+/* Batched instances under n's direct children that are collapsed (hidden: zero scale). */
+static uint32_t count_collapsed(br_engine *e, br_node3d n)
+{
+    uint32_t count = 0;
+    for (br_node3d c = br_node3d_first_child(e, n); br_node3d_valid(e, c); c = br_node3d_next_sibling(e, c)) {
+        uint32_t k = 0;
+        br_instance3d *inst = br_batched_mesh3d_instances(e, c, &k);
+        for (uint32_t i = 0; inst != NULL && i < k; i++) {
+            const float *m = inst[i].model.m;
+            count += m[0] == 0.0f && m[5] == 0.0f && m[10] == 0.0f ? 1u : 0u;
+        }
+    }
+    return count;
+}
+
 /* Mesh3d nodes anywhere under n. */
 static uint32_t count_meshes(br_engine *e, br_node3d n)
 {
@@ -199,6 +214,18 @@ static void test_batching(br_engine *e, br_model *model, br_node3d inst)
     BR_CHECK(meshes_plain == meshes_batched + 16);
     BR_CHECK(count_children(e, plain, br_batched_mesh3d_type(e), NULL) == 0);
     br_node3d_destroy(e, plain);
+
+    /* R6: hiding or destroying a batched node's group hides its copy in the batch (one per
+     * primitive: the tree has two) */
+    br_node3d copy = br_model_instantiate(e, model);
+    br_node3d_set_visible(e, find(e, copy, "Tree_01"), false);
+    br_node3d_destroy(e, find(e, copy, "Tree_02"));
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(count_collapsed(e, copy) == 4);
+    br_node3d_set_visible(e, find(e, copy, "Tree_01"), true);
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(count_collapsed(e, copy) == 2);
+    br_node3d_destroy(e, copy);
 }
 
 static void test_import(br_engine *e, br_model *model, br_node3d inst)

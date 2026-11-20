@@ -13,6 +13,15 @@ typedef struct br_gltf_pose {
     float   *weights;
 } br_gltf_pose;
 
+/* One copy of a batched model node inside a shared batched_mesh3d. */
+typedef struct br_gltf_batch_slot {
+    uint32_t  node;      /* model node */
+    br_node3d batch;     /* the batched_mesh3d */
+    uint32_t  instance;  /* index in its instances */
+    br_mat4   rest;      /* matrix while shown */
+    bool      shown;
+} br_gltf_batch_slot;
+
 /* One instance of a model (heap, the "model3d" node data points at it). All arrays are made at
  * instantiate time; nothing is allocated per frame. */
 typedef struct br_gltf_instance {
@@ -32,6 +41,8 @@ typedef struct br_gltf_instance {
     br_gltf_pose  fade_pose;       /* the clip fading out */
     uint32_t      anim_index;      /* slot in the animator pool */
     int32_t       sub_root;        /* model node of a sub-asset instance ("kit.glb#Tree"), -1 = whole scene */
+    br_gltf_batch_slot *batch_slots; /* batched copies, follow their group's destroy / visibility */
+    uint32_t      batch_slot_count;
 } br_gltf_instance;
 
 /* One entry of the dense animator pool. */
@@ -71,6 +82,8 @@ typedef struct br_gltf_state {
 void br_anim3d_system(br_engine *e, float dt, void *user);
 /* br_gltf_instance.c: registers the model3d node type. */
 void br_gltf_instance_register(br_engine *e);
+/* Collapses the batched copies whose group node died or is hidden (and restores shown ones). */
+void br_gltf_sync_batches(br_engine *e, br_gltf_instance *inst);
 /* The instance of a model3d node, NULL if n is not one. */
 br_gltf_instance *br_gltf_instance_get(br_engine *e, br_node3d n);
 /* Frames `bounds` (NULL = the world bounds of the visible meshes under content) with the view's

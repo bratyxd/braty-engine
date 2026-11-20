@@ -29,10 +29,11 @@ Examples: `examples/gltf_demo.c` (`--foxes N`, `--novsync`, `--focus 0..6`; mode
 - **Clips** are flat data (`br_anim3d_clip`): channels with `times[]`, `values[]`, one
   interpolation (linear / step / cubic spline) and a target (model node index + path:
   translation, rotation, scale, weights). Phase 2's animation system reuses them as they are.
-- **Animators** live in one dense pool, one per instance. The system `gltf.animate`
-  (LATE_UPDATE) advances clocks, samples the clip (and the clip fading out), blends, writes node
-  TRS and the mesh3d morph slot, then recomputes joint matrices into per-instance buffers that
-  the mesh3d skin slots point at. No per-frame allocation.
+- **Animators** live in one dense pool, one per instance. The unified animation system
+  (`animation.update`) advances clocks, samples the clip (and the clip fading out), blends and
+  writes node TRS and the mesh3d morph slot; then `gltf.animate` (LATE_UPDATE) recomputes joint
+  matrices into per-instance buffers that the mesh3d skin slots point at, and syncs batched
+  copies with their group nodes. No per-frame allocation.
 - **Loading split:** `decode` (worker thread with `br_assets_load_async`) parses with cgltf,
   reads buffers (GLB chunk, base64 data URIs, external `.bin`) and images (bufferView, data URI,
   external file) and decodes them with stb_image, builds vertices/indices/morph deltas and the
@@ -64,6 +65,9 @@ Examples: `examples/gltf_demo.c` (`--foxes N`, `--novsync`, `--focus 0..6`; mode
   extras or convention suffix) that share a mesh are drawn as one `batched_mesh3d` per primitive
   (labelled `batch:<mesh name>`, child of the instance root). Their group nodes stay (labels,
   positions) but moving them moves nothing: give such a node `"batch": false` (or any extras).
+  Destroying or hiding the group (or an ancestor below the instance) does hide its copy, from
+  the next `gltf.animate` (LATE_UPDATE) on: the copy collapses to zero scale (not drawn or
+  picked; the batch's bounds stay as they were).
   Opt out per file (scene extras `"batch": false`), per load (`br_gltf_options.no_batching`,
   `br_gltf_set_load_options`) or per JSON node (`"batch": false`).
 - **EXT_mesh_gpu_instancing** nodes become one `batched_mesh3d` per primitive under the node.

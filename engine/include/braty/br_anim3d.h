@@ -5,9 +5,10 @@
  * sampling and joint-matrix functions are pure, so tests and other modules can use them.
  *
  * The animator plays clips on one model instance (a "model3d" node from br_model_instantiate,
- * br_gltf.h). Every animator lives in one dense pool; one system ("gltf.animate", LATE_UPDATE)
- * samples all of them, writes node TRS, morph weights and joint matrices (the mesh3d skin and
- * morph slots). Nothing is allocated per frame.
+ * br_gltf.h). Every animator lives in one dense pool. Sampling, blending and writing node TRS and
+ * morph weights run in the unified animation system ("animation.update", br_animation.h); the
+ * "gltf.animate" system (LATE_UPDATE) then only computes joint matrices into the mesh3d skin
+ * slots. Nothing is allocated per frame.
  */
 #ifndef BR_ANIM3D_H
 #define BR_ANIM3D_H

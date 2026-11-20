@@ -31,6 +31,7 @@ static void br_gltf_instance_free(br_engine *e, br_gltf_instance *inst)
     br_free(inst->joint_first);
     br_free(inst->joints);
     br_free(inst->model_world);
+    br_free(inst->batch_slots);
     br_gltf_free_pose(&inst->pose);
     br_gltf_free_pose(&inst->fade_pose);
     br_model_release(e, inst->model);
@@ -265,6 +266,11 @@ static void br_gltf_build_batches(br_engine *e, br_gltf_instance *inst, const ui
         inst->model_world[i] = chained ? br_mat4_mul(inst->model_world[p], local) : local;
     }
     br_color white = br_color_make(1.0f, 1.0f, 1.0f, 1.0f);
+    uint32_t slots = 0;
+    for (uint32_t mesh = 0; mesh < m->mesh_count; mesh++) {
+        slots += uses[mesh] >= 2 ? uses[mesh] * m->meshes[mesh].primitive_count : 0;
+    }
+    inst->batch_slots = slots > 0 ? br_alloc(sizeof(br_gltf_batch_slot) * slots) : NULL;
     for (uint32_t mesh = 0; mesh < m->mesh_count; mesh++) {
         if (uses[mesh] < 2) {
             continue;
@@ -279,11 +285,52 @@ static void br_gltf_build_batches(br_engine *e, br_gltf_instance *inst, const ui
             br_node3d_set_label(e, batch, label);
             for (uint32_t i = 0; i < m->node_count; i++) {
                 if (batched[i] && m->nodes[i].mesh == (int32_t)mesh) {
-                    br_batched_mesh3d_add(e, batch, inst->model_world[i], white);
+                    uint32_t k = br_batched_mesh3d_add(e, batch, inst->model_world[i], white);
+                    if (inst->batch_slots != NULL && k != UINT32_MAX && inst->batch_slot_count < slots) {
+                        br_gltf_batch_slot *bs = &inst->batch_slots[inst->batch_slot_count++];
+                        bs->node = i;
+                        bs->batch = batch;
+                        bs->instance = k;
+                        bs->rest = inst->model_world[i];
+                        bs->shown = true;
+                    }
                 }
             }
             br_node3d_add_child(e, inst->self, batch);
         }
+    }
+}
+
+/* True if n and every ancestor up to (not including) top are visible. */
+static bool br_gltf_shown(br_engine *e, br_node3d n, br_node3d top)
+{
+    for (; br_node3d_valid(e, n) && !(n.index == top.index && n.generation == top.generation);
+         n = br_node3d_parent(e, n)) {
+        if (!br_node3d_visible(e, n)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void br_gltf_sync_batches(br_engine *e, br_gltf_instance *inst)
+{
+    for (uint32_t i = 0; i < inst->batch_slot_count; i++) {
+        br_gltf_batch_slot *bs = &inst->batch_slots[i];
+        br_node3d group = inst->nodes[bs->node];
+        bool shown = br_node3d_valid(e, group) && br_gltf_shown(e, group, inst->self);
+        uint32_t count = 0;
+        br_instance3d *copies = br_batched_mesh3d_instances(e, bs->batch, &count);
+        if (shown == bs->shown || copies == NULL || bs->instance >= count) {
+            continue;
+        }
+        /* hidden = zero scale at the same place: no triangles drawn or picked, bounds unchanged */
+        br_mat4 m = bs->rest;
+        for (int k = 0; k < 12; k++) {
+            m.m[k] = shown ? m.m[k] : 0.0f;
+        }
+        copies[bs->instance].model = m;
+        bs->shown = shown;
     }
 }
 
