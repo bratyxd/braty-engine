@@ -32,7 +32,7 @@ typedef struct demo_state {
 static br_node add_sprite(br_engine *e, br_node parent, br_texture t, float x, float y)
 {
     br_node n = br_sprite_create(e, t);
-    br_node_set_position(e, n, x, y);
+    br_node_set_position(e, n, br_vec2_make(x, y));
     br_node_add_child(e, parent, n);
     return n;
 }
@@ -81,7 +81,7 @@ static void build_scene(br_engine *e, demo_state *s)
     /* top row: atlas, panel with its 9-slice borders drawn as lines */
     add_sprite(e, root, br_spritesheet_texture(sheet), 20.0f, 20.0f);
     br_node panel = add_sprite(e, root, br_spritesheet_frame(e, sheet, "panel.png"), 400.0f, 36.0f);
-    br_node_set_scale(e, panel, 2.0f, 2.0f);
+    br_node_set_scale(e, panel, br_vec2_make(2.0f, 2.0f));
     float borders[4];
     if (br_spritesheet_frame_borders(e, sheet, "panel.png", borders)) {
         add_rect(e, root, 400.0f + borders[0] * 2.0f, 30.0f, 1.0f, 108.0f, 0xff4040);
@@ -96,10 +96,10 @@ static void build_scene(br_engine *e, demo_state *s)
     add_sprite(e, root, br_spritesheet_frame(e, sheet, "star_trimmed.png"), 100.0f, y);
     br_node a1 = add_sprite(e, root, br_spritesheet_frame(e, sheet, "arrow_full.png"), 200.0f, y);
     br_node a2 = add_sprite(e, root, br_spritesheet_frame(e, sheet, "arrow_rotated.png"), 280.0f, y);
-    br_node_set_scale(e, a1, 1.0f, 2.0f);
-    br_node_set_scale(e, a2, 1.0f, 2.0f);
+    br_node_set_scale(e, a1, br_vec2_make(1.0f, 2.0f));
+    br_node_set_scale(e, a2, br_vec2_make(1.0f, 2.0f));
     s->walker = add_sprite(e, root, walk_count > 0 ? walk[0] : missing, 380.0f, y);
-    br_node_set_scale(e, s->walker, 2.0f, 2.0f);
+    br_node_set_scale(e, s->walker, br_vec2_make(2.0f, 2.0f));
     for (uint32_t i = 0; i < walk_count; i++) {
         add_sprite(e, root, walk[i], 460.0f + 40.0f * (float)i, y + 16.0f);
     }
@@ -109,12 +109,12 @@ static void build_scene(br_engine *e, demo_state *s)
     add_sprite(e, root, br_texture_load(e, "checker"), 20.0f, y);
     add_sprite(e, root, br_texture_load(e, "gradient"), 170.0f, y);
     br_node badge = add_sprite(e, root, br_texture_load(e, "badge"), 320.0f, y);
-    br_node_set_scale(e, badge, 2.0f, 2.0f);
+    br_node_set_scale(e, badge, br_vec2_make(2.0f, 2.0f));
     br_node miss = add_sprite(e, root, missing, 470.0f, y);
-    br_node_set_scale(e, miss, 32.0f, 32.0f);
+    br_node_set_scale(e, miss, br_vec2_make(32.0f, 32.0f));
     /* mip chain: the checker drawn small samples its lower levels */
     br_node small = add_sprite(e, root, br_texture_load(e, "checker"), 620.0f, y);
-    br_node_set_scale(e, small, 0.25f, 0.25f);
+    br_node_set_scale(e, small, br_vec2_make(0.25f, 0.25f));
 
     /* the json loader and the spritesheet loader share .json: config.json stays plain JSON */
     const cJSON *config = br_assets_get(e, "config");

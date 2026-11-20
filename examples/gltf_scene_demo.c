@@ -148,7 +148,7 @@ static bool demo_init(br_engine *e)
     ts.font_size = 18.0f;
     ts.fill = br_color_from_hex(0x102030, 1.0f);
     d->info = br_text_create(e, "", &ts);
-    br_node_set_position(e, d->info, 16.0f, 12.0f);
+    br_node_set_position(e, d->info, br_vec2_make(16.0f, 12.0f));
     br_node_add_child(e, br_scene_root_2d(e, d->level), d->info);
 
     br_system_add(e, "demo.spin", BR_PHASE_UPDATE, 0, spin_system, d);

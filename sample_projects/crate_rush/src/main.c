@@ -96,7 +96,7 @@ static void cr_make_ui_camera(br_engine *e, cr_game *g)
     c.clear_flags = BR_CAMERA_CLEAR_NOTHING;
     g->ui_camera = br_camera_create(e, &c);
     br_node_set_label(e, g->ui_camera, "ui_camera");
-    br_node_set_position(e, g->ui_camera, 640.0f, 360.0f);
+    br_node_set_position(e, g->ui_camera, br_vec2_make(640.0f, 360.0f));
     br_node_add_child(e, br_stage_root(e), g->ui_camera);
     br_node_set_persistent(e, g->ui_camera, true);
 }

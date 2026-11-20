@@ -71,7 +71,7 @@ static br_texture make_stripes(br_engine *e, br_address_mode address)
 
 static void add(br_engine *e, br_node n, float x, float y)
 {
-    br_node_set_position(e, n, x, y);
+    br_node_set_position(e, n, br_vec2_make(x, y));
     br_node_add_child(e, br_stage_root(e), n);
 }
 
@@ -110,7 +110,7 @@ static void setup(br_engine *e, demo_state *s)
     for (uint32_t i = 0; i < count; i++) {
         s->plane_rest[i] = p[i];
     }
-    br_node_set_scale(e, plane, 1.3f, 1.3f);
+    br_node_set_scale(e, plane, br_vec2_make(1.3f, 1.3f));
     add(e, plane, 450, 30);
     /* end snippet */
     s->plane = plane;
@@ -135,7 +135,7 @@ static void setup(br_engine *e, demo_state *s)
     }
     float uniforms[12] = { 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1 }; /* origin, x step, y step, clamp */
     br_mesh_set_shader(e, custom, NULL, &br_shader_tiling_frag, NULL, 0, uniforms, sizeof(uniforms));
-    br_node_set_scale(e, custom, 1.5f, 1.0f);
+    br_node_set_scale(e, custom, br_vec2_make(1.5f, 1.0f));
     add(e, custom, 420, 330);
 
     /* above the batcher limit: one 32-bit-index custom draw */

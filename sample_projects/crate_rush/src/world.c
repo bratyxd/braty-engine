@@ -62,7 +62,7 @@ static void cr_sign_layout(br_engine *e, br_node3d plate, br_node text)
     br_canvas3d_desc *d = br_canvas3d_get(e, plate);
     d->width = w;
     d->height = h;
-    br_node_set_position(e, text, w * 0.5f, h * 0.5f);
+    br_node_set_position(e, text, br_vec2_make(w * 0.5f, h * 0.5f));
 }
 
 /* ---- setup: name plates for the signs */

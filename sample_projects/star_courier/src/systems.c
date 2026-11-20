@@ -467,7 +467,7 @@ static void sc_movement_system(br_engine *e, float dt, void *user)
             p.x = p.x < -80.0f ? 1360.0f : p.x > 1360.0f ? -80.0f : p.x;
             p.y = p.y < -80.0f ? 800.0f : p.y > 800.0f ? -80.0f : p.y;
         }
-        br_node_set_position(e, n, p.x, p.y);
+        br_node_set_position(e, n, p);
         if (body->spin != 0.0f) {
             br_node_set_rotation(e, n, br_node_rotation(e, n) + body->spin * dt);
         }
@@ -486,7 +486,7 @@ static void sc_movement_system(br_engine *e, float dt, void *user)
         if (body != NULL && c.y != p.y) {
             body->velocity.y = 0.0f;
         }
-        br_node_set_position(e, n, c.x, c.y);
+        br_node_set_position(e, n, c);
     }
 
     /* the station glides to its next spot between rounds */
@@ -499,7 +499,7 @@ static void sc_movement_system(br_engine *e, float dt, void *user)
         st->move_time += dt;
         float k = SDL_min(1.0f, st->move_time / SDL_max(t->station_move_time, 0.01f));
         k = k * k * (3.0f - 2.0f * k);
-        br_node_set_position(e, n, st->from.x + (st->to.x - st->from.x) * k, st->from.y + (st->to.y - st->from.y) * k);
+        br_node_set_position(e, n, br_vec2_make(st->from.x + (st->to.x - st->from.x) * k, st->from.y + (st->to.y - st->from.y) * k));
         st->moving = k < 1.0f;
     }
 
@@ -753,7 +753,7 @@ static void sc_hud_system(br_engine *e, float dt, void *user)
         }
         p->time += dt;
         float s = 1.0f + p->wave * SDL_sinf(p->time * p->speed);
-        br_node_set_scale(e, n, p->base.x * s, p->base.y * s);
+        br_node_set_scale(e, n, br_vec2_make(p->base.x * s, p->base.y * s));
     }
     for (uint32_t i = 0; i < br_component_count(e, g->id.blink); i++) {
         sc_blink *b = br_component_at(e, g->id.blink, i);

@@ -23,7 +23,7 @@ static void progress_system(br_engine *e, float dt, void *user)
     (void)user;
     br_node root = br_scene_root_2d(e, br_scene_find(e, "loading"));
     float progress = br_scene_progress(e, br_scene_switch_target(e));
-    br_node_set_scale(e, br_node_find_by_label(e, root, "bar", true), progress, 1.0f);
+    br_node_set_scale(e, br_node_find_by_label(e, root, "bar", true), br_vec2_make(progress, 1.0f));
     char text[32];
     SDL_snprintf(text, sizeof(text), "LOADING %d%%", (int)(progress * 100.0f + 0.5f));
     br_text_set_text(e, br_node_find_by_label(e, root, "loading_text", true), text);

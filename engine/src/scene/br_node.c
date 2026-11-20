@@ -747,11 +747,11 @@ static void br_node_transform_changed(br_engine *e, br_node n)
     br_scene_mark_dirty(e->scene, n.index, true, false);
 }
 
-void br_node_set_position(br_engine *e, br_node n, float x, float y)
+void br_node_set_position(br_engine *e, br_node n, br_vec2 position)
 {
     br_node_transform *t = br_node_transform_for(e, n);
     if (t != NULL) {
-        t->position = br_vec2_make(x, y);
+        t->position = position;
         br_node_transform_changed(e, n);
     }
 }
@@ -762,11 +762,11 @@ br_vec2 br_node_position(br_engine *e, br_node n)
     return t != NULL ? t->position : br_vec2_make(0.0f, 0.0f);
 }
 
-void br_node_set_scale(br_engine *e, br_node n, float x, float y)
+void br_node_set_scale(br_engine *e, br_node n, br_vec2 scale)
 {
     br_node_transform *t = br_node_transform_for(e, n);
     if (t != NULL) {
-        t->scale = br_vec2_make(x, y);
+        t->scale = scale;
         br_node_transform_changed(e, n);
     }
 }
@@ -792,11 +792,11 @@ float br_node_rotation(br_engine *e, br_node n)
     return t != NULL ? t->rotation : 0.0f;
 }
 
-void br_node_set_skew(br_engine *e, br_node n, float x, float y)
+void br_node_set_skew(br_engine *e, br_node n, br_vec2 skew)
 {
     br_node_transform *t = br_node_transform_for(e, n);
     if (t != NULL) {
-        t->skew = br_vec2_make(x, y);
+        t->skew = skew;
         br_node_transform_changed(e, n);
     }
 }
@@ -807,11 +807,11 @@ br_vec2 br_node_skew(br_engine *e, br_node n)
     return t != NULL ? t->skew : br_vec2_make(0.0f, 0.0f);
 }
 
-void br_node_set_pivot(br_engine *e, br_node n, float x, float y)
+void br_node_set_pivot(br_engine *e, br_node n, br_vec2 pivot)
 {
     br_node_transform *t = br_node_transform_for(e, n);
     if (t != NULL) {
-        t->pivot = br_vec2_make(x, y);
+        t->pivot = pivot;
         br_node_transform_changed(e, n);
     }
 }
@@ -822,11 +822,11 @@ br_vec2 br_node_pivot(br_engine *e, br_node n)
     return t != NULL ? t->pivot : br_vec2_make(0.0f, 0.0f);
 }
 
-void br_node_set_origin(br_engine *e, br_node n, float x, float y)
+void br_node_set_origin(br_engine *e, br_node n, br_vec2 origin)
 {
     br_node_transform *t = br_node_transform_for(e, n);
     if (t != NULL) {
-        t->origin = br_vec2_make(x, y);
+        t->origin = origin;
         br_node_transform_changed(e, n);
     }
 }

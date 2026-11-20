@@ -205,11 +205,11 @@ static void br_debug_inspector(br_engine *e, br_debug_state *s)
     mu_label(ui, name);
     br_vec2 position = br_node_position(e, n);
     if (br_debug_edit_vec2(ui, "position", &position, 1.0f)) {
-        br_node_set_position(e, n, position.x, position.y);
+        br_node_set_position(e, n, position);
     }
     br_vec2 scale = br_node_scale(e, n);
     if (br_debug_edit_vec2(ui, "scale", &scale, 0.01f)) {
-        br_node_set_scale(e, n, scale.x, scale.y);
+        br_node_set_scale(e, n, scale);
     }
     static const int row[2] = { 70, -1 };
     mu_layout_row(ui, 2, row, 0);

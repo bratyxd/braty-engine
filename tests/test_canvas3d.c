@@ -110,7 +110,7 @@ static void test_engine(void)
     br_node root = br_canvas3d_root(e, canvas);
     BR_CHECK(br_node_valid(e, root) && !br_node_valid(e, br_node_parent(e, root))); /* detached */
     br_node button = br_node_create_container(e);
-    br_node_set_position(e, button, 50.0f, 30.0f);
+    br_node_set_position(e, button, br_vec2_make(50.0f, 30.0f));
     br_hit_area area;
     SDL_zero(area);
     area.type = BR_HIT_AREA_RECT;

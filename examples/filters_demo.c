@@ -136,7 +136,7 @@ static br_node add_sprite(br_engine *e, br_node parent, br_texture t, float x, f
     br_node s = br_sprite_create(e, t);
     br_sprite_set_anchor(e, s, 0.5f, 0.5f);
     br_sprite_set_size(e, s, w, h);
-    br_node_set_position(e, s, x, y);
+    br_node_set_position(e, s, br_vec2_make(x, y));
     br_node_add_child(e, parent, s);
     return s;
 }
@@ -145,7 +145,7 @@ static br_node add_sprite(br_engine *e, br_node parent, br_texture t, float x, f
 static br_node make_card(br_engine *e, demo_state *d, br_node parent, float x, float y)
 {
     br_node card = br_node_create_container(e);
-    br_node_set_position(e, card, x, y);
+    br_node_set_position(e, card, br_vec2_make(x, y));
     br_node_add_child(e, parent, card);
     add_sprite(e, card, d->disc, 0.0f, 0.0f, 96.0f, 96.0f);
     br_node square = add_sprite(e, card, d->white, 20.0f, -20.0f, 40.0f, 40.0f);
@@ -261,7 +261,7 @@ static void build_blend_row(br_engine *e, demo_state *d)
         float x = 10.0f + 30.0f + (float)i * 60.0f;
         float y = top + 50.0f + (float)(i % 2) * 100.0f;
         br_node card = make_card(e, d, d->stage, x, y);
-        br_node_set_scale(e, card, 0.6f, 0.6f);
+        br_node_set_scale(e, card, br_vec2_make(0.6f, 0.6f));
         br_node_set_blend_mode(e, card, BR_BLEND_ADVANCED_FIRST + i);
     }
 }
@@ -282,7 +282,7 @@ static void demo_update(br_engine *e, float dt, void *user)
     br_engine_window_size(e, &w, &h);
     float fit = SDL_min((float)w / DESIGN_W, (float)h / DESIGN_H);
     if (fit > 0.0f) {
-        br_node_set_scale(e, d->stage, fit, fit);
+        br_node_set_scale(e, d->stage, br_vec2_make(fit, fit));
     }
     if (g_resize_at >= 0 && frame == (uint64_t)g_resize_at) {
         SDL_SetWindowSize(br_engine_window(e), 1000, 640);

@@ -48,7 +48,7 @@ static br_texture make_checker(br_engine *e, uint32_t a, uint32_t b)
 static br_graphics_context *cell(br_engine *e, int col, int row)
 {
     br_node n = br_graphics_create(e, NULL);
-    br_node_set_position(e, n, (float)(col * CELL_W + PAD), (float)(row * CELL_H + PAD));
+    br_node_set_position(e, n, br_vec2_make((float)(col * CELL_W + PAD), (float)(row * CELL_H + PAD)));
     br_node_add_child(e, br_stage_root(e), n);
     return br_graphics_context_of(e, n);
 }
@@ -356,10 +356,10 @@ static void row_misc(br_engine *e, br_texture checker)
     br_node a = br_graphics_create(e, shared);
     br_node b = br_graphics_create(e, shared);
     br_graphics_context_destroy(shared); /* the nodes keep it alive */
-    br_node_set_position(e, a, 0 * CELL_W + CELL_W / 2, 4 * CELL_H + CELL_H / 2 + 4);
-    br_node_set_position(e, b, 1 * CELL_W + CELL_W / 2, 4 * CELL_H + CELL_H / 2 + 4);
+    br_node_set_position(e, a, br_vec2_make(0 * CELL_W + CELL_W / 2, 4 * CELL_H + CELL_H / 2 + 4));
+    br_node_set_position(e, b, br_vec2_make(1 * CELL_W + CELL_W / 2, 4 * CELL_H + CELL_H / 2 + 4));
     br_node_set_rotation(e, b, 0.4f);
-    br_node_set_scale(e, b, 0.75f, 1.1f);
+    br_node_set_scale(e, b, br_vec2_make(0.75f, 1.1f));
     br_node_set_tint(e, b, hex(0x4cc9f0));
     br_node_add_child(e, br_stage_root(e), a);
     br_node_add_child(e, br_stage_root(e), b);
@@ -429,8 +429,8 @@ static void row_misc(br_engine *e, br_texture checker)
     br_stroke_style px = br_graphics_stroke_style(1.0f, hex(0xffffff));
     px.pixel_line = true;
     br_graphics_stroke(g, &px);
-    br_node_set_scale(e, big, 3.0f, 3.0f);
-    br_node_set_position(e, big, 7 * CELL_W + PAD + 14, 4 * CELL_H + PAD + 15);
+    br_node_set_scale(e, big, br_vec2_make(3.0f, 3.0f));
+    br_node_set_position(e, big, br_vec2_make(7 * CELL_W + PAD + 14, 4 * CELL_H + PAD + 15));
     br_node_add_child(e, br_stage_root(e), big);
 }
 

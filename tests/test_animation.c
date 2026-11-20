@@ -157,7 +157,7 @@ static void test_loop_modes(br_engine *e)
     br_animator_set_loop(e, a, 0, BR_ANIM_CLAMP);
     br_engine_step(e, 5.0f);
     BR_CHECK(near_eq(node_x(e, root), 10.0f) && br_animator_finished(e, a, 0));
-    br_node_set_position(e, root, 3.0f, 0.0f);
+    br_node_set_position(e, root, br_vec2_make(3.0f, 0.0f));
     br_engine_step(e, 0.1f); /* clamp keeps writing the end */
     BR_CHECK(near_eq(node_x(e, root), 10.0f));
 
@@ -166,7 +166,7 @@ static void test_loop_modes(br_engine *e)
     br_engine_step(e, 5.0f);
     BR_CHECK(near_eq(node_x(e, root), 10.0f) && br_animator_finished(e, a, 0));
     br_engine_step(e, 0.1f);
-    br_node_set_position(e, root, 3.0f, 0.0f);
+    br_node_set_position(e, root, br_vec2_make(3.0f, 0.0f));
     br_engine_step(e, 0.1f); /* once: stopped writing */
     BR_CHECK(near_eq(node_x(e, root), 3.0f) && br_animator_current(e, a, 0) == NULL);
 
@@ -772,7 +772,7 @@ static void test_sources(br_engine *e)
 static void test_root_motion(br_engine *e)
 {
     br_node n = make_node(e, br_stage_root(e), "walker");
-    br_node_set_position(e, n, 5.0f, 7.0f);
+    br_node_set_position(e, n, br_vec2_make(5.0f, 7.0f));
     br_anim_clip *c = br_anim_clip_create("walk", 0.0f, BR_ANIM_LOOP);
     float t[2] = { 0.0f, 1.0f };
     float v[4] = { 0.0f, 0.0f, 10.0f, 4.0f };
@@ -857,7 +857,7 @@ static void test_fade_fixes(br_engine *e)
 static void test_root_motion_track(br_engine *e)
 {
     br_node n = make_node(e, br_stage_root(e), "mover");
-    br_node_set_position(e, n, 5.0f, 7.0f);
+    br_node_set_position(e, n, br_vec2_make(5.0f, 7.0f));
     float t[2] = { 0.0f, 1.0f };
     float walk_v[4] = { 0.0f, 0.0f, 10.0f, 4.0f };
     float idle_v[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -880,13 +880,13 @@ static void test_root_motion_track(br_engine *e)
     br_engine_step(e, 0.2f); /* 0.9 -> 1 -> 0.1: was 0 (the wrap frame) */
     BR_CHECK(near_eq(br_animator_root_motion(e, a).x, 2.0f));
     /* the game moves the node itself by the delta */
-    br_node_set_position(e, n, 5.0f, 7.0f);
+    br_node_set_position(e, n, br_vec2_make(5.0f, 7.0f));
     br_animator_play(e, a, "walk");
     for (int i = 0; i < 10; i++) {
         br_engine_step(e, 0.05f);
         br_vec3 d = br_animator_root_motion(e, a);
         br_vec2 p = br_node_position(e, n);
-        br_node_set_position(e, n, p.x + d.x, p.y + d.y);
+        br_node_set_position(e, n, br_vec2_make(p.x + d.x, p.y + d.y));
     }
     BR_CHECK(near_eq(node_x(e, n), 10.0f) && near_eq(br_node_position(e, n).y, 9.0f));
     br_node_destroy(e, n);

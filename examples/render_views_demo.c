@@ -22,8 +22,8 @@ typedef struct demo_state {
 static br_node box(br_engine *e, br_node parent, float x, float y, float w, float h, br_color c)
 {
     br_node s = br_sprite_create(e, br_texture_white(e));
-    br_node_set_position(e, s, x, y);
-    br_node_set_scale(e, s, w, h);
+    br_node_set_position(e, s, br_vec2_make(x, y));
+    br_node_set_scale(e, s, br_vec2_make(w, h));
     br_node_set_tint(e, s, c);
     br_node_add_child(e, parent, s);
     return s;

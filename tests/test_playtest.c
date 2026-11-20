@@ -27,11 +27,11 @@ static void walker_system(br_engine *e, float dt, void *user)
         br_node n = br_component_owner_at(e, id, i);
         br_vec2 p = br_node_position(e, n);
         if (br_input_key_down(e, SDL_SCANCODE_RIGHT)) {
-            br_node_set_position(e, n, p.x + w->speed * dt, p.y);
+            br_node_set_position(e, n, br_vec2_make(p.x + w->speed * dt, p.y));
         }
         /* the left stick of pad 0 moves it too; its south button jumps */
         p = br_node_position(e, n);
-        br_node_set_position(e, n, p.x + w->speed * br_input_gamepad_axis(e, 0, SDL_GAMEPAD_AXIS_LEFTX) * dt, p.y);
+        br_node_set_position(e, n, br_vec2_make(p.x + w->speed * br_input_gamepad_axis(e, 0, SDL_GAMEPAD_AXIS_LEFTX) * dt, p.y));
         if (br_input_key_pressed(e, SDL_SCANCODE_SPACE) || br_input_gamepad_pressed(e, 0, SDL_GAMEPAD_BUTTON_SOUTH)) {
             w->jumps++;
             s_game.score += 10;
@@ -53,7 +53,7 @@ static bool setup_game(br_engine *e)
     br_system_add(e, "walker", BR_PHASE_UPDATE, 0, walker_system, &s_walker_id);
     br_node n = br_node_create_container(e);
     br_node_set_label(e, n, "hero");
-    br_node_set_position(e, n, 100.0f, 50.0f);
+    br_node_set_position(e, n, br_vec2_make(100.0f, 50.0f));
     br_node_add_child(e, br_stage_root(e), n);
     walker *w = br_component_add(e, n, s_walker_id);
     w->speed = 60.0f;
@@ -565,11 +565,11 @@ static void test_click_with_camera(void)
     br_camera c = br_camera_default_2d();
     c.orthographic_size = 180.0f;
     br_node cam = br_camera_create(e, &c);
-    br_node_set_position(e, cam, 1000.0f, 1000.0f);
+    br_node_set_position(e, cam, br_vec2_make(1000.0f, 1000.0f));
     br_node_add_child(e, br_stage_root(e), cam);
     br_node button = br_sprite_create(e, br_texture_white(e));
     br_sprite_set_size(e, button, 40.0f, 40.0f);
-    br_node_set_position(e, button, 1000.0f, 1000.0f);
+    br_node_set_position(e, button, br_vec2_make(1000.0f, 1000.0f));
     br_node_set_label(e, button, "button");
     br_node_set_event_mode(e, button, BR_EVENT_MODE_STATIC);
     br_node_on(e, button, BR_EVENT_CLICK, on_button_click, NULL);

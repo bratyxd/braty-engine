@@ -317,7 +317,7 @@ static void test_nodes(br_engine *e)
     BR_CHECK(br_graphics_context_of(e, own) != NULL && br_graphics_context_of(e, own) != shared);
     br_graphics_context_destroy(shared); /* nodes keep it alive */
     br_node_add_child(e, br_stage_root(e), a);
-    br_node_set_position(e, a, 100, 100);
+    br_node_set_position(e, a, br_vec2_make(100, 100));
     br_rect r = br_node_get_local_bounds(e, a);
     BR_CHECK(near(r.width, 40.0f, 1e-4f) && near(r.height, 20.0f, 1e-4f));
     BR_CHECK(br_node_type_hit_test(e, a, br_vec2_make(10, 10)));

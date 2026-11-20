@@ -446,10 +446,10 @@ void br_node_json_container_read(br_engine *e, br_node n, const cJSON *json)
     br_color c;
     br_rect r;
     if (br_data_get_vec2(e, json, "position", &v)) {
-        br_node_set_position(e, n, v.x, v.y);
+        br_node_set_position(e, n, v);
     }
     if (br_data_get_vec2(e, json, "scale", &v)) {
-        br_node_set_scale(e, n, v.x, v.y);
+        br_node_set_scale(e, n, v);
     }
     if (br_data_get_float(e, json, "rotation", &f)) {
         br_node_set_rotation(e, n, f);
@@ -458,13 +458,13 @@ void br_node_json_container_read(br_engine *e, br_node n, const cJSON *json)
         br_node_set_rotation(e, n, f * SDL_PI_F / 180.0f); /* degrees, like Pixi's angle */
     }
     if (br_data_get_vec2(e, json, "skew", &v)) {
-        br_node_set_skew(e, n, v.x, v.y);
+        br_node_set_skew(e, n, v);
     }
     if (br_data_get_vec2(e, json, "pivot", &v)) {
-        br_node_set_pivot(e, n, v.x, v.y);
+        br_node_set_pivot(e, n, v);
     }
     if (br_data_get_vec2(e, json, "origin", &v)) {
-        br_node_set_origin(e, n, v.x, v.y);
+        br_node_set_origin(e, n, v);
     }
     if (br_data_get_float(e, json, "alpha", &f)) {
         br_node_set_alpha(e, n, f);

@@ -48,7 +48,7 @@ static br_node make_rect(demo_state *s, br_engine *e, br_node parent, float x, f
 {
     br_node n = br_sprite_create(e, s->white);
     br_sprite_set_size(e, n, w, h);
-    br_node_set_position(e, n, x, y);
+    br_node_set_position(e, n, br_vec2_make(x, y));
     br_node_set_tint(e, n, br_color_from_hex(rgb, 1.0f));
     br_node_add_child(e, parent, n);
     return n;
@@ -80,7 +80,7 @@ static void button_event(br_engine *e, br_event *ev, void *user)
 static br_node make_button(demo_state *s, br_engine *e, br_node parent, float x, float y, float w, float h, uint32_t rgb)
 {
     br_node n = br_node_create_container(e);
-    br_node_set_position(e, n, x + w * 0.5f, y + h * 0.5f);   /* centred: pressed scales around the middle */
+    br_node_set_position(e, n, br_vec2_make(x + w * 0.5f, y + h * 0.5f));   /* centred: pressed scales around the middle */
     br_node_add_child(e, parent, n);
     make_rect(s, e, n, -w * 0.5f, -h * 0.5f, w, h, 0xffffff);
     br_node_set_event_mode(e, n, BR_EVENT_MODE_STATIC);
@@ -111,7 +111,7 @@ static void button_system(br_engine *e, float dt, void *user)
         }
         br_node_set_tint(e, n, c);
         float scale = b->pressed ? 0.9f : 1.0f;
-        br_node_set_scale(e, n, scale, scale);
+        br_node_set_scale(e, n, br_vec2_make(scale, scale));
     }
     for (int i = 0; i < BUTTON_COUNT; i++) {
         demo_button *b = br_component_get(e, s->buttons[i], s->button_component);
@@ -141,7 +141,7 @@ static void list_wheel(br_engine *e, br_event *ev, void *user)
 {
     demo_state *s = user;
     s->list_scroll = br_clampf(s->list_scroll + ev->wheel.y * 40.0f, -(ROW_COUNT * 50.0f - 200.0f), 0.0f);
-    br_node_set_position(e, s->list, 0.0f, s->list_scroll);
+    br_node_set_position(e, s->list, br_vec2_make(0.0f, s->list_scroll));
 }
 
 static void drag_event(br_engine *e, br_event *ev, void *user)
@@ -153,7 +153,7 @@ static void drag_event(br_engine *e, br_event *ev, void *user)
         s->drag_offset = br_vec2_sub(ev->global, pos);
     } else if (ev->type == BR_EVENT_GLOBAL_MOVE && s->dragging) {
         br_vec2 p = br_vec2_sub(ev->global, s->drag_offset);
-        br_node_set_position(e, s->drag_box, p.x, p.y);
+        br_node_set_position(e, s->drag_box, p);
     } else if (ev->type == BR_EVENT_POINTER_UP || ev->type == BR_EVENT_POINTER_UP_OUTSIDE) {
         s->dragging = false;
     }
@@ -229,7 +229,7 @@ static bool demo_init(br_engine *e)
 
     /* panel with ENTER/LEAVE and two button cards inside it */
     s->panel = br_node_create_container(e);
-    br_node_set_position(e, s->panel, 40, 200);
+    br_node_set_position(e, s->panel, br_vec2_make(40, 200));
     br_node_add_child(e, root, s->panel);
     br_node_set_event_mode(e, s->panel, BR_EVENT_MODE_STATIC);
     br_node_on(e, s->panel, BR_EVENT_POINTER_ENTER, panel_event, s);
@@ -253,7 +253,7 @@ static bool demo_init(br_engine *e)
 
     /* scissor-masked list scrolled by the wheel */
     br_node viewport = br_node_create_container(e);
-    br_node_set_position(e, viewport, 40, 460);
+    br_node_set_position(e, viewport, br_vec2_make(40, 460));
     br_node_add_child(e, root, viewport);
     br_hit_area area;
     SDL_zero(area);

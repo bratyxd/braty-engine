@@ -27,7 +27,7 @@ static br_text_style white_style(float size)
 static br_node add_text(br_engine *e, const char *text, const br_text_style *st, float x, float y)
 {
     br_node n = br_text_create(e, text, st);
-    br_node_set_position(e, n, x, y);
+    br_node_set_position(e, n, br_vec2_make(x, y));
     br_node_add_child(e, br_stage_root(e), n);
     return n;
 }
@@ -36,7 +36,7 @@ static br_node add_text(br_engine *e, const char *text, const br_text_style *st,
 static void add_panel(br_engine *e, float x, float y, float w, float h, uint32_t rgb)
 {
     br_node p = br_sprite_create(e, br_texture_white(e));
-    br_node_set_position(e, p, x, y);
+    br_node_set_position(e, p, br_vec2_make(x, y));
     br_sprite_set_size(e, p, w, h);
     br_node_set_tint(e, p, br_color_from_hex(rgb, 1.0f));
     br_node_add_child(e, br_stage_root(e), p);
@@ -83,7 +83,7 @@ static void setup_left_column(br_engine *e)
     st.stroke_width = 3.0f;
     st.stroke_color = br_color_from_hex(0x1a0a2a, 1.0f);
     br_node title = br_text_create(e, "Gradient", &st);
-    br_node_set_position(e, title, 16.0f, 296.0f);
+    br_node_set_position(e, title, br_vec2_make(16.0f, 296.0f));
     br_node_add_child(e, br_stage_root(e), title);
     /* end snippet */
 
@@ -114,7 +114,7 @@ static void setup_left_column(br_engine *e)
     title_tag.bold = true;
     title_tag.underline = true;
     br_rich_text_set_tag_style(e, r, "title", &title_tag);
-    br_node_set_position(e, r, 16.0f, 476.0f);
+    br_node_set_position(e, r, br_vec2_make(16.0f, 476.0f));
     br_node_add_child(e, br_stage_root(e), r);
 }
 
@@ -156,7 +156,7 @@ static void setup_bitmap_fonts(br_engine *e)
     opts.resolution = 1.0f;
     br_font *installed = br_bitmap_font_install(e, "Installed", &bake, &opts);
     br_node b = br_bitmap_text_create(e, "INSTALLED 2026!", installed, 0.0f);
-    br_node_set_position(e, b, 760.0f, 10.0f);
+    br_node_set_position(e, b, br_vec2_make(760.0f, 10.0f));
     br_node_add_child(e, br_stage_root(e), b);
 
     /* hand-made AngelCode files (examples/fonts/gen_pixel_font.py) */
@@ -170,17 +170,17 @@ static void setup_bitmap_fonts(br_engine *e)
         br_font_add_family(e, "Pixel5x7", pixel, false, false);
         br_node p = br_bitmap_text_create(e, "PIXEL FNT: AVA 1111", pixel, 0.0f);
         br_node_set_tint(e, p, br_color_from_hex(0xffd23f, 1.0f));
-        br_node_set_position(e, p, 760.0f, 60.0f);
+        br_node_set_position(e, p, br_vec2_make(760.0f, 60.0f));
         br_node_add_child(e, br_stage_root(e), p);
         br_node big = br_bitmap_text_create(e, "SCALED 2X", pixel, 40.0f);
         br_node_set_tint(e, big, br_color_from_hex(0x7dff9a, 1.0f));
-        br_node_set_position(e, big, 760.0f, 86.0f);
+        br_node_set_position(e, big, br_vec2_make(760.0f, 86.0f));
         br_node_add_child(e, br_stage_root(e), big);
     }
     if (pixel_xml != NULL) {
         br_node x = br_bitmap_text_create(e, "XML FNT: HELLO?", pixel_xml, 0.0f);
         br_node_set_tint(e, x, br_color_from_hex(0xff8fd0, 1.0f));
-        br_node_set_position(e, x, 760.0f, 134.0f);
+        br_node_set_position(e, x, br_vec2_make(760.0f, 134.0f));
         br_node_add_child(e, br_stage_root(e), x);
     }
 }
@@ -199,11 +199,11 @@ static void setup_sdf(br_engine *e, demo_state *s)
     st.stroke_width = 1.5f;
     st.stroke_color = br_color_from_hex(0x203060, 1.0f);
     s->sdf_text = add_text(e, "SDF", &st, 760.0f, 168.0f);
-    br_node_set_scale(e, s->sdf_text, 6.0f, 6.0f); /* 22 px glyphs drawn 132 px tall, still sharp */
+    br_node_set_scale(e, s->sdf_text, br_vec2_make(6.0f, 6.0f)); /* 22 px glyphs drawn 132 px tall, still sharp */
 
     br_text_style coverage = white_style(22.0f);
     br_node c = add_text(e, "px", &coverage, 1050.0f, 168.0f);
-    br_node_set_scale(e, c, 6.0f, 6.0f); /* coverage glyphs scaled up: soft edges, for comparison */
+    br_node_set_scale(e, c, br_vec2_make(6.0f, 6.0f)); /* coverage glyphs scaled up: soft edges, for comparison */
 
     br_text_style label = white_style(13.0f);
     label.fill = br_color_from_hex(0x9aa4c8, 1.0f);
@@ -218,18 +218,18 @@ static void setup_split(br_engine *e, demo_state *s)
     st.drop_shadow = true;
     st.shadow_distance = 3.0f;
     s->split_chars = br_split_text_create(e, "Split text!", &st, BR_SPLIT_CHARS);
-    br_node_set_position(e, s->split_chars, 760.0f, 380.0f);
+    br_node_set_position(e, s->split_chars, br_vec2_make(760.0f, 380.0f));
     br_node_add_child(e, br_stage_root(e), s->split_chars);
 
     br_text_style words = white_style(20.0f);
     words.fill = br_color_from_hex(0x8fd3ff, 1.0f);
     br_node w = br_split_text_create(e, "words can move on their own", &words, BR_SPLIT_WORDS);
-    br_node_set_position(e, w, 760.0f, 450.0f);
+    br_node_set_position(e, w, br_vec2_make(760.0f, 450.0f));
     br_node_add_child(e, br_stage_root(e), w);
     for (uint32_t i = 0; i < br_node_child_count(e, w); i++) {
         br_node piece = br_node_child_at(e, w, i);
         br_vec2 p = br_node_position(e, piece);
-        br_node_set_position(e, piece, p.x, p.y + (float)(i % 2) * 14.0f);
+        br_node_set_position(e, piece, br_vec2_make(p.x, p.y + (float)(i % 2) * 14.0f));
         br_node_set_rotation(e, piece, (i % 2 == 0 ? -0.08f : 0.08f));
     }
 }
@@ -246,7 +246,7 @@ static void wave_system(br_engine *e, float dt, void *user)
         float phase = t * 4.0f + (float)i * 0.7f;
         br_node_set_rotation(e, c, SDL_sinf(phase) * 0.35f);
         float k = 1.0f + 0.25f * SDL_sinf(phase + 1.0f);
-        br_node_set_scale(e, c, k, k);
+        br_node_set_scale(e, c, br_vec2_make(k, k));
     }
 }
 

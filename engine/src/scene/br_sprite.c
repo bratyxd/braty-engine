@@ -153,7 +153,7 @@ void br_sprite_set_size(br_engine *e, br_node sprite, float width, float height)
     /* keep the sign of the current scale so a flipped sprite stays flipped (Pixi) */
     float sx = info.width > 0.0f ? width / info.width : 1.0f;
     float sy = info.height > 0.0f ? height / info.height : 1.0f;
-    br_node_set_scale(e, sprite, scale.x < 0.0f ? -sx : sx, scale.y < 0.0f ? -sy : sy);
+    br_node_set_scale(e, sprite, br_vec2_make(scale.x < 0.0f ? -sx : sx, scale.y < 0.0f ? -sy : sy));
 }
 
 br_vec2 br_sprite_size(br_engine *e, br_node sprite)

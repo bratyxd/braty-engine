@@ -183,7 +183,7 @@ static br_texture write_and_load_png(br_engine *e)
 static br_node add_sprite(br_engine *e, br_node parent, br_texture t, float x, float y)
 {
     br_node s = br_sprite_create(e, t);
-    br_node_set_position(e, s, x, y);
+    br_node_set_position(e, s, br_vec2_make(x, y));
     br_node_add_child(e, parent, s);
     return s;
 }
@@ -192,7 +192,7 @@ static br_node add_sprite(br_engine *e, br_node parent, br_texture t, float x, f
 static br_node add_rect(br_engine *e, demo_state *s, br_node parent, float x, float y, float w, float h, uint32_t rgb)
 {
     br_node r = add_sprite(e, parent, s->white, x, y);
-    br_node_set_scale(e, r, w, h);
+    br_node_set_scale(e, r, br_vec2_make(w, h));
     br_node_set_tint(e, r, br_color_from_hex(rgb, 1.0f));
     return r;
 }
@@ -200,7 +200,7 @@ static br_node add_rect(br_engine *e, demo_state *s, br_node parent, float x, fl
 static br_node add_panel(br_engine *e, demo_state *s, int column)
 {
     br_node panel = br_node_create_container(e);
-    br_node_set_position(e, panel, 20.0f + (float)column * (PANEL_W + 25), 20.0f);
+    br_node_set_position(e, panel, br_vec2_make(20.0f + (float)column * (PANEL_W + 25), 20.0f));
     br_node_add_child(e, br_stage_root(e), panel);
     add_rect(e, s, panel, 0.0f, 0.0f, PANEL_W, PANEL_H, 0x262a40);
     return panel;
@@ -217,7 +217,7 @@ static br_node setup_bunnies(br_engine *e, demo_state *s)
     for (int i = 0; i < g_bunny_count; i++) {
         br_node b = br_sprite_create(e, s->bunny_textures[i % BUNNY_TEXTURES]);
         br_sprite_set_anchor(e, b, 0.5f, 0.5f);
-        br_node_set_position(e, b, demo_random(s) * 1280.0f, BUNNY_TOP + demo_random(s) * (720.0f - BUNNY_TOP));
+        br_node_set_position(e, b, br_vec2_make(demo_random(s) * 1280.0f, BUNNY_TOP + demo_random(s) * (720.0f - BUNNY_TOP)));
         br_node_set_rotation(e, b, demo_random(s) * BR_TAU);
         br_node_set_alpha(e, b, 0.6f + 0.4f * demo_random(s));
         br_node_set_tint(e, b, br_color_from_hsl(demo_random(s) * 360.0f, 0.4f, 0.85f, 1.0f));
@@ -233,17 +233,17 @@ static void setup_blend_panel(br_engine *e, demo_state *s)
 {
     br_node panel = add_panel(e, s, 0);
     br_node strip = add_sprite(e, panel, s->gradient, 10.0f, 10.0f);
-    br_node_set_scale(e, strip, (PANEL_W - 20) / 256.0f, 80.0f);
+    br_node_set_scale(e, strip, br_vec2_make((PANEL_W - 20) / 256.0f, 80.0f));
     int modes[6] = { BR_BLEND_NORMAL, BR_BLEND_ADD, BR_BLEND_MULTIPLY, BR_BLEND_SCREEN, BR_BLEND_ERASE, BR_BLEND_NONE };
     for (int i = 0; i < 6; i++) {
         br_node c = add_sprite(e, panel, s->circle, 15.0f + (float)i * 45.0f, 30.0f);
-        br_node_set_scale(e, c, 0.62f, 0.62f);
+        br_node_set_scale(e, c, br_vec2_make(0.62f, 0.62f));
         br_node_set_tint(e, c, br_color_from_hex(0x808080, 1.0f));
         br_node_set_blend_mode(e, c, modes[i]);
     }
     /* z-index: added left to right, but sorted so the leftmost is on top */
     br_node row = br_node_create_container(e);
-    br_node_set_position(e, row, 20.0f, 110.0f);
+    br_node_set_position(e, row, br_vec2_make(20.0f, 110.0f));
     br_node_add_child(e, panel, row);
     br_node_set_sortable_children(e, row, true);
     uint32_t colors[5] = { 0xe94f37, 0xf6c445, 0x6cc551, 0x3f88c5, 0xa45ee5 };
@@ -260,10 +260,10 @@ static void setup_scissor_panel(br_engine *e, demo_state *s)
     br_node_add_child(e, panel, group);
     s->scissor_content = add_sprite(e, group, s->checker, PANEL_W * 0.5f, PANEL_H * 0.5f);
     br_sprite_set_anchor(e, s->scissor_content, 0.5f, 0.5f);
-    br_node_set_scale(e, s->scissor_content, 5.0f, 5.0f);
+    br_node_set_scale(e, s->scissor_content, br_vec2_make(5.0f, 5.0f));
     for (int i = 0; i < 6; i++) {
         br_node b = add_sprite(e, group, s->bunny_textures[i % BUNNY_TEXTURES], -20.0f + (float)i * 60.0f, 90.0f);
-        br_node_set_scale(e, b, 2.0f, 2.0f);
+        br_node_set_scale(e, b, br_vec2_make(2.0f, 2.0f));
     }
     /* the mask: an (invisible) rectangle inside the panel; its world bounds clip the group */
     br_node mask = br_node_create_container(e);
@@ -279,7 +279,7 @@ static void setup_stencil_panel(br_engine *e, demo_state *s)
     br_node group = br_node_create_container(e);
     br_node_add_child(e, panel, group);
     br_node bg = add_sprite(e, group, s->checker, 0.0f, 0.0f);
-    br_node_set_scale(e, bg, PANEL_W / 64.0f, PANEL_H / 64.0f);
+    br_node_set_scale(e, bg, br_vec2_make(PANEL_W / 64.0f, PANEL_H / 64.0f));
     br_node inner = br_node_create_container(e);
     br_node_add_child(e, group, inner);
     s->stencil_content = inner;
@@ -288,24 +288,24 @@ static void setup_stencil_panel(br_engine *e, demo_state *s)
         br_node b = add_sprite(e, inner, s->bunny_textures[i % BUNNY_TEXTURES], SDL_cosf(angle) * 70.0f,
                                SDL_sinf(angle) * 70.0f);
         br_sprite_set_anchor(e, b, 0.5f, 0.5f);
-        br_node_set_scale(e, b, 1.5f, 1.5f);
+        br_node_set_scale(e, b, br_vec2_make(1.5f, 1.5f));
     }
     br_node centre = add_sprite(e, inner, s->bunny_textures[0], 0.0f, 0.0f);
     br_sprite_set_anchor(e, centre, 0.5f, 0.5f);
-    br_node_set_scale(e, centre, 3.0f, 3.0f);
-    br_node_set_position(e, inner, PANEL_W * 0.5f, PANEL_H * 0.5f);
+    br_node_set_scale(e, centre, br_vec2_make(3.0f, 3.0f));
+    br_node_set_position(e, inner, br_vec2_make(PANEL_W * 0.5f, PANEL_H * 0.5f));
 
     /* outer mask: a diamond (rotated square); any node can be a stencil mask */
     s->stencil_mask = add_sprite(e, panel, s->white, PANEL_W * 0.5f, PANEL_H * 0.5f);
     br_sprite_set_anchor(e, s->stencil_mask, 0.5f, 0.5f);
-    br_node_set_scale(e, s->stencil_mask, 140.0f, 140.0f);
+    br_node_set_scale(e, s->stencil_mask, br_vec2_make(140.0f, 140.0f));
     br_node_set_rotation(e, s->stencil_mask, BR_PI * 0.25f);
     br_node_set_mask(e, group, s->stencil_mask, BR_MASK_STENCIL, false);
 
     /* nested inverse mask: cut a square hole into the inner group (through the big centre bunny) */
     br_node hole = add_sprite(e, inner, s->white, 0.0f, 0.0f);
     br_sprite_set_anchor(e, hole, 0.5f, 0.5f);
-    br_node_set_scale(e, hole, 36.0f, 36.0f);
+    br_node_set_scale(e, hole, br_vec2_make(36.0f, 36.0f));
     br_node_set_mask(e, inner, hole, BR_MASK_STENCIL, true);
 }
 
@@ -317,9 +317,9 @@ static void setup_render_texture_panel(br_engine *e, demo_state *s)
     /* a little scene that lives off-stage and is drawn into the render texture */
     s->rt_scene = br_node_create_container(e);
     br_node bg = add_sprite(e, s->rt_scene, s->checker, 0.0f, 0.0f);
-    br_node_set_scale(e, bg, 2.0f, 2.0f);
+    br_node_set_scale(e, bg, br_vec2_make(2.0f, 2.0f));
     s->rt_spinner = br_node_create_container(e);
-    br_node_set_position(e, s->rt_spinner, 64.0f, 64.0f);
+    br_node_set_position(e, s->rt_spinner, br_vec2_make(64.0f, 64.0f));
     br_node_add_child(e, s->rt_scene, s->rt_spinner);
     for (int i = 0; i < 5; i++) {
         float angle = (float)i * BR_TAU / 5.0f;
@@ -331,15 +331,15 @@ static void setup_render_texture_panel(br_engine *e, demo_state *s)
     br_node big = add_sprite(e, panel, s->render_texture, 85.0f, 105.0f);
     br_sprite_set_anchor(e, big, 0.5f, 0.5f);
     br_node_set_rotation(e, big, 0.2f);
-    br_node_set_scale(e, big, 1.2f, 1.2f);
+    br_node_set_scale(e, big, br_vec2_make(1.2f, 1.2f));
     br_node small = add_sprite(e, panel, s->render_texture, 180.0f, 20.0f);
-    br_node_set_scale(e, small, 0.6f, 0.6f);
+    br_node_set_scale(e, small, br_vec2_make(0.6f, 0.6f));
     br_node_set_tint(e, small, br_color_from_hex(0xff9090, 1.0f));
 
     br_node png = add_sprite(e, panel, write_and_load_png(e), 190.0f, 120.0f);
-    br_node_set_scale(e, png, 2.0f, 2.0f);
+    br_node_set_scale(e, png, br_vec2_make(2.0f, 2.0f));
     br_node missing = add_sprite(e, panel, br_texture_load(e, "missing.png"), 250.0f, 120.0f);
-    br_node_set_scale(e, missing, 15.0f, 15.0f);
+    br_node_set_scale(e, missing, br_vec2_make(15.0f, 15.0f));
 }
 
 /* ---- extension points (snippets in docs/agents/render.md come from here) */
@@ -507,14 +507,14 @@ static void demo_overlay(br_engine *e, br_render_ctx *rc, void *user)
 static void setup_extension_strip(br_engine *e, demo_state *s, br_node top_layer, br_node bunny_parent)
 {
     br_node strip = br_node_create_container(e);
-    br_node_set_position(e, strip, 20.0f, 250.0f);
+    br_node_set_position(e, strip, br_vec2_make(20.0f, 250.0f));
     br_node_add_child(e, br_stage_root(e), strip);
     add_rect(e, s, strip, 0.0f, 0.0f, 1240.0f, 95.0f, 0x1c2033);
 
     /* render group: five sprites moved together by one matrix */
     s->group = br_node_create_container(e);
     br_node_set_render_group(e, s->group, true);
-    br_node_set_position(e, s->group, 10.0f, 15.0f);
+    br_node_set_position(e, s->group, br_vec2_make(10.0f, 15.0f));
     br_node_add_child(e, strip, s->group);
     for (int i = 0; i < 5; i++) {
         add_sprite(e, s->group, s->bunny_textures[i % BUNNY_TEXTURES], (float)i * 30.0f, 10.0f);
@@ -532,7 +532,7 @@ static void setup_extension_strip(br_engine *e, demo_state *s, br_node top_layer
     wd->texture = s->checker;
     wd->width = 220.0f;
     wd->height = 50.0f;
-    br_node_set_position(e, wn, 220.0f, 25.0f);
+    br_node_set_position(e, wn, br_vec2_make(220.0f, 25.0f));
     br_node_add_child(e, strip, wn);
 
     /* callbacks: in-pass triangle + own-pass clear of a render texture shown next to it */
@@ -544,7 +544,7 @@ static void setup_extension_strip(br_engine *e, demo_state *s, br_node top_layer
     s->callback_type = br_node_type_register(e, &cb);
     br_node cn = br_node_create(e, s->callback_type);
     *(demo_state **)br_node_data(e, cn, s->callback_type) = s;
-    br_node_set_position(e, cn, 480.0f, 17.0f);
+    br_node_set_position(e, cn, br_vec2_make(480.0f, 17.0f));
     br_node_add_child(e, strip, cn);
     s->callback_target = br_render_texture_create(e, 60.0f, 60.0f, 1.0f);
     add_sprite(e, strip, s->callback_target, 560.0f, 17.0f);
@@ -554,7 +554,7 @@ static void setup_extension_strip(br_engine *e, demo_state *s, br_node top_layer
     s->next_effects = br_render_effects_hook(e, &s->next_effects_user); /* chain, do not replace */
     br_render_set_effects_hook(e, demo_effects, s);
     s->cached = br_node_create_container(e);
-    br_node_set_position(e, s->cached, 660.0f, 15.0f);
+    br_node_set_position(e, s->cached, br_vec2_make(660.0f, 15.0f));
     br_node_add_child(e, strip, s->cached);
     add_sprite(e, s->cached, s->checker, 0.0f, 0.0f);
     add_sprite(e, s->cached, s->bunny_textures[2], 20.0f, 14.0f);
@@ -562,7 +562,7 @@ static void setup_extension_strip(br_engine *e, demo_state *s, br_node top_layer
 
     /* render layer: a big bunny that lives among the bunnies but draws above everything */
     br_node big = add_sprite(e, bunny_parent, s->bunny_textures[1], 800.0f, 245.0f);
-    br_node_set_scale(e, big, 3.0f, 3.0f);
+    br_node_set_scale(e, big, br_vec2_make(3.0f, 3.0f));
     br_node_layer_attach(e, top_layer, big);
 
     /* culling: a cullable sprite parked off screen is skipped */
@@ -600,7 +600,7 @@ static void bunny_system(br_engine *e, float dt, void *user)
             b->velocity.y = SDL_fabsf(b->velocity.y);
             p.y = BUNNY_TOP;
         }
-        br_node_set_position(e, n, p.x, p.y);
+        br_node_set_position(e, n, p);
         br_node_set_rotation(e, n, br_node_rotation(e, n) + b->spin * dt);
     }
 }
@@ -614,7 +614,7 @@ static void animate_system(br_engine *e, float dt, void *user)
     br_node_set_rotation(e, s->rt_spinner, t);
     br_node_set_rotation(e, s->stencil_mask, BR_PI * 0.25f + t * 0.2f);
     br_render_to_texture(e, s->rt_scene, s->render_texture);
-    br_node_set_position(e, s->group, 10.0f + 30.0f * SDL_sinf(t * 2.0f), 15.0f);
+    br_node_set_position(e, s->group, br_vec2_make(10.0f + 30.0f * SDL_sinf(t * 2.0f), 15.0f));
 
     uint64_t now = SDL_GetTicksNS();
     if (s->last_ns != 0 && br_ticker_frame(e) > 10) {

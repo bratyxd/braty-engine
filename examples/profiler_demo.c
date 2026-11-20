@@ -53,7 +53,7 @@ static void demo_move(br_engine *e, float dt, void *user)
         if (p.y < 0.0f || p.y > (float)h) {
             s->velocity[i].y = -v.y;
         }
-        br_node_set_position(e, s->balls[i], p.x, p.y);
+        br_node_set_position(e, s->balls[i], p);
     }
     br_profile_end(e);
 }
@@ -81,7 +81,7 @@ static void demo_fit_load(br_engine *e, float dt, void *user)
     br_engine_window_size(e, &w, &h);
     uint32_t count = br_node_child_count(e, s->load_root);
     for (uint32_t i = 0; i < count && i < s->gpu_load; i++) {
-        br_node_set_scale(e, br_node_child_at(e, s->load_root, i), (float)w, (float)h);
+        br_node_set_scale(e, br_node_child_at(e, s->load_root, i), br_vec2_make((float)w, (float)h));
     }
 }
 
@@ -126,15 +126,15 @@ static bool demo_init(br_engine *e)
     }
     for (uint32_t i = 0; i < s->draw_load; i++) {
         br_node dot = br_sprite_create(e, white);
-        br_node_set_position(e, dot, (float)(i % 400) * 3.0f, 400.0f + (float)(i / 400 % 100) * 3.0f);
-        br_node_set_scale(e, dot, 2.0f, 2.0f);
+        br_node_set_position(e, dot, br_vec2_make((float)(i % 400) * 3.0f, 400.0f + (float)(i / 400 % 100) * 3.0f));
+        br_node_set_scale(e, dot, br_vec2_make(2.0f, 2.0f));
         br_node_set_blend_mode(e, dot, i % 2 == 0 ? BR_BLEND_NORMAL : BR_BLEND_ADD); /* a draw call each */
         br_node_add_child(e, stage, dot);
     }
     for (uint32_t i = 0; i < BALLS; i++) {
         br_node ball = br_sprite_create(e, white);
-        br_node_set_scale(e, ball, 10.0f, 10.0f);
-        br_node_set_position(e, ball, br_random_float(br_random_engine(e)) * 600.0f, br_random_float(br_random_engine(e)) * 700.0f);
+        br_node_set_scale(e, ball, br_vec2_make(10.0f, 10.0f));
+        br_node_set_position(e, ball, br_vec2_make(br_random_float(br_random_engine(e)) * 600.0f, br_random_float(br_random_engine(e)) * 700.0f));
         br_node_set_tint(e, ball, br_color_from_hsl((float)i * 1.2f, 0.7f, 0.6f, 1.0f));
         br_node_add_child(e, stage, ball);
         s->balls[i] = ball;

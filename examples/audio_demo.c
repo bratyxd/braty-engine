@@ -151,7 +151,7 @@ static bool demo_init(br_engine *e)
     for (int i = 0; i < PAD_COUNT; i++) {
         br_node pad = br_sprite_create(e, br_texture_white(e));
         br_sprite_set_size(e, pad, 200, 200);
-        br_node_set_position(e, pad, 140.0f + (float)i * 260.0f, 260.0f);
+        br_node_set_position(e, pad, br_vec2_make(140.0f + (float)i * 260.0f, 260.0f));
         br_node_set_tint(e, pad, br_color_from_hex(colors[i], 1.0f));
         br_node_set_event_mode(e, pad, BR_EVENT_MODE_STATIC);
         br_node_set_cursor(e, pad, SDL_SYSTEM_CURSOR_POINTER);

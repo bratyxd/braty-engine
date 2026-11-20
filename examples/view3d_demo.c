@@ -332,13 +332,13 @@ static void setup_2d_panel(br_engine *e, demo_state *s)
     br_graphics_star(star, 0.0f, 0.0f, 5, 36.0f, 16.0f, 0.0f);
     br_graphics_fill_color(star, br_color_from_hex(0xFFEC27, 1.0f));
     s->panel_star = br_graphics_create(e, star);
-    br_node_set_position(e, s->panel_star, 200.0f, 80.0f);
+    br_node_set_position(e, s->panel_star, br_vec2_make(200.0f, 80.0f));
     br_node_add_child(e, s->panel_2d, s->panel_star);
     br_text_style ts = br_text_style_default();
     ts.font_size = 30.0f;
     ts.fill = br_color_from_hex(0xFFF1E8, 1.0f);
     br_node text = br_text_create(e, "2D in 3D", &ts);
-    br_node_set_position(e, text, 24.0f, 60.0f);
+    br_node_set_position(e, text, br_vec2_make(24.0f, 60.0f));
     br_node_add_child(e, s->panel_2d, text);
 }
 
@@ -522,7 +522,7 @@ static void setup_2d(br_engine *e, demo_state *s)
     under.bold = true;
     under.fill = br_color_from_hex(0xFFFFFF, 0.35f);
     br_node under_text = br_text_create(e, "UNDER THE VIEW", &under);
-    br_node_set_position(e, under_text, 180.0f, 70.0f);
+    br_node_set_position(e, under_text, br_vec2_make(180.0f, 70.0f));
     br_node_add_child(e, stage, under_text);
 
     br_node_add_child(e, stage, s->view);
@@ -541,11 +541,11 @@ static void setup_2d(br_engine *e, demo_state *s)
     title.shadow_color = br_color_from_hex(0x000000, 0.8f);
     title.shadow_distance = 2.0f;
     br_node t = br_text_create(e, "Braty View3D: PBR, shadows, bloom, skinning, morphs, instancing", &title);
-    br_node_set_position(e, t, 16.0f, 12.0f);
+    br_node_set_position(e, t, br_vec2_make(16.0f, 12.0f));
     br_node_add_child(e, stage, t);
     title.font_size = 18.0f;
     s->stats_text = br_text_create(e, "", &title);
-    br_node_set_position(e, s->stats_text, 16.0f, 48.0f);
+    br_node_set_position(e, s->stats_text, br_vec2_make(16.0f, 48.0f));
     br_node_add_child(e, stage, s->stats_text);
     title.font_size = 20.0f;
     title.fill = br_color_from_hex(0xFFE066, 1.0f);
@@ -558,13 +558,13 @@ static void setup_2d(br_engine *e, demo_state *s)
     br_graphics_star(badge, 20.0f, 18.0f, 5, 12.0f, 5.0f, 0.0f);
     br_graphics_fill_color(badge, br_color_from_hex(0xFFD60A, 1.0f));
     br_node b = br_graphics_create(e, badge);
-    br_node_set_position(e, b, 16.0f, 660.0f);
+    br_node_set_position(e, b, br_vec2_make(16.0f, 660.0f));
     br_node_add_child(e, stage, b);
     br_text_style bs = br_text_style_default();
     bs.font_size = 16.0f;
     bs.fill = br_color_from_hex(0xFFFFFF, 1.0f);
     br_node bt = br_text_create(e, "2D over 3D", &bs);
-    br_node_set_position(e, bt, 38.0f, 8.0f);
+    br_node_set_position(e, bt, br_vec2_make(38.0f, 8.0f));
     br_node_add_child(e, b, bt);
 }
 
@@ -601,7 +601,7 @@ static void demo_update(br_engine *e, float dt, void *user)
     br_vec2 p;
     br_vec3 top = br_vec3_add(br_node3d_world_position(e, s->torus), br_vec3_make(0.0f, 1.0f, 0.0f));
     br_node_set_visible(e, s->label, br_view3d_world_to_screen(e, s->view, top, &p));
-    br_node_set_position(e, s->label, p.x, p.y);
+    br_node_set_position(e, s->label, p);
 
     br_view3d_stats st;
     br_view3d_get_stats(e, s->view, &st);

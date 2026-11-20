@@ -349,7 +349,7 @@ static void test_save_and_reload(br_engine *e, const char *dir)
     char path[1024];
     SDL_snprintf(path, sizeof(path), "%stest_saved.scene.json", dir);
     br_node src = load(e, "{ \"label\": \"level\", \"children\": [ { \"label\": \"one\", \"position\": [3, 4] } ] }");
-    br_node_set_position(e, find(e, src, "one"), 30, 40); /* live state is what gets saved */
+    br_node_set_position(e, find(e, src, "one"), br_vec2_make(30, 40)); /* live state is what gets saved */
     BR_CHECK(br_scene_file_save(e, src, path));
     br_node loaded = br_scene_file_load(e, path, br_stage_root(e));
     BR_CHECK(br_node_valid(e, loaded));

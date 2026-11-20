@@ -199,19 +199,19 @@ static void test_engine(void)
     wc.orthographic_size = 180.0f;
     wc.culling_mask = 1u;
     br_node world_cam = br_camera_create(e, &wc);
-    br_node_set_position(e, world_cam, 1000.0f, 1000.0f);
+    br_node_set_position(e, world_cam, br_vec2_make(1000.0f, 1000.0f));
     br_node_add_child(e, root, world_cam);
     br_camera uc = br_camera_default_2d();
     uc.culling_mask = 2u;
     uc.depth = 1.0f;
     uc.clear_flags = BR_CAMERA_CLEAR_NOTHING;
     br_node ui_cam = br_camera_create(e, &uc);
-    br_node_set_position(e, ui_cam, 640.0f, 360.0f);
+    br_node_set_position(e, ui_cam, br_vec2_make(640.0f, 360.0f));
     br_node_add_child(e, root, ui_cam);
 
     br_node button = br_sprite_create(e, br_texture_white(e));
     br_sprite_set_size(e, button, 100.0f, 50.0f);
-    br_node_set_position(e, button, 20.0f, 20.0f);
+    br_node_set_position(e, button, br_vec2_make(20.0f, 20.0f));
     br_node_set_layer_bits(e, button, 2u);
     br_node_set_event_mode(e, button, BR_EVENT_MODE_STATIC);
     br_node_add_child(e, root, button);
@@ -230,7 +230,7 @@ static void test_engine(void)
     /* a world sprite (layer 1) under the screen centre is found through the world camera */
     br_node crate = br_sprite_create(e, br_texture_white(e));
     br_sprite_set_size(e, crate, 40.0f, 40.0f);
-    br_node_set_position(e, crate, 980.0f, 980.0f);
+    br_node_set_position(e, crate, br_vec2_make(980.0f, 980.0f));
     br_node_set_event_mode(e, crate, BR_EVENT_MODE_STATIC);
     br_node_add_child(e, root, crate);
     br_engine_step(e, 1.0f / 60.0f);
@@ -337,7 +337,7 @@ static br_node make_clickable(br_engine *e, float x, float y, br_event_listener_
 {
     br_node n = br_sprite_create(e, br_texture_white(e));
     br_sprite_set_size(e, n, 40.0f, 40.0f);
-    br_node_set_position(e, n, x, y);
+    br_node_set_position(e, n, br_vec2_make(x, y));
     br_node_set_event_mode(e, n, BR_EVENT_MODE_STATIC);
     br_node_on(e, n, BR_EVENT_CLICK, fn, NULL);
     br_node_add_child(e, br_stage_root(e), n);
@@ -351,7 +351,7 @@ static void test_pointer_events(void)
     br_camera c = br_camera_default_2d();
     c.orthographic_size = 180.0f; /* 2x zoom, centred on (1000, 1000) */
     br_node cam = br_camera_create(e, &c);
-    br_node_set_position(e, cam, 1000.0f, 1000.0f);
+    br_node_set_position(e, cam, br_vec2_make(1000.0f, 1000.0f));
     br_node_add_child(e, br_stage_root(e), cam);
     make_clickable(e, 1000.0f, 1000.0f, on_target_click); /* drawn at window (640..720, 360..440) */
     make_clickable(e, 640.0f, 360.0f, on_decoy_click);   /* where the raw window point would land */

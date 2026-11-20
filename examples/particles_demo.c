@@ -140,7 +140,7 @@ static void setup(br_engine *e, demo_state *s)
         q[i].texture = s->frames[i];
         q[i].tint = 0xFFE080;
     }
-    br_node_set_position(e, s->small, 20, 20);
+    br_node_set_position(e, s->small, br_vec2_make(20, 20));
     br_node_add_child(e, br_stage_root(e), s->small);
 }
 

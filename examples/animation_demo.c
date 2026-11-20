@@ -56,7 +56,7 @@ static br_node rig_part(br_engine *e, br_node parent, const char *label, float w
 {
     br_node joint = br_node_create_container(e);
     br_node_set_label(e, joint, label);
-    br_node_set_position(e, joint, x, y);
+    br_node_set_position(e, joint, br_vec2_make(x, y));
     br_node_add_child(e, parent, joint);
     br_node box = br_sprite_create(e, br_texture_white(e));
     br_sprite_set_size(e, box, w, h);
@@ -79,8 +79,8 @@ static void setup_hero(br_engine *e, demo_state *s)
 {
     s->hero = br_node_create_container(e);
     br_node_set_label(e, s->hero, "hero");
-    br_node_set_position(e, s->hero, 250.0f, 330.0f);
-    br_node_set_scale(e, s->hero, 1.6f, 1.6f);
+    br_node_set_position(e, s->hero, br_vec2_make(250.0f, 330.0f));
+    br_node_set_scale(e, s->hero, br_vec2_make(1.6f, 1.6f));
     br_node_add_child(e, br_stage_root(e), s->hero);
     rig_part(e, s->hero, "leg_l", 16.0f, 70.0f, 0.5f, 0.0f, -12.0f, 0.0f, 0x34495E);
     rig_part(e, s->hero, "leg_r", 16.0f, 70.0f, 0.5f, 0.0f, 12.0f, 0.0f, 0x2C3E50);
@@ -130,8 +130,8 @@ static void setup_flipbook(br_engine *e, demo_state *s)
     }
     s->flip = br_sprite_create(e, s->flip_frames[0]);
     br_sprite_set_anchor(e, s->flip, 0.5f, 0.5f);
-    br_node_set_position(e, s->flip, 250.0f, 560.0f);
-    br_node_set_scale(e, s->flip, 2.0f, 2.0f);
+    br_node_set_position(e, s->flip, br_vec2_make(250.0f, 560.0f));
+    br_node_set_scale(e, s->flip, br_vec2_make(2.0f, 2.0f));
     br_node_add_child(e, br_stage_root(e), s->flip);
     /* the sprites module's frame list becomes a clip: one STEP track on "sprite.texture" */
     s->flip_clip = br_anim_clip_from_frames("spin", frames, FLIP_FRAMES);
@@ -153,7 +153,7 @@ static void on_panel_ready(br_engine *e, br_tween t, void *user)
 static void setup_panel(br_engine *e, demo_state *s)
 {
     s->panel = br_node_create_container(e);
-    br_node_set_position(e, s->panel, 1400.0f, 30.0f);
+    br_node_set_position(e, s->panel, br_vec2_make(1400.0f, 30.0f));
     br_node_set_alpha(e, s->panel, 0.0f);
     br_node_add_child(e, br_stage_root(e), s->panel);
     br_node bg = rig_part(e, s->panel, "bg", 300.0f, 90.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0x1B2631);
@@ -163,8 +163,8 @@ static void setup_panel(br_engine *e, demo_state *s)
     ts.fill = br_color_from_hex(0xF0F3F4, 1.0f);
     s->panel_text = br_text_create(e, "Tween sequence", &ts);
     br_text_set_anchor(e, s->panel_text, 0.5f, 0.5f);
-    br_node_set_position(e, s->panel_text, 150.0f, 50.0f);
-    br_node_set_scale(e, s->panel_text, 0.0f, 0.0f);
+    br_node_set_position(e, s->panel_text, br_vec2_make(150.0f, 50.0f));
+    br_node_set_scale(e, s->panel_text, br_vec2_make(0.0f, 0.0f));
     br_node_add_child(e, s->panel, s->panel_text);
 
     /* --- snippet: docs/agents/animation.md (tween sequence) --- */
@@ -211,7 +211,7 @@ static br_animator add_fox(br_engine *e, br_node3d root, br_model *fox, const br
 static void setup_3d(br_engine *e, demo_state *s)
 {
     s->view = br_view3d_create(e, 700.0f, 470.0f);
-    br_node_set_position(e, s->view, 540.0f, 200.0f);
+    br_node_set_position(e, s->view, br_vec2_make(540.0f, 200.0f));
     br_view3d_set_msaa(e, s->view, 4);
     br_view3d_set_background(e, s->view, br_color_to_linear(br_color_from_hex(0x27303F, 1.0f)));
     br_view3d_set_environment(e, s->view, br_color_to_linear(br_color_from_hex(0xA8C0E8, 1.0f)),
@@ -283,7 +283,7 @@ static void setup_bench_tweens(br_engine *e)
         br_sprite_set_size(e, n, 3.0f, 3.0f);
         float x = br_random_float(br_random_engine(e)) * 1280.0f;
         float y = br_random_float(br_random_engine(e)) * 720.0f;
-        br_node_set_position(e, n, x, y);
+        br_node_set_position(e, n, br_vec2_make(x, y));
         br_node_set_tint(e, n, br_color_from_hsv(br_random_float(br_random_engine(e)), 0.6f, 1.0f, 1.0f));
         br_node_add_child(e, layer, n);
         float to[2] = { x + (br_random_float(br_random_engine(e)) - 0.5f) * 200.0f, y + (br_random_float(br_random_engine(e)) - 0.5f) * 200.0f };
@@ -383,7 +383,7 @@ static bool demo_init(br_engine *e)
     ts.font_size = 18.0f;
     ts.fill = br_color_from_hex(0xF0F0F0, 1.0f);
     s->info = br_text_create(e, "", &ts);
-    br_node_set_position(e, s->info, 16.0f, 12.0f);
+    br_node_set_position(e, s->info, br_vec2_make(16.0f, 12.0f));
     br_node_add_child(e, br_stage_root(e), s->info);
     br_system_add(e, "demo.update", BR_PHASE_UPDATE, 0, demo_update, s);
     return true;

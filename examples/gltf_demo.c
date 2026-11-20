@@ -202,10 +202,10 @@ static void setup_2d(br_engine *e, demo_state *s)
     ts.font_size = 18.0f;
     ts.fill = br_color_from_hex(0xF0F0F0, 1.0f);
     s->info = br_text_create(e, "", &ts);
-    br_node_set_position(e, s->info, 16.0f, 12.0f);
+    br_node_set_position(e, s->info, br_vec2_make(16.0f, 12.0f));
     br_node_add_child(e, br_stage_root(e), s->info);
     br_node label = br_text_create(e, "from gltf_demo.scene.json", &ts);
-    br_node_set_position(e, label, 850.0f, 430.0f);
+    br_node_set_position(e, label, br_vec2_make(850.0f, 430.0f));
     br_node_add_child(e, br_stage_root(e), label);
 }
 

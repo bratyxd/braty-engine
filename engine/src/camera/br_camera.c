@@ -340,7 +340,7 @@ br_node br_camera_create_logical(br_engine *e, float width, float height)
     c.fit = BR_CAMERA_FIT_LETTERBOX;
     c.reference_aspect = height > 0.0f ? width / height : 16.0f / 9.0f;
     br_node n = br_camera_create(e, &c);
-    br_node_set_position(e, n, width * 0.5f, height * 0.5f);
+    br_node_set_position(e, n, br_vec2_make(width * 0.5f, height * 0.5f));
     br_node_add_child(e, br_stage_root(e), n);
     return n;
 }
@@ -574,7 +574,7 @@ static void br_camera_follow_system(br_engine *e, float dt, void *user)
         }
         br_node parent = br_node_parent(e, cam);
         br_vec2 local = br_node_valid(e, parent) ? br_node_to_local(e, parent, pos) : pos;
-        br_node_set_position(e, cam, local.x, local.y);
+        br_node_set_position(e, cam, local);
     }
 }
 
@@ -837,7 +837,7 @@ static void br_camera_anchor_system(br_engine *e, float dt, void *user)
         stage = br_vec2_add(stage, a->offset);
         br_node parent = br_node_parent(e, n);
         br_vec2 local = br_node_valid(e, parent) ? br_node_to_local(e, parent, stage) : stage;
-        br_node_set_position(e, n, local.x, local.y);
+        br_node_set_position(e, n, local);
     }
 }
 

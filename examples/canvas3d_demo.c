@@ -120,7 +120,7 @@ static br_node add_text(br_engine *e, br_node parent, const char *text, const br
 {
     br_node t = br_text_create(e, text, st);
     br_text_set_anchor(e, t, 0.5f, 0.5f);
-    br_node_set_position(e, t, x, y);
+    br_node_set_position(e, t, br_vec2_make(x, y));
     br_node_add_child(e, parent, t);
     return t;
 }

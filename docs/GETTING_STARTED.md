@@ -216,7 +216,7 @@ static void mover_system(br_engine *e, float dt, void *user)
         mover *m = br_component_at(e, g->mover_id, i);
         br_node n = br_component_owner_at(e, g->mover_id, i);
         br_vec2 p = br_node_position(e, n);
-        br_node_set_position(e, n, p.x + m->velocity.x * dt, p.y + m->velocity.y * dt);
+        br_node_set_position(e, n, br_vec2_make(p.x + m->velocity.x * dt, p.y + m->velocity.y * dt));
     }
 }
 
@@ -335,7 +335,7 @@ static void mover_system(br_engine *e, float dt, void *user)
         mover *m = br_component_at(e, g->mover_id, i);
         br_node n = br_component_owner_at(e, g->mover_id, i);
         br_vec2 p = br_node_position(e, n);
-        br_node_set_position(e, n, p.x + m->velocity.x * dt, p.y + m->velocity.y * dt);
+        br_node_set_position(e, n, br_vec2_make(p.x + m->velocity.x * dt, p.y + m->velocity.y * dt));
     }
 }
 
@@ -508,7 +508,7 @@ static void mover_system(br_engine *e, float dt, void *user)
         mover *m = br_component_at(e, g->mover_id, i);
         br_node n = br_component_owner_at(e, g->mover_id, i);
         br_vec2 p = br_node_position(e, n);
-        br_node_set_position(e, n, p.x + m->velocity.x * dt, p.y + m->velocity.y * dt);
+        br_node_set_position(e, n, br_vec2_make(p.x + m->velocity.x * dt, p.y + m->velocity.y * dt));
     }
 }
 
@@ -545,7 +545,7 @@ static void coin_system(br_engine *e, float dt, void *user)
         cJSON_GetObjectItemCaseSensitive(br_game_config_json(e), "game"), "coins_on_screen");
     for (; cJSON_IsNumber(wanted) && alive < wanted->valueint; alive++) {
         br_node n = br_prefab_instantiate(e, "prefabs/coin.prefab.json", br_stage_root(e), NULL);
-        br_node_set_position(e, n, 60.0f + random01(g) * 840.0f, 80.0f + random01(g) * 420.0f);
+        br_node_set_position(e, n, br_vec2_make(60.0f + random01(g) * 840.0f, 80.0f + random01(g) * 420.0f));
     }
 }
 

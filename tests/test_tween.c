@@ -83,12 +83,12 @@ static void test_basics(br_engine *e)
     step(e, 0.5f);
 
     /* delay: nothing moves until it has passed, and the start value is read then */
-    br_node_set_position(e, n, 0.0f, 0.0f);
+    br_node_set_position(e, n, br_vec2_make(0.0f, 0.0f));
     br_tween d = br_tween_to_f(e, t, "x", 10.0f, 1.0f, BR_EASE_LINEAR);
     br_tween_set_delay(e, d, 0.5f);
     step(e, 0.25f);
     BR_CHECK(near_eq(br_node_position(e, n).x, 0.0f));
-    br_node_set_position(e, n, 2.0f, 0.0f);
+    br_node_set_position(e, n, br_vec2_make(2.0f, 0.0f));
     step(e, 0.75f); /* 0.5 s into the tween, from 2 */
     BR_CHECK(near_eq(br_node_position(e, n).x, 6.0f));
     step(e, 1.0f);
@@ -121,7 +121,7 @@ static void test_repeat_yoyo(br_engine *e)
     BR_CHECK(g_done == 1); /* once */
 
     /* an even number of yoyo passes ends where it started; a big step finishes it at once */
-    br_node_set_position(e, n, 0.0f, 0.0f);
+    br_node_set_position(e, n, br_vec2_make(0.0f, 0.0f));
     br_tween y = br_tween_to_f(e, t, "x", 10.0f, 0.5f, BR_EASE_LINEAR);
     br_tween_set_repeat(e, y, 3, true);
     br_tween_set_on_complete(e, y, on_done, (void *)(intptr_t)2);

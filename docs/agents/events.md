@@ -37,7 +37,7 @@ Test: `tests/test_events.c`. Example: `examples/events_demo.c`.
 static br_node make_button(demo_state *s, br_engine *e, br_node parent, float x, float y, float w, float h, uint32_t rgb)
 {
     br_node n = br_node_create_container(e);
-    br_node_set_position(e, n, x + w * 0.5f, y + h * 0.5f);   /* centred: pressed scales around the middle */
+    br_node_set_position(e, n, br_vec2_make(x + w * 0.5f, y + h * 0.5f));   /* centred: pressed scales around the middle */
     br_node_add_child(e, parent, n);
     make_rect(s, e, n, -w * 0.5f, -h * 0.5f, w, h, 0xffffff);
     br_node_set_event_mode(e, n, BR_EVENT_MODE_STATIC);

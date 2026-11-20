@@ -22,9 +22,9 @@ int main(void)
     br_node_add_child(e, parent, child);
 
     /* parent: translate (100, 50), scale 2; child: translate (10, 0), rotate 90 degrees clockwise */
-    br_node_set_position(e, parent, 100.0f, 50.0f);
-    br_node_set_scale(e, parent, 2.0f, 2.0f);
-    br_node_set_position(e, child, 10.0f, 0.0f);
+    br_node_set_position(e, parent, br_vec2_make(100.0f, 50.0f));
+    br_node_set_scale(e, parent, br_vec2_make(2.0f, 2.0f));
+    br_node_set_position(e, child, br_vec2_make(10.0f, 0.0f));
     br_node_set_rotation(e, child, BR_PI * 0.5f);
     /* child local (1, 0) -> rotated (0, 1) -> +(10,0) = (10, 1) -> *2 = (20, 2) -> +(100,50) */
     BR_CHECK(near_vec(br_node_to_global(e, child, br_vec2_make(1.0f, 0.0f)), 120.0f, 52.0f));
@@ -39,16 +39,16 @@ int main(void)
 
     /* pivot: the pivot point lands on the position */
     br_node p = br_node_create_container(e);
-    br_node_set_position(e, p, 30.0f, 40.0f);
-    br_node_set_pivot(e, p, 5.0f, 5.0f);
+    br_node_set_position(e, p, br_vec2_make(30.0f, 40.0f));
+    br_node_set_pivot(e, p, br_vec2_make(5.0f, 5.0f));
     br_node_set_rotation(e, p, 1.0f);
     BR_CHECK(near_vec(br_node_to_global(e, p, br_vec2_make(5.0f, 5.0f)), 30.0f, 40.0f));
 
     /* origin: rotation/scale centre that does not move the node: origin maps to position + origin */
     br_node o = br_node_create_container(e);
-    br_node_set_position(e, o, 30.0f, 40.0f);
-    br_node_set_origin(e, o, 5.0f, 5.0f);
-    br_node_set_scale(e, o, 3.0f, 3.0f);
+    br_node_set_position(e, o, br_vec2_make(30.0f, 40.0f));
+    br_node_set_origin(e, o, br_vec2_make(5.0f, 5.0f));
+    br_node_set_scale(e, o, br_vec2_make(3.0f, 3.0f));
     br_node_set_rotation(e, o, 0.7f);
     BR_CHECK(near_vec(br_node_to_global(e, o, br_vec2_make(5.0f, 5.0f)), 35.0f, 45.0f));
     /* (6,5) is 1 unit right of the origin: scaled 3 and rotated 0.7 around it */
@@ -57,7 +57,7 @@ int main(void)
 
     /* skew x: a = cos(skew_y) sx, c = -sin(-skew_x) sy -> (0,1) maps to (sin(skx), cos(skx)) */
     br_node k = br_node_create_container(e);
-    br_node_set_skew(e, k, 0.5f, 0.0f);
+    br_node_set_skew(e, k, br_vec2_make(0.5f, 0.0f));
     BR_CHECK(near_vec(br_node_to_global(e, k, br_vec2_make(0.0f, 1.0f)), SDL_sinf(0.5f), SDL_cosf(0.5f)));
     BR_CHECK(near_vec(br_node_to_global(e, k, br_vec2_make(1.0f, 0.0f)), 1.0f, 0.0f));
 
@@ -75,8 +75,8 @@ int main(void)
     br_node_add_child(e, root, group);
     br_node_add_child(e, group, member);
     br_node_set_render_group(e, group, true);
-    br_node_set_position(e, group, 1000.0f, 0.0f);
-    br_node_set_position(e, member, 7.0f, 8.0f);
+    br_node_set_position(e, group, br_vec2_make(1000.0f, 0.0f));
+    br_node_set_position(e, member, br_vec2_make(7.0f, 8.0f));
     br_engine_step(e, 1.0f / 60.0f);
     BR_CHECK(near_vec(br_node_to_global(e, member, br_vec2_make(0.0f, 0.0f)), 1007.0f, 8.0f));
 
@@ -96,9 +96,9 @@ int main(void)
     br_node s = br_sprite_create(e, tex);
     br_sprite_set_anchor(e, s, 0.5f, 0.5f);
     br_node holder = br_node_create_container(e);
-    br_node_set_position(e, holder, 100.0f, 100.0f);
+    br_node_set_position(e, holder, br_vec2_make(100.0f, 100.0f));
     br_node_add_child(e, holder, s);
-    br_node_set_scale(e, s, 2.0f, 2.0f);
+    br_node_set_scale(e, s, br_vec2_make(2.0f, 2.0f));
     br_rect b = br_node_get_bounds(e, holder);
     BR_CHECK(br_nearly_equal(b.x, 90.0f, 1e-4f) && br_nearly_equal(b.y, 80.0f, 1e-4f));
     BR_CHECK(br_nearly_equal(b.width, 20.0f, 1e-4f) && br_nearly_equal(b.height, 40.0f, 1e-4f));

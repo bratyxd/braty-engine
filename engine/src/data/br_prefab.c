@@ -141,7 +141,7 @@ void br_prefab_clear_cache(br_engine *e)
 br_node br_prefab_instantiate_at(br_engine *e, const char *path, br_node parent, br_vec2 position)
 {
     br_node n = br_prefab_instantiate(e, path, parent, NULL);
-    br_node_set_position(e, n, position.x, position.y);
+    br_node_set_position(e, n, position);
     return n;
 }
 

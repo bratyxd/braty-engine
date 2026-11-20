@@ -365,7 +365,7 @@ static void get_position(br_engine *e, br_anim_target t, br_anim_value *v)
 }
 static void set_position(br_engine *e, br_anim_target t, const br_anim_value *v)
 {
-    br_node_set_position(e, br_n(t), v->f[0], v->f[1]);
+    br_node_set_position(e, br_n(t), br_vec2_make(v->f[0], v->f[1]));
 }
 static void get_x(br_engine *e, br_anim_target t, br_anim_value *v)
 {
@@ -373,7 +373,7 @@ static void get_x(br_engine *e, br_anim_target t, br_anim_value *v)
 }
 static void set_x(br_engine *e, br_anim_target t, const br_anim_value *v)
 {
-    br_node_set_position(e, br_n(t), v->f[0], br_node_position(e, br_n(t)).y);
+    br_node_set_position(e, br_n(t), br_vec2_make(v->f[0], br_node_position(e, br_n(t)).y));
 }
 static void get_y(br_engine *e, br_anim_target t, br_anim_value *v)
 {
@@ -381,7 +381,7 @@ static void get_y(br_engine *e, br_anim_target t, br_anim_value *v)
 }
 static void set_y(br_engine *e, br_anim_target t, const br_anim_value *v)
 {
-    br_node_set_position(e, br_n(t), br_node_position(e, br_n(t)).x, v->f[0]);
+    br_node_set_position(e, br_n(t), br_vec2_make(br_node_position(e, br_n(t)).x, v->f[0]));
 }
 static void get_scale(br_engine *e, br_anim_target t, br_anim_value *v)
 {
@@ -391,7 +391,7 @@ static void get_scale(br_engine *e, br_anim_target t, br_anim_value *v)
 }
 static void set_scale(br_engine *e, br_anim_target t, const br_anim_value *v)
 {
-    br_node_set_scale(e, br_n(t), v->f[0], v->f[1]);
+    br_node_set_scale(e, br_n(t), br_vec2_make(v->f[0], v->f[1]));
 }
 static void get_rotation(br_engine *e, br_anim_target t, br_anim_value *v)
 {
@@ -409,7 +409,7 @@ static void get_skew(br_engine *e, br_anim_target t, br_anim_value *v)
 }
 static void set_skew(br_engine *e, br_anim_target t, const br_anim_value *v)
 {
-    br_node_set_skew(e, br_n(t), v->f[0], v->f[1]);
+    br_node_set_skew(e, br_n(t), br_vec2_make(v->f[0], v->f[1]));
 }
 static void get_pivot(br_engine *e, br_anim_target t, br_anim_value *v)
 {
@@ -419,7 +419,7 @@ static void get_pivot(br_engine *e, br_anim_target t, br_anim_value *v)
 }
 static void set_pivot(br_engine *e, br_anim_target t, const br_anim_value *v)
 {
-    br_node_set_pivot(e, br_n(t), v->f[0], v->f[1]);
+    br_node_set_pivot(e, br_n(t), br_vec2_make(v->f[0], v->f[1]));
 }
 static void get_alpha(br_engine *e, br_anim_target t, br_anim_value *v)
 {

@@ -18,7 +18,7 @@ static void mover_system(br_engine *e, float dt, void *user)
         if ((p.x < 40.0f && m->velocity.x < 0.0f) || (p.x > 1240.0f && m->velocity.x > 0.0f)) {
             m->velocity.x = -m->velocity.x;
         }
-        br_node_set_position(e, n, p.x + m->velocity.x * dt, p.y + m->velocity.y * dt);
+        br_node_set_position(e, n, br_vec2_make(p.x + m->velocity.x * dt, p.y + m->velocity.y * dt));
         br_node_set_rotation(e, n, br_node_rotation(e, n) + m->spin * dt);
     }
 }

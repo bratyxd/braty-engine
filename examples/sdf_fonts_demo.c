@@ -22,7 +22,7 @@ static void add_circle(br_engine *e, br_node parent, br_font *font, float size, 
     st.fill = br_color_from_hex(0xF1FAEE, 1.0f);
     br_node t = br_text_create(e, "O", &st);
     br_text_set_anchor(e, t, 0.5f, 0.5f);
-    br_node_set_position(e, t, x, y);
+    br_node_set_position(e, t, br_vec2_make(x, y));
     br_node_add_child(e, parent, t);
 
     br_graphics_context *ctx = br_graphics_context_create(e);
@@ -53,13 +53,13 @@ static bool demo_init(br_engine *e)
         add_circle(e, br_stage_root(e), fonts[i], 192.0f, x, 170.0f);
         br_node t = br_text_create(e, k_labels[i], &label);
         br_text_set_anchor(e, t, 0.5f, 0.0f);
-        br_node_set_position(e, t, x, 290.0f);
+        br_node_set_position(e, t, br_vec2_make(x, 290.0f));
         br_node_add_child(e, br_stage_root(e), t);
     }
 
     /* bottom: the same row on a canvas3d facing the camera */
     br_node view = br_view3d_create(e, 1280.0f, 360.0f);
-    br_node_set_position(e, view, 0.0f, 360.0f);
+    br_node_set_position(e, view, br_vec2_make(0.0f, 360.0f));
     br_view3d_set_background(e, view, br_color_to_linear(br_color_from_hex(0x1D3557, 1.0f)));
     br_view3d_post(e, view)->bloom = false; /* a glow would hide the ring */
     br_node_add_child(e, br_stage_root(e), view);

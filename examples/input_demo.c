@@ -68,7 +68,7 @@ static br_node make_rect(demo_state *s, br_engine *e, br_node parent, float x, f
 {
     br_node n = br_sprite_create(e, s->white);
     br_sprite_set_size(e, n, w, h);
-    br_node_set_position(e, n, x, y);
+    br_node_set_position(e, n, br_vec2_make(x, y));
     br_node_set_tint(e, n, br_color_from_hex(rgb, 1.0f));
     br_node_add_child(e, parent, n);
     return n;
@@ -80,7 +80,7 @@ static br_node make_text(br_engine *e, br_node parent, float x, float y, float s
     st.font_size = size;
     st.fill = br_color_from_hex(rgb, 1.0f);
     br_node n = br_text_create(e, text, &st);
-    br_node_set_position(e, n, x, y);
+    br_node_set_position(e, n, br_vec2_make(x, y));
     br_node_add_child(e, parent, n);
     return n;
 }
@@ -224,7 +224,7 @@ static void update_keyboard_mouse(demo_state *s, br_engine *e)
     for (int i = 0; i < 3; i++) {
         br_node_set_tint(e, s->mouse_buttons[i], br_color_from_hex(br_input_mouse_down(e, buttons[i]) ? 0x40d080 : 0x485068, 1.0f));
     }
-    br_node_set_position(e, s->cursor_marker, m.x - 4.0f, m.y - 4.0f);
+    br_node_set_position(e, s->cursor_marker, br_vec2_make(m.x - 4.0f, m.y - 4.0f));
 
     uint32_t count = br_input_touch_count(e);
     br_pen pen = br_input_pen(e);
@@ -236,7 +236,7 @@ static void update_keyboard_mouse(demo_state *s, br_engine *e)
         bool down = br_input_touch_get(e, i, &touch);
         br_node_set_visible(e, s->touch_dots[i], down);
         if (down) {
-            br_node_set_position(e, s->touch_dots[i], touch.position.x - 8.0f, touch.position.y - 8.0f);
+            br_node_set_position(e, s->touch_dots[i], br_vec2_make(touch.position.x - 8.0f, touch.position.y - 8.0f));
         }
     }
 }
@@ -268,10 +268,10 @@ static void update_pads(demo_state *s, br_engine *e)
         for (int st = 0; st < 2; st++) {
             br_vec2 stick = br_input_gamepad_stick(e, slot, st == 0 ? BR_GAMEPAD_STICK_LEFT : BR_GAMEPAD_STICK_RIGHT);
             float cx = 20.0f + (float)st * 80.0f + 30.0f;
-            br_node_set_position(e, v->stick_dot[st], cx + stick.x * 26.0f - 4.0f, 30.0f + stick.y * 26.0f - 4.0f);
+            br_node_set_position(e, v->stick_dot[st], br_vec2_make(cx + stick.x * 26.0f - 4.0f, 30.0f + stick.y * 26.0f - 4.0f));
             float trig = br_input_gamepad_axis(e, slot, st == 0 ? SDL_GAMEPAD_AXIS_LEFT_TRIGGER : SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
             br_sprite_set_size(e, v->trigger_fill[st], 14.0f, 60.0f * trig + 0.01f);
-            br_node_set_position(e, v->trigger_fill[st], 180.0f + (float)st * 24.0f, 60.0f - 60.0f * trig);
+            br_node_set_position(e, v->trigger_fill[st], br_vec2_make(180.0f + (float)st * 24.0f, 60.0f - 60.0f * trig));
         }
         buf[0] = '\0';
         if (connected) {
@@ -366,7 +366,7 @@ static void build_pad_view(demo_state *s, br_engine *e, int slot)
         v->cell_labels[b] = make_text(e, root, x + 4, y + 4, 12, 0xffffff, "");
     }
     br_node sticks = br_node_create_container(e);
-    br_node_set_position(e, sticks, x0, y0 + 136);
+    br_node_set_position(e, sticks, br_vec2_make(x0, y0 + 136));
     br_node_add_child(e, root, sticks);
     for (int st = 0; st < 2; st++) {
         make_rect(s, e, sticks, 20.0f + (float)st * 80.0f, 0, 60, 60, 0x3a4256);
@@ -429,7 +429,7 @@ static bool demo_init(br_engine *e)
         s->action_down[i] = make_rect(s, e, root, 310, y, 12, 12, 0x485068);
     }
     s->move_text = make_text(e, root, 330, 566, 12, 0xd0d8e8, "");
-    br_node_set_position(e, s->move_text, 30, 690);
+    br_node_set_position(e, s->move_text, br_vec2_make(30, 690));
     make_panel(s, e, 460, 540, 800, 170, "Last device and glyphs");
     s->glyph_text = make_text(e, root, 470, 566, 14, 0xd0d8e8, "");
     for (int i = 0; i < MAX_TOUCH_DOTS; i++) {

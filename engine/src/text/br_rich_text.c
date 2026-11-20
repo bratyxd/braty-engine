@@ -327,7 +327,7 @@ static void br_split_add_piece(br_engine *e, br_node container, const char *text
     br_node piece = br_text_create(e, buf, style);
     br_free(buf);
     br_text_set_anchor(e, piece, 0.5f, 0.5f);
-    br_node_set_position(e, piece, x + w * 0.5f, y + h * 0.5f);
+    br_node_set_position(e, piece, br_vec2_make(x + w * 0.5f, y + h * 0.5f));
     br_node_add_child(e, container, piece);
 }
 

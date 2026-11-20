@@ -174,7 +174,7 @@ static void test_persistent_nodes(br_engine *e)
     br_scene a = br_scene_load(e, "scenes/a.scene.json", BR_SCENE_SINGLE);
     br_node hud = br_node_create_container(e);
     br_node_add_child(e, br_scene_root_2d(e, a), hud);
-    br_node_set_position(e, hud, 5.0f, 6.0f);
+    br_node_set_position(e, hud, br_vec2_make(5.0f, 6.0f));
     br_node_set_persistent(e, hud, true);
     BR_CHECK(br_node_persistent(e, hud) && br_node_equal(br_node_parent(e, hud), br_stage_root(e)));
     br_node spawned = br_node_create_container(e); /* added to the stage while a is active */

@@ -34,7 +34,7 @@ br_vec2 *p = br_mesh_positions(e, plane, &count); /* edit in place, every frame 
 for (uint32_t i = 0; i < count; i++) {
     s->plane_rest[i] = p[i];
 }
-br_node_set_scale(e, plane, 1.3f, 1.3f);
+br_node_set_scale(e, plane, br_vec2_make(1.3f, 1.3f));
 add(e, plane, 450, 30);
 ```
 

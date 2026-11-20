@@ -51,7 +51,7 @@ st.gradient.colors[2] = br_color_from_hex(0x9b3dff, 1.0f);
 st.stroke_width = 3.0f;
 st.stroke_color = br_color_from_hex(0x1a0a2a, 1.0f);
 br_node title = br_text_create(e, "Gradient", &st);
-br_node_set_position(e, title, 16.0f, 296.0f);
+br_node_set_position(e, title, br_vec2_make(16.0f, 296.0f));
 br_node_add_child(e, br_stage_root(e), title);
 ```
 

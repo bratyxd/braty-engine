@@ -39,7 +39,7 @@ static br_node make_box(br_engine *e, br_node parent, const char *label, float x
     b->w = w;
     b->h = h;
     br_node_set_label(e, n, label);
-    br_node_set_position(e, n, x, y);
+    br_node_set_position(e, n, br_vec2_make(x, y));
     br_node_set_event_mode(e, n, mode);
     br_node_add_child(e, parent, n);
     return n;

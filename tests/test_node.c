@@ -122,7 +122,7 @@ static void test_types_and_stale(br_engine *e)
     BR_CHECK(reused.index == n1.index && reused.generation != n1.generation);
     BR_CHECK(br_node_data(e, n1, type) == NULL);
     BR_CHECK(!br_node_add_child(e, br_stage_root(e), n1));
-    br_node_set_position(e, n1, 5.0f, 5.0f); /* ignored */
+    br_node_set_position(e, n1, br_vec2_make(5.0f, 5.0f)); /* ignored */
     BR_CHECK(br_node_position(e, reused).x == 0.0f);
     BR_CHECK(br_node_child_count(e, n1) == 0);
     br_node_destroy(e, n1); /* no-op */
@@ -402,7 +402,7 @@ static void test_deep_chain(br_engine *e)
     br_node leaf = top;
     for (uint32_t i = 0; i < depth; i++) {
         leaf = br_sprite_create(e, br_texture_white(e));
-        br_node_set_position(e, leaf, 1.0f, 0.0f);
+        br_node_set_position(e, leaf, br_vec2_make(1.0f, 0.0f));
         br_node_add_child(e, parent, leaf);
         parent = leaf;
     }

@@ -118,14 +118,15 @@ const char *br_node_label(br_engine *e, br_node n);
 /* First child (or descendant when deep) with this label, depth-first. Zero handle if none. */
 br_node br_node_find_by_label(br_engine *e, br_node root, const char *label, bool deep);
 
-/* ---- transform (PixiJS position, scale, rotation, skew, pivot, origin) */
+/* ---- transform (PixiJS position, scale, rotation, skew, pivot, origin; setters take what the
+ * getters return, as br_node3d_*) */
 
 /* Sets the position in the parent's space. */
-void br_node_set_position(br_engine *e, br_node n, float x, float y);
+void br_node_set_position(br_engine *e, br_node n, br_vec2 position);
 /* The position. */
 br_vec2 br_node_position(br_engine *e, br_node n);
 /* Sets the scale (default 1,1). */
-void br_node_set_scale(br_engine *e, br_node n, float x, float y);
+void br_node_set_scale(br_engine *e, br_node n, br_vec2 scale);
 /* The scale. */
 br_vec2 br_node_scale(br_engine *e, br_node n);
 /* Sets the rotation in radians (clockwise on screen). */
@@ -133,15 +134,15 @@ void br_node_set_rotation(br_engine *e, br_node n, float radians);
 /* The rotation in radians. */
 float br_node_rotation(br_engine *e, br_node n);
 /* Sets the skew in radians. */
-void br_node_set_skew(br_engine *e, br_node n, float x, float y);
+void br_node_set_skew(br_engine *e, br_node n, br_vec2 skew);
 /* The skew. */
 br_vec2 br_node_skew(br_engine *e, br_node n);
 /* Sets the pivot: the local point that lands on the position, also the rotation/scale centre. */
-void br_node_set_pivot(br_engine *e, br_node n, float x, float y);
+void br_node_set_pivot(br_engine *e, br_node n, br_vec2 pivot);
 /* The pivot. */
 br_vec2 br_node_pivot(br_engine *e, br_node n);
 /* Sets the origin: rotation/scale centre that does not move the node (Pixi origin). */
-void br_node_set_origin(br_engine *e, br_node n, float x, float y);
+void br_node_set_origin(br_engine *e, br_node n, br_vec2 origin);
 /* The origin. */
 br_vec2 br_node_origin(br_engine *e, br_node n);
 /* Local matrix (from the fields above, always current). */
