@@ -198,7 +198,7 @@ static br_animator add_fox(br_engine *e, br_node3d root, br_model *fox, const br
     br_node3d_add_child(e, root, f);
     br_node3d_set_position(e, f, pos);
     br_node3d_set_scale(e, f, br_vec3_make(scale, scale, scale));
-    br_node3d_set_euler(e, f, 0.0f, yaw, 0.0f);
+    br_node3d_set_euler(e, f, br_vec3_make(0.0f, yaw, 0.0f));
     /* --- snippet: docs/agents/animation.md (glTF + state machine) --- */
     br_animator a = br_animator_add(e, br_anim_target_3d(f));
     br_animator_add_model_clips(e, a, fox);   /* Survey, Walk, Run (keys shared with the model) */
@@ -240,7 +240,7 @@ static void setup_3d(br_engine *e, demo_state *s)
     br_node3d cube = br_mesh3d_create(e, br_geometry3d_cube(e, br_vec3_make(0.8f, 0.8f, 0.8f)), make_material(e, 0x3A6CFF, 0.4f));
     br_node3d_add_child(e, root, cube);
     br_node3d_set_position(e, cube, br_vec3_make(-2.3f, 0.6f, 0.0f));
-    br_node3d_set_euler(e, cube, 0.3f, 0.6f, 0.0f);
+    br_node3d_set_euler(e, cube, br_vec3_make(0.3f, 0.6f, 0.0f));
     br_animator ca = br_animator_add(e, br_anim_target_3d(cube));
     br_animator_add_library(e, ca, props);
     br_animator_play(e, ca, "pulse");

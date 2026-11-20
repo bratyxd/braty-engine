@@ -323,7 +323,7 @@ br_node br_camera_create_3d(br_engine *e, br_node3d scene_root, const br_camera 
     d->camera = desc != NULL ? *desc : br_camera_default_3d();
     d->is_3d = true;
     d->view3d = view;
-    d->rig = br_node3d_create_group(e);
+    d->rig = br_node3d_create_container(e);
     d->node3d = br_camera3d_create(e, NULL);
     br_node3d_set_label(e, d->rig, "camera_rig");
     br_node3d_add_child(e, d->rig, d->node3d);
@@ -412,7 +412,7 @@ void br_camera_set_headless_screen(br_engine *e, float width, float height)
 static br_mat4 br_camera_world(br_engine *e, br_node cam, const br_camera_data *d)
 {
     if (d->is_3d) {
-        return br_node3d_world_matrix(e, d->node3d);
+        return br_node3d_world_transform(e, d->node3d);
     }
     br_mat3 m = br_node_world_transform(e, cam);
     br_vec2 pos = br_vec2_make(m.tx + d->shake.x, m.ty + d->shake.y);
@@ -597,7 +597,7 @@ static void br_camera_shake_system(br_engine *e, float dt, void *user)
         sh->trauma = SDL_max(0.0f, sh->trauma - (sh->decay > 0.0f ? sh->decay : 1.0f) * dt);
         if (d->is_3d) {
             br_node3d_set_position(e, d->node3d, br_vec3_make(d->shake.x, d->shake.y, 0.0f));
-            br_node3d_set_euler(e, d->node3d, 0.0f, 0.0f, d->shake.z);
+            br_node3d_set_euler(e, d->node3d, br_vec3_make(0.0f, 0.0f, d->shake.z));
         }
     }
 }

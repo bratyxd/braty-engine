@@ -356,7 +356,7 @@ static void test_view3d_resources(br_engine *e)
     br_node view = find(e, br_scene_root_2d(e, s), "view");
     BR_CHECK(br_node_valid(e, view));
     BR_CHECK(br_scene_root_3d(e, s).index == br_view3d_root(e, view).index); /* the file's view */
-    br_node3d cube = br_node3d_find_by_label(e, br_view3d_root(e, view), "cube");
+    br_node3d cube = br_node3d_find_by_label(e, br_view3d_root(e, view), "cube", true);
     br_mesh3d *m = br_mesh3d_get(e, cube);
     BR_CHECK(m != NULL);
     br_geometry3d geometry = m != NULL ? m->geometry : (br_geometry3d){ 0, 0 };

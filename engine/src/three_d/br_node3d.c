@@ -54,12 +54,15 @@ void br_node3d_table_init(br_engine *e)
     br_three_d_state *s = e->three_d;
     br_array_init(&s->nodes.free_slots, sizeof(uint32_t));
     br_array_init(&s->nodes.pending, sizeof(uint32_t));
+    br_array_init(&s->nodes.walk, sizeof(uint32_t));
+    s->nodes.cursor_epoch = UINT32_MAX; /* no cursor yet */
+    s->nodes.count_epoch = UINT32_MAX;
     br_array_init(&s->types, sizeof(br_node3d_type_entry));
     br_array_init(&s->destroy_listeners, sizeof(br_node3d_destroy_entry));
     br_node3d_type_desc group;
     SDL_zero(group);
     group.name = "group3d";
-    br_node3d_type_register(e, &group); /* id 1 = BR_NODE3D_TYPE_GROUP */
+    br_node3d_type_register(e, &group); /* id 1 = BR_NODE3D_TYPE_CONTAINER */
 }
 
 /* ---- handles */
@@ -192,9 +195,9 @@ br_node3d br_node3d_create(br_engine *e, uint32_t type_id)
     return n;
 }
 
-br_node3d br_node3d_create_group(br_engine *e)
+br_node3d br_node3d_create_container(br_engine *e)
 {
-    return br_node3d_create(e, BR_NODE3D_TYPE_GROUP);
+    return br_node3d_create(e, BR_NODE3D_TYPE_CONTAINER);
 }
 
 void *br_node3d_data(br_engine *e, br_node3d n, uint32_t type_id)
@@ -247,6 +250,7 @@ static void br_node3d_unlink(br_node3d_table *t, uint32_t i)
     t->parent[i] = BR_NONE3D;
     t->prev_sibling[i] = BR_NONE3D;
     t->next_sibling[i] = BR_NONE3D;
+    t->epoch++;
 }
 
 /* Frees one slot: type data (swap-remove), label, listeners. The node is already detached. */
@@ -308,6 +312,7 @@ void br_node3d_destroy(br_engine *e, br_node3d n)
     }
     br_node3d_table *t = &s->nodes;
     br_node3d_unlink(t, n.index);
+    t->epoch++; /* a detached root has no link to drop, but its slot may be reused */
     uint32_t first = t->pending.count;
     br_node3d_collect_subtree(t, n.index, &t->pending);
     /* handles are invalid now; memory goes at the next flush (or now, outside a frame) */
@@ -389,6 +394,7 @@ void br_node3d_table_free(br_engine *e)
     br_free(t->layer);
     br_array_free(&t->free_slots);
     br_array_free(&t->pending);
+    br_array_free(&t->walk);
     SDL_zero(*t);
 }
 
@@ -402,7 +408,8 @@ void br_node3d_on_destroy(br_engine *e, br_node3d_destroy_fn fn, void *user)
 
 /* ---- hierarchy */
 
-bool br_node3d_add_child(br_engine *e, br_node3d parent, br_node3d child)
+/* Links child under parent at index (clamped; UINT32_MAX appends). False on invalid handles or cycles. */
+static bool br_node3d_link(br_engine *e, br_node3d parent, br_node3d child, uint32_t index)
 {
     br_three_d_state *s = e->three_d;
     if (!br_node3d_index_valid(s, parent) || !br_node3d_index_valid(s, child)) {
@@ -418,16 +425,36 @@ bool br_node3d_add_child(br_engine *e, br_node3d parent, br_node3d child)
     br_node3d_unlink(t, child.index);
     uint32_t c = child.index;
     uint32_t p = parent.index;
+    uint32_t before = t->first_child[p];
+    for (uint32_t k = 0; k < index && before != BR_NONE3D; k++) {
+        before = t->next_sibling[before];
+    }
+    uint32_t after = before != BR_NONE3D ? t->prev_sibling[before] : t->last_child[p];
     t->parent[c] = p;
-    t->prev_sibling[c] = t->last_child[p];
-    t->next_sibling[c] = BR_NONE3D;
-    if (t->last_child[p] != BR_NONE3D) {
-        t->next_sibling[t->last_child[p]] = c;
+    t->prev_sibling[c] = after;
+    t->next_sibling[c] = before;
+    if (after != BR_NONE3D) {
+        t->next_sibling[after] = c;
     } else {
         t->first_child[p] = c;
     }
-    t->last_child[p] = c;
+    if (before != BR_NONE3D) {
+        t->prev_sibling[before] = c;
+    } else {
+        t->last_child[p] = c;
+    }
+    t->epoch++;
     return true;
+}
+
+bool br_node3d_add_child(br_engine *e, br_node3d parent, br_node3d child)
+{
+    return br_node3d_link(e, parent, child, UINT32_MAX);
+}
+
+bool br_node3d_add_child_at(br_engine *e, br_node3d parent, br_node3d child, uint32_t index)
+{
+    return br_node3d_link(e, parent, child, index);
 }
 
 void br_node3d_remove_from_parent(br_engine *e, br_node3d n)
@@ -437,6 +464,30 @@ void br_node3d_remove_from_parent(br_engine *e, br_node3d n)
     }
 }
 
+bool br_node3d_reparent(br_engine *e, br_node3d n, br_node3d new_parent)
+{
+    if (!br_node3d_valid(e, n) || !br_node3d_valid(e, new_parent)) {
+        return false;
+    }
+    br_mat4 world = br_node3d_world_transform(e, n);
+    br_mat4 parent_world = br_node3d_world_transform(e, new_parent);
+    if (!br_node3d_add_child(e, new_parent, n)) {
+        return false;
+    }
+    bool ok = true;
+    br_mat4 local = br_mat4_mul(br_mat4_invert_affine(parent_world, &ok), world);
+    br_vec3 position;
+    br_quat rotation;
+    br_vec3 scale;
+    if (ok && br_mat4_decompose(local, &position, &rotation, &scale)) {
+        br_node3d_table *t = &e->three_d->nodes;
+        t->position[n.index] = position;
+        t->rotation[n.index] = br_quat_normalize(rotation);
+        t->scale[n.index] = scale;
+    }
+    return true;
+}
+
 br_node3d br_node3d_parent(br_engine *e, br_node3d n)
 {
     br_node3d none = { 0, 0 };
@@ -444,29 +495,52 @@ br_node3d br_node3d_parent(br_engine *e, br_node3d n)
     return br_node3d_index_valid(s, n) ? br_node3d_handle(s, s->nodes.parent[n.index]) : none;
 }
 
-br_node3d br_node3d_first_child(br_engine *e, br_node3d n)
+br_node3d br_node3d_child_at(br_engine *e, br_node3d n, uint32_t i)
 {
-    br_node3d none = { 0, 0 };
     br_three_d_state *s = e->three_d;
-    return br_node3d_index_valid(s, n) ? br_node3d_handle(s, s->nodes.first_child[n.index]) : none;
-}
-
-br_node3d br_node3d_next_sibling(br_engine *e, br_node3d n)
-{
-    br_node3d none = { 0, 0 };
-    br_three_d_state *s = e->three_d;
-    return br_node3d_index_valid(s, n) ? br_node3d_handle(s, s->nodes.next_sibling[n.index]) : none;
+    if (!br_node3d_index_valid(s, n)) {
+        br_node3d none = { 0, 0 };
+        return none;
+    }
+    /* ponytail: a one-entry cursor makes i = 0, 1, 2... O(1) per step; nested walks over several
+     * parents fall back to O(i). Per-node child arrays (as in 2D) if that ever shows in a profile. */
+    br_node3d_table *t = &s->nodes;
+    uint32_t c = BR_NONE3D;
+    bool cursor = t->cursor_epoch == t->epoch && t->cursor_parent == n.index && t->cursor_child != BR_NONE3D;
+    if (cursor && i == t->cursor_index) {
+        c = t->cursor_child;
+    } else if (cursor && i == t->cursor_index + 1) {
+        c = t->next_sibling[t->cursor_child];
+    } else {
+        c = t->first_child[n.index];
+        for (uint32_t k = 0; k < i && c != BR_NONE3D; k++) {
+            c = t->next_sibling[c];
+        }
+    }
+    t->cursor_epoch = t->epoch;
+    t->cursor_parent = n.index;
+    t->cursor_index = i;
+    t->cursor_child = c;
+    return br_node3d_handle(s, c);
 }
 
 uint32_t br_node3d_child_count(br_engine *e, br_node3d n)
 {
     br_three_d_state *s = e->three_d;
-    uint32_t count = 0;
-    if (br_node3d_index_valid(s, n)) {
-        for (uint32_t c = s->nodes.first_child[n.index]; c != BR_NONE3D; c = s->nodes.next_sibling[c]) {
-            count++;
-        }
+    if (!br_node3d_index_valid(s, n)) {
+        return 0;
     }
+    br_node3d_table *t = &s->nodes;
+    if (t->count_epoch == t->epoch && t->count_parent == n.index) {
+        return t->count_value; /* loops calling it every iteration stay O(n) */
+    }
+    uint32_t count = 0;
+    for (uint32_t c = t->first_child[n.index]; c != BR_NONE3D; c = t->next_sibling[c]) {
+        count++;
+    }
+    t->count_epoch = t->epoch;
+    t->count_parent = n.index;
+    t->count_value = count;
     return count;
 }
 
@@ -488,28 +562,35 @@ const char *br_node3d_label(br_engine *e, br_node3d n)
     return "";
 }
 
-static uint32_t br_node3d_find_index(br_node3d_table *t, uint32_t i, const char *label)
-{
-    if (t->label[i] != NULL && br_str_equal(t->label[i], label)) {
-        return i;
-    }
-    for (uint32_t c = t->first_child[i]; c != BR_NONE3D; c = t->next_sibling[c]) {
-        uint32_t found = br_node3d_find_index(t, c, label);
-        if (found != BR_NONE3D) {
-            return found;
-        }
-    }
-    return BR_NONE3D;
-}
-
-br_node3d br_node3d_find_by_label(br_engine *e, br_node3d root, const char *label)
+br_node3d br_node3d_find_by_label(br_engine *e, br_node3d root, const char *label, bool deep)
 {
     br_node3d none = { 0, 0 };
     br_three_d_state *s = e->three_d;
     if (!br_node3d_index_valid(s, root) || label == NULL) {
         return none;
     }
-    return br_node3d_handle(s, br_node3d_find_index(&s->nodes, root.index, label));
+    br_node3d_table *t = &s->nodes;
+    br_array *stack = &t->walk;
+    br_array_clear(stack);
+    br_array_push(stack, &root.index);
+    while (stack->count > 0) {
+        uint32_t top = *(uint32_t *)br_array_at(stack, stack->count - 1);
+        br_array_pop(stack);
+        for (uint32_t c = t->first_child[top]; c != BR_NONE3D; c = t->next_sibling[c]) {
+            if (t->label[c] != NULL && br_str_equal(t->label[c], label)) {
+                return br_node3d_handle(s, c);
+            }
+        }
+        if (!deep) {
+            break;
+        }
+        for (uint32_t c = t->last_child[top]; c != BR_NONE3D; c = t->prev_sibling[c]) {
+            if (br_array_push(stack, &c) == NULL) {
+                return none;
+            }
+        }
+    }
+    return none;
 }
 
 /* ---- transform and flags */
@@ -540,9 +621,16 @@ br_quat br_node3d_rotation(br_engine *e, br_node3d n)
     return br_node3d_index_valid(s, n) ? s->nodes.rotation[n.index] : br_quat_identity();
 }
 
-void br_node3d_set_euler(br_engine *e, br_node3d n, float x, float y, float z)
+void br_node3d_set_euler(br_engine *e, br_node3d n, br_vec3 radians)
 {
-    br_node3d_set_rotation(e, n, br_quat_from_euler(x, y, z));
+    br_node3d_set_rotation(e, n, br_quat_from_euler(radians.x, radians.y, radians.z));
+}
+
+br_vec3 br_node3d_euler(br_engine *e, br_node3d n)
+{
+    br_vec3 r;
+    br_quat_to_euler(br_node3d_rotation(e, n), &r.x, &r.y, &r.z);
+    return r;
 }
 
 void br_node3d_set_scale(br_engine *e, br_node3d n, br_vec3 scale)
@@ -597,7 +685,7 @@ void br_node3d_look_at(br_engine *e, br_node3d n, br_vec3 target, br_vec3 up)
     if (!br_node3d_index_valid(s, n)) {
         return;
     }
-    br_mat4 world = br_node3d_world_matrix(e, n);
+    br_mat4 world = br_node3d_world_transform(e, n);
     br_vec3 eye = br_vec3_make(world.m[12], world.m[13], world.m[14]);
     br_vec3 back = br_vec3_normalize(br_vec3_sub(eye, target)); /* local +Z points away from the target */
     if (br_vec3_length(back) == 0.0f) {
@@ -625,7 +713,7 @@ void br_node3d_look_at(br_engine *e, br_node3d n, br_vec3 target, br_vec3 up)
     s->nodes.rotation[n.index] = br_quat_normalize(world_rotation);
 }
 
-br_mat4 br_node3d_local_matrix(br_engine *e, br_node3d n)
+br_mat4 br_node3d_local_transform(br_engine *e, br_node3d n)
 {
     br_three_d_state *s = e->three_d;
     if (!br_node3d_index_valid(s, n)) {
@@ -634,7 +722,7 @@ br_mat4 br_node3d_local_matrix(br_engine *e, br_node3d n)
     return br_mat4_from_trs(s->nodes.position[n.index], s->nodes.rotation[n.index], s->nodes.scale[n.index]);
 }
 
-br_mat4 br_node3d_world_matrix(br_engine *e, br_node3d n)
+br_mat4 br_node3d_world_transform(br_engine *e, br_node3d n)
 {
     br_three_d_state *s = e->three_d;
     if (!br_node3d_index_valid(s, n)) {
@@ -650,8 +738,20 @@ br_mat4 br_node3d_world_matrix(br_engine *e, br_node3d n)
 
 br_vec3 br_node3d_world_position(br_engine *e, br_node3d n)
 {
-    br_mat4 m = br_node3d_world_matrix(e, n);
+    br_mat4 m = br_node3d_world_transform(e, n);
     return br_vec3_make(m.m[12], m.m[13], m.m[14]);
+}
+
+br_vec3 br_node3d_to_global(br_engine *e, br_node3d n, br_vec3 local_point)
+{
+    return br_mat4_transform_point(br_node3d_world_transform(e, n), local_point);
+}
+
+br_vec3 br_node3d_to_local(br_engine *e, br_node3d n, br_vec3 world_point)
+{
+    bool ok = true;
+    br_mat4 inverse = br_mat4_invert_affine(br_node3d_world_transform(e, n), &ok);
+    return ok ? br_mat4_transform_point(inverse, world_point) : world_point;
 }
 
 void br_node3d_set_visible(br_engine *e, br_node3d n, bool visible)
@@ -667,14 +767,14 @@ bool br_node3d_visible(br_engine *e, br_node3d n)
     return br_node3d_index_valid(s, n) && s->nodes.visible[n.index];
 }
 
-void br_node3d_set_layer(br_engine *e, br_node3d n, uint32_t layer)
+void br_node3d_set_layer_bits(br_engine *e, br_node3d n, uint32_t bits)
 {
     if (br_node3d_index_valid(e->three_d, n)) {
-        e->three_d->nodes.layer[n.index] = layer;
+        e->three_d->nodes.layer[n.index] = bits;
     }
 }
 
-uint32_t br_node3d_layer(br_engine *e, br_node3d n)
+uint32_t br_node3d_layer_bits(br_engine *e, br_node3d n)
 {
     br_three_d_state *s = e->three_d;
     return br_node3d_index_valid(s, n) ? s->nodes.layer[n.index] : 0;
@@ -718,7 +818,7 @@ void br_three_d_update_world(br_engine *e, br_node3d root)
     uint32_t r = root.index;
     br_mat4 parent_world = br_mat4_identity();
     if (t->parent[r] != BR_NONE3D) {
-        parent_world = br_node3d_world_matrix(e, br_node3d_handle(s, t->parent[r]));
+        parent_world = br_node3d_world_transform(e, br_node3d_handle(s, t->parent[r]));
     }
     t->world[r] = br_mat4_mul(parent_world, br_mat4_from_trs(t->position[r], t->rotation[r], t->scale[r]));
     /* pre-order walk without recursion: parents are always computed before their children */

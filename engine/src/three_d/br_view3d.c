@@ -269,7 +269,7 @@ static void br_view3d_on_create(br_engine *e, br_node n, void *data)
     br_array_init(&v->shadow, sizeof(uint32_t));
     br_array_init(&v->joints, sizeof(br_mat4));
     br_array_init(&v->lights, sizeof(br_light3d_entry));
-    v->root = br_node3d_create_group(e);
+    v->root = br_node3d_create_container(e);
     v->own_root = v->root;
     br_node3d_set_label(e, v->root, "root");
     v->camera = br_camera3d_create(e, NULL);

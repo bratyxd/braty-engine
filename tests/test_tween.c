@@ -247,7 +247,7 @@ static void test_kill(br_engine *e)
 
 static void test_3d_and_components(br_engine *e)
 {
-    br_node3d g = br_node3d_create_group(e);
+    br_node3d g = br_node3d_create_container(e);
     float p[3] = { 2.0f, 4.0f, 6.0f };
     br_tween_to(e, br_anim_target_3d(g), "position", p, 1.0f, BR_EASE_LINEAR);
     br_quat q1 = br_quat_from_axis_angle(br_vec3_make(0.0f, 1.0f, 0.0f), 1.0f);

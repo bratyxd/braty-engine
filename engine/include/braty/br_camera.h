@@ -54,7 +54,7 @@ typedef struct br_camera {
     float           far_z;              /* 3D; <= near_z (e.g. 0 from SDL_zero) = near_z + 1000 */
     br_rect         viewport_rect;      /* normalised (0..1) part of the screen/target, top-left origin */
     float           depth;              /* draw order: lower first */
-    uint32_t        culling_mask;       /* layer bits drawn (br_node_set_layer_bits / br_node3d_set_layer) */
+    uint32_t        culling_mask;       /* layer bits drawn (br_node_set_layer_bits / br_node3d_set_layer_bits) */
     br_camera_clear clear_flags;
     br_color        background_color;   /* sRGB, straight alpha */
     br_texture      target_texture;     /* zero = the window; else a br_render_texture_create texture */

@@ -135,7 +135,7 @@ static void br_gltf_build_node(br_engine *e, br_gltf_instance *inst, uint32_t i,
 {
     const br_model *m = inst->model;
     const br_model_node *mn = &m->nodes[i];
-    br_node3d g = br_node3d_create_group(e);
+    br_node3d g = br_node3d_create_container(e);
     inst->nodes[i] = g;
     br_node3d_set_label(e, g, mn->name);
     br_node3d_set_position(e, g, (int32_t)i == inst->sub_root ? br_vec3_make(0.0f, 0.0f, 0.0f) : mn->translation);
@@ -262,7 +262,7 @@ static void br_gltf_build_batches(br_engine *e, br_gltf_instance *inst, const ui
     for (uint32_t k = 0; k < m->node_count; k++) {
         uint32_t i = inst->order[k];
         int32_t p = m->nodes[i].parent;
-        br_mat4 local = built[i] ? br_node3d_local_matrix(e, inst->nodes[i]) : br_mat4_identity();
+        br_mat4 local = built[i] ? br_node3d_local_transform(e, inst->nodes[i]) : br_mat4_identity();
         bool chained = p >= 0 && built[p] && (int32_t)i != inst->sub_root;
         inst->model_world[i] = chained ? br_mat4_mul(inst->model_world[p], local) : local;
     }
@@ -531,8 +531,8 @@ br_node3d br_model3d_camera(br_engine *e, br_node3d n, const char *name)
         if (mn->camera < 0 || !br_node3d_valid(e, inst->nodes[i]) || (name != NULL && SDL_strcmp(mn->name, name) != 0)) {
             continue;
         }
-        for (br_node3d c = br_node3d_first_child(e, inst->nodes[i]); br_node3d_valid(e, c);
-             c = br_node3d_next_sibling(e, c)) {
+        for (uint32_t c_i = 0; c_i < br_node3d_child_count(e, inst->nodes[i]); c_i++) {
+            br_node3d c = br_node3d_child_at(e, inst->nodes[i], c_i);
             if (br_camera3d_get(e, c) != NULL) {
                 return c;
             }
@@ -604,9 +604,10 @@ static br_aabb br_gltf_subtree_bounds(br_engine *e, br_node3d n)
     br_aabb box = br_aabb_empty();
     br_aabb local;
     if (br_node3d_visible(e, n) && br_node3d_local_bounds(e, n, &local) && br_aabb_is_valid(local)) {
-        box = br_aabb_transform(local, br_node3d_world_matrix(e, n));
+        box = br_aabb_transform(local, br_node3d_world_transform(e, n));
     }
-    for (br_node3d c = br_node3d_first_child(e, n); br_node3d_valid(e, c); c = br_node3d_next_sibling(e, c)) {
+    for (uint32_t c_i = 0; c_i < br_node3d_child_count(e, n); c_i++) {
+        br_node3d c = br_node3d_child_at(e, n, c_i);
         if (br_node3d_visible(e, c)) {
             box = br_aabb_union(box, br_gltf_subtree_bounds(e, c));
         }

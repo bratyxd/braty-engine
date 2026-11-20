@@ -27,7 +27,7 @@ bool cr_player_spawn(br_engine *e, cr_game *g)
     if (p == NULL) {
         return false;
     }
-    g->camera_target = br_node3d_create_group(e);
+    g->camera_target = br_node3d_create_container(e);
     br_node3d_set_label(e, g->camera_target, "camera_target");
     br_node3d_set_position(e, g->camera_target, br_vec3_make(0.0f, t->height, 0.0f));
     br_node3d_add_child(e, inst, g->camera_target);

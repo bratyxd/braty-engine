@@ -107,7 +107,7 @@ system walks only the nodes that have the component. Scene-JSON 3D nodes take `"
 | Helper object (not drawn) | `-norender` | `"no_render": true` | meshes hidden and not pickable; node and components stay |
 | Spawn point, pickup, ... | - | `"spawn_point": true`, `"pickup.value": 10` | your registered components |
 | Hidden at start | - | `"visible": false` | group node hidden |
-| Camera / render layer | - | `"layer": 2` | `br_node3d_set_layer` on the node and its content |
+| Camera / render layer | - | `"layer": 2` | `br_node3d_set_layer_bits` on the node and its content |
 | No shadow | - | `"cast_shadows": false` | meshes / lights (lights: `true` turns shadows on) |
 | Movable static mesh | - | `"batch": false` | kept out of automatic batching |
 
@@ -130,7 +130,7 @@ Graph) writes EXT_mesh_gpu_instancing for linked duplicates.
 | `br_view3d_from_model(e, model, w, h)` | PixiJS `View3D.from`: view + instance + sun + framing camera. |
 | `br_animator_add(e, br_anim_target_3d(n))` + `br_animator_add_model_clips(e, a, model)` | An animator holding the model's clips (`br_animation.h`). |
 | `br_animator_play(e, a, "Run")`, `br_animator_cross_fade(e, a, "Walk", 0.5f)`, `_stop`, `_set_speed`, `_set_loop`, `_set_time` | Playback. |
-| `br_model3d_node(e, n, i)`, `br_node3d_find_by_label(e, n, "Head")` | Reach a glTF node of an instance (attach props, IK, ...). |
+| `br_model3d_node(e, n, i)`, `br_node3d_find_by_label(e, n, "Head", true)` | Reach a glTF node of an instance (attach props, IK, ...). |
 | `br_model_find_clip`, `br_model_find_node`, `model->nodes[i].extras` | Inspect the parsed data (names, extras for gameplay). |
 | `br_anim3d_sample`, `br_anim3d_joint_matrices`, `br_anim3d_decompose` | Pure maths (tests, tools, your own animation code). |
 | `br_model_parse(e, path, bytes, size)` / `br_model_release` | Parse from memory without the cache. |
@@ -175,7 +175,7 @@ s->fox = br_model_instantiate(e, fox);                    /* a "model3d" node */
 br_node3d_add_child(e, s->root, s->fox);
 br_node3d_set_scale(e, s->fox, br_vec3_make(0.025f, 0.025f, 0.025f));
 br_node3d_set_position(e, s->fox, br_vec3_make(g_row_x[6], 0.0f, 2.6f));
-br_node3d_set_euler(e, s->fox, 0.0f, 0.9f, 0.0f);
+br_node3d_set_euler(e, s->fox, br_vec3_make(0.0f, 0.9f, 0.0f));
 s->fox_anim = br_animator_add(e, br_anim_target_3d(s->fox));  /* plays the model's clips */
 br_animator_add_model_clips(e, s->fox_anim, fox);
 br_animator_play(e, s->fox_anim, "Survey");

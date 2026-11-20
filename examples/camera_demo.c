@@ -205,7 +205,7 @@ static void build_ui(demo_state *s, br_engine *e)
 /* --mode3d: one 3D scene, two 3D cameras sharing it. */
 static void build_3d(br_engine *e)
 {
-    br_node3d root = br_node3d_create_group(e);
+    br_node3d root = br_node3d_create_container(e);
     br_material3d_desc md = br_material3d_default(BR_MATERIAL3D_PBR);
     md.base_color = br_color_to_linear(hex(0x6E9C55));
     br_node3d ground = br_mesh3d_create(e, br_geometry3d_plane(e, 30.0f, 30.0f, 1, 1), br_material3d_create(e, &md));

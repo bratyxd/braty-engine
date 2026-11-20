@@ -505,7 +505,7 @@ static void test_3d_paths(void)
     br_node3d_set_position(e, cam, br_vec3_make(0.0f, 0.0f, 10.0f));
     br_node3d_look_at(e, cam, br_vec3_make(0.0f, 0.0f, 0.0f), br_vec3_make(0.0f, 1.0f, 0.0f));
     br_material3d_desc md = br_material3d_default(BR_MATERIAL3D_PBR);
-    br_node3d group = br_node3d_create_group(e);
+    br_node3d group = br_node3d_create_container(e);
     br_node3d_set_label(e, group, "props");
     br_node3d_add_child(e, br_view3d_root(e, view), group);
     br_node3d cube = br_mesh3d_create(e, br_geometry3d_cube(e, br_vec3_make(2.0f, 2.0f, 2.0f)), br_material3d_create(e, &md));

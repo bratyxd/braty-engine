@@ -59,7 +59,7 @@ static void place_props(br_engine *e, demo *d)
                                                       (float)cJSON_GetArrayItem(pos, 2)->valuedouble));
         }
         if (cJSON_IsNumber(yaw)) {
-            br_node3d_set_euler(e, n, 0.0f, (float)yaw->valuedouble * BR_DEG_TO_RAD, 0.0f);
+            br_node3d_set_euler(e, n, br_vec3_make(0.0f, (float)yaw->valuedouble * BR_DEG_TO_RAD, 0.0f));
         }
         if (cJSON_IsNumber(scale)) {
             float k = (float)scale->valuedouble;

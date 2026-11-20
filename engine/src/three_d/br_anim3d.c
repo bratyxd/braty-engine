@@ -108,7 +108,7 @@ static void br_anim3d_skin(br_engine *e, br_gltf_instance *inst)
     }
     for (uint32_t k = 0; k < m->node_count; k++) {
         uint32_t i = inst->order[k];
-        br_mat4 local = br_node3d_local_matrix(e, inst->nodes[i]);
+        br_mat4 local = br_node3d_local_transform(e, inst->nodes[i]);
         int32_t p = m->nodes[i].parent;
         inst->model_world[i] = p >= 0 ? br_mat4_mul(inst->model_world[p], local) : local;
     }

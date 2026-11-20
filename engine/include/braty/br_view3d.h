@@ -55,7 +55,7 @@ void br_three_d_register(br_engine *e);
 /* ---- 3D node types */
 
 /* Type id of plain transform nodes (no data). Type id 0 is never valid. */
-#define BR_NODE3D_TYPE_GROUP 1u
+#define BR_NODE3D_TYPE_CONTAINER 1u
 
 typedef struct br_node3d_type_desc {
     const char *name;       /* "mesh3d", "light3d", ... (copied) */
@@ -79,12 +79,12 @@ uint32_t br_node3d_type_find(br_engine *e, const char *name);
 /* The descriptor of a 3D type, NULL if unknown. */
 const br_node3d_type_desc *br_node3d_type_get(br_engine *e, uint32_t type_id);
 
-/* ---- 3D nodes: lifetime and hierarchy */
+/* ---- 3D nodes: lifetime and hierarchy (same verbs and argument order as br_node_*) */
 
 /* Creates a detached 3D node (zeroed type data, then on_create). Zero handle on failure. */
 br_node3d br_node3d_create(br_engine *e, uint32_t type_id);
-/* Shortcut for br_node3d_create(e, BR_NODE3D_TYPE_GROUP). */
-br_node3d br_node3d_create_group(br_engine *e);
+/* Shortcut for br_node3d_create(e, BR_NODE3D_TYPE_CONTAINER) (scene JSON type "group"). */
+br_node3d br_node3d_create_container(br_engine *e);
 /* Per-type data, NULL if stale or of another type. Pointers die when that type's pool grows. */
 void *br_node3d_data(br_engine *e, br_node3d n, uint32_t type_id);
 /* Type id of a node, 0 if invalid. */
@@ -97,35 +97,41 @@ void br_node3d_destroy(br_engine *e, br_node3d n);
 uint32_t br_node3d_count(br_engine *e);
 /* Appends child to parent (detaching it first). False on invalid handles or cycles. */
 bool br_node3d_add_child(br_engine *e, br_node3d parent, br_node3d child);
+/* Inserts child at index (clamped to the child count). False on invalid handles or cycles. */
+bool br_node3d_add_child_at(br_engine *e, br_node3d parent, br_node3d child, uint32_t index);
 /* Detaches n from its parent (n stays alive). */
 void br_node3d_remove_from_parent(br_engine *e, br_node3d n);
+/* Moves n under new_parent keeping its world transform. False on invalid handles or cycles. */
+bool br_node3d_reparent(br_engine *e, br_node3d n, br_node3d new_parent);
 /* The parent (zero handle if none). */
 br_node3d br_node3d_parent(br_engine *e, br_node3d n);
-/* First child (zero handle if none). Iterate with br_node3d_next_sibling. */
-br_node3d br_node3d_first_child(br_engine *e, br_node3d n);
-/* Next sibling (zero handle at the end). */
-br_node3d br_node3d_next_sibling(br_engine *e, br_node3d n);
 /* Number of children. */
 uint32_t br_node3d_child_count(br_engine *e, br_node3d n);
+/* The i-th child (zero handle if out of range). 3D children are a linked list: O(1) when called
+ * with i = 0, 1, 2... for one parent, O(i) otherwise. */
+br_node3d br_node3d_child_at(br_engine *e, br_node3d n, uint32_t i);
 /* Sets the label (copied; NULL clears). */
 void br_node3d_set_label(br_engine *e, br_node3d n, const char *label);
 /* The label, "" if none. */
 const char *br_node3d_label(br_engine *e, br_node3d n);
-/* First descendant of root (root included) with this label, depth-first. Zero handle if none. */
-br_node3d br_node3d_find_by_label(br_engine *e, br_node3d root, const char *label);
+/* First child (or descendant when deep) with this label, depth-first; root itself is not
+ * matched. Zero handle if none. */
+br_node3d br_node3d_find_by_label(br_engine *e, br_node3d root, const char *label, bool deep);
 
-/* ---- 3D nodes: transform and flags */
+/* ---- 3D nodes: transform and flags (setters take what the getters return) */
 
 /* Sets the position in the parent's space. */
 void br_node3d_set_position(br_engine *e, br_node3d n, br_vec3 position);
 /* The position. */
 br_vec3 br_node3d_position(br_engine *e, br_node3d n);
-/* Sets the rotation (normalised here). */
+/* Sets the rotation (normalised here). 3D rotations are quaternions, 2D ones an angle. */
 void br_node3d_set_rotation(br_engine *e, br_node3d n, br_quat rotation);
 /* The rotation. */
 br_quat br_node3d_rotation(br_engine *e, br_node3d n);
 /* Sets the rotation from Euler angles in radians (X, then Y, then Z). */
-void br_node3d_set_euler(br_engine *e, br_node3d n, float x, float y, float z);
+void br_node3d_set_euler(br_engine *e, br_node3d n, br_vec3 radians);
+/* The rotation as Euler angles in radians (inverse of br_node3d_set_euler; y in [-pi/2, pi/2]). */
+br_vec3 br_node3d_euler(br_engine *e, br_node3d n);
 /* Sets the scale (default 1,1,1). */
 void br_node3d_set_scale(br_engine *e, br_node3d n, br_vec3 scale);
 /* The scale. */
@@ -133,19 +139,24 @@ br_vec3 br_node3d_scale(br_engine *e, br_node3d n);
 /* Rotates n so its -Z axis points at a world-space target (cameras, lights). */
 void br_node3d_look_at(br_engine *e, br_node3d n, br_vec3 target, br_vec3 up);
 /* Local matrix (translation * rotation * scale). */
-br_mat4 br_node3d_local_matrix(br_engine *e, br_node3d n);
-/* World matrix computed from the ancestors now (always current). */
-br_mat4 br_node3d_world_matrix(br_engine *e, br_node3d n);
+br_mat4 br_node3d_local_transform(br_engine *e, br_node3d n);
+/* Matrix from local to world space, computed from the ancestors now (always current). */
+br_mat4 br_node3d_world_transform(br_engine *e, br_node3d n);
 /* World-space position (translation of the world matrix). */
 br_vec3 br_node3d_world_position(br_engine *e, br_node3d n);
+/* Local point -> world point. */
+br_vec3 br_node3d_to_global(br_engine *e, br_node3d n, br_vec3 local_point);
+/* World point -> local point. */
+br_vec3 br_node3d_to_local(br_engine *e, br_node3d n, br_vec3 world_point);
 /* Hides/shows n and its subtree. */
 void br_node3d_set_visible(br_engine *e, br_node3d n, bool visible);
 /* True if visible. */
 bool br_node3d_visible(br_engine *e, br_node3d n);
-/* Layer bits (default 1). A view draws a node only if (layer & view culling mask) != 0. */
-void br_node3d_set_layer(br_engine *e, br_node3d n, uint32_t layer);
-/* The layer bits. */
-uint32_t br_node3d_layer(br_engine *e, br_node3d n);
+/* Layer bits (default 1). A view draws a node only if (bits & view culling mask) != 0; children
+ * are still visited. Unlike 2D, 0 does not inherit the parent's bits: each node has its own. */
+void br_node3d_set_layer_bits(br_engine *e, br_node3d n, uint32_t bits);
+/* The node's layer bits. */
+uint32_t br_node3d_layer_bits(br_engine *e, br_node3d n);
 /* Whether picking considers n (default true). */
 void br_node3d_set_pickable(br_engine *e, br_node3d n, bool pickable);
 /* True if pickable. */

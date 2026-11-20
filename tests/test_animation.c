@@ -224,7 +224,7 @@ static void test_cross_fade(br_engine *e)
     BR_CHECK(near_eq(br_animator_fade_progress(e, a, 0), 1.0f));
 
     /* 3D: a rotation fade is a slerp */
-    br_node3d n3 = br_node3d_create_group(e);
+    br_node3d n3 = br_node3d_create_container(e);
     br_anim_clip *r0 = br_anim_clip_create("r0", 0.0f, BR_ANIM_LOOP);
     br_anim_clip *r1 = br_anim_clip_create("r1", 0.0f, BR_ANIM_LOOP);
     float t[1] = { 0.0f };
@@ -628,7 +628,7 @@ static void test_properties(br_engine *e)
     BR_CHECK(br_anim_property_get_desc(e, id) != NULL && br_anim_property_count(e) > id);
 
     /* 3D: node, material, morph weights */
-    br_node3d g = br_node3d_create_group(e);
+    br_node3d g = br_node3d_create_container(e);
     br_material3d_desc md = br_material3d_default(BR_MATERIAL3D_PBR);
     br_node3d mesh = br_mesh3d_create(e, br_geometry3d_cube(e, br_vec3_make(1.0f, 1.0f, 1.0f)), br_material3d_create(e, &md));
     br_node3d_set_label(e, mesh, "box");
@@ -1189,7 +1189,7 @@ static void test_clock_and_layers(br_engine *e)
     br_node_destroy(e, n);
 
     /* additive quaternion layer: adds its rotation since its first key */
-    br_node3d g = br_node3d_create_group(e);
+    br_node3d g = br_node3d_create_container(e);
     br_anim_clip *base = br_anim_clip_create("base", 1.0f, BR_ANIM_LOOP);
     br_anim_clip *turn = br_anim_clip_create("turn", 1.0f, BR_ANIM_LOOP);
     float t1[1] = { 0.0f };
@@ -1249,7 +1249,7 @@ static void run_script(br_engine *e, float *out)
 static void test_shutdown_with_live_3d_nodes(void)
 {
     br_engine *e = br_engine_create("test_animation_shutdown", NULL);
-    br_node3d loose = br_node3d_create_group(e);
+    br_node3d loose = br_node3d_create_container(e);
     br_animator a = br_animator_add(e, br_anim_target_3d(loose));
     BR_CHECK(br_animator_valid(e, a));
     br_engine_destroy(e); /* must not crash */

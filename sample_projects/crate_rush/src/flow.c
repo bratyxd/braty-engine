@@ -191,7 +191,8 @@ static void cr_best_save(br_engine *e, cr_game *g)
 /* The model3d instance the .glb scene put under its 3D root. */
 static br_node3d cr_level_instance(br_engine *e, br_node3d root)
 {
-    for (br_node3d c = br_node3d_first_child(e, root); br_node3d_valid(e, c); c = br_node3d_next_sibling(e, c)) {
+    for (uint32_t c_i = 0; c_i < br_node3d_child_count(e, root); c_i++) {
+        br_node3d c = br_node3d_child_at(e, root, c_i);
         if (br_node3d_type_of(e, c) == br_model3d_type(e)) {
             return c;
         }
@@ -223,7 +224,7 @@ static void cr_build_colliders(br_engine *e, cr_game *g)
         if (c->trigger || !br_node3d_valid(e, n)) {
             continue;
         }
-        br_mat4 world = br_node3d_world_matrix(e, n);
+        br_mat4 world = br_node3d_world_transform(e, n);
         br_aabb box = br_aabb_empty();
         for (int k = 0; k < 8; k++) {
             br_vec3 corner = br_vec3_make(c->center.x + ((k & 1) ? 0.5f : -0.5f) * c->size.x,

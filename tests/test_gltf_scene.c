@@ -70,7 +70,7 @@ static void register_components(br_engine *e)
 
 static br_node3d find(br_engine *e, br_node3d root, const char *label)
 {
-    br_node3d n = br_node3d_find_by_label(e, root, label);
+    br_node3d n = br_node3d_find_by_label(e, root, label, true);
     BR_CHECK(br_node3d_valid(e, n));
     return n;
 }
@@ -79,7 +79,8 @@ static br_node3d find(br_engine *e, br_node3d root, const char *label)
 static uint32_t count_children(br_engine *e, br_node3d n, uint32_t type, uint32_t *instances)
 {
     uint32_t count = 0;
-    for (br_node3d c = br_node3d_first_child(e, n); br_node3d_valid(e, c); c = br_node3d_next_sibling(e, c)) {
+    for (uint32_t c_i = 0; c_i < br_node3d_child_count(e, n); c_i++) {
+        br_node3d c = br_node3d_child_at(e, n, c_i);
         if (br_node3d_type_of(e, c) == type) {
             count++;
             uint32_t k = 0;
@@ -95,7 +96,8 @@ static uint32_t count_children(br_engine *e, br_node3d n, uint32_t type, uint32_
 static uint32_t count_collapsed(br_engine *e, br_node3d n)
 {
     uint32_t count = 0;
-    for (br_node3d c = br_node3d_first_child(e, n); br_node3d_valid(e, c); c = br_node3d_next_sibling(e, c)) {
+    for (uint32_t c_i = 0; c_i < br_node3d_child_count(e, n); c_i++) {
+        br_node3d c = br_node3d_child_at(e, n, c_i);
         uint32_t k = 0;
         br_instance3d *inst = br_batched_mesh3d_instances(e, c, &k);
         for (uint32_t i = 0; inst != NULL && i < k; i++) {
@@ -110,7 +112,8 @@ static uint32_t count_collapsed(br_engine *e, br_node3d n)
 static uint32_t count_meshes(br_engine *e, br_node3d n)
 {
     uint32_t count = br_node3d_type_of(e, n) == br_mesh3d_type(e) ? 1u : 0u;
-    for (br_node3d c = br_node3d_first_child(e, n); br_node3d_valid(e, c); c = br_node3d_next_sibling(e, c)) {
+    for (uint32_t c_i = 0; c_i < br_node3d_child_count(e, n); c_i++) {
+        br_node3d c = br_node3d_child_at(e, n, c_i);
         count += count_meshes(e, c);
     }
     return count;
@@ -174,19 +177,19 @@ static void test_extras(br_engine *e, br_node3d inst)
     br_gltf_collider *ground = br_component3d_get(e, find(e, inst, "Ground-col"), col);
     BR_CHECK(ground != NULL && !ground->trigger && near_eq(ground->size.x, 24.0f) && near_eq(ground->size.y, 0.4f) &&
              near_eq(ground->center.y, -0.2f));
-    BR_CHECK(br_node3d_visible(e, br_node3d_first_child(e, find(e, inst, "Ground-col"))));
+    BR_CHECK(br_node3d_visible(e, br_node3d_child_at(e, find(e, inst, "Ground-col"), 0)));
     br_node3d gate = find(e, inst, "Gate-trigger");
     br_gltf_collider *trigger = br_component3d_get(e, gate, col);
     BR_CHECK(trigger != NULL && trigger->trigger && near_eq(trigger->size.y, 2.0f));
-    BR_CHECK(!br_node3d_visible(e, br_node3d_first_child(e, gate)));
+    BR_CHECK(!br_node3d_visible(e, br_node3d_child_at(e, gate, 0)));
     br_node3d helper = find(e, inst, "Helper-norender");
-    BR_CHECK(br_component3d_get(e, helper, col) == NULL && !br_node3d_visible(e, br_node3d_first_child(e, helper)));
+    BR_CHECK(br_component3d_get(e, helper, col) == NULL && !br_node3d_visible(e, br_node3d_child_at(e, helper, 0)));
     br_node3d layered = find(e, inst, "Layered");
-    br_node3d layered_mesh = br_node3d_first_child(e, layered);
-    BR_CHECK(br_node3d_layer(e, layered) == 2 && br_node3d_layer(e, layered_mesh) == 2);
+    br_node3d layered_mesh = br_node3d_child_at(e, layered, 0);
+    BR_CHECK(br_node3d_layer_bits(e, layered) == 2 && br_node3d_layer_bits(e, layered_mesh) == 2);
     BR_CHECK(br_mesh3d_get(e, layered_mesh) != NULL && !br_mesh3d_get(e, layered_mesh)->cast_shadows);
     BR_CHECK(!br_node3d_visible(e, find(e, inst, "Hidden")));
-    br_light3d *sun = br_light3d_get(e, br_node3d_first_child(e, find(e, inst, "Sun")));
+    br_light3d *sun = br_light3d_get(e, br_node3d_child_at(e, find(e, inst, "Sun"), 0));
     BR_CHECK(sun != NULL && sun->kind == BR_LIGHT3D_DIRECTIONAL && sun->cast_shadows);
 }
 
@@ -195,11 +198,11 @@ static void test_batching(br_engine *e, br_model *model, br_node3d inst)
     /* 8 trees x 2 primitives -> 2 batched meshes of 8 instances under the instance root */
     uint32_t instances = 0;
     BR_CHECK(count_children(e, inst, br_batched_mesh3d_type(e), &instances) == 2 && instances == 16);
-    BR_CHECK(br_node3d_valid(e, br_node3d_find_by_label(e, inst, "batch:TreeMesh")));
-    BR_CHECK(br_node3d_first_child(e, find(e, inst, "Tree_01")).index == 0); /* group stays, mesh moved */
+    BR_CHECK(br_node3d_valid(e, br_node3d_find_by_label(e, inst, "batch:TreeMesh", true)));
+    BR_CHECK(br_node3d_child_at(e, find(e, inst, "Tree_01"), 0).index == 0); /* group stays, mesh moved */
     /* nodes with extras / "batch": false / animated parents keep their own mesh3d */
-    BR_CHECK(br_mesh3d_get(e, br_node3d_first_child(e, find(e, inst, "Loose_01"))) != NULL);
-    BR_CHECK(br_mesh3d_get(e, br_node3d_first_child(e, find(e, inst, "Blades"))) != NULL);
+    BR_CHECK(br_mesh3d_get(e, br_node3d_child_at(e, find(e, inst, "Loose_01"), 0)) != NULL);
+    BR_CHECK(br_mesh3d_get(e, br_node3d_child_at(e, find(e, inst, "Blades"), 0)) != NULL);
     /* EXT_mesh_gpu_instancing: one batched mesh with the 6 rocks */
     instances = 0;
     BR_CHECK(count_children(e, find(e, inst, "Rocks"), br_batched_mesh3d_type(e), &instances) == 1 && instances == 6);
@@ -238,7 +241,7 @@ static void test_import(br_engine *e, br_model *model, br_node3d inst)
     BR_CHECK(br_model3d_camera(e, inst, "Nope").index == 0);
     /* lights */
     BR_CHECK(model->light_count == 2);
-    br_light3d *lamp = br_light3d_get(e, br_node3d_first_child(e, find(e, inst, "Lamp")));
+    br_light3d *lamp = br_light3d_get(e, br_node3d_child_at(e, find(e, inst, "Lamp"), 0));
     BR_CHECK(lamp != NULL && lamp->kind == BR_LIGHT3D_POINT && near_eq(lamp->range, 8.0f) && !lamp->cast_shadows);
     /* the scene extras' autoplay started "Spin" on the instance's animator */
     const char *playing = br_animator_current(e, br_animator_get(e, br_anim_target_3d(inst)), 0);
@@ -266,12 +269,12 @@ static void test_sub_assets(br_engine *e, br_model *model)
     uint32_t nodes3d = br_node3d_count(e);
     br_node3d mill = br_gltf_instantiate(e, "level.gltf#Windmill", (br_node3d){ 0, 0 }, NULL);
     BR_CHECK(br_model3d_model(e, mill) == model && br_assets_ref_count(e, "level.gltf") == refs + 1);
-    br_node3d root = br_node3d_first_child(e, mill);
-    BR_CHECK(SDL_strcmp(br_node3d_label(e, root), "Windmill") == 0 && br_node3d_next_sibling(e, root).index == 0);
+    br_node3d root = br_node3d_child_at(e, mill, 0);
+    BR_CHECK(SDL_strcmp(br_node3d_label(e, root), "Windmill") == 0 && br_node3d_child_count(e, mill) == 1);
     br_vec3 at = br_node3d_position(e, root);
     BR_CHECK(near_eq(at.x, 0.0f) && near_eq(at.z, 0.0f)); /* placed where the caller puts the instance */
-    BR_CHECK(br_node3d_valid(e, br_node3d_find_by_label(e, mill, "Blades")));
-    BR_CHECK(br_node3d_find_by_label(e, mill, "Tree_01").index == 0);
+    BR_CHECK(br_node3d_valid(e, br_node3d_find_by_label(e, mill, "Blades", true)));
+    BR_CHECK(br_node3d_find_by_label(e, mill, "Tree_01", true).index == 0);
     br_node3d_destroy(e, mill); /* outside a frame: freed now, with the reference it owned */
     BR_CHECK(br_assets_ref_count(e, "level.gltf") == refs && br_node3d_count(e) == nodes3d);
     /* a missing node name fails cleanly */
@@ -342,7 +345,7 @@ static void test_as_scene(br_engine *e)
     br_camera3d *cd = br_camera3d_get(e, cam);
     BR_CHECK(cd != NULL && near_eq(cd->fov_y, 0.75f) && cd->aspect == 0.0f);
     BR_CHECK(SDL_strcmp(br_node3d_label(e, br_node3d_parent(e, cam)), "MainCam") == 0);
-    BR_CHECK(br_node3d_find_by_label(e, root, "default_sun").index == 0); /* the file has lights */
+    BR_CHECK(br_node3d_find_by_label(e, root, "default_sun", true).index == 0); /* the file has lights */
     br_engine_step(e, 1.0f / 60.0f);
     br_scene_unload(e, s);
     br_engine_step(e, 1.0f / 60.0f); /* nodes flushed, then the group released */
@@ -363,9 +366,9 @@ static void test_as_scene(br_engine *e)
     view = br_node_find_by_label(e, br_scene_root_2d(e, s), "level", true);
     cd = br_camera3d_get(e, br_view3d_camera(e, view));
     BR_CHECK(cd != NULL && cd->projection == BR_PROJECTION_ORTHOGRAPHIC);
-    br_node3d inst = br_node3d_first_child(e, br_scene_root_3d(e, s));
-    while (br_node3d_valid(e, inst) && br_model3d_model(e, inst) == NULL) {
-        inst = br_node3d_next_sibling(e, inst);
+    br_node3d inst = br_node3d_child_at(e, br_scene_root_3d(e, s), 0);
+    for (uint32_t i = 1; br_node3d_valid(e, inst) && br_model3d_model(e, inst) == NULL; i++) {
+        inst = br_node3d_child_at(e, br_scene_root_3d(e, s), i);
     }
     BR_CHECK(count_children(e, inst, br_batched_mesh3d_type(e), NULL) == 0);
     BR_CHECK(br_animator_get(e, br_anim_target_3d(inst)).generation == 0); /* nothing autoplayed */
@@ -383,9 +386,9 @@ static void test_as_prefab(br_engine *e)
     for (int i = 0; i < 3; i++) {
         views[i] = br_prefab_instantiate_at(e, "level.gltf#Coin_02", br_stage_root(e), br_vec2_make(100.0f * i, 0.0f));
         BR_CHECK(br_node_type_of(e, views[i]) == br_view3d_type(e));
-        br_node3d inst = br_node3d_first_child(e, br_view3d_root(e, views[i]));
-        while (br_node3d_valid(e, inst) && br_model3d_model(e, inst) == NULL) {
-            inst = br_node3d_next_sibling(e, inst);
+        br_node3d inst = br_node3d_child_at(e, br_view3d_root(e, views[i]), 0);
+        for (uint32_t k = 1; br_node3d_valid(e, inst) && br_model3d_model(e, inst) == NULL; k++) {
+            inst = br_node3d_child_at(e, br_view3d_root(e, views[i]), k);
         }
         br_model *m = br_model3d_model(e, inst);
         BR_CHECK(m != NULL && (first == NULL || m == first)); /* one parsed model for every instance */
@@ -393,11 +396,11 @@ static void test_as_prefab(br_engine *e)
         br_node3d coin = find(e, inst, "Coin_02");
         BR_CHECK(br_component3d_get(e, coin, g_spin) != NULL);
         /* no camera in a coin: framed; no light: a default sun */
-        BR_CHECK(br_node3d_valid(e, br_node3d_find_by_label(e, br_view3d_root(e, views[i]), "default_sun")));
+        BR_CHECK(br_node3d_valid(e, br_node3d_find_by_label(e, br_view3d_root(e, views[i]), "default_sun", true)));
     }
     BR_CHECK(br_assets_ref_count(e, "level.gltf") == 3);
     /* 3D parent: br_gltf_instantiate shares the model too */
-    br_node3d holder = br_node3d_create_group(e);
+    br_node3d holder = br_node3d_create_container(e);
     br_node3d a = br_gltf_instantiate(e, "level.gltf#Tree_02", holder, NULL);
     br_node3d b = br_gltf_instantiate(e, "level.gltf#Tree_05", holder, NULL);
     BR_CHECK(br_model3d_model(e, a) == first && br_model3d_model(e, b) == first);

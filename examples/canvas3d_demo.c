@@ -144,7 +144,7 @@ static br_node3d make_panel(br_engine *e, demo_state *s, const char *label, br_v
     br_text_style st = sdf_style(e, 44.0f, 0x1D3557);
     add_text(e, root, label, &st, 100.0f, 100.0f);
     br_node3d_set_position(e, c, pos);
-    br_node3d_set_euler(e, c, 0.0f, yaw, 0.0f);
+    br_node3d_set_euler(e, c, br_vec3_make(0.0f, yaw, 0.0f));
     br_node3d_add_child(e, s->root, c);
     return c;
 }
@@ -248,7 +248,7 @@ static void build_scene(br_engine *e, demo_state *s)
     br_node_add_child(e, br_canvas3d_root(e, far_sign), sign_bg);
     add_text(e, br_canvas3d_root(e, far_sign), "SDF text stays sharp", &big, 450.0f, 60.0f);
     br_node3d_set_position(e, far_sign, br_vec3_make(4.4f, 1.3f, -2.6f));
-    br_node3d_set_euler(e, far_sign, 0.0f, -72.0f * BR_DEG_TO_RAD, 0.0f);
+    br_node3d_set_euler(e, far_sign, br_vec3_make(0.0f, -72.0f * BR_DEG_TO_RAD, 0.0f));
     br_node3d_add_child(e, s->root, far_sign);
 
     br_text_style small = sdf_style(e, 20.0f, 0xFFFFFF);
@@ -256,7 +256,7 @@ static void build_scene(br_engine *e, demo_state *s)
     small.stroke_color = hex(0x1D3557);
     br_node3d near_text = br_text3d_create(e, "close-up: 20 px SDF text, 400 px per unit", &small, 400.0f);
     br_node3d_set_position(e, near_text, br_vec3_make(0.55f, 1.95f, 6.2f));
-    br_node3d_set_euler(e, near_text, -10.0f * BR_DEG_TO_RAD, 0.0f, 0.0f);
+    br_node3d_set_euler(e, near_text, br_vec3_make(-10.0f * BR_DEG_TO_RAD, 0.0f, 0.0f));
     br_node3d_add_child(e, s->root, near_text);
 
     /* trees (y-axis billboards) around a transparent glass box: sorted back to front together */

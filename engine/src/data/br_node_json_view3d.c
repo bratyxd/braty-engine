@@ -294,7 +294,7 @@ static void br_json3d_transform(br_engine *e, br_node3d n, const cJSON *json)
         br_node3d_set_position(e, n, v);
     }
     if (br_data_get_vec3(e, json, "rotation", &v)) {
-        br_node3d_set_euler(e, n, v.x * BR_DEG_TO_RAD, v.y * BR_DEG_TO_RAD, v.z * BR_DEG_TO_RAD);
+        br_node3d_set_euler(e, n, br_vec3_make(v.x * BR_DEG_TO_RAD, v.y * BR_DEG_TO_RAD, v.z * BR_DEG_TO_RAD));
     }
     const cJSON *scale = cJSON_GetObjectItemCaseSensitive(json, "scale");
     if (cJSON_IsNumber(scale)) {
@@ -318,7 +318,8 @@ static bool br_json3d_has_light(br_engine *e, br_node3d n)
     if (br_light3d_get(e, n) != NULL) {
         return true;
     }
-    for (br_node3d c = br_node3d_first_child(e, n); br_node3d_valid(e, c); c = br_node3d_next_sibling(e, c)) {
+    for (uint32_t c_i = 0; c_i < br_node3d_child_count(e, n); c_i++) {
+        br_node3d c = br_node3d_child_at(e, n, c_i);
         if (br_json3d_has_light(e, c)) {
             return true;
         }
@@ -375,7 +376,7 @@ static void br_json3d_node(br_engine *e, br_json3d_ctx *ctx, br_node3d parent, c
     } else if (type == BR_JSON3D_GLTF) {
         n = br_json3d_gltf(e, json);
     } else {
-        n = br_node3d_create_group(e);
+        n = br_node3d_create_container(e);
     }
     if (!br_node3d_valid(e, n)) {
         return;
@@ -503,13 +504,15 @@ static bool br_data_view3d_from_json(br_engine *e, br_node n, void *data, const 
     }
     /* rebuild the 3D content (hot reload applies the JSON again): keep only the camera */
     br_node3d root = br_view3d_root(e, n);
-    br_node3d child = br_node3d_first_child(e, root);
+    uint32_t keep = 0;
+    br_node3d child = br_node3d_child_at(e, root, 0);
     while (br_node3d_valid(e, child)) {
-        br_node3d next = br_node3d_next_sibling(e, child);
         if (child.index != camera.index || child.generation != camera.generation) {
-            br_node3d_destroy(e, child);
+            br_node3d_destroy(e, child); /* unlinks it: the next one moves to this index */
+        } else {
+            keep++;
         }
-        child = next;
+        child = br_node3d_child_at(e, root, keep);
     }
     br_json3d_ctx ctx;
     ctx.view = n;

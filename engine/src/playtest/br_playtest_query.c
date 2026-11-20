@@ -394,7 +394,7 @@ static bool br_pt_find_node3d(br_engine *e, const char *target, const char *path
             continue;
         }
         view_found = true;
-        br_node3d n = br_node3d_find_by_label(e, br_view3d_root(e, v), label);
+        br_node3d n = br_node3d_find_by_label(e, br_view3d_root(e, v), label, true);
         if (br_node3d_valid(e, n)) {
             *view = v;
             *node = n;
@@ -535,7 +535,7 @@ static bool br_pt_set3d(br_engine *e, const br_pt_path *p, const char *path, con
     } else if (name[0] == 's') {
         br_node3d_set_scale(e, n, br_vec3_make(f[0], f[1], f[2]));
     } else if (name[0] == 'e') {
-        br_node3d_set_euler(e, n, f[0], f[1], f[2]);
+        br_node3d_set_euler(e, n, br_vec3_make(f[0], f[1], f[2]));
     } else {
         br_quat q = { f[0], f[1], f[2], f[3] };
         br_node3d_set_rotation(e, n, q);
@@ -556,7 +556,8 @@ static cJSON *br_pt_dump3d(br_engine *e, br_node3d n)
     cJSON_AddBoolToObject(out, "visible", br_node3d_visible(e, n));
     if (br_node3d_child_count(e, n) > 0) {
         cJSON *children = cJSON_AddArrayToObject(out, "children");
-        for (br_node3d c = br_node3d_first_child(e, n); br_node3d_valid(e, c); c = br_node3d_next_sibling(e, c)) {
+        for (uint32_t c_i = 0; c_i < br_node3d_child_count(e, n); c_i++) {
+            br_node3d c = br_node3d_child_at(e, n, c_i);
             cJSON_AddItemToArray(children, br_pt_dump3d(e, c));
         }
     }

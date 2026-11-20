@@ -40,6 +40,16 @@ typedef struct br_node3d_table {
     uint32_t *layer;
     br_array  free_slots;     /* uint32_t: released indices */
     br_array  pending;        /* uint32_t: destroyed this frame, freed at the next flush */
+    br_array  walk;           /* uint32_t: scratch stack of br_node3d_find_by_label */
+    /* br_node3d_child_at cursor: the last (parent, i) -> child answer, valid while epoch matches */
+    uint32_t  epoch;          /* bumped by every link / unlink */
+    uint32_t  cursor_epoch;
+    uint32_t  cursor_parent;
+    uint32_t  cursor_index;
+    uint32_t  cursor_child;
+    uint32_t  count_epoch;    /* br_node3d_child_count answer for count_parent, same rule */
+    uint32_t  count_parent;
+    uint32_t  count_value;
 } br_node3d_table;
 
 /* One registered 3D node type with its dense data pool. */

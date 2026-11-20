@@ -435,7 +435,7 @@ static void br_canvas3d_collect(br_engine *e, br_node3d n, const void *data, br_
         s->cmds_frame = frame;
     }
     br_mat4 node_world = br_render3d_world(ctx, n);
-    br_mat4 camera = br_node3d_world_matrix(e, br_view3d_camera(e, br_render3d_view(ctx)));
+    br_mat4 camera = br_node3d_world_transform(e, br_view3d_camera(e, br_render3d_view(ctx)));
     br_canvas3d_draw *d = br_frame_alloc(e, sizeof(br_canvas3d_draw));
     if (d == NULL) {
         return;
@@ -482,7 +482,7 @@ static void br_canvas3d_collect(br_engine *e, br_node3d n, const void *data, br_
 /* The plane's world matrix: as last drawn (billboards), or the node's before the first draw. */
 static br_mat4 br_canvas3d_plane_world(br_engine *e, const br_canvas3d_rec *c)
 {
-    return c->has_world ? c->world : br_node3d_world_matrix(e, c->node);
+    return c->has_world ? c->world : br_node3d_world_transform(e, c->node);
 }
 
 static bool br_canvas3d_pick(br_engine *e, br_node3d n, const void *data, br_ray3d local_ray, br_pick3d_hit *hit)
@@ -491,7 +491,7 @@ static bool br_canvas3d_pick(br_engine *e, br_node3d n, const void *data, br_ray
     if (c == NULL) {
         return false;
     }
-    br_mat4 node_world = br_node3d_world_matrix(e, n);
+    br_mat4 node_world = br_node3d_world_transform(e, n);
     br_mat4 plane_world = c->has_world ? c->world : node_world; /* = br_canvas3d_plane_world */
     br_ray3d world_ray;
     world_ray.origin = br_mat4_transform_point(node_world, local_ray.origin);

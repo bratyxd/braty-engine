@@ -233,10 +233,10 @@ static void test_parse(br_engine *e)
     BR_CHECK(br_animator_get(e, br_anim_target_3d(inst)).generation == 0); /* animators come on demand */
     br_node3d tri = br_model3d_node(e, inst, 1);
     BR_CHECK(SDL_strcmp(br_node3d_label(e, tri), "Tri") == 0);
-    BR_CHECK(br_node3d_find_by_label(e, inst, "Turned").index == br_model3d_node(e, inst, 2).index);
-    BR_CHECK(br_mesh3d_get(e, br_node3d_first_child(e, tri)) != NULL);
-    BR_CHECK(br_camera3d_get(e, br_node3d_first_child(e, br_model3d_node(e, inst, 3))) != NULL);
-    BR_CHECK(br_light3d_get(e, br_node3d_first_child(e, br_model3d_node(e, inst, 4))) != NULL);
+    BR_CHECK(br_node3d_find_by_label(e, inst, "Turned", true).index == br_model3d_node(e, inst, 2).index);
+    BR_CHECK(br_mesh3d_get(e, br_node3d_child_at(e, tri, 0)) != NULL);
+    BR_CHECK(br_camera3d_get(e, br_node3d_child_at(e, br_model3d_node(e, inst, 3), 0)) != NULL);
+    BR_CHECK(br_light3d_get(e, br_node3d_child_at(e, br_model3d_node(e, inst, 4), 0)) != NULL);
     br_animator a = br_animator_add(e, br_anim_target_3d(inst));
     BR_CHECK(br_animator_add_model_clips(e, a, m) == m->clip_count);
     BR_CHECK(!br_animator_play(e, a, "Run"));
@@ -335,11 +335,11 @@ static void test_detached_skin(br_engine *e)
         return;
     }
     br_node3d inst = br_model_instantiate(e, m);
-    br_node3d body = br_node3d_find_by_label(e, inst, "Body");
-    br_node3d mesh = br_node3d_first_child(e, body);
+    br_node3d body = br_node3d_find_by_label(e, inst, "Body", true);
+    br_node3d mesh = br_node3d_child_at(e, body, 0);
     br_mesh3d *md = br_mesh3d_get(e, mesh);
     BR_CHECK(md != NULL && md->joint_matrices != NULL && md->joint_count == 1);
-    br_node3d keep = br_node3d_create_group(e);
+    br_node3d keep = br_node3d_create_container(e);
     br_node3d_add_child(e, keep, mesh); /* the mesh leaves the instance */
     br_node3d_destroy(e, inst);
     md = br_mesh3d_get(e, mesh);
@@ -400,10 +400,10 @@ static void test_scene_json(br_engine *e)
     br_camera3d *cam = br_camera3d_get(e, br_view3d_camera(e, view));
     BR_CHECK(cam != NULL && near_eq(cam->fov_y, 40.0f * BR_DEG_TO_RAD));
     br_node3d root = br_view3d_root(e, view);
-    br_light3d *lamp = br_light3d_get(e, br_node3d_find_by_label(e, root, "lamp"));
+    br_light3d *lamp = br_light3d_get(e, br_node3d_find_by_label(e, root, "lamp", true));
     BR_CHECK(lamp != NULL && lamp->kind == BR_LIGHT3D_SPOT && near_eq(lamp->outer_angle, 30.0f * BR_DEG_TO_RAD));
-    BR_CHECK(br_mesh3d_get(e, br_node3d_find_by_label(e, root, "ball")) != NULL);
-    br_node3d tiny = br_node3d_find_by_label(e, root, "tiny");
+    BR_CHECK(br_mesh3d_get(e, br_node3d_find_by_label(e, root, "ball", true)) != NULL);
+    br_node3d tiny = br_node3d_find_by_label(e, root, "tiny", true);
     BR_CHECK(br_model3d_model(e, tiny) != NULL);
     BR_CHECK(vec3_eq(br_node3d_scale(e, tiny), br_vec3_make(2.0f, 2.0f, 2.0f)));
     const char *playing = br_animator_current(e, br_animator_get(e, br_anim_target_3d(tiny)), 0);
@@ -414,7 +414,7 @@ static void test_scene_json(br_engine *e)
     errors = br_scene_file_error_count(e);
     br_node view2 = br_scene_file_load_json(e, bad, SDL_strlen(bad), "bad.scene.json", br_stage_root(e));
     BR_CHECK(br_scene_file_error_count(e) == errors + 2);
-    BR_CHECK(br_light3d_get(e, br_node3d_find_by_label(e, br_view3d_root(e, view2), "ok")) != NULL);
+    BR_CHECK(br_light3d_get(e, br_node3d_find_by_label(e, br_view3d_root(e, view2), "ok", true)) != NULL);
     br_node_destroy(e, view2);
     br_node_destroy(e, view);
 }

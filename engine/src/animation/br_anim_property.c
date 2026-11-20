@@ -95,13 +95,7 @@ static br_anim_target br_anim_child(br_engine *e, br_anim_target cur, const char
         br_node3d g = br_model3d_node(e, n, (uint32_t)SDL_atoi(seg + 1));
         return br_node3d_valid(e, g) ? br_anim_target_3d(g) : none;
     }
-    for (br_node3d c = br_node3d_first_child(e, n); br_node3d_valid(e, c); c = br_node3d_next_sibling(e, c)) {
-        const char *label = br_node3d_label(e, c);
-        if (label != NULL && SDL_strcmp(label, seg) == 0) {
-            return br_anim_target_3d(c);
-        }
-    }
-    br_node3d deep = br_node3d_find_by_label(e, n, seg);
+    br_node3d deep = br_node3d_find_by_label(e, n, seg, true); /* children first, then deeper */
     return br_node3d_valid(e, deep) ? br_anim_target_3d(deep) : none;
 }
 
@@ -540,7 +534,8 @@ static void set3_visible(br_engine *e, br_anim_target t, const br_anim_value *v)
 static br_mesh3d *br_anim_mesh(br_engine *e, br_node3d n)
 {
     br_mesh3d *m = br_mesh3d_get(e, n);
-    for (br_node3d c = br_node3d_first_child(e, n); m == NULL && br_node3d_valid(e, c); c = br_node3d_next_sibling(e, c)) {
+    for (uint32_t c_i = 0; m == NULL && c_i < br_node3d_child_count(e, n); c_i++) {
+        br_node3d c = br_node3d_child_at(e, n, c_i);
         m = br_mesh3d_get(e, c);
     }
     return m;
@@ -651,7 +646,8 @@ static void set_morph(br_engine *e, br_anim_target t, const br_anim_value *v)
         own->morph_weight_count = count;
         return;
     }
-    for (br_node3d c = br_node3d_first_child(e, n); br_node3d_valid(e, c); c = br_node3d_next_sibling(e, c)) {
+    for (uint32_t c_i = 0; c_i < br_node3d_child_count(e, n); c_i++) {
+        br_node3d c = br_node3d_child_at(e, n, c_i);
         br_mesh3d *m = br_mesh3d_get(e, c);
         if (m != NULL) {
             SDL_memcpy(m->morph_weights, v->f, sizeof(float) * count);

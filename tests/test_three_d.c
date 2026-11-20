@@ -149,13 +149,13 @@ static void destroy_in_system(br_engine *e, float dt, void *user)
 
 static void test_nodes(br_engine *e)
 {
-    br_node3d parent = br_node3d_create_group(e);
-    br_node3d child = br_node3d_create_group(e);
+    br_node3d parent = br_node3d_create_container(e);
+    br_node3d child = br_node3d_create_container(e);
     br_node3d_set_label(e, child, "child");
     BR_CHECK(br_node3d_add_child(e, parent, child));
     BR_CHECK(!br_node3d_add_child(e, child, parent)); /* cycle */
     BR_CHECK(br_node3d_child_count(e, parent) == 1);
-    BR_CHECK(br_node3d_find_by_label(e, parent, "child").index == child.index);
+    BR_CHECK(br_node3d_find_by_label(e, parent, "child", true).index == child.index);
 
     /* parent at (1,0,0) turned 90 degrees about +Y; child 1 unit down its -Z */
     br_node3d_set_position(e, parent, br_vec3_make(1.0f, 0.0f, 0.0f));
@@ -167,10 +167,10 @@ static void test_nodes(br_engine *e)
 
     /* look_at points -Z at the target, also under a rotated parent */
     br_node3d_look_at(e, child, br_vec3_make(-1.0f, 0.0f, -5.0f), br_vec3_make(0.0f, 1.0f, 0.0f));
-    br_mat4 w = br_node3d_world_matrix(e, child);
+    br_mat4 w = br_node3d_world_transform(e, child);
     BR_CHECK(vec3_eq(br_vec3_normalize(br_vec3_make(-w.m[8], -w.m[9], -w.m[10])), br_vec3_make(0.0f, 0.0f, -1.0f)));
     br_node3d_look_at(e, child, br_vec3_make(-1.0f, 10.0f, 0.0f), br_vec3_make(0.0f, 1.0f, 0.0f)); /* straight up */
-    w = br_node3d_world_matrix(e, child);
+    w = br_node3d_world_transform(e, child);
     BR_CHECK(vec3_eq(br_vec3_normalize(br_vec3_make(-w.m[8], -w.m[9], -w.m[10])), br_vec3_make(0.0f, 1.0f, 0.0f)));
 
     /* destroy outside a frame: immediate; subtree goes too; stale handles ignored */
@@ -180,7 +180,7 @@ static void test_nodes(br_engine *e)
     BR_CHECK(!br_node3d_valid(e, parent) && !br_node3d_valid(e, child));
     br_node3d_set_position(e, child, br_vec3_make(9.0f, 9.0f, 9.0f)); /* ignored */
     BR_CHECK(vec3_eq(br_node3d_position(e, child), br_vec3_make(0.0f, 0.0f, 0.0f)));
-    br_node3d reuse = br_node3d_create_group(e); /* may reuse the slot: the old handle stays stale */
+    br_node3d reuse = br_node3d_create_container(e); /* may reuse the slot: the old handle stays stale */
     BR_CHECK(br_node3d_valid(e, reuse));
     BR_CHECK(!br_node3d_valid(e, parent) && !br_node3d_valid(e, child));
     br_node3d_destroy(e, reuse);
@@ -198,7 +198,7 @@ static void test_nodes(br_engine *e)
     g_victim = br_node3d_create(e, type);
     br_node3d keep = br_node3d_create(e, type); /* its data moves when the victim's is removed */
     *(int *)br_node3d_data(e, keep, type) = 77;
-    BR_CHECK(br_node3d_data(e, keep, BR_NODE3D_TYPE_GROUP) == NULL); /* wrong type */
+    BR_CHECK(br_node3d_data(e, keep, BR_NODE3D_TYPE_CONTAINER) == NULL); /* wrong type */
     br_system_add(e, "test.destroy3d", BR_PHASE_UPDATE, 0, destroy_in_system, NULL);
     br_engine_step(e, 1.0f / 60.0f);
     BR_CHECK(g_destroyed == 0);
@@ -236,7 +236,7 @@ static void test_nested_destroy(br_engine *e)
     br_node3d a = br_node3d_create(e, type);
     br_node3d keep1 = br_node3d_create(e, type);
     br_node3d keep2 = br_node3d_create(e, type);
-    br_node3d b = br_node3d_create_group(e);
+    br_node3d b = br_node3d_create_container(e);
     ((linked3d *)br_node3d_data(e, a, type))->other = b;
     ((linked3d *)br_node3d_data(e, keep1, type))->tag = 2;
     ((linked3d *)br_node3d_data(e, keep2, type))->tag = 3;
@@ -247,9 +247,9 @@ static void test_nested_destroy(br_engine *e)
     BR_CHECK(!br_node3d_valid(e, b));
     BR_CHECK(((linked3d *)br_node3d_data(e, keep1, type))->tag == 2);
     BR_CHECK(((linked3d *)br_node3d_data(e, keep2, type))->tag == 3);
-    br_node3d n1 = br_node3d_create_group(e);
-    br_node3d n2 = br_node3d_create_group(e);
-    br_node3d n3 = br_node3d_create_group(e);
+    br_node3d n1 = br_node3d_create_container(e);
+    br_node3d n2 = br_node3d_create_container(e);
+    br_node3d n3 = br_node3d_create_container(e);
     BR_CHECK(n1.index != n2.index && n2.index != n3.index && n1.index != n3.index);
     BR_CHECK(br_node3d_valid(e, n1) && br_node3d_valid(e, n2) && br_node3d_valid(e, n3));
     br_node3d_destroy(e, n1);
@@ -366,7 +366,7 @@ static void test_picking(br_engine *e)
     br_material3d_desc md = br_material3d_default(BR_MATERIAL3D_PBR);
     mat = br_material3d_create(e, &md);
     BR_CHECK(br_material3d_valid(e, mat));
-    br_node3d group = br_node3d_create_group(e);
+    br_node3d group = br_node3d_create_container(e);
     br_node3d_add_child(e, root, group);
     br_node3d box = br_mesh3d_create(e, br_geometry3d_cube(e, br_vec3_make(2.0f, 2.0f, 2.0f)), mat);
     br_node3d_add_child(e, group, box);

@@ -290,7 +290,7 @@ static void test_engine_3d(void)
 {
     br_engine *e = br_engine_create("test_camera_3d", NULL);
     br_camera_set_headless_screen(e, 1280.0f, 720.0f);
-    br_node3d scene = br_node3d_create_group(e);
+    br_node3d scene = br_node3d_create_container(e);
     br_camera c;
     SDL_zero(c);
     c.projection = BR_CAMERA_PERSPECTIVE;

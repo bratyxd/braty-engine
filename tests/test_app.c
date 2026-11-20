@@ -325,7 +325,7 @@ static bool teardown_init(br_engine *e)
     br_node_on_destroy(e, teardown_listener_2d, &s_teardown);
     br_node3d_on_destroy(e, teardown_listener_3d, &s_teardown);
     br_node_add_child(e, br_stage_root(e), br_node_create_container(e));
-    br_node3d_create_group(e);
+    br_node3d_create_container(e);
     return true;
 }
 

@@ -129,7 +129,9 @@ static bool br_gltf_read_field(br_engine *e, uint8_t *base, const br_field_desc 
                 br_data_errorf(e, "expected a node name (string) or null");
                 return false;
             }
-            target = br_node3d_find_by_label(e, search_root, value->valuestring);
+            target = br_str_equal(br_node3d_label(e, search_root), value->valuestring)
+                         ? search_root
+                         : br_node3d_find_by_label(e, search_root, value->valuestring, true);
             if (!br_node3d_valid(e, target)) {
                 br_data_errorf(e, "no node named '%s'", value->valuestring);
                 return false;
@@ -246,12 +248,13 @@ static bool br_gltf_ends_with(const char *s, const char *suffix)
 static bool br_gltf_is_content(br_engine *e, br_node3d c)
 {
     uint32_t type = br_node3d_type_of(e, c);
-    return type != BR_NODE3D_TYPE_GROUP && type != br_model3d_type(e);
+    return type != BR_NODE3D_TYPE_CONTAINER && type != br_model3d_type(e);
 }
 
 static void br_gltf_hide_meshes(br_engine *e, br_node3d g)
 {
-    for (br_node3d c = br_node3d_first_child(e, g); br_node3d_valid(e, c); c = br_node3d_next_sibling(e, c)) {
+    for (uint32_t c_i = 0; c_i < br_node3d_child_count(e, g); c_i++) {
+        br_node3d c = br_node3d_child_at(e, g, c_i);
         uint32_t type = br_node3d_type_of(e, c);
         if (type == br_mesh3d_type(e) || type == br_batched_mesh3d_type(e)) {
             br_node3d_set_visible(e, c, false);
@@ -262,17 +265,19 @@ static void br_gltf_hide_meshes(br_engine *e, br_node3d g)
 
 static void br_gltf_set_layer(br_engine *e, br_node3d g, uint32_t layer)
 {
-    br_node3d_set_layer(e, g, layer);
-    for (br_node3d c = br_node3d_first_child(e, g); br_node3d_valid(e, c); c = br_node3d_next_sibling(e, c)) {
+    br_node3d_set_layer_bits(e, g, layer);
+    for (uint32_t c_i = 0; c_i < br_node3d_child_count(e, g); c_i++) {
+        br_node3d c = br_node3d_child_at(e, g, c_i);
         if (br_gltf_is_content(e, c)) {
-            br_node3d_set_layer(e, c, layer);
+            br_node3d_set_layer_bits(e, c, layer);
         }
     }
 }
 
 static void br_gltf_set_shadows(br_engine *e, br_node3d g, bool cast)
 {
-    for (br_node3d c = br_node3d_first_child(e, g); br_node3d_valid(e, c); c = br_node3d_next_sibling(e, c)) {
+    for (uint32_t c_i = 0; c_i < br_node3d_child_count(e, g); c_i++) {
+        br_node3d c = br_node3d_child_at(e, g, c_i);
         br_mesh3d *mesh = br_mesh3d_get(e, c);
         br_light3d *light = br_light3d_get(e, c);
         if (mesh != NULL) {

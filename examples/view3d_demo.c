@@ -410,7 +410,7 @@ static void setup_scene(br_engine *e, demo_state *s)
         br_node3d_on(e, s->shapes[i], BR_EVENT_CLICK, on_shape_click, s);
     }
     s->torus = s->shapes[4];
-    br_node3d_set_euler(e, s->torus, 1.2f, 0.0f, 0.0f);
+    br_node3d_set_euler(e, s->torus, br_vec3_make(1.2f, 0.0f, 0.0f));
 
     /* transparent glass box with an opaque ball inside */
     br_material3d_desc glass = br_material3d_default(BR_MATERIAL3D_PBR);
@@ -460,7 +460,7 @@ static void setup_scene(br_engine *e, demo_state *s)
     pd.textures[BR_MATERIAL3D_EMISSIVE].texture = s->panel_texture;
     pd.emissive = br_color_make(0.4f, 0.4f, 0.4f, 1.0f);
     br_node3d panel = add_mesh(e, s, br_geometry3d_plane(e, 3.2f, 2.0f, 1, 1), br_material3d_create(e, &pd), 10.5f, 1.6f, -7.0f);
-    br_node3d_set_euler(e, panel, BR_PI * 0.5f, -0.5f, 0.0f); /* stand it up, turn it towards the camera */
+    br_node3d_set_euler(e, panel, br_vec3_make(BR_PI * 0.5f, -0.5f, 0.0f)); /* stand it up, turn it towards the camera */
 
     /* emissive ring: bright enough to bloom */
     br_material3d_desc rd = br_material3d_default(BR_MATERIAL3D_PBR);
@@ -468,7 +468,7 @@ static void setup_scene(br_engine *e, demo_state *s)
     rd.emissive = lin(0xFF7B00);
     rd.emissive_strength = 8.0f;
     s->ring = add_mesh(e, s, br_geometry3d_torus(e, 1.3f, 0.12f, 48, 12), br_material3d_create(e, &rd), 0.0f, 5.2f, -9.0f);
-    br_node3d_set_euler(e, s->ring, BR_PI * 0.5f, 0.0f, 0.0f);
+    br_node3d_set_euler(e, s->ring, br_vec3_make(BR_PI * 0.5f, 0.0f, 0.0f));
 
     /* instanced field: one batched mesh, N cubes in a ring around the scene */
     br_material3d field_material = make_material(e, BR_MATERIAL3D_PBR, 0xFFFFFF, 0.0f, 0.6f);
@@ -584,7 +584,7 @@ static void demo_update(br_engine *e, float dt, void *user)
     s->joints[0] = br_mat4_rotation(br_vec3_make(0.0f, 0.0f, 1.0f), bend * 0.15f);
     /* morph weight */
     br_mesh3d_get(e, s->morphing)->morph_weights[0] = 0.5f + 0.5f * SDL_sinf(t * 2.0f);
-    br_node3d_set_euler(e, s->ring, BR_PI * 0.5f, 0.0f, t * 0.5f);
+    br_node3d_set_euler(e, s->ring, br_vec3_make(BR_PI * 0.5f, 0.0f, t * 0.5f));
 
     /* 2D content of the render texture used by the panel material */
     br_node_set_rotation(e, s->panel_star, t * 1.5f);

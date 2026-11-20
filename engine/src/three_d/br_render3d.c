@@ -183,7 +183,7 @@ void br_view3d_compute_camera(br_engine *e, br_view3d_state *v)
     if (cam == NULL) {
         cam = &fallback;
     }
-    br_mat4 world = br_node3d_world_matrix(e, v->camera);
+    br_mat4 world = br_node3d_world_transform(e, v->camera);
     v->view = br_mat4_invert(world, NULL);
     float aspect = v->height > 0.0f ? v->width / v->height : 1.0f;
     v->projection = br_camera3d_projection(cam, aspect);

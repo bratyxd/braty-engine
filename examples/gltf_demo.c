@@ -101,7 +101,7 @@ static void on_fox_loaded(br_engine *e, const char *path, void *asset, void *use
     br_node3d_add_child(e, s->root, s->fox);
     br_node3d_set_scale(e, s->fox, br_vec3_make(0.025f, 0.025f, 0.025f));
     br_node3d_set_position(e, s->fox, br_vec3_make(g_row_x[6], 0.0f, 2.6f));
-    br_node3d_set_euler(e, s->fox, 0.0f, 0.9f, 0.0f);
+    br_node3d_set_euler(e, s->fox, br_vec3_make(0.0f, 0.9f, 0.0f));
     s->fox_anim = br_animator_add(e, br_anim_target_3d(s->fox));  /* plays the model's clips */
     br_animator_add_model_clips(e, s->fox_anim, fox);
     br_animator_play(e, s->fox_anim, "Survey");
