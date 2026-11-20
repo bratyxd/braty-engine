@@ -11,7 +11,10 @@ float4 main(CanvasVaryings input) : SV_Target0
     float4 texel = u_texture.Sample(u_sampler, input.uv);
     float value = texel.a;
     if (u_mode.x > 0.5) {
-        value = max(min(texel.r, texel.g), min(max(texel.r, texel.g), texel.b));
+        // pages are premultiplied on upload: MTSDF (a true SDF in alpha) has rgb * a here, so
+        // divide it back out (MSDF pages have a = 1 and are unchanged)
+        float3 rgb = texel.rgb / max(texel.a, 1.0 / 255.0);
+        value = max(min(rgb.r, rgb.g), min(max(rgb.r, rgb.g), rgb.b));
     }
     float dist = (value - u_field.x) * u_field.y + u_field.z;
     float width = max(fwidth(dist), max(u_field.w, 0.0001));

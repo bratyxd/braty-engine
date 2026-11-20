@@ -56,6 +56,7 @@ CASES = [
     ("gltf_demo", "gltf_demo", 90, [], None),
     ("gltf_scene_demo", "gltf_scene_demo", 90, [], None),
     ("render_views_demo", "render_views_demo", 10, [], None),
+    ("sdf_fonts_demo", "sdf_fonts_demo", 10, [], None),
     ("star_courier_title", STAR_COURIER, 60, [], ROUND),
     ("star_courier_play", STAR_COURIER, 700, [], ROUND),
     ("crate_rush_menu", CRATE_RUSH, 60, [], None),
