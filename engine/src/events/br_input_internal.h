@@ -98,6 +98,8 @@ typedef struct br_input_state {
     char     contexts[BR_INPUT_CONTEXT_DEPTH][BR_INPUT_CONTEXT_NAME];
     uint32_t context_count;
 
+    bool             keyboard_captured; /* a text field has focus: key bindings read as up */
+
     br_input_device capture_device;  /* NONE = not capturing */
     bool             capture_done;
     br_input_binding capture_result;
@@ -140,5 +142,7 @@ void br_input_actions_clear_state(br_input_state *s);
 br_action *br_input_find_action(br_input_state *s, const char *name);
 /* Checks the latched state for a capture result. */
 void br_input_capture_update(br_input_state *s);
+/* Blocks every action with a key binding that is held or pressed since the last latch. */
+void br_input_block_held_keys(br_input_state *s);
 
 #endif
