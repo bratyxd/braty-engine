@@ -71,10 +71,12 @@ uint32_t br_texture_count(br_engine *e);
 
 /* ---- render textures (PixiJS RenderTexture): draw into them with br_render_to_texture */
 
+#define BR_RENDER_TEXTURE_MAX_SIZE 16384 /* largest render texture edge in pixels */
 /* Creates a render texture of width x height logical units at `resolution` pixels per unit
- * (<= 0 means 1). Has depth+stencil, so masks work inside it. */
+ * (<= 0 means 1). Has depth+stencil, so masks work inside it. Zero handle (logged) unless each
+ * edge is 1..BR_RENDER_TEXTURE_MAX_SIZE pixels (NaN and negative sizes fail). */
 br_texture br_render_texture_create(br_engine *e, float width, float height, float resolution);
-/* Resizes a render texture (contents are lost). */
+/* Resizes a render texture (contents are lost). False for sizes create would refuse. */
 bool br_render_texture_resize(br_engine *e, br_texture t, float width, float height);
 /* The render target behind a render texture, NULL for other textures or headless. */
 br_render_target *br_texture_render_target(br_engine *e, br_texture t);

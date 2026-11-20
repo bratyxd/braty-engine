@@ -363,6 +363,7 @@ const br_frame_set *br_frame_set_load(br_engine *e, const char *path)
     br_frame_set *fs = br_assets_load(e, path);
     if (fs != NULL && !br_str_equal(br_assets_type(e, path), "frames")) {
         br_log_error("br_frame_set_load: '%s' is not a frame set", path);
+        br_assets_unload(e, path); /* drop the reference br_assets_load took */
         return NULL;
     }
     return fs;
