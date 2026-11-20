@@ -16,6 +16,7 @@ typedef struct br_anim_animator_config {
     char  play[BR_FIELD_STRING_SIZE];    /* clip to play (optional) */
     char  loop[BR_FIELD_STRING_SIZE];    /* loop / once / ping_pong / clamp (optional) */
     float speed;                         /* 0 = 1 */
+    bool  unscaled;                      /* br_animator_set_unscaled */
     bool  started;                       /* not a field: set once handled */
 } br_anim_animator_config;
 
@@ -33,6 +34,7 @@ typedef struct br_anim_tween_config {
     char     ease[BR_FIELD_STRING_SIZE];
     int32_t  repeat;
     bool     yoyo;
+    bool     unscaled;                   /* br_tween_set_unscaled */
     bool     started;
 } br_anim_tween_config;
 
@@ -45,6 +47,7 @@ void br_anim_components_register(br_engine *e)
         { "play", BR_FIELD_STRING, offsetof(br_anim_animator_config, play) },
         { "loop", BR_FIELD_STRING, offsetof(br_anim_animator_config, loop) },
         { "speed", BR_FIELD_FLOAT, offsetof(br_anim_animator_config, speed) },
+        { "unscaled", BR_FIELD_BOOL, offsetof(br_anim_animator_config, unscaled) },
     };
     static const br_field_desc tween_fields[] = {
         { "property", BR_FIELD_STRING, offsetof(br_anim_tween_config, property) },
@@ -60,6 +63,7 @@ void br_anim_components_register(br_engine *e)
         { "ease", BR_FIELD_STRING, offsetof(br_anim_tween_config, ease) },
         { "repeat", BR_FIELD_INT, offsetof(br_anim_tween_config, repeat) },
         { "yoyo", BR_FIELD_BOOL, offsetof(br_anim_tween_config, yoyo) },
+        { "unscaled", BR_FIELD_BOOL, offsetof(br_anim_tween_config, unscaled) },
     };
     br_component_desc a = { "animator", sizeof(br_anim_animator_config), animator_fields, BR_ARRAY_COUNT(animator_fields) };
     br_component_desc t = { "tween", sizeof(br_anim_tween_config), tween_fields, BR_ARRAY_COUNT(tween_fields) };
@@ -81,6 +85,7 @@ static void br_anim_start_animator(br_engine *e, br_anim_target root, const br_a
         }
     }
     br_animator_set_speed(e, a, c->speed != 0.0f ? c->speed : 1.0f);
+    br_animator_set_unscaled(e, a, c->unscaled);
     if (c->graph[0] != '\0') {
         const br_anim_graph *g = br_anim_graph_load(e, c->graph);
         if (g != NULL) {
@@ -161,6 +166,7 @@ static void br_anim_start_tween(br_engine *e, br_anim_target target, const br_an
     }
     br_tween_set_delay(e, t, c->delay);
     br_tween_set_repeat(e, t, c->repeat, c->yoyo);
+    br_tween_set_unscaled(e, t, c->unscaled);
 }
 
 void br_anim_components_system(br_engine *e, float dt, void *user)

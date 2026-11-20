@@ -35,7 +35,8 @@ Test: `tests/test_audio.c` (headless mixer). Example: `examples/audio_demo.c`.
 | `br_audio_play_defaults()`, `br_audio_play(e, sound, &desc)` | Play. |
 | `br_audio_stop / set_paused / set_volume / set_pan / set_speed / set_loop / seek / position` | Control an instance. |
 | `br_audio_bus_create(e, "music")`, `br_audio_bus_set_volume/muted/paused` | Groups. |
-| `br_audio_set_master_volume`, `br_audio_set_muted` | Global. |
+| `br_audio_set_master_volume`, `br_audio_set_muted`, `br_audio_set_global_paused` | Global. |
+| `br_audio_master_volume`, `br_audio_muted`, `br_audio_global_paused`, `br_audio_bus_volume` / `_bus_muted`, `br_audio_volume(e, instance)` | Read them back (settings screens). |
 | `br_audio_mix(e, out, frames)` | The mixer (tests). |
 
 ## Snippet (from examples/audio_demo.c)
@@ -92,6 +93,10 @@ download (see `examples/audio/LICENSE-gong.txt`).
 - `br_audio_set_device_paused(e, on)` pauses the whole output device; the app calls it while the
   window is inactive (`br_app_set_pause_when_inactive`, docs/agents/app.md). Instance and bus
   pause flags are untouched.
+- `br_audio_set_global_paused(e, on)` is the game's pause (a pause menu): every instance holds
+  its position. It is a separate flag from the device pause, so pausing for both reasons and
+  resuming one stays silent. Audio does not follow `br_ticker_set_speed` (voices play on the
+  device clock; without a device on scaled game time).
 
 - Limits: 64 instances, 15 buses, 16 sprites per sound (`BR_AUDIO_MAX_*`). Play returns a zero
   handle when all instances are busy.

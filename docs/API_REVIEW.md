@@ -432,6 +432,10 @@ ones from the earlier lists. Summary of the whole review: `docs/REVIEW_2026-11-2
     `tests/test_app.c`, `test_unscaled_delta`, `test_pause_when_inactive`. Still open: tweens and
     animators have no unscaled flag, so they cannot keep animating a pause menu while
     `br_ticker_set_speed(e, 0)` stops the game.
+    **Resolved (Phase 3 Task B5):** `br_tween_set_unscaled` / `_set_paused`,
+    `br_animator_set_unscaled` (and `"unscaled"` on the `tween` / `animator` components); audio
+    pauses with `br_audio_set_global_paused`; particles are moved by game systems. Which clock
+    each part uses: the table in `docs/agents/app.md`. Test: `test_tween` `test_pause_clocks`.
 47. **friction - two mutation styles** (setters next to `_get` lookups returning mutable struct
     pointers whose lifetime differs per module). **Resolved, doc step (Phase 3 Task A):** the
     pointer rule is stated once at the top of `br_core.h` ("valid until the next create or
@@ -463,6 +467,11 @@ ones from the earlier lists. Summary of the whole review: `docs/REVIEW_2026-11-2
 52. **gap - audio has no volume getters and no global pause** (`br_audio.h`). Settings screens
     keep their own copy of bus volumes. **Fix:** `br_audio_bus_volume`, `br_audio_master_volume`,
     `br_audio_set_paused`. Rank 10.
+    **Resolved (Phase 3 Task B5):** `br_audio_master_volume`, `br_audio_bus_volume`,
+    `br_audio_volume` (instance), `br_audio_muted`, `br_audio_bus_muted`; the global pause is
+    `br_audio_set_global_paused` / `br_audio_global_paused` (`br_audio_set_paused` is the
+    instance call), a flag separate from the device pause so the two compose. Test: `test_audio`
+    `test_getters_and_global_pause`.
 
 ## Migration table (Phase 3 Task A)
 

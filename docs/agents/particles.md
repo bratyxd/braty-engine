@@ -46,6 +46,10 @@ br_node_add_child(e, br_stage_root(e), pc);
 
 ## Gotchas
 
+- Clock: the engine never moves particles, so they pause with whatever system you move them in
+  (its group, the scaled `dt`); use `br_ticker_unscaled_delta(e)` there for particles that should
+  keep moving in a pause menu (`docs/agents/app.md`, clocks table).
+
 - Changing a static group without `br_particle_container_update` shows the old values.
   Make a group dynamic if it changes every frame (default: only POSITION).
 - One texture source per container; particle textures are frames of it (rotated/trimmed OK).

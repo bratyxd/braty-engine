@@ -47,6 +47,15 @@ bool br_tween_set_ease_name(br_engine *e, br_tween t, const char *name);
 void br_tween_set_on_complete(br_engine *e, br_tween t, br_tween_fn fn, void *user);
 /* A number for br_tween_kill_tag (0 = none). */
 void br_tween_set_tag(br_engine *e, br_tween t, uint32_t tag);
+/* Clock: false (default) = the frame's scaled dt (stops with br_ticker_set_speed(e, 0)); true =
+ * br_ticker_unscaled_delta (pause-menu UI keeps animating; still 0 while the app is inactive). */
+void br_tween_set_unscaled(br_engine *e, br_tween t, bool unscaled);
+/* True if the tween runs on the unscaled clock. */
+bool br_tween_unscaled(br_engine *e, br_tween t);
+/* Holds a tween where it is (delay included) until resumed. */
+void br_tween_set_paused(br_engine *e, br_tween t, bool paused);
+/* True while the tween is held by br_tween_set_paused. */
+bool br_tween_paused(br_engine *e, br_tween t);
 
 /* Stops a tween where it is (no on_complete). */
 void br_tween_kill(br_engine *e, br_tween t);

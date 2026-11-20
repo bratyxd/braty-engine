@@ -90,6 +90,8 @@ bool br_audio_is_playing(br_engine *e, br_sound_instance i);
 void br_audio_set_paused(br_engine *e, br_sound_instance i, bool paused);
 /* Sets an instance's volume (0..16; non-finite = 1). */
 void br_audio_set_volume(br_engine *e, br_sound_instance i, float volume);
+/* An instance's volume (0 if stale). */
+float br_audio_volume(br_engine *e, br_sound_instance i);
 /* Sets an instance's pan (-1..1; non-finite = 0). */
 void br_audio_set_pan(br_engine *e, br_sound_instance i, float pan);
 /* Sets an instance's speed (0.01..16; non-finite = 1). */
@@ -111,14 +113,27 @@ int br_audio_bus_create(br_engine *e, const char *name);
 int br_audio_bus_find(br_engine *e, const char *name);
 /* Sets a bus volume. */
 void br_audio_bus_set_volume(br_engine *e, int bus, float volume);
+/* A bus volume (0 if no such bus). */
+float br_audio_bus_volume(br_engine *e, int bus);
+/* True if the bus is muted. */
+bool br_audio_bus_muted(br_engine *e, int bus);
 /* Mutes or unmutes a bus. */
 void br_audio_bus_set_muted(br_engine *e, int bus, bool muted);
 /* Pauses or resumes every instance on a bus. */
 void br_audio_bus_set_paused(br_engine *e, int bus, bool paused);
 /* Sets the master volume (default 1). */
 void br_audio_set_master_volume(br_engine *e, float volume);
+/* The master volume. */
+float br_audio_master_volume(br_engine *e);
 /* Mutes or unmutes everything. */
 void br_audio_set_muted(br_engine *e, bool muted);
+/* True if everything is muted. */
+bool br_audio_muted(br_engine *e);
+/* The game's pause: every instance holds its position (silence) until resumed. Independent of the
+ * app's device pause (br_audio_set_device_paused): sound plays only when neither is set. */
+void br_audio_set_global_paused(br_engine *e, bool paused);
+/* True while br_audio_set_global_paused holds every instance. */
+bool br_audio_global_paused(br_engine *e);
 
 /* ---- mixer and device */
 

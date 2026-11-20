@@ -74,6 +74,9 @@ typedef struct br_audio_state {
     SDL_AudioStream *device;
     bool             device_failed;
     bool             device_paused;   /* br_audio_set_device_paused (the app is inactive) */
+    bool             global_paused;   /* br_audio_set_global_paused (the game's pause): the mixer
+                                         skips every voice. A separate flag from device_paused, so
+                                         either reason alone keeps the sound stopped. */
     bool             manual_mix;      /* someone calls br_audio_mix (tests): no game-clock mixing */
     double           game_clock_frames; /* no device: mixer frames owed to game time */
     /* audio-thread scratch (only br_audio_mix touches these) */
@@ -411,7 +414,7 @@ static void br_audio_mix_frames(br_engine *e, float *out, uint32_t frames)
         return;
     }
     SDL_LockMutex(s->lock);
-    for (int i = 0; i < BR_AUDIO_MAX_INSTANCES; i++) {
+    for (int i = 0; i < BR_AUDIO_MAX_INSTANCES && !s->global_paused; i++) {
         br_voice *v = &s->voices[i];
         if (!v->active || v->finished || v->paused || s->buses[v->bus].paused) {
             continue;
@@ -502,6 +505,28 @@ void br_audio_set_device_paused(br_engine *e, bool paused)
 bool br_audio_device_paused(br_engine *e)
 {
     return e->audio != NULL && e->audio->device_paused;
+}
+
+void br_audio_set_global_paused(br_engine *e, bool paused)
+{
+    br_audio_state *s = e->audio;
+    if (s != NULL) {
+        SDL_LockMutex(s->lock);
+        s->global_paused = paused;
+        SDL_UnlockMutex(s->lock);
+    }
+}
+
+bool br_audio_global_paused(br_engine *e)
+{
+    br_audio_state *s = e->audio;
+    if (s == NULL) {
+        return false;
+    }
+    SDL_LockMutex(s->lock);
+    bool paused = s->global_paused;
+    SDL_UnlockMutex(s->lock);
+    return paused;
 }
 
 bool br_audio_device_open(br_engine *e)
@@ -667,6 +692,16 @@ void br_audio_set_volume(br_engine *e, br_sound_instance i, float volume)
     SDL_UnlockMutex(s->lock);
 }
 
+float br_audio_volume(br_engine *e, br_sound_instance i)
+{
+    br_audio_state *s = e->audio;
+    SDL_LockMutex(s->lock);
+    br_voice *v = br_audio_voice(s, i);
+    float volume = v != NULL ? v->volume : 0.0f;
+    SDL_UnlockMutex(s->lock);
+    return volume;
+}
+
 void br_audio_set_pan(br_engine *e, br_sound_instance i, float pan)
 {
     br_audio_state *s = e->audio;
@@ -794,6 +829,26 @@ void br_audio_bus_set_volume(br_engine *e, int bus, float volume)
     SDL_UnlockMutex(s->lock);
 }
 
+float br_audio_bus_volume(br_engine *e, int bus)
+{
+    br_audio_state *s = e->audio;
+    SDL_LockMutex(s->lock);
+    br_bus *b = br_audio_bus(s, bus);
+    float volume = b != NULL ? b->volume : 0.0f;
+    SDL_UnlockMutex(s->lock);
+    return volume;
+}
+
+bool br_audio_bus_muted(br_engine *e, int bus)
+{
+    br_audio_state *s = e->audio;
+    SDL_LockMutex(s->lock);
+    br_bus *b = br_audio_bus(s, bus);
+    bool muted = b != NULL && b->muted;
+    SDL_UnlockMutex(s->lock);
+    return muted;
+}
+
 void br_audio_bus_set_muted(br_engine *e, int bus, bool muted)
 {
     br_audio_state *s = e->audio;
@@ -822,6 +877,24 @@ void br_audio_set_master_volume(br_engine *e, float volume)
     SDL_LockMutex(s->lock);
     s->master_volume = br_audio_float(volume, 1.0f, 0.0f, BR_AUDIO_MAX_VOLUME);
     SDL_UnlockMutex(s->lock);
+}
+
+float br_audio_master_volume(br_engine *e)
+{
+    br_audio_state *s = e->audio;
+    SDL_LockMutex(s->lock);
+    float volume = s->master_volume;
+    SDL_UnlockMutex(s->lock);
+    return volume;
+}
+
+bool br_audio_muted(br_engine *e)
+{
+    br_audio_state *s = e->audio;
+    SDL_LockMutex(s->lock);
+    bool muted = s->muted;
+    SDL_UnlockMutex(s->lock);
+    return muted;
 }
 
 void br_audio_set_muted(br_engine *e, bool muted)

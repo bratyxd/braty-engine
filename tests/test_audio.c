@@ -161,6 +161,48 @@ static void test_buses(br_engine *e, br_sound *ramp)
     BR_CHECK(br_audio_instance_count(e) == 0);
 }
 
+/* volume getters, and a global pause that composes with the app's device pause */
+static void test_getters_and_global_pause(br_engine *e, br_sound *ramp)
+{
+    float out[2 * 1];
+    int music = br_audio_bus_create(e, "music");
+    BR_CHECK(near(br_audio_master_volume(e), 1.0f) && near(br_audio_bus_volume(e, music), 1.0f));
+    br_audio_set_master_volume(e, 0.25f);
+    br_audio_bus_set_volume(e, music, 0.75f);
+    br_audio_bus_set_muted(e, music, true);
+    BR_CHECK(near(br_audio_master_volume(e), 0.25f) && near(br_audio_bus_volume(e, music), 0.75f));
+    BR_CHECK(br_audio_bus_muted(e, music) && !br_audio_muted(e));
+    BR_CHECK(near(br_audio_bus_volume(e, 99), 0.0f)); /* no such bus */
+    br_audio_bus_set_muted(e, music, false);
+    br_audio_set_master_volume(e, 1.0f);
+    br_audio_play_desc d = br_audio_play_defaults();
+    d.volume = 0.5f;
+    d.loop = true;
+    d.start = 10.0f / BR_AUDIO_RATE;
+    br_sound_instance i = br_audio_play(e, ramp, &d);
+    BR_CHECK(near(br_audio_volume(e, i), 0.5f));
+    br_audio_set_volume(e, i, 2.0f);
+    BR_CHECK(near(br_audio_volume(e, i), 2.0f));
+
+    /* paused for two reasons, resumed for one: still paused, and the voice does not advance */
+    br_audio_set_global_paused(e, true);
+    br_audio_set_device_paused(e, true);
+    BR_CHECK(br_audio_global_paused(e));
+    br_audio_mix(e, out, 1);
+    BR_CHECK(near(out[0], 0.0f));
+    br_audio_set_device_paused(e, false); /* the window came back; the game's pause menu is still up */
+    br_audio_mix(e, out, 1);
+    BR_CHECK(near(out[0], 0.0f) && br_audio_global_paused(e) && near(br_audio_position(e, i), 10.0f / BR_AUDIO_RATE));
+    br_audio_set_device_paused(e, true);
+    br_audio_set_global_paused(e, false); /* menu closed while the window is away */
+    BR_CHECK(br_audio_device_paused(e) && !br_audio_global_paused(e));
+    br_audio_set_device_paused(e, false);
+    br_audio_mix(e, out, 1);
+    BR_CHECK(near(out[0], 0.10f * 2.0f)); /* resumes at frame 10 */
+    br_audio_stop(e, i);
+    BR_CHECK(near(br_audio_volume(e, i), 0.0f)); /* stale handle */
+}
+
 static void test_resample(br_engine *e)
 {
     float pcm[2 * 240];
@@ -340,6 +382,7 @@ int main(void)
     test_volume_pan(e, ramp);
     test_loop_and_completion(e, ramp);
     test_speed_seek_sprite(e, ramp);
+    test_getters_and_global_pause(e, ramp);
     test_buses(e, ramp);
     test_resample(e);
     BR_CHECK(!br_audio_device_open(e));   /* headless: never opened */

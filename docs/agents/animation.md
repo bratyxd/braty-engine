@@ -86,13 +86,14 @@ through the same animator (`br_animator_add_model_clips`). Tests: `tests/test_an
 | `br_animator_add_clip(e, a, clip)`, `br_anim_clip_from_frames(name, frames, n)` | Your own / flipbook clips (you own them; they must outlive the animator). |
 | `br_animator_rebind(e, a)` | Re-resolve dropped tracks after attaching nodes (a weapon) under the animator. |
 | `br_animator_play`, `_cross_fade(e, a, "run", 0.2f)`, `_queue`, `_stop` | Base-layer playback. |
-| `br_animator_set_speed`, `_set_paused`, `_set_loop(e, a, layer, BR_ANIM_PING_PONG)`, `_set_time` | Clock control. |
+| `br_animator_set_speed`, `_set_paused`, `_set_unscaled`, `_set_loop(e, a, layer, BR_ANIM_PING_PONG)`, `_set_time` | Clock control (`_set_unscaled`: runs while `br_ticker_set_speed(e, 0)` pauses the game). |
 | `br_animator_set_layer(e, a, 1, weight, additive)`, `_layer_add_mask`, `_play_layer` | Layers. |
 | `br_animator_set_float/_bool/_trigger`, `_add_blend1d`, `_add_blend2d` | Parameters, blend trees. |
 | `br_animator_set_graph(e, a, br_anim_graph_load(e, "x.animgraph.json"))`, `br_animator_state` | State machine. |
 | `br_animation_events(e, &n)`, `br_animator_set_event_callback` | Markers. |
 | `br_tween_to(e, target, "position", to, seconds, ease)`, `_to_f`, `_from`, `_from_to` | One-line tweens. |
 | `br_tween_set_delay/_repeat(count, yoyo)/_on_complete/_tag`, `br_tween_kill*` | Tween options. |
+| `br_tween_set_unscaled`, `br_tween_set_paused` | Clock: unscaled (pause-menu UI) or held. Tweens and animators use the scaled dt by default; system groups do not pause them (`docs/agents/app.md`, clocks table). |
 | `br_tween_sequence_begin/_add/_join/_wait/_call` | Sequences and parallel groups. |
 | `br_anim_get/_set(e, root, "arm:rotation", &value)`, `br_anim_property_register` | Property paths, new properties. |
 
@@ -163,12 +164,13 @@ The module registers two components, so scene files and prefabs can start animat
 ```
 
 `animator`: `clips` (an anim.json, loaded through the asset cache), `graph` (optional
-animgraph.json), `play` (optional clip), `loop`, `speed` (0 = 1). The animator holds one reference
+animgraph.json), `play` (optional clip), `loop`, `speed` (0 = 1), `unscaled` (true = the
+unscaled clock). The animator holds one reference
 to each asset and releases it when it is removed. `tween`: `property` (a property path), `to` /
 `from` (a number or `[x, y]`), `to3` / `from3` (`[x, y, z]`, vec3 properties such as a 3D
 `position`), `to_color` / `from_color` (colour properties such as `tint`), `mode` (`"to"`
 default, `"from"`, `"from_to"`), `duration`, `delay`, `ease` (easing name), `repeat` (-1 =
-forever), `yoyo`; rotations and weights cannot be tweened from a component. Each row is turned
+forever), `yoyo`, `unscaled`; rotations and weights cannot be tweened from a component. Each row is turned
 into a real animator / tween the first frame after it appears, on 2D and on 3D nodes, so glTF
 node extras work too: `{ "animator.clips": "door.anim.json", "animator.play": "open" }` (one
 tween component per node).

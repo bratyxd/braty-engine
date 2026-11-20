@@ -246,6 +246,11 @@ void br_animator_stop(br_engine *e, br_animator a);
 void br_animator_set_speed(br_engine *e, br_animator a, float speed);
 /* Pauses (the pose is still written) or resumes. */
 void br_animator_set_paused(br_engine *e, br_animator a, bool paused);
+/* Clock: false (default) = the frame's scaled dt (stops with br_ticker_set_speed(e, 0)); true =
+ * br_ticker_unscaled_delta (a pause menu keeps animating; still 0 while the app is inactive). */
+void br_animator_set_unscaled(br_engine *e, br_animator a, bool unscaled);
+/* True if the animator runs on the unscaled clock. */
+bool br_animator_unscaled(br_engine *e, br_animator a);
 /* Loop mode of the motion playing on a layer (default: the clip's). */
 void br_animator_set_loop(br_engine *e, br_animator a, uint32_t layer, br_anim_loop loop);
 /* Jumps the motion playing on a layer to `seconds` (blend trees: normalised 0..1). */

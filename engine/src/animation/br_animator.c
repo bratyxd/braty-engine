@@ -850,6 +850,20 @@ void br_animator_set_paused(br_engine *e, br_animator a, bool paused)
     }
 }
 
+void br_animator_set_unscaled(br_engine *e, br_animator a, bool unscaled)
+{
+    br_animator_data *d = br_animator_data_get(e, a);
+    if (d != NULL) {
+        d->unscaled = unscaled;
+    }
+}
+
+bool br_animator_unscaled(br_engine *e, br_animator a)
+{
+    br_animator_data *d = br_animator_data_get(e, a);
+    return d != NULL && d->unscaled;
+}
+
 void br_animator_set_loop(br_engine *e, br_animator a, uint32_t layer, br_anim_loop loop)
 {
     br_animator_data *d = br_animator_data_get(e, a);
@@ -1703,7 +1717,7 @@ void br_animator_system(br_engine *e, float dt, void *user)
             br_animator_remove_data(e, d); /* destroyed this frame; listeners may not have run yet */
             continue;
         }
-        br_animator_update(e, d, dt);
+        br_animator_update(e, d, d->unscaled ? br_ticker_unscaled_delta(e) : dt);
         s->stat_animators++;
     }
     s->updating = false;

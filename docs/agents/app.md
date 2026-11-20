@@ -105,10 +105,24 @@ average error at 60 / 144.
   and frees it in an on-shutdown callback.
 - `min_fps` (default 10) clamps `dt` so a stall does not produce one giant step; `speed` scales it
   (negative or NaN speed is clamped to 0 = paused).
-- Pause menus: switch the gameplay group off (`br_system_group_set_enabled`) or set the ticker
-  speed to 0, and animate the menu with `br_ticker_unscaled_delta(e)` instead of the system's
-  `dt` (which is scaled). Tweens, animators and particles are engine systems that use the scaled
-  dt, so speed 0 freezes them too.
+- Pause menus: set the ticker speed to 0 (`br_ticker_set_speed(e, 0)`) and switch the gameplay
+  group off if its systems must not run at all (`br_system_group_set_enabled`); mark the menu's
+  tweens and animators unscaled (`br_tween_set_unscaled`, `br_animator_set_unscaled`, the
+  components' `"unscaled": true`) and silence the game with `br_audio_set_global_paused(e, true)`.
+  System groups pause only the systems in them: the engine's own systems (tweens, animators,
+  sprites, audio) are not in a group and follow the clocks below.
+- Which clock each part uses:
+
+  | Part | Clock |
+  |---|---|
+  | Your systems | `dt` = scaled (ticker speed); `br_ticker_unscaled_delta(e)` = unscaled; FIXED_UPDATE = fixed steps of scaled time |
+  | Tweens (`animation.tweens`) | scaled; per tween `br_tween_set_unscaled` = unscaled, `br_tween_set_paused` holds it |
+  | Animators (`animation.update`) | scaled times `br_animator_set_speed`; `br_animator_set_unscaled` = unscaled, `_set_paused` holds it |
+  | Animated sprites (`sprites.animated`) | scaled (`br_animated_sprite_stop` / `_play` to hold one) |
+  | Particles | the engine does not move them: the system that does (yours) decides; groups pause it |
+  | Camera follow / shake / orbit | scaled |
+  | Audio | the device's wall clock (no device: scaled game time); not the ticker. Pause with `br_audio_set_global_paused`, a bus or an instance |
+  | Inactive app (`pause_when_inactive`) | every clock above is 0 and the audio device is paused |
 - Lifecycle: the app is active while its window is focused, not minimised and not in the
   background (SDL focus / minimise / restore and will/did-enter-background / foreground events,
   handled in `br_app_event`). Going inactive calls the lifecycle callbacks with `DEACTIVATED`;
