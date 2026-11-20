@@ -97,6 +97,9 @@ if(BRATY_BUILD_TESTS)
                     --build-dir ${CMAKE_BINARY_DIR} --out ${CMAKE_BINARY_DIR}/golden ${BR_GOLDEN_DRIVER})
         set_tests_properties(golden PROPERTIES LABELS golden SKIP_RETURN_CODE 77 TIMEOUT 900)
     endif()
+    if(Python3_FOUND)
+        add_test(NAME test_playtest_tool COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_playtest_tool.py)
+    endif()
 endif()
 
 # --- examples: every examples/*.c is one executable

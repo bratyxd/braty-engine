@@ -17,11 +17,12 @@ From a shell (each command is one argument; replies are printed one JSON line ea
     python tools/playtest.py GAME.exe "step 60" "action start" "step 30" \
         "screenshot build/shot.png" "get ship:position" quit
 
-Short commands: step [N], key NAME [down|up|tap], action NAME [tap|down|up [VALUE]],
-gamepad connect TYPE [SLOT] | disconnect [SLOT] | tap|down|up BUTTON [SLOT] |
+Short commands: step [N], key NAME [down|up|tap] [FRAMES], action NAME [tap|down|up [VALUE]],
+gamepad connect TYPE [SLOT] | disconnect [SLOT] | tap|down|up BUTTON [SLOT] [FRAMES] |
 axis AXIS VALUE [SLOT], click LABEL,
 text "...", screenshot FILE, get PATH, set PATH JSON, find LABEL, dump [FILE], window W H,
 stats, profile [N], logs [N], help, quit. Anything starting with "{" is sent as raw JSON.
+Extra or unknown words ("key Up frames=40") are rejected before the game starts.
 A failed command raises PlaytestError with the engine's message; the game process is ended when
 the with-block exits, on an exception, and at interpreter exit.
 Full reference: docs/PLAYTESTING.md.
@@ -223,20 +224,45 @@ class Playtest:
             self.kill()  # an exception: do not wait for a game that may be stuck
 
 
+PRESS = ("tap", "down", "up")
+
+
+def arity(name, rest, low, high):
+    """Rejects missing or trailing words ("key Up frames=40" is not a 40-frame hold)."""
+    if not low <= len(rest) <= high:
+        extra = " ".join(rest[high:]) if len(rest) > high else None
+        raise ValueError("unexpected %r after %s" % (extra, name) if extra else "%s needs more arguments" % name)
+
+
+def press(word, name):
+    if word not in PRESS:
+        raise ValueError("%s: expected tap, down or up, not %r" % (name, word))
+    return word
+
+
 def parse_gamepad(rest):
-    """gamepad connect TYPE [SLOT] | disconnect [SLOT] | tap|down|up BUTTON [SLOT] | axis AXIS VALUE [SLOT]"""
+    """gamepad connect TYPE [SLOT] | disconnect [SLOT] | tap|down|up BUTTON [SLOT] [FRAMES] | axis AXIS VALUE [SLOT]"""
+    arity("gamepad", rest, 1, 5)
     action = rest[0]
     if action == "connect":
+        arity("gamepad connect", rest[1:], 0, 2)
         cmd = {"cmd": "gamepad", "action": action, "type": rest[1] if len(rest) > 1 else "generic"}
         if len(rest) > 2:
             cmd["slot"] = int(rest[2])
         return cmd
     if action == "disconnect":
+        arity("gamepad disconnect", rest[1:], 0, 1)
         return {"cmd": "gamepad", "action": action, "slot": int(rest[1]) if len(rest) > 1 else 0}
     if action == "axis":
+        arity("gamepad axis", rest[1:], 2, 3)
         return {"cmd": "gamepad", "action": action, "axis": rest[1], "value": float(rest[2]),
                 "slot": int(rest[3]) if len(rest) > 3 else 0}
-    return {"cmd": "gamepad", "action": action, "button": rest[1], "slot": int(rest[2]) if len(rest) > 2 else 0}
+    press(action, "gamepad")
+    arity("gamepad " + action, rest[1:], 1, 3)
+    cmd = {"cmd": "gamepad", "action": action, "button": rest[1], "slot": int(rest[2]) if len(rest) > 2 else 0}
+    if len(rest) > 3:
+        cmd["frames"] = int(rest[3])
+    return cmd
 
 
 def parse_short(text):
@@ -245,43 +271,56 @@ def parse_short(text):
         return json.loads(text)
     try:
         return parse_words(text, shlex.split(text))
-    except (IndexError, ValueError) as error:  # "key" without a name, "step ten"
+    except (IndexError, ValueError) as error:  # "key" without a name, "step ten", "key Up frames=40"
         raise SystemExit("bad short command %r: %s" % (text, error))
 
 
 def parse_words(text, words):
-    """The short form split into words."""
+    """The short form split into words. Every command takes a fixed set of words: anything more
+    (or an unknown tap / down / up word) is an error before the game starts."""
+    if not words:
+        raise ValueError("empty command")
     name, rest = words[0], words[1:]
     if name in ("step", "wait"):
+        arity(name, rest, 0, 1)
         return {"cmd": name, "frames": int(rest[0]) if rest else 1}
-    if name == "key":
-        return {"cmd": "key", "key": rest[0], "action": rest[1] if len(rest) > 1 else "tap"}
-    if name == "action":
-        cmd = {"cmd": "action", "name": rest[0], "action": rest[1] if len(rest) > 1 else "tap"}
+    if name == "key":  # key NAME [tap|down|up] [FRAMES]
+        arity(name, rest, 1, 3)
+        cmd = {"cmd": "key", "key": rest[0], "action": press(rest[1], name) if len(rest) > 1 else "tap"}
+        if len(rest) > 2:
+            cmd["frames"] = int(rest[2])
+        return cmd
+    if name == "action":  # action NAME [tap|down|up [VALUE]]
+        arity(name, rest, 1, 3)
+        cmd = {"cmd": "action", "name": rest[0], "action": press(rest[1], name) if len(rest) > 1 else "tap"}
         if len(rest) > 2:
             cmd["value"] = float(rest[2])
         return cmd
     if name == "gamepad":
         return parse_gamepad(rest)
-    if name in ("click", "find"):
-        return {"cmd": name, "label": rest[0]}
+    if name in ("click", "find", "screenshot", "get"):
+        arity(name, rest, 1, 1)
+        key = {"click": "label", "find": "label", "screenshot": "file", "get": "path"}[name]
+        return {"cmd": name, key: rest[0]}
     if name == "text":
         return {"cmd": "text", "text": " ".join(rest)}
-    if name == "screenshot":
-        return {"cmd": "screenshot", "file": rest[0]}
-    if name == "get":
-        return {"cmd": "get", "path": rest[0]}
     if name == "set":
+        arity(name, rest, 2, len(rest))
         return {"cmd": "set", "path": rest[0], "value": json.loads(" ".join(rest[1:]))}
     if name == "dump":
+        arity(name, rest, 0, 1)
         return {"cmd": "dump", "file": rest[0]} if rest else {"cmd": "dump"}
     if name == "logs":
+        arity(name, rest, 0, 1)
         return {"cmd": "logs", "count": int(rest[0]) if rest else 20}
     if name == "profile":
+        arity(name, rest, 0, 1)
         return {"cmd": "profile", "frames": int(rest[0]) if rest else 300}
     if name == "window":
+        arity(name, rest, 2, 2)
         return {"cmd": "window", "width": int(rest[0]), "height": int(rest[1])}
     if name in ("stats", "quit", "help"):
+        arity(name, rest, 0, 0)
         return {"cmd": name}
     raise SystemExit("unknown short command %r (use raw JSON for the others)" % text)
 

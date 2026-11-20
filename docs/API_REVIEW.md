@@ -356,6 +356,9 @@ the game (the workaround is named) and left here with a proposed fix.
     before starting the game. (Still open after the 2026-11-20 review: the engine now rejects
     unknown argument *names* in JSON commands, but `key Up frames=40` still reaches it as the
     action `"frames=40"` and gets an error reply.)
+    **Resolved (Phase 3 Task B5):** every short command checks its word count and its
+    tap / down / up word; `key NAME [tap|down|up] [FRAMES]`, `gamepad ... BUTTON [SLOT] [FRAMES]`.
+    Test: `tests/test_playtest_tool.py` (CTest `test_playtest_tool`).
 41. **friction - `br_animation_stats` counts an animator only once it has been sampled.** On the
     first frame of a level the count is 0 although `br_animator_add` ran; the soak checks it a few
     frames later. **Fix:** report live animators (pool size) and sampled animators separately.
