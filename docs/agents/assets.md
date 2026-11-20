@@ -32,6 +32,9 @@ Test: `tests/test_assets.c` (headless). Example: `examples/assets_demo.c`, data 
 - **Groups** (`br_asset_group.h`, `br_asset_group.c`): a named set holding one reference per
   asset, loaded sync or async (polled each frame, never called back after unload/destroy), with
   lazy entries and manifest bundles. Every `br_scene` owns one; guide: `docs/agents/scenes.md`.
+  Callback contract: `on_done` runs exactly once per async load, from an engine step; a sync
+  `br_asset_group_load` during it finishes the load (on_done still runs, next step); a second
+  `_load_async` replaces the callbacks; `_unload` / `_destroy` cancel them.
 - **Capture** (`br_assets_capture_begin/_end`, internal): references taken by `br_assets_load*`
   outside loaders are recorded; the data layer hands them to the scene or file root that loaded them.
 - **Background loading**: worker threads read files and run `decode`; the main thread runs

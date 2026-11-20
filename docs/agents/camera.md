@@ -12,6 +12,11 @@ Example: `examples/camera_demo.c` (`--size WxH`, `--mode3d`).
   - **3D** (`br_camera_create_3d(e, scene_root, &desc)`): the same data drives a `camera3d` node
     and a View3D the module owns. Place it with `br_camera_node3d` (a rig; the camera3d is its
     child so shake does not fight you); post / environment through `br_camera_view3d`.
+  - **Adopted** (`br_camera_adopt_view3d(e, view, NULL)`): an existing View3D (a `.glb` scene's;
+    `br_gltf_options.camera_as_br_camera` does it on load) becomes a 3D camera. The camera node
+    takes the view's place in the stage, the view leaves it (drawn once, through the camera) and
+    keeps its environment / post / MSAA; the rig starts at the view's camera pose and FOV / near /
+    far / background / culling mask are read from the view.
 - **Unity semantics:** `orthographic_size` is half the visible *vertical* extent,
   `field_of_view` is vertical; the horizontal extent follows the viewport aspect (`aspect`
   overrides). 2D: `pixels_per_unit` stage units per world unit, so a 2D camera shows
@@ -34,7 +39,7 @@ Example: `examples/camera_demo.c` (`--size WxH`, `--mode3d`).
 
 | Function | What for |
 |---|---|
-| `br_camera_default_2d/_3d`, `br_camera_create`, `br_camera_create_3d`, `br_camera_get` | Make and edit cameras. |
+| `br_camera_default_2d/_3d`, `br_camera_create`, `br_camera_create_3d`, `br_camera_adopt_view3d`, `br_camera_get` | Make and edit cameras. |
 | `br_camera_screen_to_world`, `_world_to_screen`, `_screen_point_to_ray`, `_viewport_to_world` | Conversions (`z` = distance in front of a 3D camera). |
 | `br_camera_get_view` / `br_camera_compute_view` + `br_camera_view_*` | The same maths, pure (tests, tools). |
 | `br_node_set_layer_bits`, `culling_mask`, `depth`, `clear_flags`, `target_texture` | Split screen, minimap, UI over 3D. |

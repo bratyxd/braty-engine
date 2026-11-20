@@ -77,6 +77,10 @@ whole reply) for a failed command, a game that exited, or a reply that is not JS
 process is ended when the `with` block exits (killed at once if it exits with an exception, or
 after 30 s if `quit` hangs) and, failing that, when Python exits.
 
+Its short commands take fixed words (`key NAME [tap|down|up] [FRAMES]`, `gamepad tap|down|up
+BUTTON [SLOT] [FRAMES]`, the list in the script's docstring): a missing, extra or unknown word
+(`"key Up frames=40"`) stops the script before the game starts (`tests/test_playtest_tool.py`).
+
 ## Commands
 
 One JSON object each, the same in scripts and on stdin.

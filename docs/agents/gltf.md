@@ -134,7 +134,7 @@ Graph) writes EXT_mesh_gpu_instancing for linked duplicates.
 | `br_model_find_clip`, `br_model_find_node`, `model->nodes[i].extras` | Inspect the parsed data (names, extras for gameplay). |
 | `br_anim3d_sample`, `br_anim3d_joint_matrices`, `br_anim3d_decompose` | Pure maths (tests, tools, your own animation code). |
 | `br_model_parse(e, path, bytes, size)` / `br_model_release` | Parse from memory without the cache. |
-| `br_scene_load(e, "level.glb", mode)`, `br_gltf_set_load_options` | A glTF file as a scene (camera, autoplay, batching). |
+| `br_scene_load(e, "level.glb", mode)`, `br_gltf_set_load_options` | A glTF file as a scene (camera, autoplay, batching, `camera_as_br_camera`). |
 | `br_gltf_instantiate(e, "kit.glb#Tree", parent, &opts)`, `br_model_instantiate_ex` | Place a model or one kit part (options: node, autoplay, no_batching). |
 | `br_model3d_camera(e, inst, "TopCam")` + `br_view3d_set_camera` | Use an imported camera. |
 | `br_component3d_count/at/owner_at`, `_get`, `_add` | Components on 3D nodes (from extras or code). |
@@ -216,11 +216,12 @@ animator. Task 18 keys: `"source": "kit.glb#Node"`, `"camera"` (true / node name
   and are logged once per engine by name; unknown required ones fail.
 - Material extensions: emissive strength, unlit (FLAT model), texture transform, transmission
   (alpha blending with alpha = 1 - 0.7 * factor; no refraction).
-- Cameras are imported as `camera3d` nodes (the View3D's camera), not as `br_camera` nodes: a
-  `br_camera` 3D camera owns its own off-stage View3D, which would render the level a second time.
-  Put follow / shake on a `br_camera_create_3d` over `br_scene_root_3d` if you need them, and
-  hide the scene's own view (`br_node_set_visible`) or the level is drawn twice; copy the view's
-  environment by hand (Crate Rush `src/flow.c`, `cr_level_setup`; API_REVIEW items 23-24).
+- Cameras are imported as `camera3d` nodes (the View3D's camera). For follow / shake, set
+  `br_gltf_options.camera_as_br_camera` (`br_gltf_set_load_options`): a scene load then turns the
+  view into a 3D `br_camera` (`br_camera_adopt_view3d`) labelled after the glTF camera's node; the
+  view keeps the extras' environment, background and MSAA and is drawn once, through the camera
+  (Crate Rush `src/flow.c`, `cr_level_setup`). `br_scene_root_3d` and play-test `view/node` paths
+  find the view through the camera.
 - Batching merges repeated meshes inside one instance; kit parts placed as separate instances
   are separate draws (`ponytail:` limit; a cross-instance merge pass would remove it).
 - A 3D component's `BR_FIELD_NODE` field holds a `br_node3d`; extras are parsed per instance.

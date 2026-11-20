@@ -14,7 +14,10 @@ Test: `tests/test_audio.c` (headless mixer). Example: `examples/audio_demo.c`.
   interpolation, pitch changes), loop, start offset, sprite (named range), bus, completion callback.
 - Buses are flat named groups with volume / mute / pause; plus master volume and mute.
 - The mixer `br_audio_mix` runs on SDL's audio thread. All state it shares with the main thread
-  sits behind one mutex. Completion callbacks run on the main thread (`audio.update`, UPDATE).
+  sits behind one mutex. Streaming voices decode Vorbis with the mutex released (the mixer owns
+  each voice's decoder; a stop during a decode is finished by the mixer, a seek is a request it
+  applies), so no main-thread call waits for a decode (`test_audio` `test_stream_stress`).
+  Completion callbacks run on the main thread (`audio.update`, UPDATE).
 - The device opens on the first `br_audio_play` when the engine has a window. Headless engines
   never open one. Whenever no device is open (headless, or opening it failed: no output device,
   RDP, a bad `SDL_AUDIO_DRIVER`) the engine mixes by game time in `audio.update`, so instances
@@ -35,7 +38,8 @@ Test: `tests/test_audio.c` (headless mixer). Example: `examples/audio_demo.c`.
 | `br_audio_play_defaults()`, `br_audio_play(e, sound, &desc)` | Play. |
 | `br_audio_stop / set_paused / set_volume / set_pan / set_speed / set_loop / seek / position` | Control an instance. |
 | `br_audio_bus_create(e, "music")`, `br_audio_bus_set_volume/muted/paused` | Groups. |
-| `br_audio_set_master_volume`, `br_audio_set_muted` | Global. |
+| `br_audio_set_master_volume`, `br_audio_set_muted`, `br_audio_set_global_paused` | Global. |
+| `br_audio_master_volume`, `br_audio_muted`, `br_audio_global_paused`, `br_audio_bus_volume` / `_bus_muted`, `br_audio_volume(e, instance)` | Read them back (settings screens). |
 | `br_audio_mix(e, out, frames)` | The mixer (tests). |
 
 ## Snippet (from examples/audio_demo.c)
@@ -92,6 +96,10 @@ download (see `examples/audio/LICENSE-gong.txt`).
 - `br_audio_set_device_paused(e, on)` pauses the whole output device; the app calls it while the
   window is inactive (`br_app_set_pause_when_inactive`, docs/agents/app.md). Instance and bus
   pause flags are untouched.
+- `br_audio_set_global_paused(e, on)` is the game's pause (a pause menu): every instance holds
+  its position. It is a separate flag from the device pause, so pausing for both reasons and
+  resuming one stays silent. Audio does not follow `br_ticker_set_speed` (voices play on the
+  device clock; without a device on scaled game time).
 
 - Limits: 64 instances, 15 buses, 16 sprites per sound (`BR_AUDIO_MAX_*`). Play returns a zero
   handle when all instances are busy.

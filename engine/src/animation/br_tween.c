@@ -153,6 +153,34 @@ void br_tween_set_tag(br_engine *e, br_tween t, uint32_t tag)
     }
 }
 
+void br_tween_set_unscaled(br_engine *e, br_tween t, bool unscaled)
+{
+    br_tween_data *d = br_tween_data_get(e, t);
+    if (d != NULL) {
+        d->unscaled = unscaled;
+    }
+}
+
+bool br_tween_unscaled(br_engine *e, br_tween t)
+{
+    br_tween_data *d = br_tween_data_get(e, t);
+    return d != NULL && d->unscaled;
+}
+
+void br_tween_set_paused(br_engine *e, br_tween t, bool paused)
+{
+    br_tween_data *d = br_tween_data_get(e, t);
+    if (d != NULL) {
+        d->paused = paused;
+    }
+}
+
+bool br_tween_paused(br_engine *e, br_tween t)
+{
+    br_tween_data *d = br_tween_data_get(e, t);
+    return d != NULL && d->paused;
+}
+
 /* ---- removal */
 
 static void br_tween_remove_at(br_engine *e, uint32_t i)
@@ -334,19 +362,24 @@ void br_tween_system(br_engine *e, float dt, void *user)
     bool check_targets = s->tween_epoch != s->destroy_epoch;
     s->tween_epoch = s->destroy_epoch;
     s->updating = true;
+    float unscaled = br_ticker_unscaled_delta(e);
     for (uint32_t i = 0; i < count; i++) {
         br_tween_data *d = br_array_at(&s->tweens, i);
         if (d->dead) {
             continue;
         }
+        float frame_dt = d->unscaled ? unscaled : dt;
         bool has_target = d->target.kind != BR_ANIM_TARGET_NONE;
         if (has_target && check_targets && !br_anim_target_valid(e, d->target)) {
             d->dead = true; /* the node was destroyed: the tween goes with it */
             continue;
         }
-        float step = dt;
+        if (d->paused) {
+            continue;
+        }
+        float step = frame_dt;
         if (d->delay > 0.0f) {
-            d->delay -= dt;
+            d->delay -= frame_dt;
             if (d->delay > 0.0f) {
                 continue;
             }

@@ -3,7 +3,11 @@
 #include "braty/braty.h"
 #include "br_test.h"
 
+#include <SDL3/SDL_atomic.h>
 #include <SDL3/SDL_filesystem.h>
+#include <SDL3/SDL_log.h>
+#include <SDL3/SDL_thread.h>
+#include <SDL3/SDL_timer.h>
 #include <math.h>
 
 #define RAMP_FRAMES 100
@@ -161,6 +165,48 @@ static void test_buses(br_engine *e, br_sound *ramp)
     BR_CHECK(br_audio_instance_count(e) == 0);
 }
 
+/* volume getters, and a global pause that composes with the app's device pause */
+static void test_getters_and_global_pause(br_engine *e, br_sound *ramp)
+{
+    float out[2 * 1];
+    int music = br_audio_bus_create(e, "music");
+    BR_CHECK(near(br_audio_master_volume(e), 1.0f) && near(br_audio_bus_volume(e, music), 1.0f));
+    br_audio_set_master_volume(e, 0.25f);
+    br_audio_bus_set_volume(e, music, 0.75f);
+    br_audio_bus_set_muted(e, music, true);
+    BR_CHECK(near(br_audio_master_volume(e), 0.25f) && near(br_audio_bus_volume(e, music), 0.75f));
+    BR_CHECK(br_audio_bus_muted(e, music) && !br_audio_muted(e));
+    BR_CHECK(near(br_audio_bus_volume(e, 99), 0.0f)); /* no such bus */
+    br_audio_bus_set_muted(e, music, false);
+    br_audio_set_master_volume(e, 1.0f);
+    br_audio_play_desc d = br_audio_play_defaults();
+    d.volume = 0.5f;
+    d.loop = true;
+    d.start = 10.0f / BR_AUDIO_RATE;
+    br_sound_instance i = br_audio_play(e, ramp, &d);
+    BR_CHECK(near(br_audio_volume(e, i), 0.5f));
+    br_audio_set_volume(e, i, 2.0f);
+    BR_CHECK(near(br_audio_volume(e, i), 2.0f));
+
+    /* paused for two reasons, resumed for one: still paused, and the voice does not advance */
+    br_audio_set_global_paused(e, true);
+    br_audio_set_device_paused(e, true);
+    BR_CHECK(br_audio_global_paused(e));
+    br_audio_mix(e, out, 1);
+    BR_CHECK(near(out[0], 0.0f));
+    br_audio_set_device_paused(e, false); /* the window came back; the game's pause menu is still up */
+    br_audio_mix(e, out, 1);
+    BR_CHECK(near(out[0], 0.0f) && br_audio_global_paused(e) && near(br_audio_position(e, i), 10.0f / BR_AUDIO_RATE));
+    br_audio_set_device_paused(e, true);
+    br_audio_set_global_paused(e, false); /* menu closed while the window is away */
+    BR_CHECK(br_audio_device_paused(e) && !br_audio_global_paused(e));
+    br_audio_set_device_paused(e, false);
+    br_audio_mix(e, out, 1);
+    BR_CHECK(near(out[0], 0.10f * 2.0f)); /* resumes at frame 10 */
+    br_audio_stop(e, i);
+    BR_CHECK(near(br_audio_volume(e, i), 0.0f)); /* stale handle */
+}
+
 static void test_resample(br_engine *e)
 {
     float pcm[2 * 240];
@@ -227,6 +273,120 @@ static void test_loaders(void)
     br_engine_step(e, 1.0f / 60.0f);
     BR_CHECK(g_completed == 1 && br_audio_instance_count(e) == 0);
     br_engine_destroy(e);                            /* asset unload after audio shutdown is safe */
+}
+
+/* ---- streaming voices decode outside the audio lock */
+
+typedef struct mixer_thread {
+    br_engine    *e;
+    SDL_AtomicInt running;  /* 1 while the thread mixes */
+    SDL_AtomicInt stop;
+    uint64_t      mix_ns;   /* longest br_audio_mix call */
+    bool          finite;
+} mixer_thread;
+
+static bool all_finite_mix(const float *out, uint32_t count)
+{
+    for (uint32_t i = 0; i < count; i++) {
+        if (SDL_isnan(out[i]) || SDL_isinf(out[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Plays the audio thread: mixes 0.25 s per call (a long callback: many decodes per call). */
+static int SDLCALL mixer_main(void *user)
+{
+    mixer_thread *m = user;
+    static float buf[2 * 12000];
+    SDL_SetAtomicInt(&m->running, 1);
+    while (SDL_GetAtomicInt(&m->stop) == 0) {
+        uint64_t t0 = SDL_GetTicksNS();
+        br_audio_mix(m->e, buf, 12000);
+        uint64_t t = SDL_GetTicksNS() - t0;
+        m->mix_ns = t > m->mix_ns ? t : m->mix_ns;
+        m->finite = m->finite && all_finite_mix(buf, 2 * 12000);
+    }
+    SDL_SetAtomicInt(&m->running, 0);
+    return 0;
+}
+
+/* Many plays / stops / seeks / speed changes on streaming voices while another thread mixes.
+ * The main thread's calls must never wait for a whole decode: the longest seek / speed / volume /
+ * pause call stays far below the longest mix (which is mostly Vorbis decoding). Before the fix
+ * the lock was held for the whole mix, so a call could wait as long as one (measured: 10.6 ms
+ * call, 11.2 ms mix). */
+static void test_stream_stress(void)
+{
+    char *cwd = SDL_GetCurrentDirectory();
+    char root[1024];
+    SDL_snprintf(root, sizeof(root), "%s../examples/audio", cwd != NULL ? cwd : "");
+    SDL_free(cwd);
+    br_engine *e = br_engine_create("test_audio_stream", root);
+    br_audio_set_stream_threshold(e, 1.0f);
+    br_sound *gong = br_sound_load(e, "gong.ogg");
+    BR_CHECK(gong != NULL && br_sound_is_streaming(gong));
+    if (gong == NULL) {
+        br_engine_destroy(e);
+        return;
+    }
+    br_audio_play_desc d = br_audio_play_defaults();
+    d.loop = true;
+    br_sound_instance voices[24];
+    for (int i = 0; i < 24; i++) {
+        d.start = (float)i * 0.2f;
+        voices[i] = br_audio_play(e, gong, &d);
+    }
+    mixer_thread m;
+    SDL_zero(m);
+    m.e = e;
+    m.finite = true;
+    SDL_Thread *thread = SDL_CreateThread(mixer_main, "test_mixer", &m);
+    BR_CHECK(thread != NULL);
+    while (thread != NULL && SDL_GetAtomicInt(&m.running) == 0) {
+        SDL_Delay(0);
+    }
+    uint64_t worst = 0;
+    uint32_t rng = 12345u;
+    uint64_t until = SDL_GetTicksNS() + 1500000000ull; /* 1.5 s of churn */
+    while (SDL_GetTicksNS() < until) {
+        rng = rng * 1664525u + 1013904223u;
+        int k = (int)((rng >> 8) % 24u);
+        uint64_t t0 = SDL_GetTicksNS();
+        switch ((rng >> 4) % 5u) {
+        case 0:
+            br_audio_stop(e, voices[k]);
+            voices[k] = br_audio_play(e, gong, &d);
+            break;
+        case 1:
+            br_audio_seek(e, voices[k], (float)((rng >> 12) % 50u) * 0.1f);
+            break;
+        case 2:
+            br_audio_set_speed(e, voices[k], 0.5f + (float)((rng >> 12) % 4u) * 0.5f);
+            break;
+        case 3:
+            br_audio_set_volume(e, voices[k], 0.5f);
+            break;
+        default:
+            br_audio_set_paused(e, voices[k], ((rng >> 12) & 1u) != 0);
+            break;
+        }
+        uint64_t t = SDL_GetTicksNS() - t0;
+        if ((rng >> 4) % 5u != 0) { /* play opens and seeks a decoder itself (no lock): not a wait */
+            worst = t > worst ? t : worst;
+        }
+    }
+    SDL_SetAtomicInt(&m.stop, 1);
+    SDL_WaitThread(thread, NULL);
+    SDL_Log("stream stress: longest main-thread call %.3f ms, longest mix %.3f ms", (double)worst / 1e6,
+            (double)m.mix_ns / 1e6);
+    BR_CHECK(m.finite && br_audio_instance_count(e) <= 24);
+    BR_CHECK(worst * 4 < m.mix_ns);
+    /* destroying the sound with voices on it while nothing mixes: all gone */
+    br_assets_unload(e, "gong.ogg");
+    BR_CHECK(br_audio_instance_count(e) == 0);
+    br_engine_destroy(e);
 }
 
 /* Headless + deterministic: no device mixes, so instances advance by game time and finish
@@ -340,6 +500,7 @@ int main(void)
     test_volume_pan(e, ramp);
     test_loop_and_completion(e, ramp);
     test_speed_seek_sprite(e, ramp);
+    test_getters_and_global_pause(e, ramp);
     test_buses(e, ramp);
     test_resample(e);
     BR_CHECK(!br_audio_device_open(e));   /* headless: never opened */
@@ -348,5 +509,6 @@ int main(void)
     test_deterministic_game_clock();
     test_no_device_game_clock();
     test_bad_floats();
+    test_stream_stress();
     return br_test_finish();
 }

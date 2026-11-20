@@ -177,9 +177,8 @@ typedef struct cr_game {
     char      level_scene[BR_FIELD_STRING_SIZE]; /* "level1" */
     char      level_title[BR_FIELD_STRING_SIZE];
     br_scene  level;
-    br_node   level_view;           /* the .glb's view3d (hidden; the camera renders the level) */
     br_node3d level_root;           /* its 3D root */
-    br_node   camera;               /* the following 3D br_camera */
+    br_node   camera;               /* the .glb's camera as a following br_camera; holds "level" */
     br_node3d player;               /* the character instance (model3d) */
     br_node3d camera_target;        /* child of the player the camera looks at */
     br_animator animator;

@@ -457,6 +457,87 @@ br_texture br_view3d_texture(br_engine *e, br_node view)
     return v != NULL ? v->output : none;
 }
 
+bool br_view3d_auto_resize(br_engine *e, br_node view)
+{
+    br_view3d_state *v = br_view3d_state_get(e, view);
+    return v != NULL && v->auto_resize;
+}
+
+float br_view3d_resolution(br_engine *e, br_node view)
+{
+    br_view3d_state *v = br_view3d_state_get(e, view);
+    return v != NULL ? v->resolution : 0.0f;
+}
+
+uint32_t br_view3d_msaa(br_engine *e, br_node view)
+{
+    br_view3d_state *v = br_view3d_state_get(e, view);
+    return v != NULL ? v->msaa : 0;
+}
+
+br_color br_view3d_background(br_engine *e, br_node view)
+{
+    br_view3d_state *v = br_view3d_state_get(e, view);
+    br_color c = br_color_make(0.0f, 0.0f, 0.0f, 0.0f);
+    if (v != NULL && v->background.a > 0.0f) {
+        c = br_color_make(v->background.r / v->background.a, v->background.g / v->background.a,
+                          v->background.b / v->background.a, v->background.a);
+    }
+    return c;
+}
+
+bool br_view3d_get_environment(br_engine *e, br_node view, br_color *sky, br_color *ground, float *intensity)
+{
+    br_view3d_state *v = br_view3d_state_get(e, view);
+    if (v == NULL) {
+        return false;
+    }
+    if (sky != NULL) {
+        *sky = v->sky;
+    }
+    if (ground != NULL) {
+        *ground = v->ground;
+    }
+    if (intensity != NULL) {
+        *intensity = v->ambient_intensity;
+    }
+    return true;
+}
+
+uint32_t br_view3d_culling_mask(br_engine *e, br_node view)
+{
+    br_view3d_state *v = br_view3d_state_get(e, view);
+    return v != NULL ? v->culling_mask : 0;
+}
+
+uint32_t br_view3d_shadow_resolution(br_engine *e, br_node view)
+{
+    br_view3d_state *v = br_view3d_state_get(e, view);
+    return v != NULL ? v->shadow_tile_size : 0;
+}
+
+bool br_view3d_copy_settings(br_engine *e, br_node from, br_node to)
+{
+    br_view3d_state *a = br_view3d_state_get(e, from);
+    br_view3d_state *b = br_view3d_state_get(e, to);
+    if (a == NULL || b == NULL) {
+        br_log_error("br_view3d_copy_settings: both nodes must be view3d nodes");
+        return false;
+    }
+    b->msaa = a->msaa;
+    b->resolution = a->resolution;
+    b->background = a->background; /* premultiplied both sides: no round trip */
+    b->sky = a->sky;
+    b->ground = a->ground;
+    b->ambient_intensity = a->ambient_intensity;
+    b->culling_mask = a->culling_mask;
+    b->shadow_tile_size = a->shadow_tile_size;
+    b->post = a->post;
+    SDL_memcpy(b->passes, a->passes, sizeof(b->passes));
+    b->pass_count = a->pass_count;
+    return true;
+}
+
 void br_view3d_get_stats(br_engine *e, br_node view, br_view3d_stats *out)
 {
     br_view3d_state *v = br_view3d_state_get(e, view);

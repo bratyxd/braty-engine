@@ -6,9 +6,9 @@
  *
  * Systems: cr.flow (UPDATE 0). Scene events reset the level state when a level unloads.
  * A level is a .glb loaded as a scene; on activation this file reads its scene extras into a
- * "level" component, builds the collider list in the level arena, puts a following br_camera
- * over the level's 3D root (taking its pose from the file's camera), spawns the player and loads
- * the HUD on top.
+ * "level" component, builds the collider list in the level arena, makes the file's camera (a
+ * br_camera through the .glb's own view, br_gltf_options.camera_as_br_camera) follow the player,
+ * spawns the player and loads the HUD on top.
  */
 #include "game.h"
 
@@ -201,15 +201,6 @@ static br_node3d cr_level_instance(br_engine *e, br_node3d root)
     return none;
 }
 
-static br_color cr_extras_color(br_engine *e, const cJSON *extras, const char *key, uint32_t fallback)
-{
-    br_color c = br_color_from_hex(fallback, 1.0f);
-    if (cJSON_HasObjectItem(extras, key)) {
-        br_data_get_color(e, extras, key, &c);
-    }
-    return c;
-}
-
 /* World-space boxes of every solid "gltf.collider" (from "-colonly" / "-col" nodes) into the
  * level arena: the movement code loops over this dense array. */
 static void cr_build_colliders(br_engine *e, cr_game *g)
@@ -240,15 +231,17 @@ static void cr_level_setup(br_engine *e, cr_game *g)
 {
     const cr_tuning *t = cr_tuning_get(e, g);
     g->level = br_scene_active(e);
-    g->level_view = cr_find(e, g->level, g->level_scene); /* the view is labelled after the file */
+    g->camera = cr_find(e, g->level, "Camera"); /* the .glb's camera, labelled after its glTF node */
+    br_node_set_label(e, g->camera, "level_camera");
     g->level_root = br_scene_root_3d(e, g->level);
     br_node3d inst = cr_level_instance(e, g->level_root);
     const br_model *model = br_model3d_model(e, inst);
 
     /* level settings live in the glTF scene extras: {"level": {...}, "sky": ..., "background": ...} */
     cJSON *extras = model != NULL && model->scene_extras != NULL ? cJSON_Parse(model->scene_extras) : NULL;
-    br_scene_file_apply_component(e, g->level_view, "level", cJSON_GetObjectItemCaseSensitive(extras, "level"));
-    const cr_level *lvl = br_component_get(e, g->level_view, g->id.level);
+    br_scene_file_apply_component(e, g->camera, "level", cJSON_GetObjectItemCaseSensitive(extras, "level"));
+    cJSON_Delete(extras);
+    const cr_level *lvl = br_component_get(e, g->camera, g->id.level);
     cr_level defaults;
     SDL_zero(defaults);
     defaults.time_limit = 60.0f;
@@ -262,37 +255,13 @@ static void cr_level_setup(br_engine *e, cr_game *g)
     g->kill_y = lvl->kill_y;
     g->last_tick = -1;
 
-    /* the following camera: a br_camera over the level's 3D root, starting where the file's camera
-     * is. The .glb view stays hidden so the level is not drawn twice (docs/API_REVIEW.md). */
-    br_node3d file_cam = br_model3d_camera(e, inst, NULL);
-    br_camera c = br_camera_default_3d();
-    const br_camera3d *fc = br_camera3d_get(e, file_cam);
-    if (fc != NULL) {
-        c.field_of_view = fc->fov_y;
-        c.near_z = fc->near_z;
-        c.far_z = fc->far_z;
-    }
-    c.background_color = cr_extras_color(e, extras, "background", 0x5fa8de);
-    g->camera = br_camera_create_3d(e, g->level_root, &c);
-    br_node_set_label(e, g->camera, "level_camera");
-    br_node_add_child(e, br_scene_root_2d(e, g->level), g->camera); /* dies with the level */
-    br_node cam_view = br_camera_view3d(e, g->camera);
-    float ambient = 0.45f;
-    const cJSON *amb = cJSON_GetObjectItemCaseSensitive(extras, "ambient");
-    if (cJSON_IsNumber(amb)) {
-        ambient = (float)amb->valuedouble;
-    }
-    br_view3d_set_environment(e, cam_view, br_color_to_linear(cr_extras_color(e, extras, "sky", 0xbfe3ff)),
-                              br_color_to_linear(cr_extras_color(e, extras, "ground", 0x6f8f5a)), ambient);
-    br_view3d_set_msaa(e, cam_view, 4);
-    br_post3d_settings *post = br_view3d_post(e, cam_view);
+    /* the camera draws through the .glb's view: sky, ground, background and MSAA come from the
+     * scene extras already; bloom is tuning */
+    br_post3d_settings *post = br_view3d_post(e, br_camera_view3d(e, g->camera));
     if (post != NULL) {
         post->bloom_threshold = t->bloom_threshold;
         post->bloom_intensity = t->bloom_intensity;
     }
-    // ponytail: the .glb's own view is hidden and its environment copied by hand (API_REVIEW 23, 24); an engine call that adopts the view as a br_camera would remove both.
-    br_node_set_visible(e, g->level_view, false);
-    cJSON_Delete(extras);
 
     /* per-level memory and data */
     br_arena_linear_reset(&g->level_arena);
@@ -317,7 +286,7 @@ static void cr_level_setup(br_engine *e, cr_game *g)
 
     /* the rig starts at the file camera; the follow offset keeps that framing */
     br_node3d rig = br_camera_node3d(e, g->camera);
-    br_vec3 eye = br_node3d_world_position(e, file_cam);
+    br_vec3 eye = br_node3d_world_position(e, rig);
     br_vec3 look = br_vec3_add(g->spawn, br_vec3_make(0.0f, t->height, 0.0f));
     br_node3d_set_position(e, rig, eye);
     br_node3d_look_at(e, rig, look, br_vec3_make(0.0f, 1.0f, 0.0f));
@@ -371,7 +340,6 @@ static void cr_on_scene_event(br_engine *e, br_scene scene, br_scene_event event
     br_node none = { 0, 0 };
     br_scene no_scene = { 0, 0 };
     g->level = no_scene;
-    g->level_view = none;
     g->level_root = none3d;
     g->camera = none;
     g->player = none3d;
@@ -486,7 +454,7 @@ static void cr_finish_level(br_engine *e, cr_game *g)
     } else if (g->crates_taken * 2 >= g->crates_total) {
         g->result_stars = 1;
     }
-    const cr_level *lvl = br_component_get(e, g->level_view, g->id.level);
+    const cr_level *lvl = br_component_get(e, g->camera, g->id.level);
     int index = lvl != NULL ? SDL_clamp(lvl->index, 1, CR_MAX_LEVELS) : 1;
     g->result_new_best = g->result_score > g->best[index];
     if (g->result_new_best) {
@@ -713,5 +681,9 @@ void cr_flow_register(br_engine *e, cr_game *g)
     cr_settings_load(e, g);
     cr_settings_apply(e, g);
     br_scene_on_event(e, cr_on_scene_event, g);
+    br_gltf_options levels;
+    SDL_zero(levels);
+    levels.camera_as_br_camera = true; /* a level's camera follows and shakes (br_camera) */
+    br_gltf_set_load_options(e, &levels);
     br_system_add(e, "cr.flow", BR_PHASE_UPDATE, 0, cr_flow_system, g);
 }

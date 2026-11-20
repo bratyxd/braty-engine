@@ -162,6 +162,7 @@ typedef struct br_render_state {
     bool       collected;         /* the draw list belongs to this frame */
     bool       warned_no_stencil;
     bool       warned_depth;
+    bool       warned_capture_effects; /* effects met inside a canvas3d capture (logged once) */
 
     br_render_effects_fn effects_fn;
     void                *effects_user;

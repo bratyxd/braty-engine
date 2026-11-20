@@ -447,12 +447,13 @@ and prefabs can start animation without code:
 ```
 
 `animator`: `clips` (an anim.json, section 6, loaded through the asset cache), `graph` (optional
-animgraph.json, section 7; its states name clips of `clips`), `play` (optional clip), `loop`, `speed` (0 = 1). `tween`: `property`
+animgraph.json, section 7; its states name clips of `clips`), `play` (optional clip), `loop`, `speed` (0 = 1), `unscaled` (true: runs on
+`br_ticker_unscaled_delta`, so a pause menu keeps animating at ticker speed 0). `tween`: `property`
 (a property path, section 6), `to` / `from` (a number or `[x, y]`: float, int, bool and vec2
 properties), `to3` / `from3` (`[x, y, z]`: vec3 properties such as a 3D node's `position` and
 `scale`), `to_color` / `from_color` (colour properties such as `tint`), `mode` (`"to"` default,
 `"from"`, `"from_to"`), `duration`, `delay`, `ease` (easing name), `repeat` (-1 = forever),
-`yoyo`. Rotations (quaternions), morph weights and textures cannot be tweened from the
+`yoyo`, `unscaled` (as for `animator`). Rotations (quaternions), morph weights and textures cannot be tweened from the
 component (use code or a clip). Each row is turned into a real animator / tween the first frame
 after it appears; one tween component per node. The asset references the components take are
 released with the node.

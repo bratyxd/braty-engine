@@ -66,12 +66,14 @@ Test: `tests/test_three_d.c`. Example: `examples/view3d_demo.c` (`--camera 0|1`,
 |---|---|
 | `br_view3d_create(e, w, h)`, `br_view3d_root`, `br_view3d_camera`, `_set_auto_resize`, `_set_msaa` | A view in the 2D stage. |
 | `br_view3d_set_environment`, `_set_background`, `br_view3d_post` / `_add_post_pass` | Ambient, background, bloom/tone map/custom passes. |
+| `br_view3d_msaa`, `_background`, `_get_environment`, `_auto_resize`, `_resolution`, `_culling_mask`, `_shadow_resolution`; `br_view3d_copy_settings(e, from, to)` | Read the settings back; copy a view's look (not size, root or camera) onto another. |
 | `br_node3d_create(e, type)`, `_add_child`, `_child_at`, `_set_position/rotation/euler/scale`, `_look_at`, `_destroy` | Scene graph (same verbs as `br_node_*`). |
 | `br_geometry3d_cube/sphere/plane/cylinder/cone/torus/capsule`, `br_geometry3d_create(desc)` | Geometry (full vertex layout, 32-bit indices, morph targets). |
 | `br_material3d_default(model)` + `br_material3d_create`, `br_material3d_get` | PBR / Phong / Flat / Toon / custom materials, edit live. |
 | `br_mesh3d_create(e, geo, mat)`, `br_mesh3d_get` (skin + morph slots) | A mesh node. |
 | `br_batched_mesh3d_create`, `_add(e, n, matrix, color)` | Instancing: one draw for N copies. |
 | `br_light3d_default(kind)` + `br_light3d_create` | Directional (cascaded shadows), point, spot (shadows). |
+| `br_light3d_spot_cone(&light)` | The (cos outer, cos inner) the shader gets: inner == outer (or inner > outer, NaN) becomes a hard edge instead of a division by zero in `smoothstep`. |
 | `br_camera_create_3d` + the `camera.orbit` component (`br_camera_orbit_make`, `br_camera.h`) | Mouse orbit camera. |
 | `br_view3d_pick`, `br_view3d_world_to_screen`, `br_node3d_on(e, n, BR_EVENT_CLICK, fn, user)` | Picking, 2D following 3D, 3D pointer events. |
 

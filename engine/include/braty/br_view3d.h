@@ -275,6 +275,25 @@ void br_view3d_set_shadow_resolution(br_engine *e, br_node view, uint32_t tile_s
 /* The tone-mapped output (a render texture, usable as a sprite or material texture elsewhere). */
 br_texture br_view3d_texture(br_engine *e, br_node view);
 
+/* Getters for the setters above (0 / false / zero colour if view is not a view3d). */
+bool br_view3d_auto_resize(br_engine *e, br_node view);
+/* Target pixels per 2D unit (0 = window pixel density). */
+float br_view3d_resolution(br_engine *e, br_node view);
+/* MSAA samples asked for (the GPU may give fewer). */
+uint32_t br_view3d_msaa(br_engine *e, br_node view);
+/* Background (linear, straight alpha; stored premultiplied, so alpha 0 reads back as transparent black). */
+br_color br_view3d_background(br_engine *e, br_node view);
+/* Copies the hemisphere ambient light into the non-NULL outputs. False if view is not a view3d. */
+bool br_view3d_get_environment(br_engine *e, br_node view, br_color *sky, br_color *ground, float *intensity);
+/* The culling mask (layer bits drawn). */
+uint32_t br_view3d_culling_mask(br_engine *e, br_node view);
+/* Shadow map tile size in pixels. */
+uint32_t br_view3d_shadow_resolution(br_engine *e, br_node view);
+/* Copies the look of `from` onto `to`: MSAA, resolution, background, environment, culling mask,
+ * shadow resolution, post settings and custom passes (not size, auto-resize, root or camera).
+ * False if either is not a view3d. */
+bool br_view3d_copy_settings(br_engine *e, br_node from, br_node to);
+
 /* ---- screen <-> world, picking, 3D pointer events */
 
 /* World ray through a stage (global 2D) point, starting on the near plane. Direction is unit length. */

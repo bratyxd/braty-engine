@@ -181,7 +181,9 @@ bool br_asset_group_load(br_asset_group *g)
             ok = ok && entry->state == BR_GROUP_LOADED;
         }
     }
-    g->async = false;
+    /* an async load in flight is finished by this one, not cancelled: its on_done still runs once,
+     * from the next poll (callbacks always come from engine steps). Nothing is left to request. */
+    g->issue_next = g->entries.count;
     return ok;
 }
 
@@ -278,8 +280,8 @@ float br_asset_group_progress(const br_asset_group *g)
 bool br_asset_group_is_loaded(const br_asset_group *g)
 {
     uint32_t finished, total, failed;
-    if (g == NULL || g->async) {
-        return false;
+    if (g == NULL || (g->async && g->issue_next < g->entries.count)) {
+        return false; /* deterministic async: entries not requested yet may still be LOADED from before */
     }
     br_group_counts(g, &finished, &total, &failed);
     return finished == total;

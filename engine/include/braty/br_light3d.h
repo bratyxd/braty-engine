@@ -55,6 +55,10 @@ br_node3d br_light3d_create(br_engine *e, const br_light3d *light);
 /* The light data, NULL if n is not a live light3d. */
 /* Pointer rule (br_core.h): valid until the next create or destroy of this kind of object. */
 br_light3d *br_light3d_get(br_engine *e, br_node3d n);
+/* The spot cone as the shader gets it: (cos outer, cos inner), the inner cosine kept at least
+ * 1e-4 above the outer one (the shader's smoothstep divides by their difference: equal angles
+ * gave NaN), non-finite angles replaced by the defaults. */
+br_vec2 br_light3d_spot_cone(const br_light3d *light);
 /* Far distance of each cascade (practical split scheme: lambda blends logarithmic and uniform). */
 void br_shadow3d_cascade_splits(float near_z, float far_z, uint32_t count, float lambda, float *out_far);
 

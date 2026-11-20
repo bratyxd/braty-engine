@@ -4,6 +4,8 @@
 #include "braty/braty.h"
 #include "br_test.h"
 
+#include <SDL3/SDL_log.h>
+
 static bool near_eq(float a, float b)
 {
     return SDL_fabsf(a - b) < 1e-3f;
@@ -168,11 +170,73 @@ static void test_engine(void)
     br_engine_destroy(e);
 }
 
+/* Log lines containing `needle`. */
+static int count_logs(br_engine *e, const char *needle)
+{
+    int found = 0;
+    char line[512];
+    for (uint32_t i = 0; i < br_debug_log_count(e); i++) {
+        if (br_debug_log_line(e, i, line, sizeof(line)) && SDL_strstr(line, needle) != NULL) {
+            found++;
+        }
+    }
+    return found;
+}
+
+/* A filter inside a geometry-mode canvas3d cannot run (its offscreen passes would land in the 3D
+ * replay): one clear error naming the node, and it is drawn plainly. Texture mode runs it.
+ * Needs a GPU (capture only happens when drawing); skips without one. */
+static void test_effects_in_canvas(void)
+{
+    br_engine *e = br_engine_create("test_canvas3d_effects", NULL);
+    if (!br_engine_open_window(e, 320, 240, NULL)) {
+        SDL_Log("test_effects_in_canvas skipped: no window / GPU");
+        br_engine_destroy(e);
+        return;
+    }
+    br_node view = br_view3d_create(e, 320.0f, 240.0f);
+    br_node_add_child(e, br_stage_root(e), view);
+    br_node3d cam = br_view3d_camera(e, view);
+    br_node3d_set_position(e, cam, br_vec3_make(0.0f, 0.0f, 5.0f));
+    br_node3d_look_at(e, cam, br_vec3_make(0.0f, 0.0f, 0.0f), br_vec3_make(0.0f, 1.0f, 0.0f));
+    br_filter blur = br_filter_blur(4.0f, 2, 5);
+    br_canvas3d_desc d = br_canvas3d_default(200.0f, 100.0f);
+    br_node3d geometry = br_canvas3d_create(e, &d);
+    br_node3d_add_child(e, br_view3d_root(e, view), geometry);
+    br_node blurred = br_sprite_create(e, br_texture_white(e));
+    br_sprite_set_size(e, blurred, 50.0f, 50.0f);
+    br_node_set_label(e, blurred, "blurred_label");
+    BR_CHECK(br_filters_set(e, blurred, &blur, 1));
+    br_node_add_child(e, br_canvas3d_root(e, geometry), blurred);
+    for (int i = 0; i < 3; i++) {
+        br_engine_step(e, 1.0f / 60.0f);
+    }
+    BR_CHECK(count_logs(e, "blurred_label") == 1); /* once, not every frame */
+    BR_CHECK(count_logs(e, "BR_CANVAS3D_TEXTURE") == 1);
+
+    /* the same in texture mode: no error */
+    br_node3d_destroy(e, geometry);
+    d.mode = BR_CANVAS3D_TEXTURE;
+    br_node3d textured = br_canvas3d_create(e, &d);
+    br_node3d_add_child(e, br_view3d_root(e, view), textured);
+    br_node fine = br_sprite_create(e, br_texture_white(e));
+    br_sprite_set_size(e, fine, 50.0f, 50.0f);
+    br_node_set_label(e, fine, "textured_label");
+    BR_CHECK(br_filters_set(e, fine, &blur, 1));
+    br_node_add_child(e, br_canvas3d_root(e, textured), fine);
+    for (int i = 0; i < 3; i++) {
+        br_engine_step(e, 1.0f / 60.0f);
+    }
+    BR_CHECK(count_logs(e, "textured_label") == 0);
+    br_engine_destroy(e);
+}
+
 int main(void)
 {
     test_plane();
     test_ray_to_local();
     test_billboard();
     test_engine();
+    test_effects_in_canvas();
     return br_test_finish();
 }

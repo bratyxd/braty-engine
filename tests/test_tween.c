@@ -389,6 +389,66 @@ static void test_scene_components(void)
     br_engine_destroy(e);
 }
 
+/* A pause menu: br_ticker_set_speed(e, 0) freezes the game; unscaled tweens and animators keep
+ * the menu moving; a paused tween holds. Runs the real app loop (unscaled delta = 1/60). */
+static void test_pause_clocks(void)
+{
+    char *argv[] = { "test_tween", "--headless", "--deterministic" };
+    br_app_desc desc;
+    SDL_zero(desc);
+    void *state = NULL;
+    BR_CHECK(br_app_init(&state, &desc, 3, argv) == SDL_APP_CONTINUE);
+    br_engine *e = state;
+    if (e == NULL) {
+        return;
+    }
+    br_node game = make_node(e, "game");
+    br_node menu = make_node(e, "menu");
+    br_node held = make_node(e, "held");
+    br_tween tg = br_tween_to_f(e, br_anim_target_2d(game), "x", 60.0f, 1.0f, BR_EASE_LINEAR);
+    br_tween tm = br_tween_to_f(e, br_anim_target_2d(menu), "x", 60.0f, 1.0f, BR_EASE_LINEAR);
+    br_tween th = br_tween_to_f(e, br_anim_target_2d(held), "x", 60.0f, 1.0f, BR_EASE_LINEAR);
+    br_tween_set_unscaled(e, tm, true);
+    br_tween_set_paused(e, th, true);
+    BR_CHECK(br_tween_unscaled(e, tm) && !br_tween_unscaled(e, tg) && br_tween_paused(e, th));
+
+    br_node anim_game = make_node(e, "anim_game");
+    br_node anim_menu = make_node(e, "anim_menu");
+    br_anim_clip *clip = br_anim_clip_create("r", 1.0f, BR_ANIM_LOOP);
+    float times[2] = { 0.0f, 1.0f };
+    float values[2] = { 0.0f, 60.0f };
+    br_anim_clip_add_track(clip, ":x", BR_ANIM_LINEAR, 1, 2, times, values);
+    br_animator ag = br_animator_add(e, br_anim_target_2d(anim_game));
+    br_animator am = br_animator_add(e, br_anim_target_2d(anim_menu));
+    br_animator_add_clip(e, ag, clip);
+    br_animator_add_clip(e, am, clip);
+    br_animator_play(e, ag, "r");
+    br_animator_play(e, am, "r");
+    br_animator_set_unscaled(e, am, true);
+    BR_CHECK(br_animator_unscaled(e, am) && !br_animator_unscaled(e, ag));
+    /* the "tween" component's "unscaled" field (a menu built from a scene file) */
+    br_node data_menu = make_node(e, "data_menu");
+    cJSON *fields = cJSON_Parse("{ \"property\": \"x\", \"to\": 60, \"duration\": 1, \"unscaled\": true }");
+    BR_CHECK(br_scene_file_apply_component(e, data_menu, "tween", fields));
+    cJSON_Delete(fields);
+
+    br_ticker_set_speed(e, 0.0f);
+    for (int i = 0; i < 6; i++) {
+        br_app_iterate(state);
+    }
+    BR_CHECK(near_eq(br_node_position(e, game).x, 0.0f) && near_eq(br_node_position(e, held).x, 0.0f));
+    BR_CHECK(near_eq(br_node_position(e, menu).x, 6.0f));
+    BR_CHECK(near_eq(br_node_position(e, anim_game).x, 0.0f) && near_eq(br_node_position(e, anim_menu).x, 6.0f));
+    BR_CHECK(near_eq(br_node_position(e, data_menu).x, 6.0f));
+    /* unpaused: the paused tween goes on from where it held, at game speed */
+    br_ticker_set_speed(e, 1.0f);
+    br_tween_set_paused(e, th, false);
+    br_app_iterate(state);
+    BR_CHECK(near_eq(br_node_position(e, held).x, 1.0f) && near_eq(br_node_position(e, game).x, 1.0f));
+    br_app_quit(state, SDL_APP_SUCCESS);
+    br_anim_clip_destroy(clip);
+}
+
 int main(void)
 {
     br_engine *e = br_engine_create("test_tween", NULL);
@@ -404,5 +464,6 @@ int main(void)
         br_engine_destroy(e);
     }
     test_scene_components();
+    test_pause_clocks();
     return br_test_finish();
 }

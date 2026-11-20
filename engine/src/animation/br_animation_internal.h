@@ -127,6 +127,7 @@ typedef struct br_animator_data {
     uint32_t               param_count;
     float                  speed;
     bool                   paused;
+    bool                   unscaled;  /* br_ticker_unscaled_delta instead of the scaled dt */
     const br_anim_graph   *graph;
     int32_t                state;
     int32_t               *state_motion;  /* per graph state: motion index */
@@ -165,6 +166,8 @@ typedef struct br_tween_data {
     bool             started;
     bool             dead;
     bool             yoyo;
+    bool             unscaled;        /* br_ticker_unscaled_delta instead of the scaled dt */
+    bool             paused;
     float            delay;
     float            duration;
     float            elapsed;         /* in the current pass */

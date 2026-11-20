@@ -249,12 +249,19 @@ the game (the workaround is named) and left here with a proposed fix.
     desc)` turning an existing View3D (with its environment, post and MSAA) into a `br_camera`
     whose rig starts at the view's current camera; and `br_gltf_options.camera_as_br_camera` so a
     scene load does it, labelling the camera node after the glTF camera.
+    **Resolved (Phase 3 Task B5):** `br_camera_adopt_view3d(e, view, desc)` and
+    `br_gltf_options.camera_as_br_camera`; the view leaves the stage, so the level renders once.
+    Crate Rush uses it (no hidden view). Tests: `test_camera` `test_adopt_view`, `test_gltf_scene`
+    `test_as_scene`.
 24. **gap - View3D settings are write-only** (`br_view3d.h`: `br_view3d_set_environment`,
     `_set_background`, `_set_msaa` have no getters). Because of 23 the camera's view needs the
     level's sky / ground / ambient / background, which only the scene extras have, so the game
     parses `model->scene_extras` again (`cr_extras_color`). **Fix:** `br_view3d_environment(e,
     view, &sky, &ground, &intensity)`, `br_view3d_background`, `br_view3d_msaa`, and a
     `br_view3d_copy_settings(e, from, to)`.
+    **Resolved (Phase 3 Task B5):** a getter for every setter (`br_view3d_msaa`, `_background`,
+    `_get_environment` (out-copy rule), `_auto_resize`, `_resolution`, `_culling_mask`,
+    `_shadow_resolution`) and `br_view3d_copy_settings`. Test: `test_three_d` `test_view_settings`.
 25. **gap - scene extras cannot carry components** (`engine/src/data/br_gltf_extras.c`,
     `br_data_gltf_apply_extras` reads node extras only). Level settings (title, time limit,
     footstep sounds, kill height) are a `"level"` object in the scene extras; the game reaches
@@ -349,6 +356,9 @@ the game (the workaround is named) and left here with a proposed fix.
     before starting the game. (Still open after the 2026-11-20 review: the engine now rejects
     unknown argument *names* in JSON commands, but `key Up frames=40` still reaches it as the
     action `"frames=40"` and gets an error reply.)
+    **Resolved (Phase 3 Task B5):** every short command checks its word count and its
+    tap / down / up word; `key NAME [tap|down|up] [FRAMES]`, `gamepad ... BUTTON [SLOT] [FRAMES]`.
+    Test: `tests/test_playtest_tool.py` (CTest `test_playtest_tool`).
 41. **friction - `br_animation_stats` counts an animator only once it has been sampled.** On the
     first frame of a level the count is 0 although `br_animator_add` ran; the soak checks it a few
     frames later. **Fix:** report live animators (pool size) and sampled animators separately.
@@ -425,6 +435,10 @@ ones from the earlier lists. Summary of the whole review: `docs/REVIEW_2026-11-2
     `tests/test_app.c`, `test_unscaled_delta`, `test_pause_when_inactive`. Still open: tweens and
     animators have no unscaled flag, so they cannot keep animating a pause menu while
     `br_ticker_set_speed(e, 0)` stops the game.
+    **Resolved (Phase 3 Task B5):** `br_tween_set_unscaled` / `_set_paused`,
+    `br_animator_set_unscaled` (and `"unscaled"` on the `tween` / `animator` components); audio
+    pauses with `br_audio_set_global_paused`; particles are moved by game systems. Which clock
+    each part uses: the table in `docs/agents/app.md`. Test: `test_tween` `test_pause_clocks`.
 47. **friction - two mutation styles** (setters next to `_get` lookups returning mutable struct
     pointers whose lifetime differs per module). **Resolved, doc step (Phase 3 Task A):** the
     pointer rule is stated once at the top of `br_core.h` ("valid until the next create or
@@ -460,6 +474,11 @@ ones from the earlier lists. Summary of the whole review: `docs/REVIEW_2026-11-2
 52. **gap - audio has no volume getters and no global pause** (`br_audio.h`). Settings screens
     keep their own copy of bus volumes. **Fix:** `br_audio_bus_volume`, `br_audio_master_volume`,
     `br_audio_set_paused`. Rank 10.
+    **Resolved (Phase 3 Task B5):** `br_audio_master_volume`, `br_audio_bus_volume`,
+    `br_audio_volume` (instance), `br_audio_muted`, `br_audio_bus_muted`; the global pause is
+    `br_audio_set_global_paused` / `br_audio_global_paused` (`br_audio_set_paused` is the
+    instance call), a flag separate from the device pause so the two compose. Test: `test_audio`
+    `test_getters_and_global_pause`.
 
 ## Migration table (Phase 3 Task A)
 

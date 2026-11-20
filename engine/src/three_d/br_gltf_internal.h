@@ -78,6 +78,7 @@ typedef struct br_gltf_state {
     char     load_autoplay[64];
     bool     load_autoplay_set;
     bool     load_no_batching;
+    bool     load_camera_as_br_camera;
 } br_gltf_state;
 
 /* br_anim3d.c: the animation system (registered by br_gltf_register). */
