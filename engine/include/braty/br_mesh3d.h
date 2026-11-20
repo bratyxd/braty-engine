@@ -94,7 +94,8 @@ typedef struct br_mesh3d {
     br_color       color;                 /* linear multiplier of the base colour (default white) */
     bool           cast_shadows;          /* default true */
     /* skin slot: written by animation code, uploaded every frame */
-    const br_mat4 *joint_matrices;        /* NULL = not skinned; must stay valid while set */
+    const br_mat4 *joint_matrices;        /* NULL = not skinned; must stay valid while set (a glTF
+                                             instance clears it on meshes moved out of it when it dies) */
     uint32_t       joint_count;
     /* morph slot: weights of the geometry's targets */
     float          morph_weights[BR_MESH3D_MAX_MORPH_WEIGHTS];

@@ -54,6 +54,15 @@ static void br_gltf_model3d_destroy(br_engine *e, br_node3d n, void *data)
         }
         br_array_remove_swap(&s->anims, inst->anim_index);
     }
+    /* mesh3d nodes moved out of the instance outlive it: unskin them before inst->joints goes
+     * (the ones still inside are already dead, br_mesh3d_get returns NULL for them) */
+    for (uint32_t i = 0; i < inst->prim_node_count; i++) {
+        br_mesh3d *md = br_mesh3d_get(e, inst->prim_nodes[i]);
+        if (md != NULL && md->joint_matrices != NULL) {
+            md->joint_matrices = NULL;
+            md->joint_count = 0;
+        }
+    }
     br_gltf_instance_free(e, inst);
 }
 
