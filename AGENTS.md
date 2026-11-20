@@ -151,6 +151,9 @@ Your own code: `br_profile_begin(e, "name")` / `br_profile_end(e)`. `docs/PROFIL
      render levels, 16 prefab levels, 16 names per `{a,b}` pattern, 8192-point concave fills,
      glTF counts, text sizes) are in README "Limits" and `docs/DATA_FORMATS.md`.
 
+7. **Or skip building the engine:** link the prebuilt SDK from the GitHub releases
+   (`find_package(braty CONFIG REQUIRED)`, `braty::braty`); `docs/BUILDING.md` "The SDK".
+
 Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
 
 ## Code rules (hard requirements)

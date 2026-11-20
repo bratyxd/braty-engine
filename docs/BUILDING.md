@@ -167,3 +167,34 @@ struct, `SV_Position` included, or Direct3D 12 rejects the pipeline.
 
 Tests read their data from the source tree (`BRATY_SOURCE_DIR`, set by CMake), so a build
 directory can be anywhere: `cmake --preset windows-gcc -B build/any/depth` works with `ctest`.
+
+## The SDK (a game without the engine's sources)
+
+Every release on https://github.com/bratyxd/braty-engine/releases has one archive per toolchain
+(`windows-msvc`, `windows-mingw`, `linux-x64`, `macos-arm64`): the engine and SDL3 as static
+libraries, the headers, a CMake package, `tools/` and `docs/`. A game links it and never compiles
+the engine or SDL:
+
+```cmake
+cmake_minimum_required(VERSION 3.24)
+project(my_game LANGUAGES C)
+find_package(braty CONFIG REQUIRED)            # cmake -DCMAKE_PREFIX_PATH=<unzipped SDK folder> ...
+file(GLOB SOURCES CONFIGURE_DEPENDS src/*.c)
+add_executable(my_game ${SOURCES})
+target_link_libraries(my_game PRIVATE braty::braty)
+add_custom_command(TARGET my_game POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/data $<TARGET_FILE_DIR:my_game>)
+braty_install_game(my_game ${CMAKE_CURRENT_SOURCE_DIR}/data)   # cmake --install: exe + game.json + assets.brpack
+```
+
+The tools are in `<SDK>/tools` (`playtest.py`, `pack_assets.py`, `golden.py`). Both sample games
+use the SDK when `CMAKE_PREFIX_PATH` points at one and build the engine from source otherwise.
+
+- One flavour: optimised, profiler and `--playtest-stdin` compiled in. For a stripped shipping
+  build, or a toolchain with no archive (consoles, Intel Macs), build from source
+  (`add_subdirectory(<braty>)` and the `<preset>-release` presets).
+- MSVC: built with the release runtime; build the game as Release or RelWithDebInfo.
+- Linux: built on Ubuntu 22.04 (its glibc or newer).
+- Making a release: `git tag v0.2.0 && git push origin v0.2.0` (bump `project(braty VERSION ...)`
+  first). `.github/workflows/release.yml` builds each archive, builds Crate Rush against it,
+  plays its round, and publishes. `gh workflow run release.yml` does the same without publishing.
