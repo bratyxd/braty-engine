@@ -50,6 +50,7 @@ typedef struct br_events_state {
     bool     move_pending;      /* mouse motion not dispatched yet (coalesced to one per frame) */
     br_vec2  move_position;     /* stage position of the latest pending motion */
     uint64_t move_timestamp;
+    bool     warned_depth;      /* the hit-test depth limit was logged */
     int      cursor;            /* SDL_SystemCursor shown, -1 = default */
     SDL_Cursor *cursors[SDL_SYSTEM_CURSOR_COUNT];
 } br_events_state;
@@ -357,8 +358,28 @@ static bool br_events_self_contains(br_engine *e, uint32_t index, br_vec2 world_
 }
 
 /* Point inside a node's drawn geometry, children included (stencil masks). */
-static bool br_events_geometry_contains(br_engine *e, uint32_t index, br_vec2 p)
+/* Hit tests recurse per level, so they stop where the render walk stops drawing
+ * (BR_RENDER_MAX_DEPTH): deeper nodes are neither drawn nor hit. */
+#define BR_EVENTS_MAX_HIT_DEPTH 2048
+
+static bool br_events_too_deep(br_engine *e, uint32_t depth)
 {
+    if (depth < BR_EVENTS_MAX_HIT_DEPTH) {
+        return false;
+    }
+    if (!e->events->warned_depth) {
+        br_log_warn("events: hierarchy deeper than %d levels (or a render-layer loop): deeper nodes are not hit",
+                    BR_EVENTS_MAX_HIT_DEPTH);
+        e->events->warned_depth = true;
+    }
+    return true;
+}
+
+static bool br_events_geometry_contains(br_engine *e, uint32_t index, br_vec2 p, uint32_t depth)
+{
+    if (br_events_too_deep(e, depth)) {
+        return false;
+    }
     br_node_record *rec = br_scene_record_at(e->scene, index);
     if (rec->destroyed) {
         return false;
@@ -368,7 +389,7 @@ static bool br_events_geometry_contains(br_engine *e, uint32_t index, br_vec2 p)
     }
     for (uint32_t i = 0; i < rec->children.count; i++) {
         uint32_t child = *(uint32_t *)br_array_at(&rec->children, i);
-        if (br_events_geometry_contains(e, child, p)) {
+        if (br_events_geometry_contains(e, child, p, depth + 1)) {
             return true;
         }
         rec = br_scene_record_at(e->scene, index);
@@ -391,7 +412,7 @@ static bool br_events_mask_allows(br_engine *e, const br_node_record *rec, br_ve
         return has && br_rect_contains(bounds, p.x, p.y);
     }
     /* stencil, alpha and colour masks: the mask geometry decides */
-    bool inside = br_events_geometry_contains(e, mask, p);
+    bool inside = br_events_geometry_contains(e, mask, p, 0);
     return rec->mask_inverse ? !inside : inside;
 }
 
@@ -399,9 +420,23 @@ typedef struct br_hit_ctx {
     br_engine *e;
     br_vec2    point;
     br_node    target;
+    uint32_t   depth;
 } br_hit_ctx;
 
+static int br_events_hit_node(br_hit_ctx *h, uint32_t index, bool inherited, bool from_layer);
+
 static int br_events_hit(br_hit_ctx *h, uint32_t index, bool inherited, bool from_layer)
+{
+    if (br_events_too_deep(h->e, h->depth)) {
+        return BR_HIT_NONE;
+    }
+    h->depth += 1;
+    int r = br_events_hit_node(h, index, inherited, from_layer);
+    h->depth -= 1;
+    return r;
+}
+
+static int br_events_hit_node(br_hit_ctx *h, uint32_t index, bool inherited, bool from_layer)
 {
     br_engine *e = h->e;
     br_scene_state *s = e->scene;
@@ -485,6 +520,7 @@ br_node br_events_hit_test(br_engine *e, br_vec2 point)
     h.e = e;
     h.point = point;
     h.target = (br_node){ 0, 0 };
+    h.depth = 0;
     br_node root = br_scene_root(e);
     if (br_node_valid(e, root)) {
         br_events_hit(&h, root.index, false, false);

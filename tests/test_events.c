@@ -206,6 +206,34 @@ static void test_hit_masks(void)
     br_engine_destroy(e);
 }
 
+/* A chain of `depth` boxes, each 10 x 10 and one unit right of its parent; node 5 is "n5". */
+static br_node make_chain(br_engine *e, br_node parent, uint32_t depth, float x, br_event_mode mode)
+{
+    br_node top = make_box(e, parent, "top", x, 0, 10, 10, mode);
+    br_node p = top;
+    for (uint32_t i = 1; i < depth; i++) {
+        p = make_box(e, p, i == 5 ? "n5" : "", 1, 0, 10, 10, mode);
+    }
+    return top;
+}
+
+/* 50,000 levels: the hit test and the mask geometry test must not overflow the stack. */
+static void test_hit_deep_chain(void)
+{
+    br_engine *e = make_engine();
+    br_node root = br_scene_root(e);
+    make_chain(e, root, 50000, 0, BR_EVENT_MODE_STATIC);
+    BR_CHECK(SDL_strcmp(hit_label(e, 5, 5), "n5") == 0); /* the deepest box under the point */
+
+    br_node group = br_node_create_container(e);
+    br_node_add_child(e, root, group);
+    make_box(e, group, "masked", 0, 100, 50, 50, BR_EVENT_MODE_STATIC);
+    br_node mask = make_chain(e, root, 50000, 200, BR_EVENT_MODE_PASSIVE); /* far from the point */
+    br_node_set_mask(e, group, mask, BR_MASK_STENCIL, false);
+    BR_CHECK(SDL_strcmp(hit_label(e, 25, 125), "-") == 0);
+    br_engine_destroy(e);
+}
+
 /* ---- propagation */
 
 static void stop_listener(br_engine *e, br_event *ev, void *user)
@@ -649,6 +677,7 @@ int main(void)
     test_hit_order();
     test_hit_modes();
     test_hit_masks();
+    test_hit_deep_chain();
     test_propagation();
     test_hover_and_click();
     test_wheel_and_global_move();
