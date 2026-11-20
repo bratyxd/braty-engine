@@ -323,7 +323,8 @@ cJSON *br_input_actions_to_json(br_engine *e);
 /* Writes all bindings as JSON to save data (br_save_write), e.g. "bindings.json". */
 bool br_input_bindings_save(br_engine *e, const char *save_path);
 /* Reads bindings saved by br_input_bindings_save: every action in the file gets exactly the
- * file's bindings; other actions keep theirs. False if missing or not JSON. */
+ * file's bindings (an action none of whose entries parse keeps its own, logged); other actions
+ * keep theirs. False if missing or not JSON. */
 bool br_input_bindings_load(br_engine *e, const char *save_path);
 /* True while any binding is held (or was pressed this frame). */
 bool br_input_action_down(br_engine *e, const char *action);

@@ -397,6 +397,12 @@ static void test_json_and_save(br_engine *e)
     BR_CHECK(br_input_action_binding_count(e, "jump") == 2);
     BR_CHECK(br_input_action_binding_get(e, "jump", 0, &b) && b.code == SDL_SCANCODE_SPACE);
     BR_CHECK(br_input_action_binding_count(e, "extra") == 1);
+    /* a file whose entries for an action all fail to parse keeps the action's bindings (R5) */
+    const char *stale = "{\"jump\":{\"keys\":[\"NoSuchKey\"]},\"extra\":{}}";
+    BR_CHECK(br_save_write(e, "test_input_bindings.json", stale, SDL_strlen(stale)));
+    BR_CHECK(br_input_bindings_load(e, "test_input_bindings.json"));
+    BR_CHECK(br_input_action_binding_count(e, "jump") == 2);
+    BR_CHECK(br_input_action_binding_count(e, "extra") == 0); /* saved with no bindings: unbound */
     BR_CHECK(br_save_write(e, "test_input_bindings.json", "[1,2]", 5));
     BR_CHECK(!br_input_bindings_load(e, "test_input_bindings.json"));
     br_save_remove(e, "test_input_bindings.json");

@@ -427,6 +427,17 @@ bool br_input_bindings_save(br_engine *e, const char *save_path)
     return ok;
 }
 
+/* Number of binding entries (keys, mouse, buttons, axes) one saved action lists. */
+static int br_input_saved_entry_count(const cJSON *action)
+{
+    const char *lists[4] = { "keys", "mouse", "buttons", "axes" };
+    int count = 0;
+    for (int i = 0; i < 4; i++) {
+        count += cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(action, lists[i]));
+    }
+    return count;
+}
+
 bool br_input_bindings_load(br_engine *e, const char *save_path)
 {
     void *bytes = NULL;
@@ -445,10 +456,23 @@ bool br_input_bindings_load(br_engine *e, const char *save_path)
     cJSON_ArrayForEach(action, json)
     {
         br_action *a = br_input_find_action(e->input, action->string);
-        if (a != NULL) {
-            br_array_clear(&a->bindings);
+        if (a == NULL) {
+            br_input_action_from_json(e, action->string, action);
+            continue;
         }
+        br_array old = a->bindings;
+        br_array_init(&a->bindings, sizeof(br_input_binding));
         br_input_action_from_json(e, action->string, action);
+        a = br_input_find_action(e->input, action->string);
+        /* entries that no longer parse (renamed keys, a hand-edited file) must not unbind it */
+        if (a->bindings.count == 0 && br_input_saved_entry_count(action) > 0) {
+            br_log_warn("input: bindings '%s': none of '%s' could be read; keeping its current bindings",
+                        save_path, action->string);
+            br_array_free(&a->bindings);
+            a->bindings = old;
+        } else {
+            br_array_free(&old);
+        }
     }
     cJSON_Delete(json);
     return true;
