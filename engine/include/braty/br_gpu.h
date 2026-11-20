@@ -146,7 +146,9 @@ SDL_GPUColorTargetBlendState br_gpu_blend_premultiplied(void);
 
 /* Creates a GPU buffer, uploading `data` if non-NULL. Free with br_gpu_buffer_destroy. */
 SDL_GPUBuffer *br_gpu_buffer_create(br_gpu *g, SDL_GPUBufferUsageFlags usage, uint32_t size, const void *data);
-/* Uploads bytes into an existing buffer (own command buffer, ordered before the next frame). */
+/* Uploads bytes into an existing buffer (own command buffer, submitted at once). Call outside
+ * RENDER / POST_RENDER: inside, the data lands before ALL of this frame's commands (draws
+ * recorded earlier in the frame see it too). */
 bool br_gpu_buffer_update(br_gpu *g, SDL_GPUBuffer *buffer, uint32_t offset, const void *data, uint32_t size);
 /* Releases a buffer from br_gpu_buffer_create. NULL is fine. */
 void br_gpu_buffer_destroy(br_gpu *g, SDL_GPUBuffer *buffer);
@@ -157,9 +159,10 @@ void br_gpu_buffer_destroy(br_gpu *g, SDL_GPUBuffer *buffer);
  * write the data right away. Bind with br_gpu_transient_vertex_buffer + the returned offset.
  */
 
-/* Reserves `size` bytes of vertex data for this frame. Returns a CPU pointer to fill. */
+/* Reserves `size` bytes of vertex data for this frame. Returns a CPU pointer to fill. NULL (logged
+ * once per frame) after this frame's br_gpu_transient_upload: allocate in PRE_RENDER. */
 void *br_gpu_transient_alloc_vertices(br_gpu *g, uint32_t size, uint32_t *offset);
-/* Reserves `size` bytes of index data for this frame. Returns a CPU pointer to fill. */
+/* Reserves `size` bytes of index data for this frame. Same rules as the vertex stream. */
 void *br_gpu_transient_alloc_indices(br_gpu *g, uint32_t size, uint32_t *offset);
 /* Uploads this frame's transient data in one copy pass. Call in RENDER before any render pass;
  * the first call of a frame uploads, later calls do nothing (allocate everything in PRE_RENDER). */
@@ -199,11 +202,14 @@ br_gpu_texture *br_gpu_texture_create(br_gpu *g, uint32_t width, uint32_t height
 /* Creates a sampleable RGBA8 texture from tightly packed pixels (may be NULL), generating mips if asked. */
 br_gpu_texture *br_gpu_texture_create_rgba8(br_gpu *g, uint32_t width, uint32_t height, const void *pixels,
                                             bool mipmaps);
-/* Uploads tightly packed texels (in the texture's format) into a region of mip 0, then regenerates mips. */
+/* Uploads tightly packed texels (in the texture's format) into a region of mip 0, then regenerates
+ * mips. False (logged) when the region is empty or not inside the texture. Own command buffer,
+ * submitted at once (same ordering note as br_gpu_buffer_update). */
 bool br_gpu_texture_upload(br_gpu *g, br_gpu_texture *t, uint32_t x, uint32_t y, uint32_t width,
                            uint32_t height, const void *texels);
 /* Reads mip 0 back as tightly packed RGBA8 (BGRA formats are swizzled). Blocks until the GPU is done.
- * Supports 8-bit RGBA/BGRA formats only. Free *rgba with br_free. */
+ * Supports 8-bit RGBA/BGRA formats only. Free *rgba with br_free. Inside RENDER / POST_RENDER it
+ * does not see this frame's draws (they are submitted at frame end) and logs a warning. */
 bool br_gpu_texture_read(br_gpu *g, br_gpu_texture *t, uint8_t **rgba);
 /* Releases a texture. NULL is fine. */
 void br_gpu_texture_destroy(br_gpu *g, br_gpu_texture *t);

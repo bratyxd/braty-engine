@@ -1,7 +1,9 @@
 # gpu - thin layer over the SDL3 GPU API
 
 Header: `engine/include/braty/br_gpu.h` (read its top comment: frame flow and shader rules).
-Source: `engine/src/gpu/`. Example: `examples/hello_quad.c`.
+Source: `engine/src/gpu/`. Example: `examples/hello_quad.c`. Tests: `tests/test_gpu.c` (hidden
+window; skips when no GPU device can be created): transient alignment and late allocs, upload
+bounds, RGBA/BGRA readback, sampler cache.
 
 It does not hide SDL_GPU: SDL types are used directly, and `br_gpu_device(g)` gives you the
 `SDL_GPUDevice` for anything not wrapped. What it adds: shader blobs per backend, caches
@@ -68,6 +70,15 @@ SDL_EndGPURenderPass(pass);
   `depth_stencil_format = br_gpu_render_target_depth_format(target)`.
 - Call `br_gpu_transient_upload` in RENDER before any render pass; only the first call of a frame uploads, so allocate everything in PRE_RENDER (copy passes
   cannot run inside render passes). Transient pointers die at the next alloc; write at once.
+  An alloc after that upload returns NULL and logs (once per frame): its bytes would never reach
+  the GPU.
+- `br_gpu_buffer_update`, `br_gpu_texture_upload` and `br_gpu_texture_read` submit their own
+  command buffer at once. Use them outside RENDER / POST_RENDER: inside, an upload lands before
+  every command of the current frame (also draws recorded earlier), and a readback does not see
+  this frame's draws (it logs a warning). `br_gpu_texture_upload` refuses a region outside the
+  texture (SDL checks it only in debug mode).
+- Vsync is the app's: `br_app_set_vsync` (there is no GPU-level vsync call; `br_gpu_set_present_mode`
+  bypasses `br_app_vsync`).
 - `br_gpu_frame_*` return NULL outside RENDER/POST_RENDER, and RENDER does not run at all when
   the window is minimised. Never cache the command buffer or the frame target across frames
   (the target is recreated on resize).
