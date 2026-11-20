@@ -1,0 +1,11 @@
+[
+  {"cmd": "log", "message": "input for the crate_rush_play golden image (tools/golden.py): start level 1, run to the first crate"},
+  {"cmd": "wait", "frames": 30},
+  {"cmd": "action", "name": "confirm"},
+  {"cmd": "wait", "frames": 100},
+  {"cmd": "key", "key": "W", "action": "down"},
+  {"cmd": "wait", "frames": 24},
+  {"cmd": "key", "key": "A", "action": "down"},
+  {"cmd": "wait", "frames": 12},
+  {"cmd": "quit"}
+]

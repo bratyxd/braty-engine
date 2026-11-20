@@ -28,6 +28,8 @@ SKIP = 77
 # name, executable (relative to the build dir), frame of the screenshot, extra arguments, base script
 STAR_COURIER = "sample_projects/star_courier/star_courier"
 ROUND = os.path.join(ROOT, "sample_projects", "star_courier", "playtest", "round.json")
+CRATE_RUSH = "sample_projects/crate_rush/crate_rush"
+CRATE_PLAY = os.path.join(ROOT, "sample_projects", "crate_rush", "playtest", "golden_play.json")
 CASES = [
     ("hello_quad", "hello_quad", 30, [], None),
     ("graphics_demo", "graphics_demo", 30, [], None),
@@ -51,6 +53,8 @@ CASES = [
     ("gltf_scene_demo", "gltf_scene_demo", 90, [], None),
     ("star_courier_title", STAR_COURIER, 60, [], ROUND),
     ("star_courier_play", STAR_COURIER, 700, [], ROUND),
+    ("crate_rush_menu", CRATE_RUSH, 60, [], None),
+    ("crate_rush_play", CRATE_RUSH, 166, [], CRATE_PLAY),
 ]
 
 
