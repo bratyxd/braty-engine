@@ -92,7 +92,9 @@ br_material3d br_material3d_create(br_engine *e, const br_material3d_desc *desc)
 void br_material3d_destroy(br_engine *e, br_material3d m);
 /* True if live. */
 bool br_material3d_valid(br_engine *e, br_material3d m);
-/* The live parameters to edit in place, NULL if stale. */
+/* The live parameters to edit in place, NULL if stale. Valid until the next material create (the
+ * pool may move; re-fetch it, e.g. after loading a model). Custom counts over the limits are
+ * clamped when drawn. */
 br_material3d_desc *br_material3d_params(br_engine *e, br_material3d m);
 /* Sets a texture slot with default sampling and no transform. */
 void br_material3d_set_texture(br_engine *e, br_material3d m, br_material3d_slot slot, br_texture texture);

@@ -695,19 +695,22 @@ static void br_render3d_draw_item(br_engine *e, br_view3d_state *v, SDL_GPURende
     SDL_BindGPUGraphicsPipeline(pass, pipeline);
     br_bind_geometry(e, v, pass, cmd, item, geo);
     if (custom) {
+        /* the desc is editable in place (br_material3d_params): clamp what create checked */
+        uint32_t texture_count = SDL_min(mat->custom_texture_count, (uint32_t)BR_MATERIAL3D_CUSTOM_TEXTURES);
+        uint32_t uniform_size = SDL_min(mat->custom_uniform_size, (uint32_t)BR_MATERIAL3D_CUSTOM_UNIFORM_SIZE);
         SDL_GPUTextureSamplerBinding bindings[BR_MATERIAL3D_CUSTOM_TEXTURES];
-        for (uint32_t i = 0; i < mat->custom_texture_count; i++) {
+        for (uint32_t i = 0; i < texture_count; i++) {
             br_material3d_texture slot;
             SDL_zero(slot);
             slot.texture = mat->custom_textures[i];
             bool present = false;
             bindings[i] = br_slot_binding(e, g, &slot, &present);
         }
-        if (mat->custom_texture_count > 0) {
-            SDL_BindGPUFragmentSamplers(pass, 0, bindings, mat->custom_texture_count);
+        if (texture_count > 0) {
+            SDL_BindGPUFragmentSamplers(pass, 0, bindings, texture_count);
         }
-        if (mat->custom_uniform_size > 0) {
-            SDL_PushGPUFragmentUniformData(cmd, 1, mat->custom_uniforms, mat->custom_uniform_size);
+        if (uniform_size > 0) {
+            SDL_PushGPUFragmentUniformData(cmd, 1, mat->custom_uniforms, uniform_size);
         }
     } else {
         SDL_GPUTextureSamplerBinding bindings[BR_MATERIAL3D_SLOT_COUNT + 1];
@@ -829,7 +832,8 @@ static void br_render3d_post(br_engine *e, br_view3d_state *v, SDL_GPUCommandBuf
             continue;
         }
         br_render_target *dst = v->post_temp[done % 2];
-        br_post_blit(e, cmd, dst, true, pp->fragment_shader, no_blend, image, NULL, pp->uniforms, pp->uniform_size);
+        uint32_t uniform_size = SDL_min(pp->uniform_size, (uint32_t)BR_POST3D_UNIFORM_SIZE); /* editable in place */
+        br_post_blit(e, cmd, dst, true, pp->fragment_shader, no_blend, image, NULL, pp->uniforms, uniform_size);
         image = dst->color;
         done++;
     }
