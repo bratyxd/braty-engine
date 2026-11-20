@@ -457,6 +457,8 @@ static void br_scenes_release_group(br_engine *e, br_asset_group *group)
     br_asset_group_destroy(group);
 }
 
+static bool br_scoped_find(br_engine *e, const char *name, const void *user);
+
 void br_scene_unload(br_engine *e, br_scene scene)
 {
     br_scenes_state *s = e->scenes;
@@ -478,8 +480,11 @@ void br_scene_unload(br_engine *e, br_scene scene)
         br_scoped_system *sys = *(br_scoped_system **)br_array_at(&s->scoped, i - 1);
         if (br_scene_same(sys->scene, scene)) {
             /* the engine stops calling it at once (deferred removal inside a frame), so the
-             * record can go now */
-            br_system_remove(e, sys->name);
+             * record can go now. Only our own system: the game may have removed it and added
+             * another one under the same name since. */
+            if (br_scoped_find(e, sys->name, sys)) {
+                br_system_remove(e, sys->name);
+            }
             br_free(sys->name);
             br_free(sys);
             br_array_remove_swap(&s->scoped, i - 1);
@@ -657,6 +662,21 @@ void br_scene_on_event(br_engine *e, br_scene_event_fn fn, void *user)
 
 /* ---- scene-scoped systems */
 
+/* True if a live system called `name` exists; with `user` non-NULL, only one with that user data. */
+static bool br_scoped_find(br_engine *e, const char *name, const void *user)
+{
+    br_array *lists[2] = { &e->systems, &e->pending_systems };
+    for (uint32_t l = 0; l < 2; l++) {
+        for (uint32_t i = 0; i < lists[l]->count; i++) {
+            const br_system_entry *entry = br_array_at(lists[l], i);
+            if (!entry->removed && SDL_strcmp(entry->name, name) == 0 && (user == NULL || entry->user == user)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 static void br_scoped_run(br_engine *e, float dt, void *user)
 {
     br_scoped_system *sys = user;
@@ -679,6 +699,11 @@ void br_system_add_for_scene(br_engine *e, br_scene scene, const char *name, br_
             br_log_error("system '%s' already exists (scene '%s')", name, br_scene_name(e, sys->scene));
             return;
         }
+    }
+    if (br_scoped_find(e, name, NULL)) {
+        /* an engine or game system: recording it would remove that system when the scene unloads */
+        br_log_error("br_system_add_for_scene: system '%s' already exists; not added", name);
+        return;
     }
     br_scoped_system *sys = br_alloc(sizeof(br_scoped_system));
     if (sys == NULL) {
@@ -763,6 +788,10 @@ static void br_scenes_switch_update(br_engine *e, float dt)
         break;
     case BR_SWITCH_OUT:
         if (br_scenes_fade(s, dt, 1.0f)) {
+            if (target == NULL) {
+                s->phase = BR_SWITCH_IN; /* the target was unloaded meanwhile: keep what is there */
+                break;
+            }
             br_scenes_unload_others(e, s->target);
             s->phase = BR_SWITCH_WAIT;
             if (s->loading_name[0] != '\0' && br_scene_valid(e, s->target)) {

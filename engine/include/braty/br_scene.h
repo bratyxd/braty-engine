@@ -94,7 +94,8 @@ void br_scene_on_event(br_engine *e, br_scene_event_fn fn, void *user);
 /* Switches to another scene with a transition: fade to black over `seconds`, unload every scene
  * (persistent nodes stay), show the loading scene if one is set, load the target in the
  * background, fade in. Returns the target (loading). Ignored (zero handle) while another
- * switch runs. */
+ * switch runs. If the target is unloaded during the fade-out, nothing is unloaded and the
+ * screen fades back in. */
 br_scene br_scene_switch(br_engine *e, const char *name, br_transition transition, float seconds);
 /* Scene shown while br_scene_switch loads the next one (NULL = none). Its nodes can read
  * br_scene_progress(e, br_scene_switch_target(e)) for a progress bar. */
@@ -111,7 +112,8 @@ void br_node_set_persistent(br_engine *e, br_node n, bool persistent);
 bool br_node_persistent(br_engine *e, br_node n);
 
 /* br_system_add for a system that runs only while `scene` is loaded and stops for good when it
- * is unloaded. The name may be reused by a later scene. */
+ * is unloaded. The name may be reused by a later scene; a name an existing system has is
+ * refused (logged), so the unload never removes a system the scene did not add. */
 void br_system_add_for_scene(br_engine *e, br_scene scene, const char *name, br_phase phase, int priority,
                              br_system_fn fn, void *user);
 
