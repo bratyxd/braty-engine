@@ -112,6 +112,35 @@ static void br_text_on_destroy(br_engine *e, br_node n, void *data)
     br_array_free(&t->spans);
 }
 
+void br_text_forget_font(br_engine *e, const br_font *font)
+{
+    br_text_state *s = e->text;
+    if (s == NULL || e->scene == NULL) {
+        return;
+    }
+    uint32_t types[3] = { s->text_type, s->bitmap_text_type, s->rich_text_type };
+    for (int k = 0; k < 3; k++) {
+        br_node_type_entry *type = br_scene_type_entry(e->scene, types[k]);
+        if (type == NULL) {
+            continue;
+        }
+        for (uint32_t i = 0; i < type->data.count; i++) {
+            br_text_node *t = br_array_at(&type->data, i);
+            if (t->style.font == font) {
+                t->style.font = NULL; /* the family (or the default font) takes over */
+                t->dirty = true;
+            }
+            for (uint32_t j = 0; j < t->spans.count; j++) {
+                const br_text_span *span = br_array_at(&t->spans, j);
+                if (span->font == font) {
+                    t->dirty = true; /* every reader of spans runs br_text_node_update first */
+                    break;
+                }
+            }
+        }
+    }
+}
+
 void br_text_node_update(br_engine *e, br_text_node *node)
 {
     if (!node->dirty) {

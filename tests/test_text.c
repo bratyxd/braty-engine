@@ -2,6 +2,8 @@
 #include "braty/braty.h"
 #include "br_test.h"
 
+#include <SDL3/SDL.h>
+
 /* A monospace bitmap font: every glyph advances 10, one kerning pair (a b = -2). */
 static const char *k_fnt_text =
     "info face=\"Test\" size=16 bold=0 italic=0\n"
@@ -381,6 +383,58 @@ static void test_bad_fonts(br_engine *e)
     SDL_free(copy);
 }
 
+/* Freeing a font that text nodes use: the nodes drop it and fall back, never keep the pointer. */
+static void test_font_lifetime(br_engine *e)
+{
+    br_text_style src = br_text_style_default(); /* the default TTF font */
+    src.font_size = 20.0f;
+    br_bitmap_font_options digits;
+    SDL_zero(digits);
+    digits.chars = "0123456789";
+    br_font *a = br_bitmap_font_install(e, "score", &src, &digits);
+    BR_CHECK(a != NULL);
+
+    br_text_style st = br_text_style_default();
+    br_text_style_set_family(&st, "score");
+    br_node by_family = br_text_create(e, "11", &st);
+    br_node direct = br_bitmap_text_create(e, "11", a, 0.0f);
+    float wide = br_text_size(e, by_family).x;
+    BR_CHECK(wide > 0.0f && br_text_size(e, direct).x > 0.0f);
+    br_rich_char_style cs;
+    BR_CHECK(br_rich_text_char_style(e, by_family, 0, &cs) && cs.font == a);
+
+    /* reinstall under the same name: the family node follows the new font (no '1', no space:
+     * zero width), the node that held the old font directly falls back to the default font */
+    digits.chars = "AB";
+    br_font *b = br_bitmap_font_install(e, "score", &src, &digits);
+    BR_CHECK(b != NULL);
+    BR_CHECK(br_text_size(e, by_family).x == 0.0f);
+    BR_CHECK(br_rich_text_char_style(e, by_family, 0, &cs) && cs.font == b);
+    BR_CHECK(br_rich_text_char_style(e, direct, 0, &cs) && cs.font == br_font_default(e));
+    BR_CHECK(br_text_size(e, direct).x != wide);
+
+    /* uninstall: the family node falls back to the default font */
+    br_bitmap_font_uninstall(e, "score");
+    BR_CHECK(br_rich_text_char_style(e, by_family, 0, &cs) && cs.font == br_font_default(e));
+    br_text_style got;
+    BR_CHECK(br_text_get_style(e, direct, &got) && got.font == NULL);
+
+    /* a font asset unloaded while a node uses it */
+    const char *fnt = "test_text_data/lifetime.fnt";
+    BR_CHECK(br_file_write_all(e, fnt, k_fnt_text, SDL_strlen(k_fnt_text)));
+    br_font *asset = br_bitmap_font_load(e, fnt);
+    BR_CHECK(asset != NULL);
+    br_node from_asset = br_bitmap_text_create(e, "ab", asset, 16.0f);
+    BR_CHECK(near(br_text_size(e, from_asset).x, 18.0f)); /* kerned */
+    br_assets_unload(e, fnt);
+    BR_CHECK(br_assets_get(e, fnt) == NULL);
+    BR_CHECK(br_rich_text_char_style(e, from_asset, 0, &cs) && cs.font == br_font_default(e));
+
+    br_node_destroy(e, by_family);
+    br_node_destroy(e, direct);
+    br_node_destroy(e, from_asset);
+}
+
 int main(void)
 {
     test_utf8();
@@ -389,10 +443,14 @@ int main(void)
     if (e == NULL) {
         return br_test_finish();
     }
+    char dir[512]; /* fixtures written at startup: <executable dir>/test_text_data/ */
+    BR_CHECK(br_file_resolve(e, "test_text_data", dir, sizeof(dir)));
+    SDL_CreateDirectory(dir);
     br_font *f = br_bitmap_font_parse(e, k_fnt_text, SDL_strlen(k_fnt_text), "", false);
     test_fnt_text(e, f);
     test_fnt_xml(e);
     test_bad_fonts(e);
+    test_font_lifetime(e);
     if (f != NULL) {
         test_measure(e, f);
         test_wrap(e, f);

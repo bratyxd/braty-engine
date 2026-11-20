@@ -305,6 +305,7 @@ void br_font_free(br_engine *e, br_font *font)
     if (font == NULL) {
         return;
     }
+    br_text_forget_font(e, font);
     br_font_untrack(e, font);
     if (e->render != NULL) {
         if (font->atlas_texture.generation != 0) {

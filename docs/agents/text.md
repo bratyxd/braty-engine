@@ -80,7 +80,11 @@ Type names `"text"`, `"bitmap_text"`, `"rich_text"`; their `from_json` is writte
   style fill; installed fonts with colours baked in draw as baked (tint with the node).
   Stroke on a non-SDF bitmap font is ignored (bake it with `br_bitmap_font_install`).
 - `br_bitmap_font_install` registers the name as a font family, so `<font=Name>` and
-  `style.font_family` find it. Uninstalling or destroying a font that text still uses is a bug.
+  `style.font_family` find it. Installing again under the same name frees the old font.
+- Fonts can be freed while text uses them (`br_font_destroy`, asset unload, uninstall,
+  reinstall): every text node holding the font in `style.font` drops it and every node whose
+  layout used it lays out again, falling back to its family or the default font. Pointers
+  kept elsewhere (your own structs) are yours to clear.
 - Gradients are over the whole text box (`start`/`end` as fractions). Vertical and horizontal
   gradients are exact; diagonal ones are sampled at glyph corners. Split pieces get their own box.
 - Rich-text line info offsets (`br_text_get_line`) refer to `br_rich_text_plain`, not the markup.

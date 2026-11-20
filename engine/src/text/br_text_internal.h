@@ -3,6 +3,7 @@
 #define BR_TEXT_INTERNAL_H
 
 #include "app/br_engine_internal.h"
+#include "scene/br_scene_internal.h"
 #include "braty/br_assets.h"
 #include "braty/br_bitmap_font.h"
 #include "braty/br_font.h"
@@ -211,6 +212,9 @@ void br_rich_text_free(br_text_node *node);
 /* ---- br_text.c */
 /* The text-node data of n for any of the three types, NULL otherwise. */
 br_text_node *br_text_node_get(br_engine *e, br_node n);
+/* Called before a font is freed: text nodes holding it in their style drop it (the family or
+ * the default font takes over) and nodes whose layout used it lay out again. */
+void br_text_forget_font(br_engine *e, const br_font *font);
 /* Rebuilds the cached layout if text or style changed. */
 void br_text_node_update(br_engine *e, br_text_node *node);
 /* Colour of a gradient at a point given as a fraction of the text box. */
