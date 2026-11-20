@@ -551,6 +551,64 @@ static void test_atlas(br_engine *e)
     br_font_destroy(e, font);
 }
 
+/* The per-node quad cache: rebuilt on every change that moves a quad, never otherwise. */
+static void test_quad_cache(br_engine *e)
+{
+    size_t size = 0;
+    const void *data = br_font_default_data(&size);
+    br_font *font = br_font_create(e, data, size, NULL);
+    br_text_style st = br_text_style_default();
+    st.font = font;
+    st.font_size = 16.0f;
+    br_node n = br_text_create(e, "abc", &st);
+    br_text_set_resolution(e, n, 1.0f);
+    BR_CHECK(br_text_quad_builds(e, n) == 0);
+    br_text_prepare(e, n);
+    BR_CHECK(br_text_quad_builds(e, n) == 1);
+    br_text_prepare(e, n);
+    BR_CHECK(br_text_quad_builds(e, n) == 1); /* unchanged: the cache is reused */
+    br_text_set_text(e, n, "abc");
+    br_text_prepare(e, n);
+    BR_CHECK(br_text_quad_builds(e, n) == 1); /* the same text is no change */
+    br_text_set_text(e, n, "abd");
+    br_text_prepare(e, n);
+    BR_CHECK(br_text_quad_builds(e, n) == 2); /* text */
+    st.stroke_width = 2.0f;
+    br_text_set_style(e, n, &st);
+    br_text_prepare(e, n);
+    BR_CHECK(br_text_quad_builds(e, n) == 3); /* style */
+    br_text_set_anchor(e, n, 0.5f, 0.5f);
+    br_text_prepare(e, n);
+    BR_CHECK(br_text_quad_builds(e, n) == 4); /* anchor (part of the cached positions) */
+    br_text_set_resolution(e, n, 2.0f);
+    br_text_prepare(e, n);
+    BR_CHECK(br_text_quad_builds(e, n) == 5); /* resolution (device scale): other raster sizes */
+    br_text_prepare(e, n);
+    BR_CHECK(br_text_quad_builds(e, n) == 5);
+
+    /* another node grows the shared atlas: every glyph moved, the cached UVs are stale */
+    uint32_t w0, h0, w1, h1;
+    br_font_atlas_size(font, &w0, &h0);
+    br_text_style big = st;
+    big.font_size = 96.0f;
+    br_node other = br_text_create(e, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", &big);
+    br_text_set_resolution(e, other, 1.0f);
+    br_text_prepare(e, other);
+    br_font_atlas_size(font, &w1, &h1);
+    BR_CHECK(w1 * h1 > w0 * h0);
+    br_text_prepare(e, n);
+    BR_CHECK(br_text_quad_builds(e, n) == 6);
+
+    /* the font is freed: the node falls back to the default font and builds again */
+    br_font_destroy(e, font);
+    br_text_prepare(e, n);
+    BR_CHECK(br_text_quad_builds(e, n) == 7);
+    br_text_style got;
+    BR_CHECK(br_text_get_style(e, n, &got) && got.font == NULL);
+    br_node_destroy(e, n);
+    br_node_destroy(e, other);
+}
+
 typedef struct png_buffer {
     uint8_t data[4096];
     size_t  size;
@@ -639,6 +697,7 @@ int main(void)
     test_bad_fonts(e);
     test_font_lifetime(e);
     test_atlas(e);
+    test_quad_cache(e);
     test_fnt_assets(e);
     if (f != NULL) {
         test_measure(e, f);

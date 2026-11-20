@@ -566,6 +566,7 @@ static bool br_font_atlas_resize(br_engine *e, br_font *f, uint32_t w, uint32_t 
     f->atlas_w = w;
     f->atlas_h = h;
     f->atlas_texture = br_texture_create_rgba8(e, w, h, NULL, NULL);
+    e->text->atlas_generation += 1; /* every text node's cached quads may point at the old atlas */
     f->dirty = false;
     br_font_mark_dirty(f, 0, 0, w, h);
     return true;

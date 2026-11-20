@@ -12,7 +12,7 @@ Headers: `engine/include/braty/br_text.h` (styles, text node, measure, UTF-8), `
   (`engine/src/text/br_font_default_data.c`, made by `engine/assets/fonts/embed_font.py`,
   licence `engine/assets/fonts/OFL.txt`). Latin, Greek and Cyrillic.
 - A text node lays out UTF-8 with a `br_text_style` and draws quads: shadow, stroke, fill,
-  then underline/strike bars. Layout is cached until text or style change.
+  then underline/strike bars. Layout and quads are cached per node (below).
 - TTF glyphs are rasterised on demand into one atlas per font, keyed by glyph, pixel size and
   effect (fill / grown outline for strokes and fake bold / softened for shadows). The atlas
   grows 256 -> 4096; an old atlas texture is kept alive until the next frame.
@@ -23,6 +23,28 @@ Headers: `engine/include/braty/br_text.h` (styles, text node, measure, UTF-8), `
   multi-channel mode divides by alpha before the median (`examples/sdf_fonts_demo.c`, golden
   `sdf_fonts_demo`, draws one glyph of each kind inside a reference ring).
 
+## Per-node quad cache
+
+Glyph lookup and quad generation run only when something that moves a quad changes: the text,
+the style, the anchor, the resolution (device scale), a font being freed, a fallback chain, or
+any TTF atlas being recreated (it grew: glyphs moved, new texture; `atlas_generation`). The cache
+holds local-space vertices with their colour before tint; world vertices are recomputed only
+when the node's matrix, world tint or alpha changes. An unchanged node then costs one
+`br_render_push_quad` per quad (one `br_render_push_custom` per SDF run). `br_text_quad_builds`
+counts rebuilds (`test_text` `test_quad_cache` checks every invalidation).
+
+Measured with `examples/text_bench.c` (2,000 static labels, a quarter stroked, a quarter with a
+drop shadow, ~40,000 glyphs), D3D12, RTX 3060 Ti, `--vsync off --frames 600 --profile FILE`,
+five runs each (other builds were running on the machine, so the ranges are wide):
+
+| Build | Before (every frame: lookups + quads) | After (cache) |
+|---|---|---|
+| release (`windows-gcc-release`), frame ms avg | 6.7 - 13.0 | 1.1 - 1.4 |
+| debug (`windows-gcc`), `render.collect` self ms | 29.5 - 38.3 | 1.8 - 2.1 |
+
+The release preset has the profiler scopes off, so the release row is the whole frame (GPU about
+1.2 ms either way); the debug row is the `render.collect` scope from `FILE.txt`.
+
 ## Functions you actually need
 
 | Function | What for |
@@ -30,6 +52,7 @@ Headers: `engine/include/braty/br_text.h` (styles, text node, measure, UTF-8), `
 | `br_text_style_default()`, `br_text_style_set_vertical_gradient` | Start a style (Pixi defaults: 26 px, black fill). |
 | `br_text_create(e, utf8, &style)`, `br_text_set_text`, `br_text_set_style`, `br_text_set_anchor` | Text node (JSON type `"text"`). |
 | `br_text_measure(e, utf8, &style)`, `br_text_size`, `br_text_get_line` | Size and line breaks. |
+| `br_text_prepare(e, n)`, `br_text_quad_builds(e, n)` | Warm glyphs and quads at load time; count cache rebuilds. |
 | `br_font_load(e, "x.ttf")`, `br_font_create(e, bytes, size, &opts)`, `br_font_add_family` | More fonts; families give `font_family` + bold/italic. |
 | `br_bitmap_font_load(e, "x.fnt")`, `br_bitmap_text_create(e, utf8, font, size)` | AngelCode fonts (text or XML, multi-page, kerning). |
 | `br_bitmap_font_install(e, name, &style, &opts)` | Bake a TTF + style (gradient, stroke, shadow) into a bitmap font. |
@@ -91,7 +114,8 @@ Checked inside the module whatever the caller passes (`br_text_create`, `br_text
   with the square of the size; logged once). Wider effects: an SDF font or a filter.
 - A glyph that does not fit the atlas (full, or larger than 4096) is remembered as empty: drawn
   as nothing, rasterised once. SDF fonts: `sdf_size` <= 256, `sdf_padding` <= 64.
-- `br_text_prepare(e, node)` runs the rasterise pass of a draw now (warm the atlas at load time).
+- `br_text_prepare(e, node)` runs the rasterise pass of a draw and builds the quad cache now
+  (warm the atlas at load time).
 
 ## Gotchas
 

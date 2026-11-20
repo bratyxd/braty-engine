@@ -17,20 +17,33 @@ typedef struct br_text_sdf_params {
     float mode[4];    /* x: 1 = MSDF */
 } br_text_sdf_params;
 
-/* Everything needed to turn local glyph rects into vertices for one layer. */
+/* One cached vertex in the node's local space: colour before the node's tint and alpha. */
+typedef struct br_text_cache_vertex {
+    float    x, y, u, v;
+    br_color color;
+} br_text_cache_vertex;
+
+/* A run of cached quads drawn the same way: batched quads of one texture, or one SDF custom draw. */
+typedef struct br_text_cache_draw {
+    br_texture         texture;
+    uint32_t           first;     /* first vertex in cache_local */
+    uint32_t           count;     /* vertices (4 per quad) */
+    bool               custom;
+    br_text_sdf_params params;
+} br_text_cache_draw;
+
+/* Everything needed to turn local glyph rects into cached vertices for one layer. */
 typedef struct br_text_emit {
     br_engine              *e;
-    br_render_ctx          *rc;
-    br_mat3                 m;
+    br_text_node           *node;          /* the cache being built */
     float                   ox, oy;        /* anchor/baseline shift + layer offset */
-    br_color                tint;
-    float                   alpha;
     br_color                solid;
     const br_text_gradient *gradient;      /* NULL = solid */
     float                   box_w, box_h;  /* gradient box (the text box) */
     float                   shear;         /* fake italic */
     float                   baseline;      /* shear pivot of the current glyph */
-    bool                    custom;        /* collect into the SDF scratch instead of batching */
+    bool                    custom;        /* following quads go to an SDF custom draw */
+    bool                    open;          /* the last cached draw takes more SDF quads */
     br_texture              texture;
     br_text_sdf_params      params;
 } br_text_emit;
@@ -143,6 +156,9 @@ static void br_text_on_create(br_engine *e, br_node n, void *data)
     br_text_node *t = data;
     br_text_layout_init(&t->layout);
     br_array_init(&t->spans, sizeof(br_text_span));
+    br_array_init(&t->cache_local, sizeof(br_text_cache_vertex));
+    br_array_init(&t->cache_draws, sizeof(br_text_cache_draw));
+    br_array_init(&t->cache_world, sizeof(br_vertex2d));
     t->style = br_text_style_default();
     t->dirty = true;
 }
@@ -157,6 +173,9 @@ static void br_text_on_destroy(br_engine *e, br_node n, void *data)
     br_rich_text_free(t);
     br_text_layout_free(&t->layout);
     br_array_free(&t->spans);
+    br_array_free(&t->cache_local);
+    br_array_free(&t->cache_draws);
+    br_array_free(&t->cache_world);
 }
 
 void br_text_forget_font(br_engine *e, const br_font *font)
@@ -206,6 +225,7 @@ void br_text_node_update(br_engine *e, br_text_node *node)
     br_text_layout_build(&node->layout, &chars, node->spans.data, &node->style);
     br_array_free(&chars);
     node->dirty = false;
+    node->cache_valid = false;
 }
 
 /* Local offset of the text box: anchor and baseline mode. */
@@ -237,7 +257,8 @@ br_color br_text_gradient_at(const br_text_gradient *g, float nx, float ny)
     return g->colors[n - 1];
 }
 
-static br_vertex2d br_text_vertex(const br_text_emit *em, float x, float y, float u, float v)
+/* A vertex in the node's local space (shear and offsets applied), colour before tint and alpha. */
+static br_text_cache_vertex br_text_vertex(const br_text_emit *em, float x, float y, float u, float v)
 {
     br_color c = em->solid;
     if (em->gradient != NULL) {
@@ -245,46 +266,19 @@ static br_vertex2d br_text_vertex(const br_text_emit *em, float x, float y, floa
         float ny = em->box_h > 0.0f ? y / em->box_h : 0.0f;
         c = br_text_gradient_at(em->gradient, nx, ny);
     }
-    c = br_color_make(c.r * em->tint.r, c.g * em->tint.g, c.b * em->tint.b, c.a);
-    float sx = x + (em->baseline - y) * em->shear + em->ox;
-    float sy = y + em->oy;
-    br_vec2 p = br_mat3_apply(em->m, br_vec2_make(sx, sy));
-    br_vertex2d out;
-    out.x = p.x;
-    out.y = p.y;
+    br_text_cache_vertex out;
+    out.x = x + (em->baseline - y) * em->shear + em->ox;
+    out.y = y + em->oy;
     out.u = u;
     out.v = v;
-    out.color = br_render_pack_color(c, em->alpha);
+    out.color = c;
     return out;
 }
 
+/* Ends the SDF custom draw being cached: the next SDF quad starts a new one. */
 static void br_text_flush_custom(br_text_emit *em)
 {
-    br_text_state *s = em->e->text;
-    if (s->indices.count == 0) {
-        return;
-    }
-    br_custom_draw draw;
-    SDL_zero(draw);
-    draw.vertex_shader = &br_shader_textured_vert;
-    draw.fragment_shader = &br_shader_text_sdf_frag;
-    draw.layout.buffer_count = 1;
-    draw.layout.strides[0] = sizeof(br_vertex2d);
-    draw.layout.attribute_count = 3;
-    draw.layout.attributes[0] = (SDL_GPUVertexAttribute){ 0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, 0 };
-    draw.layout.attributes[1] = (SDL_GPUVertexAttribute){ 1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, 8 };
-    draw.layout.attributes[2] = (SDL_GPUVertexAttribute){ 2, 0, SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM, 16 };
-    draw.vertices = s->vertices.data;
-    draw.vertex_bytes = s->vertices.count * (uint32_t)sizeof(br_vertex2d);
-    draw.indices = s->indices.data;
-    draw.index_count = s->indices.count;
-    draw.textures[0] = em->texture;
-    draw.texture_count = 1;
-    draw.fragment_uniforms = &em->params;
-    draw.fragment_uniform_size = sizeof(em->params);
-    br_render_push_custom(em->rc, &draw);
-    br_array_clear(&s->vertices);
-    br_array_clear(&s->indices);
+    em->open = false;
 }
 
 /* Switches the following quads to the SDF shader with these parameters (flushing a batch with others). */
@@ -312,24 +306,39 @@ static void br_text_use_batch(br_text_emit *em)
 static void br_text_quad(br_text_emit *em, br_texture texture, float x0, float y0, float x1, float y1, float u0,
                          float v0, float u1, float v1)
 {
-    br_vertex2d v[4];
+    br_text_cache_vertex v[4];
     v[0] = br_text_vertex(em, x0, y0, u0, v0);
     v[1] = br_text_vertex(em, x1, y0, u1, v0);
     v[2] = br_text_vertex(em, x1, y1, u1, v1);
     v[3] = br_text_vertex(em, x0, y1, u0, v1);
+    br_text_node *t = em->node;
+    br_text_cache_draw *last = t->cache_draws.count > 0 ? br_array_at(&t->cache_draws, t->cache_draws.count - 1) : NULL;
+    bool start = false;
     if (!em->custom) {
-        br_render_push_quad(em->rc, texture, v);
-        return;
+        /* batched quads of one texture share a draw; each is still pushed on its own */
+        start = last == NULL || last->custom || last->texture.index != texture.index ||
+                last->texture.generation != texture.generation;
+    } else {
+        if (texture.index != em->texture.index || texture.generation != em->texture.generation) {
+            br_text_flush_custom(em);
+            em->texture = texture;
+        }
+        start = !em->open;
     }
-    br_text_state *s = em->e->text;
-    if (texture.index != em->texture.index || texture.generation != em->texture.generation) {
-        br_text_flush_custom(em);
-        em->texture = texture;
+    if (start) {
+        br_text_cache_draw d;
+        SDL_zero(d);
+        d.texture = texture;
+        d.first = t->cache_local.count;
+        d.custom = em->custom;
+        d.params = em->params;
+        last = br_array_push(&t->cache_draws, &d);
+        em->open = em->custom;
     }
-    uint32_t base = s->vertices.count;
-    br_array_push_n(&s->vertices, v, 4);
-    uint32_t idx[6] = { base, base + 1, base + 2, base, base + 2, base + 3 };
-    br_array_push_n(&s->indices, idx, 6);
+    if (last == NULL || br_array_push_n(&t->cache_local, v, 4) == NULL) {
+        return; /* out of memory: the quad is not drawn */
+    }
+    last->count += 4;
 }
 
 /* A glyph quad; gradients along x or y are cut at their stops so every stop shows exactly. */
@@ -440,9 +449,11 @@ static void br_text_draw_layer(br_text_emit *em, br_text_node *t, br_text_layer 
             float k = span->size / font->native_size;
             float page_px = k * font->texel_scale; /* local units per page pixel */
             br_texture page = font->pages[ch->page];
-            const br_texture_info *info = br_render_texture_info(em->rc, page);
-            float pw = (float)(info->source_width > 0 ? info->source_width : 1);
-            float ph = (float)(info->source_height > 0 ? info->source_height : 1);
+            br_texture_info info;
+            SDL_zero(info);
+            br_texture_get_info(em->e, page, &info);
+            float pw = (float)(info.source_width > 0 ? info.source_width : 1);
+            float ph = (float)(info.source_height > 0 ? info.source_height : 1);
             float x0 = g->x + ch->xoffset * k;
             float y0 = line->baseline - font->base * k + ch->yoffset * k;
             if (sdf) {
@@ -550,6 +561,7 @@ static void br_text_draw_decorations(br_text_emit *em, br_text_node *t)
     em->oy = origin.y;
     em->shear = 0.0f;
     em->custom = false;
+    em->open = false;
     br_texture white = br_texture_white(em->e);
     for (int kind = 0; kind < 2; kind++) {
         for (uint32_t li = 0; li < t->layout.lines.count; li++) {
@@ -600,6 +612,101 @@ static void br_text_draw_layers(br_text_emit *em, br_text_node *t, float resolut
     br_text_draw_layer(em, t, BR_TEXT_LAYER_FILL, resolution, emit);
 }
 
+/* Rebuilds the node's cached quads unless they are still valid for this layout, resolution and
+ * every font atlas (an atlas that grew moved its glyphs and replaced its texture). */
+static void br_text_cache_build(br_engine *e, br_text_node *t, float resolution)
+{
+    br_text_node_update(e, t);
+    if (t->cache_valid && t->cache_resolution == resolution && t->cache_atlas_generation == e->text->atlas_generation) {
+        return;
+    }
+    br_array_clear(&t->cache_local);
+    br_array_clear(&t->cache_draws);
+    t->world_valid = false;
+    br_text_emit em;
+    SDL_zero(em);
+    em.e = e;
+    em.node = t;
+    em.box_w = t->layout.width;
+    em.box_h = t->layout.height;
+    /* pass 0 rasterises every glyph first: if the atlas grows, it happens before any vertex of
+     * this node points into it */
+    br_text_draw_layers(&em, t, resolution, false);
+    br_text_draw_layers(&em, t, resolution, true);
+    br_text_draw_decorations(&em, t);
+    t->cache_valid = true;
+    t->cache_resolution = resolution;
+    t->cache_atlas_generation = e->text->atlas_generation;
+    t->cache_builds += 1;
+}
+
+/* Pushes the cached quads: world vertices are recomputed only when the matrix, tint or alpha changed. */
+static void br_text_cache_draw_all(br_engine *e, br_text_node *t, br_render_ctx *rc, br_mat3 m, br_color tint,
+                                   float alpha)
+{
+    uint32_t count = t->cache_local.count;
+    if (!t->world_valid || SDL_memcmp(&m, &t->world_m, sizeof(m)) != 0 ||
+        SDL_memcmp(&tint, &t->world_tint, sizeof(tint)) != 0 || alpha != t->world_alpha) {
+        if (!br_array_resize(&t->cache_world, count)) {
+            return;
+        }
+        const br_text_cache_vertex *src = t->cache_local.data;
+        br_vertex2d *dst = t->cache_world.data;
+        for (uint32_t i = 0; i < count; i++) {
+            br_color c = src[i].color;
+            c = br_color_make(c.r * tint.r, c.g * tint.g, c.b * tint.b, c.a);
+            br_vec2 p = br_mat3_apply(m, br_vec2_make(src[i].x, src[i].y));
+            dst[i].x = p.x;
+            dst[i].y = p.y;
+            dst[i].u = src[i].u;
+            dst[i].v = src[i].v;
+            dst[i].color = br_render_pack_color(c, alpha);
+        }
+        t->world_valid = true;
+        t->world_m = m;
+        t->world_tint = tint;
+        t->world_alpha = alpha;
+    }
+    br_text_state *s = e->text;
+    const br_vertex2d *world = t->cache_world.data;
+    for (uint32_t i = 0; i < t->cache_draws.count; i++) {
+        const br_text_cache_draw *d = br_array_at(&t->cache_draws, i);
+        if (!d->custom) {
+            for (uint32_t q = 0; q < d->count; q += 4) {
+                br_render_push_quad(rc, d->texture, world + d->first + q);
+            }
+            continue;
+        }
+        uint32_t index_count = d->count / 4 * 6;
+        while (s->quad_indices.count < index_count) { /* 0,1,2,0,2,3 per quad, shared by every draw */
+            uint32_t base = s->quad_indices.count / 6 * 4;
+            uint32_t idx[6] = { base, base + 1, base + 2, base, base + 2, base + 3 };
+            if (br_array_push_n(&s->quad_indices, idx, 6) == NULL) {
+                return;
+            }
+        }
+        br_custom_draw draw;
+        SDL_zero(draw);
+        draw.vertex_shader = &br_shader_textured_vert;
+        draw.fragment_shader = &br_shader_text_sdf_frag;
+        draw.layout.buffer_count = 1;
+        draw.layout.strides[0] = sizeof(br_vertex2d);
+        draw.layout.attribute_count = 3;
+        draw.layout.attributes[0] = (SDL_GPUVertexAttribute){ 0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, 0 };
+        draw.layout.attributes[1] = (SDL_GPUVertexAttribute){ 1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, 8 };
+        draw.layout.attributes[2] = (SDL_GPUVertexAttribute){ 2, 0, SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM, 16 };
+        draw.vertices = world + d->first;
+        draw.vertex_bytes = d->count * (uint32_t)sizeof(br_vertex2d);
+        draw.indices = s->quad_indices.data;
+        draw.index_count = index_count;
+        draw.textures[0] = d->texture;
+        draw.texture_count = 1;
+        draw.fragment_uniforms = &d->params;
+        draw.fragment_uniform_size = sizeof(d->params);
+        br_render_push_custom(rc, &draw);
+    }
+}
+
 static void br_text_render(br_engine *e, br_node n, const void *data, br_render_ctx *rc)
 {
     (void)data;
@@ -612,21 +719,9 @@ static void br_text_render(br_engine *e, br_node n, const void *data, br_render_
     if (t->layout.glyphs.count == 0 || alpha <= 0.0f) {
         return;
     }
-    br_text_emit em;
-    SDL_zero(em);
-    em.e = e;
-    em.rc = rc;
-    em.m = br_render_node_transform(rc, n);
-    em.tint = br_node_world_tint(e, n);
-    em.alpha = alpha;
-    em.box_w = t->layout.width;
-    em.box_h = t->layout.height;
     float resolution = t->resolution > 0.0f ? t->resolution : br_render_pixel_ratio(rc);
-    /* pass 0 rasterises every glyph first: if the atlas grows, it happens before any vertex of
-     * this node points into it */
-    br_text_draw_layers(&em, t, resolution, false);
-    br_text_draw_layers(&em, t, resolution, true);
-    br_text_draw_decorations(&em, t);
+    br_text_cache_build(e, t, resolution);
+    br_text_cache_draw_all(e, t, rc, br_render_node_transform(rc, n), br_node_world_tint(e, n), alpha);
 }
 
 void br_text_prepare(br_engine *e, br_node n)
@@ -635,12 +730,14 @@ void br_text_prepare(br_engine *e, br_node n)
     if (t == NULL) {
         return;
     }
-    br_text_node_update(e, t);
-    br_text_emit em; /* the rasterise pass of br_text_render: no render context needed */
-    SDL_zero(em);
-    em.e = e;
     float resolution = t->resolution > 0.0f ? t->resolution : br_engine_pixel_density(e);
-    br_text_draw_layers(&em, t, resolution > 0.0f ? resolution : 1.0f, false);
+    br_text_cache_build(e, t, resolution > 0.0f ? resolution : 1.0f); /* no render context needed */
+}
+
+uint32_t br_text_quad_builds(br_engine *e, br_node n)
+{
+    br_text_node *t = br_text_node_get(e, n);
+    return t != NULL ? t->cache_builds : 0;
 }
 
 static bool br_text_local_bounds(br_engine *e, br_node n, const void *data, br_rect *out)
@@ -734,6 +831,7 @@ void br_text_set_anchor(br_engine *e, br_node n, float x, float y)
     br_text_node *t = br_text_node_get(e, n);
     if (t != NULL) {
         t->anchor = br_vec2_make(x, y);
+        t->cache_valid = false; /* cached vertices include the anchor offset */
     }
 }
 
@@ -827,8 +925,7 @@ static void br_text_shutdown(br_engine *e, void *user)
     (void)user;
     br_text_state *s = e->text;
     br_font_module_shutdown(e);
-    br_array_free(&s->vertices);
-    br_array_free(&s->indices);
+    br_array_free(&s->quad_indices);
     br_free(s);
     e->text = NULL;
 }
@@ -854,8 +951,7 @@ void br_text_register(br_engine *e)
         return;
     }
     e->text = s;
-    br_array_init(&s->vertices, sizeof(br_vertex2d));
-    br_array_init(&s->indices, sizeof(uint32_t));
+    br_array_init(&s->quad_indices, sizeof(uint32_t));
     s->text_type = br_text_register_type(e, "text");
     s->bitmap_text_type = br_text_register_type(e, "bitmap_text");
     s->rich_text_type = br_text_register_type(e, "rich_text");

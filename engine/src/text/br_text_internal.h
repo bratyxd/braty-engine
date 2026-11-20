@@ -162,6 +162,20 @@ typedef struct br_text_node {
     char              *plain;        /* rich: text without tags */
     br_text_layout     layout;
     br_array           spans;        /* br_text_span */
+    /* Quad cache (br_text.c): local vertices and draws, rebuilt only when the layout, the anchor,
+     * the resolution or a font atlas changes; world vertices redone only when the matrix, tint
+     * or alpha changes. */
+    bool               cache_valid;
+    float              cache_resolution;
+    uint32_t           cache_atlas_generation;
+    uint32_t           cache_builds;
+    br_array           cache_local;  /* br_text_cache_vertex */
+    br_array           cache_draws;  /* br_text_cache_draw */
+    br_array           cache_world;  /* br_vertex2d for world_m / world_tint / world_alpha */
+    bool               world_valid;
+    br_mat3            world_m;
+    br_color           world_tint;
+    float              world_alpha;
 } br_text_node;
 
 typedef struct br_text_state {
@@ -173,8 +187,8 @@ typedef struct br_text_state {
     br_array families;     /* br_font_family */
     br_array installed;    /* br_installed_font */
     br_array retired;      /* br_texture: old atlas textures, destroyed next frame */
-    br_array vertices;     /* br_vertex2d scratch for SDF draws */
-    br_array indices;      /* uint32_t scratch */
+    br_array quad_indices; /* uint32_t 0,1,2,0,2,3, 4,5,6,... for SDF custom draws */
+    uint32_t atlas_generation; /* bumped when any TTF atlas is recreated (texture and UVs change) */
     bool     effect_clamp_logged;   /* a stroke / shadow was clamped to BR_TEXT_MAX_EFFECT_PX */
 } br_text_state;
 
