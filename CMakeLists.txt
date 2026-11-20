@@ -51,6 +51,10 @@ target_include_directories(braty
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/engine/include ${CMAKE_CURRENT_SOURCE_DIR}/engine/shaders/compiled
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/engine/src)
 target_compile_options(braty PRIVATE ${BR_WARNINGS})
+option(BRATY_WERROR "Treat warnings in engine code as errors (CI turns it on)" OFF)
+if(BRATY_WERROR)
+    target_compile_options(braty PRIVATE $<IF:$<C_COMPILER_ID:MSVC>,/WX,-Werror>)
+endif()
 target_link_libraries(braty PUBLIC SDL3::SDL3 braty_third_party)
 option(BRATY_PROFILER "Profiler scopes and counters (turn OFF for release builds)" ON)
 if(NOT BRATY_PROFILER)
@@ -71,15 +75,26 @@ if(BRATY_BUILD_TESTS)
         add_executable(${name} ${src})
         target_compile_options(${name} PRIVATE ${BR_WARNINGS})
         target_link_libraries(${name} PRIVATE braty)
+        # tests read tests/data, examples/ and docs/ from the source tree, so any build directory works
+        target_compile_definitions(${name} PRIVATE BRATY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+        if(BRATY_PLAYTEST_STDIN)
+            target_compile_definitions(${name} PRIVATE BRATY_PLAYTEST_STDIN)
+        endif()
         add_test(NAME ${name} COMMAND ${name} WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests)
     endforeach()
     # golden images (tools/golden.py): every example + the sample game vs tests/golden/*.png.
     # Opens windows; reported as skipped (exit 77) when no GPU device can be created.
     find_package(Python3 COMPONENTS Interpreter QUIET)
+    # The goldens are Direct3D 12 images; other drivers differ by a few pixels (docs/TESTING.md),
+    # so Windows names the driver instead of taking whatever SDL picks.
+    set(BR_GOLDEN_DRIVER "")
+    if(WIN32)
+        set(BR_GOLDEN_DRIVER --gpu-driver direct3d12)
+    endif()
     if(Python3_FOUND AND BRATY_BUILD_EXAMPLES AND BRATY_BUILD_SAMPLES)
         add_test(NAME golden
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/golden.py run
-                    --build-dir ${CMAKE_BINARY_DIR} --out ${CMAKE_BINARY_DIR}/golden)
+                    --build-dir ${CMAKE_BINARY_DIR} --out ${CMAKE_BINARY_DIR}/golden ${BR_GOLDEN_DRIVER})
         set_tests_properties(golden PROPERTIES LABELS golden SKIP_RETURN_CODE 77 TIMEOUT 900)
     endif()
 endif()

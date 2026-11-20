@@ -364,3 +364,77 @@ the game (the workaround is named) and left here with a proposed fix.
   shared group and the menu's own assets.
 - Play-testing with `wait_until` on `*/player:position.x`: the round script walks to waypoints
   instead of counting frames, so it survives tuning changes.
+
+# Full review 2026-11-20
+
+The whole-engine review (`docs/plans/2026-11-20-engine-review.md`, report R8) read the public
+headers as one API. These are its API findings, ranked: worth fixing first at the top. None is
+implemented yet; each has a recommended resolution. Items 36, 23-25 and 38 above are ranked by the
+same review as the most valuable open ones from the earlier lists.
+
+42. **friction - two ways to do one thing.** (a) `br_animator3d_*` (`br_anim3d.h`) is a legacy
+    shim over the unified `br_animator`, still public and still used by scene JSON
+    (`br_node_json_view3d.c`, `"animation"`), although Phase 2 Task 17 says it is replaced.
+    (b) `br_orbit_camera_*` (`br_camera3d.h`) next to the `camera.orbit` component.
+    (c) `br_ticker_set_max_fps` next to `br_app_set_max_fps` (`br_app.h`).
+    (d) `br_color_srgb_to_linear` (`br_material3d.h`) next to `br_color_to_linear` (`br_math.h`).
+    (e) `br_engine_random` / `_random_float` / `_set_seed` (`br_app.h`) next to
+    `br_random_engine(e)` + `br_random_*` (`br_random.h`). Every duplicate doubles what an agent
+    reads and must choose between. **Fix:** delete (c)-(e) now (one caller each); mark (a) and (b)
+    deprecated in their headers, move scene JSON `"animation"` to `br_animator`, delete them in
+    the next phase. Rank 1: cheap, and the cost grows with every game written.
+43. **friction - component fields are too narrow for data-driven games** (`br_node.h`,
+    `br_field_type`). Types are bool / int / float / vec2 / vec3 / color / string / asset / node.
+    Strings are `char[BR_FIELD_STRING_SIZE]` = 64, so 63 UTF-8 bytes: Crate Rush's sign `text`
+    does not survive a German or Russian translation. No arrays (waypoints, loot tables, dialogue
+    lines), no enum by name, no uint, vec4 / quat or `br_node3d` field. Anything beyond is parsed by
+    hand from cJSON, the opposite of "data + systems". **Fix:** `BR_FIELD_TEXT` (a heap or interned
+    string freed with the row), `BR_FIELD_ENUM` with a name table, `BR_FIELD_VEC4` / `_QUAT`, a
+    `BR_FIELD_NODE3D`, and a fixed-capacity array field (count + inline elements of one type).
+    Rank 2: blocks localisation and every list-shaped design.
+44. **friction - 2D and 3D node APIs disagree** (`br_node.h` vs `br_view3d.h`). Position takes
+    `(x, y)` in 2D and a `br_vec3` in 3D; children by index in 2D (`br_node_child_at`) vs
+    first-child / next-sibling in 3D; `br_node_find_by_label(e, root, label, deep)` excludes root,
+    `br_node3d_find_by_label(e, root, label)` includes it and is always deep; layer bits are
+    "0 = inherit" in 2D (`br_node_set_layer_bits`) and "default 1, no inherit" in 3D
+    (`br_node3d_set_layer`); counts are `br_scene_node_count` vs `br_node3d_count`; destroy hooks
+    `br_scene_on_node_destroy` vs `br_node3d_on_destroy`. 3D lacks reparent-keeping-world,
+    add-child-at, world-to-local and an Euler getter. 3D components are declared in `br_gltf.h`
+    although they have nothing to do with glTF. An agent writing 3D code by analogy with 2D gets
+    each of these wrong once. **Fix:** add the missing 3D functions; give find-by-label the same
+    root / deep rule in both; rename the odd ones keeping the old names as one-line deprecated
+    wrappers for one phase; move the `br_component3d_*` block to `br_view3d.h`. Rank 3.
+45. **friction - "scene" means two things** (`br_node.h`, `br_scene.h`). `br_scene_root(e)` is
+    the stage (every node), `br_scene_root_2d(e, scene)` one loaded scene's root,
+    `br_scene_node_count` counts all nodes; modules "scene", "scenes", "scene_file" and "data"
+    (`br_data_register` lives in `br_scene_file.h`) are four names for overlapping things.
+    **Fix:** `br_stage(e)`, `br_node_count(e)`, `br_node_on_destroy(e, ...)` with the old names
+    kept as deprecated one-liners; "scene" then only means a loaded scene (`br_scene`). Rank 4.
+46. **gap - pausing a game is incomplete** (`br_app.h`, `br_tween.h`, `br_animation.h`). System
+    groups pause game systems, but tweens, animators, particles and audio are engine systems that
+    keep running; `br_ticker_set_speed(0)` freezes the UI too, and there is no unscaled delta.
+    Crate Rush pauses its animator by hand. **Fix:** an unscaled delta for UI and an
+    `unscaled` flag (or a time group) on tweens and animators. Rank 5.
+47. **friction - two mutation styles.** 2D nodes, audio and input use setters; `br_camera_get`,
+    `br_light3d_get`, `br_canvas3d_get`, `br_material3d_params`, `br_view3d_post` and
+    `br_animator3d_get` return a mutable struct pointer whose lifetime differs per module. An
+    agent cannot tell whether an edit needs a "dirty" call or whether the pointer survives the
+    next create. **Fix:** state the rule once in each header with the same wording ("valid until
+    the next create or destroy of this type; edits apply next frame"); long term one style per
+    kind of object. Rank 6: doc-only first step.
+48. **friction - two RNG and two colour helpers** are items 42 (d) and (e); listed here so a
+    search for "random" or "linear" finds them.
+49. **friction - getters are named three ways**: bare noun (`br_node_alpha`), `_get_`
+    (`br_text_get_text`, `br_node_get_bounds`, `br_view3d_get_stats`) and `_get` returning a
+    pointer (`br_camera_get`). **Fix:** bare noun for values, `_get` only for pointers into a
+    table; rename with deprecated wrappers. Rank 7.
+50. **friction - `br_node_set_blend_mode` takes `int`** because the advanced modes live in
+    `br_filter.h`. **Fix:** one `br_blend_mode` enum in `br_node.h`. Rank 8.
+51. **friction - path bases differ:** game.json and the asset root are relative to the
+    executable, `--assets` / `--screenshot` / `--record` / `--profile` to the working directory,
+    `br_file_*` to the asset root. **Fix:** document the three in `br_app.h` in one table; long
+    term route all file access through one storage layer (title storage for data, user storage
+    for saves). Rank 9.
+52. **gap - audio has no volume getters and no global pause** (`br_audio.h`). Settings screens
+    keep their own copy of bus volumes. **Fix:** `br_audio_bus_volume`, `br_audio_master_volume`,
+    `br_audio_set_paused`. Rank 10.

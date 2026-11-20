@@ -8,7 +8,7 @@ tests/golden/<name>.png. Standard library only.
 
 run exits 0 when every image matches within the tolerance, 1 on any mismatch (diff images are
 written next to the new screenshots in build/golden/), and 77 (CTest "skipped") when no GPU
-device or window can be created. docs/TESTING.md says when an update is legitimate.
+device or window can be created; an unknown --only name exits 2. docs/TESTING.md says when an update is legitimate.
 """
 import argparse
 import json
@@ -21,8 +21,12 @@ import zlib
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GOLDEN_DIR = os.path.join(ROOT, "tests", "golden")
 DOWNSAMPLE = 4          # 1280x720 -> 320x180 keeps the PNGs small
-CHANNEL_TOLERANCE = 6   # per channel, 0..255, after the 4x4 average
-BAD_PIXEL_SHARE = 0.002 # up to 0.2% of pixels may exceed the channel tolerance
+# Direct3D 12 renders every case identically run after run (measured over three runs: worst
+# channel difference 0, once 1), so the check is tight: one downsampled pixel more than 2 off
+# fails. That catches a moved scrollbar (8 pixels) or one changed glyph, which the old 6 / 0.2 %
+# (115 pixels) let through. Vulkan differs by up to 29 per channel (docs/TESTING.md).
+CHANNEL_TOLERANCE = 2   # per channel, 0..255, after the 4x4 average
+MAX_BAD_PIXELS = 0      # downsampled pixels allowed over the channel tolerance
 SKIP = 77
 
 # name, executable (relative to the build dir), frame of the screenshot, extra arguments, base script
@@ -147,7 +151,7 @@ def compare(golden_path, actual_path, diff_path):
             diff[i:i + 4] = bytes((grey, grey, grey, 255))
     share = bad / (gw * gh)
     message = "%d pixels over tolerance (%.3f%%), worst channel difference %d" % (bad, 100.0 * share, worst)
-    if share > BAD_PIXEL_SHARE:
+    if bad > MAX_BAD_PIXELS:
         write_png(diff_path, gw, gh, bytes(diff))
         return False, message
     return True, message
@@ -200,7 +204,9 @@ def run_case(case, build_dir, out_dir, driver):
     except subprocess.TimeoutExpired:
         return None, "timed out"
     log = result.stderr + result.stdout
-    if "cannot create GPU device" in log or "cannot create window" in log:
+    # the three ways the engine reports "no usable GPU / window here" (br_engine.c, br_gpu_device.c)
+    if ("cannot create GPU device" in log or "cannot create window" in log
+            or "cannot claim window for GPU" in log):
         return SKIP, "no GPU device / window"
     if result.returncode != 0 or not os.path.exists(shot):
         tail = "\n".join(log.strip().splitlines()[-5:])
@@ -219,7 +225,17 @@ def main():
     out_dir = args.out or os.path.join(ROOT, "build", "golden")
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(GOLDEN_DIR, exist_ok=True)
+    names = [c[0] for c in CASES]
+    unknown = [n for n in args.only or [] if n not in names]
+    if unknown:
+        print("golden: unknown case %s; cases: %s" % (", ".join(unknown), " ".join(names)))
+        return 2
     cases = [c for c in CASES if not args.only or c[0] in args.only]
+    # a release build (BRATY_PROFILER=OFF) has no profiler panel to compare
+    cache = os.path.join(args.build_dir, "CMakeCache.txt")
+    if os.path.exists(cache) and "BRATY_PROFILER:BOOL=OFF" in open(cache).read():
+        print("skip  %-20s BRATY_PROFILER is OFF in this build" % "profiler_demo")
+        cases = [c for c in cases if c[0] != "profiler_demo"]
     failures = 0
     for case in cases:
         name = case[0]

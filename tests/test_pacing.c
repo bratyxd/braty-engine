@@ -38,7 +38,9 @@ static void test_fps_cap(void)
         double avg = measure_cap(caps[i], 120, &worst);
         printf("cap %s fps: average interval %.4f ms (target %.4f, error %.3f%%), worst frame %.3f ms\n", caps[i],
                avg, target, 100.0 * (avg - target) / target, worst);
-        BR_CHECK(avg > target * 0.98 && avg < target * 1.02);
+        /* a cap must never run fast (tight lower bound); a loaded CI runner can run late, so the
+         * upper bound only catches a broken cap (measured here: within 0.1 %) */
+        BR_CHECK(avg > target * 0.98 && avg < target * 1.25);
     }
 }
 

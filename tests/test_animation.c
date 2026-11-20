@@ -848,7 +848,7 @@ int main(void)
     SDL_GetLogOutputFunction(&g_prev_log, &g_prev_log_user);
     SDL_SetLogOutputFunction(count_log, NULL);
     test_sampling();
-    br_engine *e = br_engine_create("test_animation", "../../tests/data"); /* relative to the exe */
+    br_engine *e = br_engine_create("test_animation", BRATY_SOURCE_DIR "/tests/data"); /* the source tree (CMake) */
     BR_CHECK(e != NULL);
     if (e != NULL) {
         test_loop_modes(e);

@@ -7,16 +7,18 @@ ever been built and run.** Everything else below is configured, written down, an
 
 | Platform | Preset | GPU backend | Status |
 |---|---|---|---|
-| Windows 10/11, MinGW-w64 GCC | `windows-gcc` | Direct3D 12, Vulkan | **Tested**: all tests, every example, the sample game; D3D12 and Vulkan screenshots identical |
-| Windows, MSVC | `windows-msvc` | Direct3D 12, Vulkan | Configured, never built (no MSVC on the dev machine). CI builds it once the workflow runs |
+| Windows 10/11, MinGW-w64 GCC | `windows-gcc`, `windows-gcc-release` | Direct3D 12, Vulkan | **Tested**: all tests (Debug and release presets), every example, both sample games. Goldens are D3D12; Vulkan screenshots differ by a few edge pixels in 9 of 24 cases (`docs/TESTING.md`) |
+| Windows, MSVC | `windows-msvc` | Direct3D 12, Vulkan | **Never built, never run** (no MSVC on the dev machine). The CI workflow has a `windows-msvc` job, but the workflow itself has never run |
 | Linux (GCC/Clang) | `linux` | Vulkan | Configured, never built. CI builds it once the workflow runs |
 | macOS (Apple Clang) | `macos` | Metal | Configured, never built. **MSL shaders are generated but have never run** |
 | iOS | `ios` (Xcode generator) | Metal | Configured, never built; tests off |
 | Android | `android` (NDK toolchain) | Vulkan | Configured, never built; tests off; needs SDL's Java glue |
 | Consoles | - | the console's native format | Not possible yet: needs an SDL3 port from the platform holder (below) |
 
-The workflow `.github/workflows/build.yml` builds Windows (MinGW), Linux and macOS and runs
-the headless tests; it has not run yet either.
+Every desktop preset has a `-release` twin (`docs/BUILDING.md`, "Release builds"). The workflow
+`.github/workflows/build.yml` builds Windows (MinGW, Debug and release), Windows (MSVC), Linux and
+macOS with engine warnings as errors and runs the tests; **it has never run**, so none of those
+jobs is known to pass.
 
 ## Common requirements
 
@@ -62,11 +64,14 @@ order, but no Mac has ever run it: expect to debug resource bindings the first t
 
 ## iOS and Android (untested)
 
-- iOS: `cmake --preset ios` produces an Xcode project (tests off). Signing, the app bundle and
-  copying `data/` into the bundle (the sample's post-build copy targets a directory, not a
-  bundle) still have to be added.
-- Android: set `ANDROID_NDK`, `cmake --preset android` builds the native library (arm64-v8a,
-  API 24). An APK also needs SDL's `android-project` Java glue, and assets must be read from
+- iOS: `cmake --preset ios` produces an Xcode project (tests off). Signing, the app bundle
+  (`MACOSX_BUNDLE` on the game's `add_executable`) and copying `data/` into the bundle (the
+  samples' post-build copy targets a directory, not a bundle) still have to be added.
+- Android: set `ANDROID_NDK`; `cmake --preset android` builds `libbraty.a` and the examples /
+  sample games as *executables*, which nothing on Android can load: SDL's `SDLActivity` loads a
+  shared library named `main`, so a game needs `add_library(<game> SHARED ...)` under
+  `if(ANDROID)` (not done in the samples or the guide). An APK also needs SDL's `android-project`
+  Java glue, and assets must be read from
   the APK (SDL's `SDL_IOFromFile` does this for relative paths; the engine currently resolves
   paths against `SDL_GetBasePath`, see "places that would change" below).
 
@@ -84,20 +89,24 @@ What a console port needs, once the platform holder's SDL3 port (with SDL_GPU) e
    fills `[BR_SHADER_FORMAT_PRIVATE]` in every generated header (the compiler and its output
    stay under NDA, so this usually lives in a private fork of the script), and regenerate.
 3. **Storage.** Game data must come from the title container and saves go through user
-   storage. Saves already use `SDL_OpenUserStorage` (`br_save_*`); data files use
-   `SDL_LoadFile` on paths under the executable directory, which needs to become title storage.
+   storage. Saves already use `SDL_OpenUserStorage` (`br_save_*`); data files are read with
+   `SDL_IOFromFile` on paths under the executable directory, which needs to become title storage.
 4. **Platform rules** (suspend/resume, user sign-in, save-data size limits, controller
-   disconnect prompts) are game- and platform-specific; SDL delivers the events
-   (`br_engine_add_event_handler`).
+   disconnect prompts). SDL delivers the events (`br_engine_add_event_handler`), but the engine
+   itself did not react to the app lifecycle at the 2026-11-20 review (below).
 
-No engine module needs new code beyond these places, which are the complete list of
-platform-sensitive spots:
+The platform-sensitive spots known today (from the 2026-11-20 review; nothing has been ported, so
+expect more):
 
 | Place | Why it would change |
 |---|---|
 | `engine/src/gpu/br_gpu_device.c`, `br_gpu_create` | Requests `SPIRV | DXIL | MSL` from `SDL_CreateGPUDevice`; add `SDL_GPU_SHADERFORMAT_PRIVATE` (one flag). |
 | `tools/compile_shaders.py` (+ regenerated `engine/shaders/compiled/*.h`) | Emit the console's format into the PRIVATE slot. |
-| `engine/src/core/br_file.c`, `br_file_read_all` / `br_file_write_all` / `br_file_exists` | Use `SDL_OpenTitleStorage` instead of `SDL_LoadFile` / `SDL_SaveFile` / `SDL_GetPathInfo`. |
+| `engine/src/core/br_file.c`, `br_file_read_all` / `br_file_write_all` / `br_file_exists` | Use `SDL_OpenTitleStorage` instead of `SDL_IOFromFile` / `SDL_SaveFile` / `SDL_GetPathInfo`. |
+| `engine/src/core/br_file.c`, save storage | User storage is opened once and kept open for the whole session; platforms that commit on close only commit at exit. |
+| `engine/src/app/br_app.c`, app lifecycle | Background / minimise / low-memory / terminate events were not handled by the engine at the 2026-11-20 review; consoles and mobile require it. |
+| `engine/src/playtest/br_playtest_stdin.c` | C stdio (`--playtest-stdin`); off with `BRATY_PLAYTEST_STDIN=OFF` (default on Android / iOS / Emscripten and in the release presets). |
+| `sample_projects/*/CMakeLists.txt`, the guide's step 2 | Games are `add_executable`; Android needs a shared library named `main`, iOS `MACOSX_BUNDLE`. |
 | `engine/src/data/br_scene_reload.c`, `br_data_modify_time` | Hot reload polls `SDL_GetPathInfo`; development only, turn it off (`debug.hot_reload`). |
 | `engine/src/core/br_file.c`, `br_save_*` | Busy-waits until user storage is ready (`ponytail:`); consoles want an asynchronous ready callback. |
 | `engine/src/app/br_engine.c` (asset root) and `engine/src/data/br_game_config.c` (`br_game_config_load`) | Resolve paths against `SDL_GetBasePath()`; on a console this becomes the title-storage root. |

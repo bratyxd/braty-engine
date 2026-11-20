@@ -166,7 +166,7 @@ static void test_lazy_bundle_capture(br_engine *e)
 
 static void test_deterministic(void)
 {
-    br_engine *e = br_engine_create("test_asset_group_det", "../../tests/data");
+    br_engine *e = br_engine_create("test_asset_group_det", BRATY_SOURCE_DIR "/tests/data");
     br_app_set_deterministic(e, true, 1);
     br_asset_group *g = br_asset_group_create(e, "ordered");
     br_asset_group_add(g, "scenes/red.png");
@@ -188,7 +188,7 @@ static void test_deterministic(void)
 
 int main(void)
 {
-    br_engine *e = br_engine_create("test_asset_group", "../../tests/data"); /* relative to the exe */
+    br_engine *e = br_engine_create("test_asset_group", BRATY_SOURCE_DIR "/tests/data"); /* the source tree (CMake) */
     test_sync_and_shared(e);
     test_async(e);
     test_lazy_bundle_capture(e);

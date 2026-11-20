@@ -24,14 +24,15 @@ build/windows-gcc/sample_projects/crate_rush/crate_rush.exe --headless --playtes
 build/windows-gcc/sample_projects/star_courier/star_courier.exe --playtest sample_projects/star_courier/playtest/round.json
 python tools/golden.py run --only crate_rush_play                   # one golden image (docs/TESTING.md)
 python tools/check_getting_started.py                               # builds and runs every step of the guide
+cmake --preset windows-gcc-release && cmake --build --preset windows-gcc-release   # optimised, profiler off (docs/BUILDING.md)
 ```
 
 Every app built on `br_app` takes `--frames N --screenshot out.png` (fixed 1/60 s steps, exits 0),
 plus `--vsync`, `--max-fps`, `--deterministic`, `--headless`, `--assets DIR` and the play-test
 flags (`docs/agents/app.md`). **Open the PNG before claiming a visual feature works**, on both
 `direct3d12` and `vulkan`. How to test, and the rule below: `docs/TESTING.md`.
-Examples read their data from the source tree (`BRATY_EXAMPLES_DIR`, set by CMake), so they work
-from any working directory and any build directory; the sample games copy their data next to the
+Examples and tests read their data from the source tree (`BRATY_EXAMPLES_DIR` /
+`BRATY_SOURCE_DIR`, set by CMake), so they work from any working directory and any build directory; the sample games copy their data next to the
 executable (`--assets <dir>` or `BRATY_ASSETS` points any app at another asset root). Each sample
 has `playtest/round.json` (CTest runs it headless) and `playtest/soak.json` (run by hand with a
 window: Crate Rush's cycles all levels and checks counts return to baseline). Details:
@@ -72,7 +73,7 @@ Your own code: `br_profile_begin(e, "name")` / `br_profile_end(e)`. `docs/PROFIL
 
 ## How to make a game with Braty
 
-1. **Learn the pattern:** `docs/GETTING_STARTED.md` - a 2D game in eleven compiling steps, then a
+1. **Learn the pattern:** `docs/GETTING_STARTED.md` - a 2D game in eleven steps (the first two only write files), then a
    3D track (a `.glb` level as the scene, components from glTF extras, a system over 3D
    components, a following camera, a world-space label). `tools/check_getting_started.py` builds
    every step, so the code there is known to compile.
@@ -97,8 +98,8 @@ Your own code: `br_profile_begin(e, "name")` / `br_profile_end(e)`. `docs/PROFIL
    parameters for `*.animgraph.json`, footsteps from animation events), `src/world.c` (crates,
    hazards, signs as 3D components from extras; canvas3d plates and popups; tweens) and
    `src/ui.c` (buttons, focus, prompts, settings, HUD; `br_query`). Levels come from
-   `tools/build_assets.py` (what a Blender export would contain); Kenney assets from
-   `tools/fetch_assets.py`.
+   `sample_projects/crate_rush/tools/build_assets.py` (what a Blender export would contain);
+   Kenney assets from `sample_projects/crate_rush/tools/fetch_assets.py`.
 5. **Test it like the samples:** a `round.json` with `expect` (state, score, positions,
    `engine:scene`), a soak that checks counts return to baseline, a golden image of a
    deterministic frame (`tools/golden.py`), and look at screenshots on both GPU drivers.
