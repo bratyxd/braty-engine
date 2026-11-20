@@ -29,6 +29,9 @@ def main():
                                           "slot": 0}
     assert p("get */player:position") == {"cmd": "get", "path": "*/player:position"}
     assert p('set game:score 5') == {"cmd": "set", "path": "game:score", "value": 5}
+    # the value is JSON as written: shlex must not eat a string's quotes
+    assert p('set engine:locale "de"') == {"cmd": "set", "path": "engine:locale", "value": "de"}
+    assert p('set ship:position [1, 2]') == {"cmd": "set", "path": "ship:position", "value": [1, 2]}
     assert p('text "hello world"') == {"cmd": "text", "text": "hello world"}
     assert p("window 1280 720") == {"cmd": "window", "width": 1280, "height": 720}
     assert p("quit") == {"cmd": "quit"}

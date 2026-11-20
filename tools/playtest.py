@@ -314,7 +314,8 @@ def parse_words(text, words):
         return {"cmd": "type", "label": rest[0], "text": " ".join(rest[1:])}
     if name == "set":
         arity(name, rest, 2, len(rest))
-        return {"cmd": "set", "path": rest[0], "value": json.loads(" ".join(rest[1:]))}
+        # the value as written in the text (JSON): the split words lost a string's quotes
+        return {"cmd": "set", "path": rest[0], "value": json.loads(text.split(None, 2)[2])}
     if name == "dump":
         arity(name, rest, 0, 1)
         return {"cmd": "dump", "file": rest[0]} if rest else {"cmd": "dump"}
