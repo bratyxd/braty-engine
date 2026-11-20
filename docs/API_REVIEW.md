@@ -545,6 +545,14 @@ way (54, 62); the rest are open.
     to `shlex` and failed with a JSON error. **Resolved (Phase 3 Task C):** UTF-8 pipes, the value
     parsed from the text as written. Test: `tests/test_playtest_tool.py`.
 
+63. **open - recorded play-tests are not bit-identical on Apple arm64.** Star Courier's
+    `round.json` (a recorded 1300-frame session) ends in "gameover" on Windows (GCC, MSVC) and
+    Linux but is still in "play" on macOS arm64, with FMA contraction off. Suspects: libm
+    `sinf` / `cosf` / `powf` results differing in the last bit, or a float -> integer cast of an
+    out-of-range value (undefined, and different on x86 and arm). CI runs that test as an
+    informative step on macOS until the cause is found (needs a Mac, or a state-hash dump per
+    frame compared between platforms).
+
 ## Migration table (Phase 3 Task A)
 
 Every name below was removed without an alias: a game that still uses one gets a compiler

@@ -236,6 +236,10 @@ static void test_hit_deep_chain(void)
 
 /* ---- propagation */
 
+/* One pointer for on and off: listeners match by user pointer, and equal string literals are
+ * not guaranteed to share an address (MSVC debug builds do not pool them). */
+static char second_prefix[] = "2nd-";
+
 static void stop_listener(br_engine *e, br_event *ev, void *user)
 {
     log_event(e, ev, NULL);
@@ -266,7 +270,7 @@ static void test_propagation(void)
     /* stop_propagation finishes c's listeners, then stops */
     br_node_off(e, c, BR_EVENT_POINTER_DOWN, log_event, NULL);
     br_node_on(e, c, BR_EVENT_POINTER_DOWN, stop_listener, NULL);
-    br_node_on(e, c, BR_EVENT_POINTER_DOWN, log_event, "2nd-");
+    br_node_on(e, c, BR_EVENT_POINTER_DOWN, log_event, second_prefix);
     clear_log();
     br_input_inject_pointer_down(e, 10, 10, SDL_BUTTON_LEFT);
     BR_CHECK(log_is("cap-down:root cap-down:p cap-down:c down:c 2nd-down:c "));
@@ -274,9 +278,9 @@ static void test_propagation(void)
 
     /* immediate: the second listener of c is skipped too */
     br_node_off(e, c, BR_EVENT_POINTER_DOWN, stop_listener, NULL);
-    br_node_off(e, c, BR_EVENT_POINTER_DOWN, log_event, "2nd-");
+    br_node_off(e, c, BR_EVENT_POINTER_DOWN, log_event, second_prefix);
     br_node_on(e, c, BR_EVENT_POINTER_DOWN, stop_listener, "immediate");
-    br_node_on(e, c, BR_EVENT_POINTER_DOWN, log_event, "2nd-");
+    br_node_on(e, c, BR_EVENT_POINTER_DOWN, log_event, second_prefix);
     clear_log();
     br_input_inject_pointer_down(e, 10, 10, SDL_BUTTON_LEFT);
     BR_CHECK(log_is("cap-down:root cap-down:p cap-down:c down:c "));
