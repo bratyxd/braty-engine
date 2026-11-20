@@ -24,7 +24,7 @@ Tests: `tests/test_node.c`, `test_components.c`, `test_transform.c`, `test_query
 | `br_node_to_global` / `br_node_to_local` / `br_node_world_transform` | Always current, computed from ancestors. |
 | `br_node_set_alpha/tint/visible/z_index/sortable_children/blend_mode` | Appearance and order. |
 | `br_node_get_bounds` / `get_local_bounds`, `br_node_set_cullable` | Bounds, culling. |
-| `br_node_destroy(e, n)` | Deferred: invalid now, freed at the start of next frame. |
+| `br_node_destroy(e, n)` | Invalid now; freed by the next flush (start of next frame, or at once outside a step). |
 | `br_node_type_register(e, &desc)` | Add a node type (from your module's register function). |
 | `br_component_register/add/get/remove/count/at/owner_at` | Components. |
 | `br_query_begin(e, ids, count)`, `br_query_next(&q)`, `br_query_end(&q)` | Nodes that have 1-4 components at once (`br_query.h`). |
@@ -125,7 +125,18 @@ is layer 1) picks which cameras draw a node (`culling_mask`, `docs/agents/camera
 - Destroy is deferred inside `br_engine_step`: the handle is invalid at once, children lists and
   component arrays keep the dead entries until the next frame (so loops do not shift). Check
   `br_node_valid(e, br_component_owner_at(...))` when iterating components after destroying.
-- Outside a step (init, tests) destroy is immediate.
+- Outside a step (init, tests) destroy is immediate: the flush runs inside `br_node_destroy`.
+  One rule for callbacks either way: a `br_node_destroy` from an `on_destroy` or destroy listener
+  marks the node and the running flush frees it before returning (the flush never re-enters), so
+  a type that owns helper nodes may destroy them in `on_destroy`.
+- The flush removes dead children from each live parent (and dead members from each layer) in one
+  pass per list, so destroying thousands of children of one container is linear.
+- Tree walks (transform update, bounds, culling, destroy, label search) use explicit stacks:
+  hierarchies of any depth work. The render walk recurses and stops at 2048 levels (logged once).
+- Relations that would loop are rejected by the setters (logged): `br_node_set_mask` with `n`
+  inside the mask's subtree, `br_node_layer_attach` with the layer inside the member's subtree.
+  Rearranging the tree afterwards can still build such a loop: the renderer ignores masks met
+  while drawing a mask, and the depth limit stops a layer loop.
 - Render groups (`br_node_set_render_group`): descendants' cached world matrices are relative to
   the group. `br_node_world_transform`/`to_global` are always absolute.
 - Masks: the mask node is not drawn as content and does not count in its parent's bounds. It is

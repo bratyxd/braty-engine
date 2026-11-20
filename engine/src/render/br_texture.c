@@ -144,15 +144,32 @@ br_texture br_texture_wrap_gpu(br_engine *e, br_gpu_texture *gpu, bool take_owne
     return t;
 }
 
+/* Pixel size of a render texture; false (logged) unless it is finite, positive and at most
+ * BR_RENDER_TEXTURE_MAX_SIZE (sizes come from data: the float -> uint32 cast needs that). */
+static bool br_render_texture_pixels(const char *what, float width, float height, float resolution, uint32_t *pw,
+                                     uint32_t *ph)
+{
+    float w = SDL_ceilf(width * resolution);
+    float h = SDL_ceilf(height * resolution);
+    /* written so NaN fails every comparison */
+    if (!(w >= 1.0f && w <= (float)BR_RENDER_TEXTURE_MAX_SIZE && h >= 1.0f && h <= (float)BR_RENDER_TEXTURE_MAX_SIZE)) {
+        br_log_error("%s: size %g x %g at resolution %g is not 1..%d pixels", what, (double)width, (double)height,
+                     (double)resolution, BR_RENDER_TEXTURE_MAX_SIZE);
+        return false;
+    }
+    *pw = (uint32_t)w;
+    *ph = (uint32_t)h;
+    return true;
+}
+
 br_texture br_render_texture_create(br_engine *e, float width, float height, float resolution)
 {
-    if (resolution <= 0.0f) {
+    if (!(resolution > 0.0f)) {
         resolution = 1.0f;
     }
-    uint32_t pw = (uint32_t)SDL_ceilf(width * resolution);
-    uint32_t ph = (uint32_t)SDL_ceilf(height * resolution);
-    if (pw == 0 || ph == 0) {
-        br_log_error("br_render_texture_create: zero size");
+    uint32_t pw;
+    uint32_t ph;
+    if (!br_render_texture_pixels("br_render_texture_create", width, height, resolution, &pw, &ph)) {
         return br_texture_zero();
     }
     br_render_target *rt = NULL;
@@ -182,9 +199,9 @@ bool br_render_texture_resize(br_engine *e, br_texture t, float width, float hei
     if (rec == NULL || rec->source.index != t.index) {
         return false;
     }
-    uint32_t pw = (uint32_t)SDL_ceilf(width * rec->resolution);
-    uint32_t ph = (uint32_t)SDL_ceilf(height * rec->resolution);
-    if (pw == 0 || ph == 0) {
+    uint32_t pw;
+    uint32_t ph;
+    if (!br_render_texture_pixels("br_render_texture_resize", width, height, rec->resolution, &pw, &ph)) {
         return false;
     }
     if (rec->target != NULL && !br_gpu_render_target_resize(br_engine_gpu(e), rec->target, pw, ph)) {
@@ -441,6 +458,7 @@ br_texture br_texture_load(br_engine *e, const char *path)
     br_texture *t = br_assets_load(e, path);
     if (t != NULL && !br_str_equal(br_assets_type(e, path), "texture")) {
         br_log_error("br_texture_load: '%s' is not a texture", path);
+        br_assets_unload(e, path); /* drop the reference br_assets_load took */
         t = NULL;
     }
     if (t == NULL) {

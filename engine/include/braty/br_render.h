@@ -161,7 +161,7 @@ typedef struct br_render_view {
     br_mat4    projection;     /* root-space -> clip space of the WHOLE target */
     br_rect    area;           /* root-space rect the view shows (br_render_area, inverse masks) */
     br_rect    viewport;       /* part of the target drawn into, in target units (window units) */
-    uint32_t   culling_mask;   /* nodes with (layer bits & mask) == 0 are skipped with their subtree */
+    uint32_t   culling_mask;   /* nodes with (layer bits & mask) == 0 are not drawn; children still visited */
     bool       clear;          /* fill the viewport with clear_color first */
     br_color   clear_color;
 } br_render_view;

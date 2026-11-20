@@ -67,8 +67,10 @@ uint32_t br_node_type_of(br_engine *e, br_node n);
 bool br_node_valid(br_engine *e, br_node n);
 /* True if both handles are identical. */
 bool br_node_equal(br_node a, br_node b);
-/* Destroys the node and all its descendants. Deferred: handles turn invalid now, memory is
- * freed at the start of the next frame (immediately when called outside br_engine_step). */
+/* Destroys the node and all its descendants. Handles turn invalid now. Inside br_engine_step
+ * memory is freed by the flush at the start of the next frame; outside a step the flush runs
+ * now. A destroy from a destroy callback (on_destroy, br_scene_on_node_destroy) joins the
+ * flush that is running, which frees it before it returns: callbacks run once per node. */
 void br_node_destroy(br_engine *e, br_node n);
 /* The stage: the root node the engine updates and draws every frame. */
 br_node br_scene_root(br_engine *e);
@@ -232,7 +234,8 @@ void br_node_set_render_group(br_engine *e, br_node n, bool is_render_group);
 /* True if the node is a render group. */
 bool br_node_is_render_group(br_engine *e, br_node n);
 /* Draws n (with its subtree) where `layer` is in the draw order instead of where n sits in the
- * hierarchy (Pixi RenderLayer.attach). Any node can be a layer. Transforms still come from n's parent. */
+ * hierarchy (Pixi RenderLayer.attach). Any node can be a layer. Transforms still come from n's parent.
+ * False (logged) if layer is n or inside n's subtree (the walk would never end). */
 bool br_node_layer_attach(br_engine *e, br_node layer, br_node n);
 /* Detaches n from its render layer. */
 void br_node_layer_detach(br_engine *e, br_node n);
@@ -259,7 +262,9 @@ typedef enum br_mask_kind {
 } br_mask_kind;
 
 /* Masks n's subtree with `mask` (which is then no longer drawn as content). Zero mask or
- * BR_MASK_NONE removes the mask. inverse: draw only outside the mask (stencil/alpha). */
+ * BR_MASK_NONE removes the mask. inverse: draw only outside the mask (stencil/alpha).
+ * n inside the mask's own subtree (or n == mask) is rejected (logged): n ends up unmasked.
+ * The renderer also ignores masks met while it draws a mask's geometry. */
 void br_node_set_mask(br_engine *e, br_node n, br_node mask, br_mask_kind kind, bool inverse);
 /* The mask node (zero handle if none); kind and inverse may be NULL. */
 br_node br_node_mask(br_engine *e, br_node n, br_mask_kind *kind, bool *inverse);
@@ -353,7 +358,8 @@ typedef struct br_component_desc {
     const char *name; size_t size; const br_field_desc *fields; uint32_t field_count;
 } br_component_desc;
 
-/* Registers a component (desc, name and field list are copied). Returns its id, 0 on failure. */
+/* Registers a component (desc, name and field list are copied). Returns its id, 0 on failure
+ * (logged): duplicate name, size 0, or a field without a name, of unknown type or not inside size. */
 uint32_t br_component_register(br_engine *e, const br_component_desc *desc);
 /* Finds a component id by name, 0 if unknown. */
 uint32_t br_component_find(br_engine *e, const char *name);

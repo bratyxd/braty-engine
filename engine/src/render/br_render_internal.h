@@ -95,6 +95,7 @@ typedef struct br_batch_vertex {
 } br_batch_vertex;
 
 #define BR_RENDER_INFO_CACHE 16  /* texture infos cached per collect, direct-mapped by index */
+#define BR_RENDER_MAX_DEPTH 2048 /* render walk levels (it recurses); deeper nodes are not drawn */
 
 struct br_render_ctx {
     br_engine *e;
@@ -117,6 +118,8 @@ struct br_render_ctx {
     float      target_height;
     uint32_t   culling_mask;      /* layer bits a node needs to be drawn */
     uint32_t   layer_bits;        /* effective layer bits of the node being walked (inherited) */
+    uint32_t   depth;             /* levels of br_render_walk active (limit BR_RENDER_MAX_DEPTH) */
+    uint32_t   mask_draws;        /* > 0 while a mask's geometry is drawn: masks inside are ignored */
     uint32_t   serial;            /* changes whenever state that splits batches changes */
     int        open_batch;        /* index of the batch accepting quads, -1 if none */
     /* per-pass caches (textures do not change while the stage is walked) */
@@ -152,6 +155,7 @@ typedef struct br_render_state {
     uint32_t   serial_counter;
     bool       collected;         /* the draw list belongs to this frame */
     bool       warned_no_stencil;
+    bool       warned_depth;
 
     br_render_effects_fn effects_fn;
     void                *effects_user;
@@ -179,6 +183,16 @@ bool br_texture_binding(br_engine *e, br_texture source, SDL_GPUTextureSamplerBi
 void br_render_register(br_engine *e);
 /* Starts a new state serial: following pushes do not join the open batch. */
 void br_render_ctx_changed(br_render_ctx *rc);
+/* Target-pixel rect covering a rect of root space (the space of the context's area / view
+ * projection), floored/ceiled outward, not clipped. Includes the viewport offset of views and
+ * their zoom; a rotated view gives the bounding box. Used by scissor masks and the filters
+ * module (backdrop copies). Meaningless while capturing for 3D (target_width == 0). */
+br_rect br_render_rect_to_pixels(br_render_ctx *rc, br_rect r);
+
+/* br_render_subtree_to_texture; own_color false draws the subtree as if n and its ancestors had
+ * alpha 1 and a white tint (cache_as_texture: the cached quad applies n's colour when drawn). */
+void br_render_subtree_to_texture_ex(br_render_ctx *rc, br_node n, br_texture target, br_rect area, bool clear,
+                                     br_color clear_color, bool own_color);
 
 /* Records n's subtree (n's own effects skipped, like br_render_subtree_to_texture) with
  * `projection` mapping n's root space to "clip" space, but instead of drawing it, moves the

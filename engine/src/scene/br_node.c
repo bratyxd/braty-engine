@@ -298,15 +298,22 @@ bool br_node_equal(br_node a, br_node b)
     return a.index == b.index && a.generation == b.generation;
 }
 
+/* Marks a subtree destroyed. The pending list doubles as the work list (no recursion: chains
+ * of any depth), so parents are queued before their children. */
 static void br_scene_mark_destroyed(br_scene_state *s, uint32_t index)
 {
-    br_node_record *rec = br_scene_record_at(s, index);
-    rec->destroyed = true;
+    uint32_t first = s->pending_destroy.count;
+    br_scene_record_at(s, index)->destroyed = true;
     br_array_push(&s->pending_destroy, &index);
-    for (uint32_t i = 0; i < rec->children.count; i++) {
-        uint32_t *child = br_array_at(&rec->children, i);
-        if (!br_scene_record_at(s, *child)->destroyed) {
-            br_scene_mark_destroyed(s, *child);
+    for (uint32_t i = first; i < s->pending_destroy.count; i++) {
+        br_node_record *rec = br_scene_record_at(s, *(uint32_t *)br_array_at(&s->pending_destroy, i));
+        for (uint32_t c = 0; c < rec->children.count; c++) {
+            uint32_t child = *(uint32_t *)br_array_at(&rec->children, c);
+            br_node_record *crec = br_scene_record_at(s, child);
+            if (!crec->destroyed) {
+                crec->destroyed = true;
+                br_array_push(&s->pending_destroy, &child);
+            }
         }
     }
 }
@@ -322,7 +329,8 @@ void br_node_destroy(br_engine *e, br_node n)
         return;
     }
     br_scene_mark_destroyed(e->scene, n.index);
-    if (!e->stepping) {
+    /* inside a running flush (a destroy callback) the node joins that flush: never re-enter it */
+    if (!e->stepping && !e->scene->flushing) {
         br_scene_flush_destroyed(e);
     }
 }
@@ -380,16 +388,7 @@ static void br_scene_free_node(br_engine *e, uint32_t index)
         br_array_pop(&type->data);
         br_array_pop(&type->owners);
     }
-    if (rec->parent != BR_NO_NODE && br_pool_slot_alive(&s->nodes, rec->parent)) {
-        br_node_record *prec = br_scene_record_at(s, rec->parent);
-        if (!prec->destroyed) {
-            br_remove_index(&prec->children, index);
-        }
-    }
-    br_node_record *layer = br_scene_record(e, rec->layer);
-    if (layer != NULL) {
-        br_remove_handle(&layer->layer_members, n);
-    }
+    /* the live parent's children and the layer's members were compacted by br_scene_unlink_destroyed */
     br_node_record *mask = br_scene_record(e, rec->mask);
     if (mask != NULL && mask->mask_users > 0) {
         mask->mask_users -= 1;
@@ -410,15 +409,73 @@ static void br_scene_free_node(br_engine *e, uint32_t index)
     br_pool_release(&s->nodes, n.index, n.generation);
 }
 
+/* Queues a live node whose children / layer members lose destroyed entries. */
+static void br_scene_queue_compact(br_scene_state *s, uint32_t index)
+{
+    br_node_record *rec = br_scene_record_at(s, index);
+    if (!rec->destroyed && !rec->compact_queued) {
+        rec->compact_queued = true;
+        br_array_push(&s->walk_stack, &index);
+    }
+}
+
+/* Removes pending_destroy[start, end) from their live parents and layers: each list is
+ * compacted once (order kept), not searched once per destroyed node. */
+static void br_scene_unlink_destroyed(br_engine *e, uint32_t start, uint32_t end)
+{
+    br_scene_state *s = e->scene;
+    br_array_clear(&s->walk_stack);
+    for (uint32_t i = start; i < end; i++) {
+        br_node_record *rec = br_scene_record_at(s, *(uint32_t *)br_array_at(&s->pending_destroy, i));
+        if (rec->parent != BR_NO_NODE && br_pool_slot_alive(&s->nodes, rec->parent)) {
+            br_scene_queue_compact(s, rec->parent);
+        }
+        if (br_scene_record(e, rec->layer) != NULL) {
+            br_scene_queue_compact(s, rec->layer.index);
+        }
+    }
+    for (uint32_t i = 0; i < s->walk_stack.count; i++) {
+        br_node_record *rec = br_scene_record_at(s, *(uint32_t *)br_array_at(&s->walk_stack, i));
+        rec->compact_queued = false;
+        uint32_t *children = rec->children.data;
+        uint32_t kept = 0;
+        for (uint32_t c = 0; c < rec->children.count; c++) {
+            if (!br_scene_record_at(s, children[c])->destroyed) {
+                children[kept++] = children[c];
+            }
+        }
+        rec->children.count = kept;
+        br_node *members = rec->layer_members.data;
+        kept = 0;
+        for (uint32_t m = 0; m < rec->layer_members.count; m++) {
+            if (br_scene_record(e, members[m]) != NULL) {
+                members[kept++] = members[m];
+            }
+        }
+        rec->layer_members.count = kept;
+    }
+    br_array_clear(&s->walk_stack);
+}
+
 void br_scene_flush_destroyed(br_engine *e)
 {
     br_scene_state *s = e->scene;
-    /* count is re-read: destroy callbacks may destroy more nodes */
-    for (uint32_t i = 0; i < s->pending_destroy.count; i++) {
-        uint32_t index = *(uint32_t *)br_array_at(&s->pending_destroy, i);
-        br_scene_free_node(e, index);
+    if (s->flushing) {
+        return; /* the running flush also frees what was marked since it started */
+    }
+    s->flushing = true;
+    /* rounds: destroy callbacks may destroy more nodes, which are freed in the next round */
+    uint32_t start = 0;
+    while (start < s->pending_destroy.count) {
+        uint32_t end = s->pending_destroy.count;
+        br_scene_unlink_destroyed(e, start, end);
+        for (uint32_t i = start; i < end; i++) {
+            br_scene_free_node(e, *(uint32_t *)br_array_at(&s->pending_destroy, i));
+        }
+        start = end;
     }
     br_array_clear(&s->pending_destroy);
+    s->flushing = false;
 }
 
 br_node br_scene_root(br_engine *e)
@@ -634,25 +691,31 @@ const char *br_node_label(br_engine *e, br_node n)
     return rec != NULL && rec->label != NULL ? rec->label : "";
 }
 
+/* Depth-first, in child order; each node's direct children are checked before going deeper
+ * (the order the recursive version had). Explicit stack: chains of any depth. */
 static uint32_t br_find_label(br_scene_state *s, uint32_t index, const char *label, bool deep)
 {
-    br_node_record *rec = br_scene_record_at(s, index);
-    for (uint32_t i = 0; i < rec->children.count; i++) {
-        uint32_t child = *(uint32_t *)br_array_at(&rec->children, i);
-        br_node_record *crec = br_scene_record_at(s, child);
-        if (!crec->destroyed && crec->label != NULL && SDL_strcmp(crec->label, label) == 0) {
-            return child;
-        }
-    }
-    if (deep) {
+    br_array *stack = &s->walk_stack;
+    br_array_clear(stack);
+    br_array_push(stack, &index);
+    while (stack->count > 0) {
+        uint32_t top = *(uint32_t *)br_array_at(stack, stack->count - 1);
+        br_array_pop(stack);
+        br_node_record *rec = br_scene_record_at(s, top);
+        const uint32_t *children = rec->children.data;
         for (uint32_t i = 0; i < rec->children.count; i++) {
-            uint32_t child = *(uint32_t *)br_array_at(&rec->children, i);
-            if (br_scene_record_at(s, child)->destroyed) {
-                continue;
+            br_node_record *crec = br_scene_record_at(s, children[i]);
+            if (!crec->destroyed && crec->label != NULL && SDL_strcmp(crec->label, label) == 0) {
+                return children[i];
             }
-            uint32_t found = br_find_label(s, child, label, true);
-            if (found != BR_NO_NODE) {
-                return found;
+        }
+        if (!deep) {
+            break;
+        }
+        for (uint32_t i = rec->children.count; i > 0; i--) {
+            uint32_t child = ((const uint32_t *)rec->children.data)[i - 1];
+            if (!br_scene_record_at(s, child)->destroyed && br_array_push(stack, &child) == NULL) {
+                return BR_NO_NODE;
             }
         }
     }
@@ -1019,7 +1082,13 @@ bool br_node_layer_attach(br_engine *e, br_node layer, br_node n)
 {
     br_node_record *lrec = br_scene_record(e, layer);
     br_node_record *rec = br_scene_record(e, n);
-    if (lrec == NULL || rec == NULL || br_node_equal(layer, n)) {
+    if (lrec == NULL || rec == NULL) {
+        return false;
+    }
+    if (br_node_is_descendant_of(e, layer, n)) {
+        /* the layer would draw n, whose subtree draws the layer again: an endless walk */
+        br_log_error("br_node_layer_attach: the layer '%s' is '%s' or inside it", br_node_label(e, layer),
+                     br_node_label(e, n));
         return false;
     }
     br_node_layer_detach(e, n);
@@ -1079,7 +1148,13 @@ void br_node_set_mask(br_engine *e, br_node n, br_node mask, br_mask_kind kind, 
         old->mask_users -= 1;
     }
     br_node_record *mrec = br_scene_record(e, mask);
-    if (mrec == NULL || kind == BR_MASK_NONE || br_node_equal(mask, n)) {
+    bool inside = mrec != NULL && kind != BR_MASK_NONE && br_node_is_descendant_of(e, n, mask);
+    if (inside) {
+        /* drawing the mask would reach n, which draws the mask again: no mask */
+        br_log_error("br_node_set_mask: '%s' is the mask '%s' or inside it", br_node_label(e, n),
+                     br_node_label(e, mask));
+    }
+    if (mrec == NULL || kind == BR_MASK_NONE || inside) {
         rec->mask = br_node_zero();
         rec->mask_kind = BR_MASK_NONE;
         rec->mask_inverse = false;
@@ -1294,6 +1369,10 @@ static void br_scene_shutdown(br_engine *e, void *user)
     br_array_free(&s->sort_queue);
     br_array_free(&s->sort_scratch);
     br_array_free(&s->cullables);
+    br_array_free(&s->walk_stack);
+    br_array_free(&s->transform_stack);
+    br_array_free(&s->transform_parents);
+    br_array_free(&s->bounds_stack);
     br_free(s);
     e->scene = NULL;
 }
@@ -1313,6 +1392,8 @@ void br_scene_register(br_engine *e)
     br_array_init(&s->destroy_listeners, sizeof(br_destroy_listener));
     br_array_init(&s->sort_queue, sizeof(uint32_t));
     br_array_init(&s->cullables, sizeof(uint32_t));
+    br_array_init(&s->walk_stack, sizeof(uint32_t));
+    br_scene_walks_init(s);
     br_engine_on_shutdown(e, br_scene_shutdown, NULL);
 
     br_node_type_desc container;

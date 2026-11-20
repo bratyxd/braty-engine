@@ -9,6 +9,7 @@
 #define BR_WALK_AS_MASK      4u   /* drawn as a stencil mask: ignore visible / is-a-mask */
 
 static void br_render_walk(br_render_ctx *rc, uint32_t index, br_blend_mode inherited, uint32_t flags);
+static void br_render_walk_node(br_render_ctx *rc, uint32_t index, br_blend_mode inherited, uint32_t flags);
 
 /* ---- context state */
 
@@ -50,6 +51,9 @@ uint32_t br_render_node_color(br_render_ctx *rc, br_node n)
     br_node_record *rec = br_scene_record(rc->e, n);
     if (rec == NULL) {
         return 0;
+    }
+    if (rc->stencil == BR_STENCIL_INCR || rc->stencil == BR_STENCIL_DECR) {
+        return 0xFFFFFFFFu; /* stencil mask geometry: a mask with alpha 0 still clips */
     }
     return rec->world_color; /* packed by the transform system whenever world tint/alpha change */
 }
@@ -118,7 +122,9 @@ static void br_render_draw_mask_node(br_render_ctx *rc, uint32_t mask_index)
     br_scene_state *s = rc->e->scene;
     br_scene_refresh_subtree(s, mask_index); /* the mask may live outside the stage */
     br_mat3 saved = br_render_set_space(rc, br_scene_group_space(s, mask_index));
+    rc->mask_draws += 1; /* a node in the mask masked by it would draw the mask again, forever */
     br_render_walk(rc, mask_index, BR_BLEND_NORMAL, BR_WALK_AS_MASK | BR_WALK_SKIP_EFFECTS);
+    rc->mask_draws -= 1;
     br_render_set_space(rc, saved);
 }
 
@@ -149,28 +155,40 @@ typedef struct br_mask_saved {
     SDL_Rect     scissor;
 } br_mask_saved;
 
-/* Target-pixel rect covering a world rect seen through a view's projection (rotated cameras
- * give the bounding box of the projected corners). */
-static br_rect br_render_view_scissor(br_render_ctx *rc, br_rect world)
+br_rect br_render_rect_to_pixels(br_render_ctx *rc, br_rect r)
 {
     float x0 = 1e30f;
     float y0 = 1e30f;
     float x1 = -1e30f;
     float y1 = -1e30f;
-    for (int i = 0; i < 4; i++) {
-        float wx = (i & 1) ? world.x + world.width : world.x;
-        float wy = (i & 2) ? world.y + world.height : world.y;
-        br_vec3 clip = br_mat4_transform_point(rc->projection, br_vec3_make(wx, wy, 0.0f));
-        float px = (clip.x + 1.0f) * 0.5f * rc->target_width;
-        float py = (1.0f - clip.y) * 0.5f * rc->target_height;
-        x0 = SDL_min(x0, px);
-        y0 = SDL_min(y0, py);
-        x1 = SDL_max(x1, px);
-        y1 = SDL_max(y1, py);
+    if (rc->has_projection) {
+        /* the view's projection maps root space to clip space of the whole target */
+        for (int i = 0; i < 4; i++) {
+            float wx = (i & 1) ? r.x + r.width : r.x;
+            float wy = (i & 2) ? r.y + r.height : r.y;
+            br_vec3 clip = br_mat4_transform_point(rc->projection, br_vec3_make(wx, wy, 0.0f));
+            float px = (clip.x + 1.0f) * 0.5f * rc->target_width;
+            float py = (1.0f - clip.y) * 0.5f * rc->target_height;
+            x0 = SDL_min(x0, px);
+            y0 = SDL_min(y0, py);
+            x1 = SDL_max(x1, px);
+            y1 = SDL_max(y1, py);
+        }
+    } else {
+        float sx = rc->pixel_width / rc->area.width;
+        float sy = rc->pixel_height / rc->area.height;
+        x0 = (r.x - rc->area.x) * sx;
+        y0 = (r.y - rc->area.y) * sy;
+        x1 = (r.x + r.width - rc->area.x) * sx;
+        y1 = (r.y + r.height - rc->area.y) * sy;
     }
-    x0 = SDL_floorf(x0);
-    y0 = SDL_floorf(y0);
-    return br_rect_make(x0, y0, SDL_ceilf(x1) - x0, SDL_ceilf(y1) - y0);
+    /* a little slack: edges already on the pixel grid stay there after the float maths */
+    const float slack = 1.0f / 256.0f;
+    x0 = SDL_floorf(x0 + slack);
+    y0 = SDL_floorf(y0 + slack);
+    x1 = SDL_ceilf(x1 - slack);
+    y1 = SDL_ceilf(y1 - slack);
+    return br_rect_make(x0, y0, x1 - x0, y1 - y0);
 }
 
 /* Stencil levels: content inside d nested masks is drawn where stencil == d.
@@ -195,23 +213,14 @@ static bool br_render_push_mask(br_render_ctx *rc, uint32_t index, br_mask_saved
         br_rect bounds = br_rect_make(0.0f, 0.0f, 0.0f, 0.0f);
         bool has = false;
         br_scene_bounds(s, e, saved->mask_index, br_scene_chain_transform(s, saved->mask_index, false), &bounds, &has);
-        br_rect px;
-        if (rc->has_projection) {
-            if (rc->target_width <= 0.0f) {
-                saved->kind = BR_MASK_NONE; /* captured for 3D (canvas3d): no pixels to clip */
-                return true;
-            }
-            px = br_render_view_scissor(rc, bounds);
-        } else {
-            float sx = rc->pixel_width / rc->area.width;
-            float sy = rc->pixel_height / rc->area.height;
-            float x0 = SDL_floorf((bounds.x - rc->area.x) * sx);
-            float y0 = SDL_floorf((bounds.y - rc->area.y) * sy);
-            float x1 = SDL_ceilf((bounds.x + bounds.width - rc->area.x) * sx);
-            float y1 = SDL_ceilf((bounds.y + bounds.height - rc->area.y) * sy);
-            px = br_rect_make(x0, y0, x1 - x0, y1 - y0);
+        if (rc->target_width <= 0.0f) {
+            saved->kind = BR_MASK_NONE; /* captured for 3D (canvas3d): no pixels to clip */
+            return true;
         }
-        px = br_rect_intersection(px, br_rect_make(0.0f, 0.0f, rc->pixel_width, rc->pixel_height));
+        /* target pixels, clipped to the whole target; a view's own scissor (rc->scissor below)
+         * clips to its viewport */
+        br_rect px = br_render_rect_to_pixels(rc, bounds);
+        px = br_rect_intersection(px, br_rect_make(0.0f, 0.0f, rc->target_width, rc->target_height));
         if (rc->scissor_on) {
             br_rect old = br_rect_make((float)rc->scissor.x, (float)rc->scissor.y, (float)rc->scissor.w,
                                        (float)rc->scissor.h);
@@ -283,14 +292,32 @@ static void br_render_pop_mask(br_render_ctx *rc, const br_mask_saved *saved)
 
 /* ---- the walk */
 
-static bool br_render_record_needs_effects(br_engine *e, const br_node_record *rec)
+static bool br_render_record_needs_effects(br_render_ctx *rc, const br_node_record *rec)
 {
-    bool effect_mask = (rec->mask_kind == BR_MASK_ALPHA || rec->mask_kind == BR_MASK_COLOR) &&
-                       br_scene_record(e, rec->mask) != NULL;
+    /* masks met while a mask is drawn are ignored (br_render_ctx.mask_draws) */
+    bool effect_mask = rc->mask_draws == 0 && (rec->mask_kind == BR_MASK_ALPHA || rec->mask_kind == BR_MASK_COLOR) &&
+                       br_scene_record(rc->e, rec->mask) != NULL;
     return rec->filters != NULL || rec->cache_as_texture || effect_mask || rec->blend_mode >= BR_BLEND_ADVANCED_FIRST;
 }
 
+/* The walk recurses per level: past BR_RENDER_MAX_DEPTH it logs once and stops (deep chains,
+ * or a render-layer loop built by rearranging the tree after attaching). */
 static void br_render_walk(br_render_ctx *rc, uint32_t index, br_blend_mode inherited, uint32_t flags)
+{
+    if (rc->depth >= BR_RENDER_MAX_DEPTH) {
+        if (!rc->e->render->warned_depth) {
+            br_log_warn("render: hierarchy deeper than %d levels (or a render-layer loop): deeper nodes are not drawn",
+                        BR_RENDER_MAX_DEPTH);
+            rc->e->render->warned_depth = true;
+        }
+        return;
+    }
+    rc->depth += 1;
+    br_render_walk_node(rc, index, inherited, flags);
+    rc->depth -= 1;
+}
+
+static void br_render_walk_node(br_render_ctx *rc, uint32_t index, br_blend_mode inherited, uint32_t flags)
 {
     br_engine *e = rc->e;
     br_scene_state *s = e->scene;
@@ -321,7 +348,7 @@ static void br_render_walk(br_render_ctx *rc, uint32_t index, br_blend_mode inhe
     }
     /* a node on a layer this camera does not draw: skip its own drawing, keep walking children */
     bool drawn = as_mask || (rc->layer_bits & rc->culling_mask) != 0;
-    if (drawn && (flags & BR_WALK_SKIP_EFFECTS) == 0 && r->effects_fn != NULL && br_render_record_needs_effects(e, rec)) {
+    if (drawn && (flags & BR_WALK_SKIP_EFFECTS) == 0 && r->effects_fn != NULL && br_render_record_needs_effects(rc, rec)) {
         rc->blend = blend;
         if (r->effects_fn(e, n, rc, r->effects_user)) {
             rc->layer_bits = saved_bits;
@@ -332,7 +359,7 @@ static void br_render_walk(br_render_ctx *rc, uint32_t index, br_blend_mode inhe
 
     br_mask_saved mask;
     mask.kind = BR_MASK_NONE;
-    if (!as_mask && rec->mask.generation != 0 && !br_render_push_mask(rc, index, &mask)) {
+    if (!as_mask && rc->mask_draws == 0 && rec->mask.generation != 0 && !br_render_push_mask(rc, index, &mask)) {
         rc->layer_bits = saved_bits;
         return;
     }
@@ -407,20 +434,34 @@ static bool br_render_is_on_stage(br_scene_state *s, uint32_t index)
 void br_render_subtree_to_texture(br_render_ctx *rc, br_node n, br_texture target, br_rect area, bool clear,
                                   br_color clear_color)
 {
+    br_render_subtree_to_texture_ex(rc, n, target, area, clear, clear_color, true);
+}
+
+void br_render_subtree_to_texture_ex(br_render_ctx *rc, br_node n, br_texture target, br_rect area, bool clear,
+                                     br_color clear_color, bool own_color)
+{
     br_engine *e = rc->e;
     br_scene_state *s = e->scene;
     br_render_target *rt = br_texture_render_target(e, target);
     if (br_scene_record(e, n) == NULL || rt == NULL || area.width <= 0.0f || area.height <= 0.0f) {
         return;
     }
-    if (!br_render_is_on_stage(s, n.index)) {
+    if (!own_color) {
+        br_scene_refresh_subtree_uncolored(s, n.index);
+    } else if (!br_render_is_on_stage(s, n.index)) {
         br_scene_refresh_subtree(s, n.index); /* the transform system only walks the stage */
     }
     br_render_ctx saved = *rc;
     br_batch_push_pass(rc, target, clear, clear_color);
     br_render_ctx_set_target(rc, target, area, (float)rt->width, (float)rt->height, rt->depth_stencil != NULL);
     br_render_set_space(rc, br_scene_group_space(s, n.index));
+    if (br_scene_record_at(s, n.index)->mask_users > 0) {
+        rc->mask_draws += 1; /* an alpha/colour mask: masks inside it are ignored (restored below) */
+    }
     br_render_walk(rc, n.index, BR_BLEND_NORMAL, BR_WALK_SKIP_EFFECTS);
+    if (!own_color) {
+        br_scene_refresh_subtree(s, n.index); /* vertices are recorded: put the real colours back */
+    }
 
     *rc = saved;
     br_batch_push_pass(rc, saved.target, false, clear_color);

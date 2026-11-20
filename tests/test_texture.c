@@ -118,6 +118,23 @@ int main(void)
     br_texture missing = br_texture_missing(e);
     BR_CHECK(fallback.index == missing.index && fallback.generation == missing.generation);
 
+    /* render texture sizes come from data: negative, NaN and huge sizes are refused */
+    br_texture ok = br_render_texture_create(e, 64.0f, 32.0f, 1.0f);
+    BR_CHECK(ok.generation != 0);
+    BR_CHECK(br_render_texture_create(e, -5.0f, 10.0f, 1.0f).generation == 0);
+    BR_CHECK(br_render_texture_create(e, SDL_sqrtf(-1.0f), 10.0f, 1.0f).generation == 0);
+    BR_CHECK(br_render_texture_create(e, 1e9f, 10.0f, 1.0f).generation == 0);
+    BR_CHECK(br_render_texture_create(e, 10.0f, 10.0f, 1e9f).generation == 0);
+    BR_CHECK(!br_render_texture_resize(e, ok, -1.0f, 10.0f));
+    BR_CHECK(!br_render_texture_resize(e, ok, 1e9f, 10.0f));
+    BR_CHECK(size_is(e, ok, 64.0f, 32.0f));
+    br_texture_destroy(e, ok);
+
+    /* a load of the wrong type does not keep a reference */
+    uint32_t refs = br_assets_ref_count(e, DIR "a.png");
+    BR_CHECK(br_frame_set_load(e, DIR "a.png") == NULL);
+    BR_CHECK(br_assets_ref_count(e, DIR "a.png") == refs);
+
     br_engine_destroy(e);
     return br_test_finish();
 }

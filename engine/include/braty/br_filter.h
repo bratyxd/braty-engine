@@ -26,8 +26,9 @@
  * blend shader composites the two.
  *
  * cache_as_texture: br_node_set_cache_as_texture(e, n, true) renders the subtree once into a
- * texture; later frames draw that texture with the node's current transform. Call
- * br_cache_update_texture after changing the subtree's content.
+ * texture (without the node's and its ancestors' alpha/tint); later frames draw that texture
+ * with the node's current transform, alpha and tint. Call br_cache_update_texture after
+ * changing the subtree's content.
  */
 #ifndef BR_FILTER_H
 #define BR_FILTER_H

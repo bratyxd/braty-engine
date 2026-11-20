@@ -49,8 +49,8 @@ br_node_add_child(e, br_scene_root(e), pc);
 - Changing a static group without `br_particle_container_update` shows the old values.
   Make a group dynamic if it changes every frame (default: only POSITION).
 - One texture source per container; particle textures are frames of it (rotated/trimmed OK).
-- The container's transform, tint, alpha and blend mode apply to all particles; stencil masks
-  work, scissor masks do not (`ponytail:` in br_particles.c: the callback info has no scissor).
+- The container's transform, tint, alpha and blend mode apply to all particles; scissor and
+  stencil masks work (the draw sets `info->scissor`).
 - A container drawn twice in one frame (render-to-texture and stage) uses the last matrix for
   both (`ponytail:`).
 - `local_bounds` is the AABB of positions (frame sizes ignored) and is O(n).
