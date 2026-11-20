@@ -418,6 +418,46 @@ static void test_picking(br_engine *e)
     BR_CHECK(!br_node3d_valid(e, root) && !br_node3d_valid(e, group));
 }
 
+/* every View3D setter has a getter, and br_view3d_copy_settings carries them to another view */
+static void test_view_settings(br_engine *e)
+{
+    br_node a = br_view3d_create(e, 100.0f, 50.0f);
+    br_node b = br_view3d_create(e, 10.0f, 10.0f);
+    BR_CHECK(br_view3d_msaa(e, a) == 1 && !br_view3d_auto_resize(e, a) && br_view3d_culling_mask(e, a) == 0xFFFFFFFFu);
+    br_view3d_set_msaa(e, a, 4);
+    br_view3d_set_auto_resize(e, a, true);
+    br_view3d_set_resolution(e, a, 2.0f);
+    br_view3d_set_background(e, a, br_color_make(0.2f, 0.4f, 0.6f, 0.5f));
+    br_view3d_set_environment(e, a, br_color_make(1.0f, 0.0f, 0.0f, 1.0f), br_color_make(0.0f, 1.0f, 0.0f, 1.0f), 0.7f);
+    br_view3d_set_culling_mask(e, a, 0x5u);
+    br_view3d_set_shadow_resolution(e, a, 512);
+    br_view3d_post(e, a)->exposure = 2.5f;
+    BR_CHECK(br_view3d_msaa(e, a) == 4 && br_view3d_auto_resize(e, a) && near_eq(br_view3d_resolution(e, a), 2.0f));
+    br_color bg = br_view3d_background(e, a);
+    BR_CHECK(near_eq(bg.r, 0.2f) && near_eq(bg.g, 0.4f) && near_eq(bg.b, 0.6f) && near_eq(bg.a, 0.5f));
+    br_color sky;
+    br_color ground;
+    float intensity = 0.0f;
+    BR_CHECK(br_view3d_get_environment(e, a, &sky, &ground, &intensity));
+    BR_CHECK(near_eq(sky.r, 1.0f) && near_eq(ground.g, 1.0f) && near_eq(intensity, 0.7f));
+    BR_CHECK(br_view3d_culling_mask(e, a) == 0x5u && br_view3d_shadow_resolution(e, a) == 512);
+    br_node not_view = br_node_create_container(e);
+    BR_CHECK(!br_view3d_get_environment(e, not_view, &sky, &ground, &intensity) && br_view3d_msaa(e, not_view) == 0);
+
+    BR_CHECK(br_view3d_copy_settings(e, a, b));
+    BR_CHECK(br_view3d_msaa(e, b) == 4 && near_eq(br_view3d_resolution(e, b), 2.0f) && br_view3d_culling_mask(e, b) == 0x5u);
+    BR_CHECK(br_view3d_shadow_resolution(e, b) == 512 && near_eq(br_view3d_post(e, b)->exposure, 2.5f));
+    bg = br_view3d_background(e, b);
+    BR_CHECK(near_eq(bg.b, 0.6f) && near_eq(bg.a, 0.5f));
+    BR_CHECK(br_view3d_get_environment(e, b, &sky, &ground, &intensity) && near_eq(intensity, 0.7f));
+    /* size, root, camera and auto-resize belong to the view, not its look */
+    BR_CHECK(near_eq(br_view3d_size(e, b).x, 10.0f) && !br_view3d_auto_resize(e, b));
+    BR_CHECK(!br_view3d_copy_settings(e, a, not_view));
+    br_node_destroy(e, not_view);
+    br_node_destroy(e, a);
+    br_node_destroy(e, b);
+}
+
 int main(void)
 {
     test_projection();
@@ -431,6 +471,7 @@ int main(void)
         test_nested_destroy(e);
         test_geometry(e);
         test_picking(e);
+        test_view_settings(e);
         br_engine_destroy(e);
     }
     return br_test_finish();
