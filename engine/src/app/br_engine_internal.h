@@ -84,6 +84,8 @@ struct br_engine {
     uint64_t skipped_frames;        /* frames where no swapchain texture was available */
 
     SDL_Storage *save_storage;      /* opened on first save access */
+    char        *save_org;          /* save identity (sanitised): "braty" and the title by default */
+    char        *save_app;
 
     /* --frames / --screenshot (0 / NULL when not given) */
     uint64_t frame_limit;
@@ -118,6 +120,9 @@ struct br_engine {
     struct br_animation_state   *animation;
     struct br_profiler_state    *profiler;
 };
+
+/* A br_strdup of name made safe as a save folder name (br_file.c). */
+char *br_save_name_sanitize(const char *name);
 
 /* FPS cap: waits until the next frame's deadline (br_pacing.c). No-op when uncapped. */
 void br_app_pace_frame(br_engine *e);

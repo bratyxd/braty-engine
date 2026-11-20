@@ -219,6 +219,7 @@ SDL_AppResult br_app_init(void **appstate, const br_app_desc *desc, int argc, ch
         e->app_user = desc->user;
         e->argc = argc;
         e->argv = argv;
+        br_engine_set_save_name(e, desc->save_org, desc->save_app);
         if (args.deterministic) {
             br_app_set_deterministic(e, true, args.seed); /* before init: the game may draw numbers there */
         }

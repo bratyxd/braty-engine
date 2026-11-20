@@ -54,6 +54,8 @@ typedef struct br_app_desc {
     bool (*init)(br_engine *e);           /* register components, systems, load first scene */
     void (*shutdown)(br_engine *e);
     void *user;                           /* for the game: br_engine_app_user(e) in init and later */
+    const char *save_org;                 /* save identity (br_engine_set_save_name); NULL = "braty" */
+    const char *save_app;                 /* NULL = the title */
     /* Set by br_game_config_main, owned by the engine: applied before init (window, input,
      * audio, manifest, ...), its start scene loaded after init, then freed. */
     struct br_game_config *config;
@@ -112,7 +114,8 @@ bool br_system_get_info(br_engine *e, uint32_t index, br_system_info *out);
 /* ---- engine */
 
 /* Creates a headless engine (no window, no GPU): enough for tests and tools.
- * title names the save-data folder; asset_root as in br_app_desc (NULL = executable dir). */
+ * title also names the save-data folder (br_engine_set_save_name); asset_root as in br_app_desc
+ * (NULL = executable dir). */
 br_engine *br_engine_create(const char *title, const char *asset_root);
 /* Destroys every 3D and 2D node (destroy listeners run), then runs shutdown callbacks (reverse
  * order), destroys GPU and window, frees the engine. */

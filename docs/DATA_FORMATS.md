@@ -57,6 +57,7 @@ Every key is optional; the values below are the defaults unless noted.
   },
   "debug": { "overlay": false, "toggle_key": "F1", "hot_reload": true },
   "profiler": { "hud": false, "panel": false },
+  "save": { "org": "my-studio", "app": "My Game" },
   "game": { "lives": 3 }
 }
 ```
@@ -83,6 +84,7 @@ overlay closed, F1, hot reload on in debug builds, no logical size (the example'
 | `debug.toggle_key` | SDL key name toggling the overlay (`"F1"`, `"F12"`, `"Grave"`). |
 | `debug.hot_reload` | Poll loaded scene files and reload them when they change (default: on in debug builds, off with `NDEBUG`). |
 | `profiler.hud` / `profiler.panel` | Profiler corner readout / panel (F2) shown at start (`br_profiler_set_hud`, `br_profiler_set_open`). `false` leaves the command line (`--profiler-hud`, `--profiler`) in charge. |
+| `save.org` / `save.app` | Save-data folder (`br_engine_set_save_name`): default org `"braty"` and the window title. Sanitised (characters a folder name cannot hold become `_`), so renaming or localising the title does not move saves once `save.app` is set. |
 | `game` | Anything the game wants: `br_game_config_json(e)` returns the whole document. Other unknown keys log a warning. |
 
 Command line (`br_game_config_args`): `--debug` opens the overlay, `--scene path` replaces

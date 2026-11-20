@@ -39,9 +39,13 @@ br_engine *br_engine_create(const char *title, const char *asset_root)
     }
     e->title = br_strdup(title != NULL ? title : "braty");
     e->asset_root = br_resolve_asset_root(asset_root);
-    if (e->title == NULL || e->asset_root == NULL) {
+    e->save_org = br_strdup("braty");
+    e->save_app = br_save_name_sanitize(e->title);
+    if (e->title == NULL || e->asset_root == NULL || e->save_org == NULL || e->save_app == NULL) {
         br_free(e->title);
         br_free(e->asset_root);
+        br_free(e->save_org);
+        br_free(e->save_app);
         br_free(e);
         return NULL;
     }
@@ -108,6 +112,8 @@ void br_engine_destroy(br_engine *e)
     if (e->save_storage != NULL) {
         SDL_CloseStorage(e->save_storage);
     }
+    br_free(e->save_org);
+    br_free(e->save_app);
     br_free(e->screenshot_path);
     br_free(e->asset_root);
     br_free(e->title);

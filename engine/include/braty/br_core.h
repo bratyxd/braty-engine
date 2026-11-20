@@ -224,11 +224,18 @@ bool br_file_exists(br_engine *e, const char *path);
 /* Resolves `path` against the asset root into `out`. Absolute paths are copied unchanged. */
 bool br_file_resolve(br_engine *e, const char *path, char *out, size_t out_size);
 
-/* ---- save data (SDL_Storage user storage, per org "braty" + the game title) */
+/* ---- save data (SDL_Storage user storage: one folder per org + app)
+ *
+ * The identity defaults to org "braty" and the window title; br_app_desc.save_org / save_app or
+ * game.json "save": { "org", "app" } set it. Names are sanitised (characters a folder name cannot
+ * hold become '_'), so any title works and a title that worked before keeps its saves. */
 
+/* Sets the save identity; NULL or "" keeps that part. Sanitised. Later save calls use it. */
+void br_engine_set_save_name(br_engine *e, const char *org, const char *app);
 /* Reads a save file. *bytes is NUL-terminated; free with br_free. False if missing. */
 bool br_save_read(br_engine *e, const char *path, void **bytes, size_t *size);
-/* Writes a save file, replacing it. */
+/* Writes a save file, replacing it atomically: the bytes go to "<path>.tmp", which is then
+ * renamed over the save, so a crash mid-write leaves the previous save intact. */
 bool br_save_write(br_engine *e, const char *path, const void *bytes, size_t size);
 /* Deletes a save file. */
 bool br_save_remove(br_engine *e, const char *path);

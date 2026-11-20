@@ -49,6 +49,8 @@ typedef struct br_game_config {
     bool     hot_reload;                           /* scene hot reload (debug builds: true) */
     bool     profiler_hud;                         /* profiler.hud: corner readout at start (false) */
     bool     profiler_panel;                       /* profiler.panel: profiler panel open at start (false) */
+    char     save_org[64];                         /* save.org: save identity, "" = "braty" */
+    char     save_app[128];                        /* save.app: "" = the window title */
     cJSON   *json;                                 /* the whole document (owned) */
 } br_game_config;
 

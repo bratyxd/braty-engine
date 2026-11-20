@@ -199,6 +199,50 @@ static void test_files(br_engine *e)
     BR_CHECK(!br_save_read(e, "slot1.json", &bytes, &size));
 }
 
+/* R1: the save folder was the raw window title (':' or '?' made every save fail); R8: writes
+ * were not atomic (a crash mid-write left a truncated save). */
+static void test_save_identity(void)
+{
+    br_engine *e = br_engine_create("R1 Review: Save Test?", NULL);
+    const char *save = "{\"slot\":1}";
+    BR_CHECK(br_save_write(e, "slot.json", save, SDL_strlen(save)));
+    void *bytes = NULL;
+    size_t size = 0;
+    BR_CHECK(br_save_read(e, "slot.json", &bytes, &size));
+    BR_CHECK(bytes != NULL && br_str_equal(bytes, save));
+    br_free(bytes);
+    BR_CHECK(br_save_remove(e, "slot.json"));
+    br_engine_destroy(e);
+
+    /* an explicit identity: two titles, one save folder */
+    br_engine *a = br_engine_create("Title A", NULL);
+    br_engine *b = br_engine_create("Title B", NULL);
+    br_engine_set_save_name(a, "braty-tests", "shared/app");
+    br_engine_set_save_name(b, "braty-tests", "shared/app");
+    BR_CHECK(br_save_write(a, "shared.json", "42", 2));
+    BR_CHECK(br_save_read(b, "shared.json", &bytes, &size) && size == 2);
+    br_free(bytes);
+
+    /* atomic: the new bytes go to a temp file first, so a failed write keeps the old save */
+    BR_CHECK(br_save_write(a, "shared.json", "old", 3));
+    char *pref = SDL_GetPrefPath("braty-tests", "shared_app");
+    char tmp[1024];
+    SDL_snprintf(tmp, sizeof(tmp), "%sshared.json.tmp", pref != NULL ? pref : "");
+    BR_CHECK(pref != NULL && SDL_CreateDirectory(tmp)); /* the temp name cannot be written now */
+    BR_CHECK(!br_save_write(a, "shared.json", "new", 3));
+    BR_CHECK(br_save_read(a, "shared.json", &bytes, &size) && size == 3 && SDL_memcmp(bytes, "old", 3) == 0);
+    br_free(bytes);
+    BR_CHECK(SDL_RemovePath(tmp));
+    BR_CHECK(br_save_write(a, "shared.json", "newer", 5));  /* replaces the existing file */
+    BR_CHECK(br_save_read(b, "shared.json", &bytes, &size) && size == 5 && SDL_memcmp(bytes, "newer", 5) == 0);
+    br_free(bytes);
+    BR_CHECK(!SDL_GetPathInfo(tmp, NULL)); /* no temp file left behind */
+    BR_CHECK(br_save_remove(a, "shared.json"));
+    SDL_free(pref);
+    br_engine_destroy(a);
+    br_engine_destroy(b);
+}
+
 /* ---- systems: order by phase, then priority, then adding order */
 
 typedef struct order_log {
@@ -340,6 +384,7 @@ int main(int argc, char **argv)
     test_strings();
     test_systems();
     test_ticker();
+    test_save_identity();
     test_system_churn();
     return br_test_finish();
 }

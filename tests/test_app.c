@@ -91,6 +91,7 @@ static void test_game_config_main(void)
 {
     BR_CHECK(write_next_to_exe("test_app_game.json",
                                "{ \"window\": { \"title\": \"boot test\" }, \"start_scene\": \"test_app_scene.json\","
+                               "  \"save\": { \"org\": \"braty-tests\", \"app\": \"config app\" },"
                                "  \"game\": { \"level\": 3 } }"));
     /* the scene uses a component that only exists once init ran */
     BR_CHECK(write_next_to_exe("test_app_scene.json",
@@ -108,6 +109,16 @@ static void test_game_config_main(void)
     BR_CHECK(p != NULL && p->value == 7);
     const cJSON *level = cJSON_GetObjectItem(cJSON_GetObjectItem(br_game_config_json(e), "game"), "level");
     BR_CHECK(cJSON_IsNumber(level) && level->valueint == 3);
+    /* game.json "save" names the save folder, not the title */
+    BR_CHECK(br_save_write(e, "config.json", "1", 1));
+    br_engine *other = br_engine_create("another title", NULL);
+    br_engine_set_save_name(other, "braty-tests", "config app");
+    void *bytes = NULL;
+    size_t size = 0;
+    BR_CHECK(br_save_read(other, "config.json", &bytes, &size) && size == 1);
+    br_free(bytes);
+    BR_CHECK(br_save_remove(other, "config.json"));
+    br_engine_destroy(other);
     br_app_quit(state, SDL_APP_SUCCESS);
 }
 
