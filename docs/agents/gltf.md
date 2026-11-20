@@ -204,7 +204,9 @@ animator. Task 18 keys: `"source": "kit.glb#Node"`, `"camera"` (true / node name
   (alpha blending with alpha = 1 - 0.7 * factor; no refraction).
 - Cameras are imported as `camera3d` nodes (the View3D's camera), not as `br_camera` nodes: a
   `br_camera` 3D camera owns its own off-stage View3D, which would render the level a second time.
-  Put follow / shake on a `br_camera_create_3d` over `br_scene_root_3d` if you need them.
+  Put follow / shake on a `br_camera_create_3d` over `br_scene_root_3d` if you need them, and
+  hide the scene's own view (`br_node_set_visible`) or the level is drawn twice; copy the view's
+  environment by hand (Crate Rush `src/flow.c`, `cr_level_setup`; API_REVIEW items 23-24).
 - Batching merges repeated meshes inside one instance; kit parts placed as separate instances
   are separate draws (`ponytail:` limit; a cross-instance merge pass would remove it).
 - A 3D component's `BR_FIELD_NODE` field holds a `br_node3d`; extras are parsed per instance.
