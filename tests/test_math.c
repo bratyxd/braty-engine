@@ -970,7 +970,7 @@ static void test_geometry3d_types(void)
     BR_CHECK(br_frustum_planes_aabb(planes, box) && !br_frustum_planes_aabb(planes, behind));
 }
 
-/* ---- one engine RNG behind br_engine_random and br_random_engine, seeded by --seed */
+/* ---- one engine RNG behind br_random_engine, seeded by --seed */
 
 static uint32_t s_first_draw;
 
@@ -988,14 +988,14 @@ static void test_engine_random(void)
     br_app_set_deterministic(e, true, 5);
     bool same = true;
     for (int i = 0; i < 16; i++) {
-        /* both entry points draw from the one generator, interleaved */
-        uint32_t v = (i % 2 == 0) ? br_engine_random(e) : br_random_u32(br_random_engine(e));
+        /* the accessor returns the one generator every time */
+        uint32_t v = br_random_u32(br_random_engine(e));
         same = same && v == br_random_u32(&ref);
     }
     BR_CHECK(same);
-    br_engine_set_seed(e, 5);
-    uint32_t a = br_engine_random(e);
-    br_engine_set_seed(e, 5);
+    br_random_seed(br_random_engine(e), 5, 0);
+    uint32_t a = br_random_u32(br_random_engine(e));
+    br_random_seed(br_random_engine(e), 5, 0);
     BR_CHECK(br_random_u32(br_random_engine(e)) == a);
     br_engine_destroy(e);
 

@@ -262,15 +262,15 @@ static void test_deterministic(void)
     BR_CHECK(br_app_init(&state, &desc, 5, argv) == SDL_APP_CONTINUE);
     br_engine *e = state;
     BR_CHECK(br_app_deterministic(e));
-    uint32_t first = br_engine_random(e);
+    uint32_t first = br_random_u32(br_random_engine(e));
     for (int i = 0; i < 3; i++) {
         SDL_Delay(30); /* the wall clock says 30+ ms; the step stays 1/60 s */
         br_app_iterate(state);
         BR_CHECK(br_ticker_delta(e) == 1.0f / 60.0f);
     }
-    br_engine_set_seed(e, 7);
-    BR_CHECK(br_engine_random(e) == first);
-    float f = br_engine_random_float(e);
+    br_random_seed(br_random_engine(e), 7, 0);
+    BR_CHECK(br_random_u32(br_random_engine(e)) == first);
+    float f = br_random_float(br_random_engine(e));
     BR_CHECK(f >= 0.0f && f < 1.0f);
 
     /* async loads finish on the main thread at once, callbacks still come from the next step */

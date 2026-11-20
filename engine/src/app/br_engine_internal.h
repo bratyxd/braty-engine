@@ -91,7 +91,7 @@ struct br_engine {
     br_ticker_state ticker;
     br_vsync vsync;                 /* present mode in effect (or requested, while headless) */
     bool     deterministic;         /* --deterministic: constant dt, seeded RNG, sync asset loads */
-    br_random rng;                  /* the engine RNG: br_engine_random and br_random_engine(e) */
+    br_random rng;                  /* the engine RNG: br_random_engine(e) */
     bool     quit_requested;
     bool     exit_failure;          /* the app exits with a failure code (a play-test step failed) */
     bool     playtest_stdin;        /* --playtest-stdin: br_app_iterate reads commands instead */

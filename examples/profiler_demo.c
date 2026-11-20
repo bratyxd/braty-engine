@@ -134,12 +134,12 @@ static bool demo_init(br_engine *e)
     for (uint32_t i = 0; i < BALLS; i++) {
         br_node ball = br_sprite_create(e, white);
         br_node_set_scale(e, ball, 10.0f, 10.0f);
-        br_node_set_position(e, ball, br_engine_random_float(e) * 600.0f, br_engine_random_float(e) * 700.0f);
+        br_node_set_position(e, ball, br_random_float(br_random_engine(e)) * 600.0f, br_random_float(br_random_engine(e)) * 700.0f);
         br_node_set_tint(e, ball, br_color_from_hsl((float)i * 1.2f, 0.7f, 0.6f, 1.0f));
         br_node_add_child(e, stage, ball);
         s->balls[i] = ball;
-        s->velocity[i] = br_vec2_make(br_engine_random_float(e) * 300.0f - 150.0f,
-                                      br_engine_random_float(e) * 300.0f - 150.0f);
+        s->velocity[i] = br_vec2_make(br_random_float(br_random_engine(e)) * 300.0f - 150.0f,
+                                      br_random_float(br_random_engine(e)) * 300.0f - 150.0f);
     }
 
     br_system_add(e, "demo.move", BR_PHASE_UPDATE, 0, demo_move, s);

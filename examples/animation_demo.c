@@ -281,13 +281,13 @@ static void setup_bench_tweens(br_engine *e)
     for (int i = 0; i < g_bench_tweens; i++) {
         br_node n = br_sprite_create(e, br_texture_white(e));
         br_sprite_set_size(e, n, 3.0f, 3.0f);
-        float x = br_engine_random_float(e) * 1280.0f;
-        float y = br_engine_random_float(e) * 720.0f;
+        float x = br_random_float(br_random_engine(e)) * 1280.0f;
+        float y = br_random_float(br_random_engine(e)) * 720.0f;
         br_node_set_position(e, n, x, y);
-        br_node_set_tint(e, n, br_color_from_hsv(br_engine_random_float(e), 0.6f, 1.0f, 1.0f));
+        br_node_set_tint(e, n, br_color_from_hsv(br_random_float(br_random_engine(e)), 0.6f, 1.0f, 1.0f));
         br_node_add_child(e, layer, n);
-        float to[2] = { x + (br_engine_random_float(e) - 0.5f) * 200.0f, y + (br_engine_random_float(e) - 0.5f) * 200.0f };
-        br_tween t = br_tween_to(e, br_anim_target_2d(n), "position", to, 1.0f + br_engine_random_float(e) * 2.0f,
+        float to[2] = { x + (br_random_float(br_random_engine(e)) - 0.5f) * 200.0f, y + (br_random_float(br_random_engine(e)) - 0.5f) * 200.0f };
+        br_tween t = br_tween_to(e, br_anim_target_2d(n), "position", to, 1.0f + br_random_float(br_random_engine(e)) * 2.0f,
                                  BR_EASE_IN_OUT_SINE);
         br_tween_set_repeat(e, t, -1, true);
     }

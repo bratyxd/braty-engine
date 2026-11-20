@@ -148,14 +148,7 @@ bool br_app_deterministic(br_engine *e);
 /* Turns deterministic stepping on or off (see --deterministic); also seeds the RNG with `seed`. */
 void br_app_set_deterministic(br_engine *e, bool on, uint64_t seed);
 
-/* ---- engine random numbers (one generator per engine; the same seed gives the same sequence) */
-
-/* Next 32 random bits. */
-uint32_t br_engine_random(br_engine *e);
-/* Random float in [0, 1). */
-float br_engine_random_float(br_engine *e);
-/* Restarts the generator from `seed`. Unseeded engines start from the clock. */
-void br_engine_set_seed(br_engine *e, uint64_t seed);
+/* Engine random numbers: br_random_engine(e) (br_random.h), seeded by --seed. */
 
 /* Writes the last rendered frame as PNG (path relative to the working directory). False (logged)
  * when nothing was rendered (headless, minimised, first frame). */

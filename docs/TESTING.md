@@ -77,7 +77,7 @@ for the GPU (what `SDL_VIDEODRIVER=dummy` gives); exit code 2 when an `--only` n
 arguments, optional base script), `python tools/golden.py update --only <name>`, open the PNG in
 `tests/golden/`, commit it. Keep scenes deterministic: no wall-clock time on screen (hide it when
 `br_app_deterministic(e)` is true, as `gltf_demo` does), randomness from a seeded generator
-(`br_engine_random` or the game's own).
+(`br_random_engine(e)` or the game's own).
 
 **When an update is legitimate:** the change is *meant* to change the picture (a new feature, a
 fixed rendering bug, a changed example) and you have looked at the new PNG and the diff image and
@@ -113,7 +113,7 @@ channel tolerance.
 ## Determinism
 
 `--deterministic` (implied by `--playtest` and `--playtest-stdin`) makes a run reproducible:
-every frame steps exactly 1/60 s whatever the wall clock says, `br_engine_random` is seeded
+every frame steps exactly 1/60 s whatever the wall clock says, `br_random_engine(e)` is seeded
 (`--seed N`, default 1), asset loads skip the worker threads so callbacks fire in request order,
 and play-test input lands on exact frames. Verified: two runs of Star Courier's `round.json`
 give byte-identical screenshots and identical state dumps.

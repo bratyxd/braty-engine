@@ -7,7 +7,7 @@
 
 br_random *br_random_engine(br_engine *e)
 {
-    return &e->rng; /* one generator per engine, also behind br_engine_random */
+    return &e->rng; /* one generator per engine */
 }
 
 void br_random_seed(br_random *r, uint64_t seed, uint64_t stream)

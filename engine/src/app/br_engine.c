@@ -60,7 +60,7 @@ br_engine *br_engine_create(const char *title, const char *asset_root)
     e->ticker.speed = 1.0f;
     e->ticker.min_fps = 10.0f;
     e->vsync = BR_VSYNC_ON;
-    br_engine_set_seed(e, SDL_GetPerformanceCounter());
+    br_random_seed(&e->rng, SDL_GetPerformanceCounter(), 0);
     br_builtin_register(e);
     return e;
 }
@@ -202,22 +202,7 @@ bool br_app_deterministic(br_engine *e)
 void br_app_set_deterministic(br_engine *e, bool on, uint64_t seed)
 {
     e->deterministic = on;
-    br_engine_set_seed(e, seed);
-}
-
-void br_engine_set_seed(br_engine *e, uint64_t seed)
-{
     br_random_seed(&e->rng, seed, 0);
-}
-
-uint32_t br_engine_random(br_engine *e)
-{
-    return br_random_u32(&e->rng);
-}
-
-float br_engine_random_float(br_engine *e)
-{
-    return br_random_float(&e->rng);
 }
 
 void *br_engine_app_user(br_engine *e)

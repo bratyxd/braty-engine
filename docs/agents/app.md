@@ -34,7 +34,7 @@ next frame.
 | `br_app_set_vsync(e, BR_VSYNC_OFF/ON/ADAPTIVE/MAILBOX)` | Present mode; unsupported modes fall back with a log line (SDL GPU has no adaptive: it becomes on). |
 | `br_app_set_max_fps(e, fps)` | FPS cap (0 = off), works with vsync off: deadline + `SDL_DelayPrecise` (1 ms sleeps, spin for the rest). |
 | `br_app_set_fixed_timestep(e, hz)`, `br_app_fixed_alpha(e)` | Fixed-rate `FIXED_UPDATE`; alpha interpolates rendering between steps. |
-| `br_app_deterministic(e)`, `br_engine_random(e)` | Reproducible runs; the seeded engine RNG. |
+| `br_app_deterministic(e)`, `br_random_engine(e)` | Reproducible runs; the seeded engine RNG. |
 | `br_engine_screenshot(e, path)` | Last rendered frame as PNG. |
 | `br_system_add(e, name, phase, priority, fn, user)` | Register behaviour; false (logged) for a duplicate name, NULL fn or bad phase. |
 | `br_system_set_enabled(e, name, on)` | Pause a system. |
