@@ -348,6 +348,36 @@ static void test_compressed_and_failures(br_engine *e)
     write_text(e, DIR "noimage.json", "{ \"frames\": {}, \"meta\": { \"image\": \"absent.png\" } }");
     BR_CHECK(br_spritesheet_load(e, DIR "noimage.json") == NULL);
     BR_CHECK(br_assets_count(e) == 0);
+
+    /* a 4x4 BC1 claiming 16 mip levels: clamped to its chain (4x4, 2x2, 1x1 = 3 blocks) */
+    size = make_dds(buf, 4, false);
+    put_u32(buf, 8, 0x1 | 0x2 | 0x4 | 0x1000 | 0x20000); /* DDSD_MIPMAPCOUNT */
+    put_u32(buf, 28, 16);
+    write_file(e, DIR "mips.dds", buf, size + 15 * 8); /* data for all 16 claimed levels */
+    BR_CHECK(br_assets_load(e, DIR "mips.dds") != NULL);
+    BR_CHECK(br_assets_list(e, list, 8) == 1 && list[0].byte_size == 24);
+    br_assets_unload(e, DIR "mips.dds");
+
+    /* a 128-byte header claiming 16384x16384 RGBA8 with 15 mips: fails before allocating */
+    SDL_memset(buf, 0, 128);
+    SDL_memcpy(buf, "DDS ", 4);
+    put_u32(buf, 4, 124);
+    put_u32(buf, 8, 0x1 | 0x2 | 0x4 | 0x1000 | 0x20000);
+    put_u32(buf, 12, 16384);
+    put_u32(buf, 16, 16384);
+    put_u32(buf, 28, 15);
+    put_u32(buf, 76, 32);
+    put_u32(buf, 80, 0x40); /* DDPF_RGB */
+    put_u32(buf, 88, 32);
+    put_u32(buf, 92, 0x000000ff);
+    write_file(e, DIR "huge.dds", buf, 128);
+    br_memory_stats before;
+    br_memory_stats after;
+    br_memory_get_stats(&before);
+    BR_CHECK(br_assets_load(e, DIR "huge.dds") == NULL);
+    br_memory_get_stats(&after);
+    BR_CHECK(after.peak_bytes - before.peak_bytes < 16u * 1024u * 1024u);
+    BR_CHECK(br_assets_count(e) == 0);
 }
 
 /* ---- reference counting */
@@ -518,6 +548,82 @@ static void test_async(br_engine *e)
     br_assets_load_async(e, DIR "async.dds", NULL, NULL, NULL);
 }
 
+/* ---- loader choice: a claimed load that fails falls back; self-loads are refused */
+
+static int g_warnings = 0;
+static SDL_LogOutputFunction g_default_log = NULL;
+static void *g_default_log_user = NULL;
+
+static void count_warnings(void *unused, int category, SDL_LogPriority priority, const char *message)
+{
+    (void)unused;
+    if (priority == SDL_LOG_PRIORITY_WARN) {
+        g_warnings++;
+    }
+    g_default_log(g_default_log_user, category, priority, message);
+}
+
+static void test_loader_choice(br_engine *e)
+{
+    /* game data that uses "frames" and "meta" is plain JSON */
+    write_text(e, DIR "tuning.json", "{ \"meta\": { \"author\": \"me\" }, \"frames\": 30, \"speed\": 4 }");
+    BR_CHECK(br_assets_load(e, DIR "tuning.json") != NULL);
+    BR_CHECK(br_str_equal(br_assets_type(e, DIR "tuning.json"), "json"));
+    br_assets_unload(e, DIR "tuning.json");
+    write_text(e, DIR "nested.json", "{ \"level\": { \"frames\": {}, \"meta\": { \"image\": \"x.png\" } } }");
+    BR_CHECK(br_assets_load(e, DIR "nested.json") != NULL);
+    BR_CHECK(br_str_equal(br_assets_type(e, DIR "nested.json"), "json"));
+    br_assets_unload(e, DIR "nested.json");
+
+    /* shaped like a sheet, but the sheet load fails: the next loader (json) gets the file */
+    write_text(e, DIR "almost_sheet.json", "{ \"frames\": {}, \"meta\": { \"image\": \"absent.png\" } }");
+    BR_CHECK(br_assets_load(e, DIR "almost_sheet.json") != NULL);
+    BR_CHECK(br_str_equal(br_assets_type(e, DIR "almost_sheet.json"), "json"));
+    br_assets_unload(e, DIR "almost_sheet.json");
+    async_result r = { false, 0, NULL };
+    br_assets_load_async(e, DIR "almost_sheet.json", NULL, on_done, &r);
+    BR_CHECK(step_until(e, &r.done) && r.asset != NULL);
+    BR_CHECK(br_str_equal(br_assets_type(e, DIR "almost_sheet.json"), "json"));
+    br_assets_unload(e, DIR "almost_sheet.json");
+
+    /* a multi-pack that lists itself: refused, no second copy, back to baseline after one unload */
+    uint32_t baseline = br_assets_count(e);
+    write_png(e, DIR "selfpack.png", 16, 16);
+    write_text(e, DIR "selfpack.json",
+               "{ \"frames\": { \"s0\": { \"frame\": {\"x\":0,\"y\":0,\"w\":8,\"h\":8} } },"
+               "  \"meta\": { \"image\": \"selfpack.png\", \"related_multi_packs\": [\"selfpack.json\"] } }");
+    br_spritesheet *sheet = br_spritesheet_load(e, DIR "selfpack.json");
+    BR_CHECK(sheet != NULL);
+    BR_CHECK(br_assets_ref_count(e, DIR "selfpack.json") == 1);
+    br_assets_unload(e, DIR "selfpack.json");
+    BR_CHECK(br_assets_count(e) == baseline);
+
+    /* bare frame names: the first loaded sheet with the name wins (a warning names the other),
+     * and a scene using one owns a reference on that sheet */
+    write_text(e, DIR "dup_a.json",
+               "{ \"frames\": { \"dup.png\": { \"frame\": {\"x\":0,\"y\":0,\"w\":8,\"h\":8} } }, \"meta\": { \"image\": \"selfpack.png\" } }");
+    write_text(e, DIR "dup_b.json",
+               "{ \"frames\": { \"dup.png\": { \"frame\": {\"x\":8,\"y\":0,\"w\":4,\"h\":4} } }, \"meta\": { \"image\": \"selfpack.png\" } }");
+    SDL_GetLogOutputFunction(&g_default_log, &g_default_log_user);
+    SDL_SetLogOutputFunction(count_warnings, NULL);
+    br_spritesheet *a = br_spritesheet_load(e, DIR "dup_a.json");
+    br_spritesheet *b = br_spritesheet_load(e, DIR "dup_b.json");
+    SDL_SetLogOutputFunction(g_default_log, g_default_log_user);
+    BR_CHECK(a != NULL && b != NULL && g_warnings == 1);
+    BR_CHECK(br_data_texture(e, "dup.png").index == br_spritesheet_frame(e, a, "dup.png").index);
+    br_assets_unload(e, DIR "dup_a.json"); /* br_data_texture took one reference: still loaded */
+    BR_CHECK(br_assets_ref_count(e, DIR "dup_a.json") == 1);
+    br_assets_unload(e, DIR "dup_a.json");
+    const char *scene = "{ \"type\": \"sprite\", \"texture\": \"dup.png\" }";
+    br_node n = br_scene_file_load_json(e, scene, SDL_strlen(scene), "bare.scene.json", br_scene_root(e));
+    BR_CHECK(br_assets_ref_count(e, DIR "dup_b.json") == 2); /* the scene's reference */
+    br_assets_unload(e, DIR "dup_b.json");                   /* the other owner lets go */
+    BR_CHECK(br_assets_get(e, DIR "dup_b.json") != NULL);    /* still there for the scene */
+    br_node_destroy(e, n);
+    br_engine_step(e, 1.0f / 60.0f); /* node flush, then the scene's references go */
+    BR_CHECK(br_assets_count(e) == baseline);
+}
+
 int main(void)
 {
     br_engine *e = br_engine_create("test_assets", NULL);
@@ -533,6 +639,7 @@ int main(void)
     test_spritesheet(e);
     test_compressed_and_failures(e);
     test_ref_counting(e);
+    test_loader_choice(e);
     test_async(e);
     br_engine_destroy(e);
     return br_test_finish();

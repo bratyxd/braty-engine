@@ -17,6 +17,7 @@ typedef struct br_sheet_animation {
 } br_sheet_animation;
 
 struct br_spritesheet {
+    char      *path;         /* resolved path of the sheet itself */
     char      *image_path;   /* resolved; the sheet holds one reference */
     br_texture texture;
     br_array   frames;       /* br_sheet_frame, file order */
@@ -136,11 +137,61 @@ static void br_sheet_add_animations(br_engine *e, br_spritesheet *sheet, const c
     }
 }
 
+/* Makes this sheet the owner of its frame names that no loaded sheet owns yet (first one wins:
+ * the winner depends on load order only). */
+static void br_sheet_register_frames(br_engine *e, const br_spritesheet *sheet)
+{
+    br_map *owners = &e->assets->frame_sheets;
+    for (uint32_t i = 0; i < sheet->frames.count; i++) {
+        const br_sheet_frame *f = br_array_at(&sheet->frames, i);
+        char **owner = br_map_get(owners, f->name);
+        if (owner == NULL) {
+            char *copy = br_strdup(sheet->path);
+            br_map_set(owners, f->name, &copy);
+        } else if (!br_str_equal(*owner, sheet->path)) {
+            br_log_warn("spritesheet '%s': frame '%s' is also in '%s'; a bare \"%s\" names that one", sheet->path,
+                        f->name, *owner, f->name);
+        }
+    }
+}
+
+/* A sheet that owned `name` is going: another loaded sheet with that frame takes it over. */
+static void br_sheet_hand_over(br_engine *e, const char *name)
+{
+    // ponytail: scans the cache, once per frame name the dying sheet owned (unloads are rare);
+    // a list of sheets per name would make it a lookup.
+    uint32_t slot = 0;
+    const char *key = NULL;
+    void *value = NULL;
+    while (br_map_next(&e->assets->cache, &slot, &key, &value)) {
+        const br_asset_entry *entry = value;
+        if (!entry->loading && entry->loader != NULL && br_str_equal(entry->loader->type_name, "spritesheet") &&
+            br_sheet_find_local(entry->asset, name) != NULL) {
+            char *copy = br_strdup(key);
+            br_map_set(&e->assets->frame_sheets, name, &copy);
+            return;
+        }
+    }
+}
+
+const char *br_spritesheet_frame_owner(br_engine *e, const char *name)
+{
+    char **owner = br_map_get(&e->assets->frame_sheets, name);
+    return owner != NULL ? *owner : NULL;
+}
+
 static void br_spritesheet_unload(br_engine *e, void *asset)
 {
     br_spritesheet *sheet = asset;
+    br_map *owners = &e->assets->frame_sheets;
     for (uint32_t i = 0; i < sheet->frames.count; i++) {
         br_sheet_frame *f = br_array_at(&sheet->frames, i);
+        char **owner = br_map_get(owners, f->name);
+        if (owner != NULL && br_str_equal(*owner, sheet->path)) {
+            br_free(*owner);
+            br_map_remove(owners, f->name);
+            br_sheet_hand_over(e, f->name);
+        }
         br_texture_destroy(e, f->texture);
         br_free(f->name);
     }
@@ -162,6 +213,7 @@ static void br_spritesheet_unload(br_engine *e, void *asset)
     br_map_free(&sheet->frame_index);
     br_array_free(&sheet->animations);
     br_array_free(&sheet->linked);
+    br_free(sheet->path);
     br_free(sheet);
 }
 
@@ -211,6 +263,7 @@ static void *br_spritesheet_load_asset(br_engine *e, const char *path, const voi
     br_map_init(&sheet->frame_index, sizeof(uint32_t));
     br_array_init(&sheet->animations, sizeof(br_sheet_animation));
     br_array_init(&sheet->linked, sizeof(char *));
+    sheet->path = br_strdup(path);
 
     // ponytail: the atlas image loads synchronously here (on the main thread, also for async loads);
     // dependency-aware jobs would queue it on a worker and finish the sheet when it arrives.
@@ -266,6 +319,7 @@ static void *br_spritesheet_load_asset(br_engine *e, const char *path, const voi
         a->sheet_nesting--;
     }
     br_sheet_add_animations(e, sheet, cJSON_GetObjectItemCaseSensitive(root, "animations"));
+    br_sheet_register_frames(e, sheet);
     cJSON_Delete(root);
     if (!ok) {
         br_log_error("spritesheet '%s': some frames could not be read", path);
@@ -273,12 +327,121 @@ static void *br_spritesheet_load_asset(br_engine *e, const char *path, const voi
     return sheet;
 }
 
-/* Claims .json files that look like TexturePacker output. */
+/* ---- the content test: a tiny JSON scanner, not cJSON (tests run on worker threads and
+ * cJSON keeps its error position in a global). It only skips values; anything odd = no match. */
+
+static const char *br_scan_space(const char *p, const char *end)
+{
+    while (p < end && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) {
+        p++;
+    }
+    return p;
+}
+
+/* Skips the string whose opening quote is at p; NULL if it is not closed. */
+static const char *br_scan_string(const char *p, const char *end)
+{
+    for (p++; p < end; p++) {
+        if (*p == '\\') {
+            p++;
+        } else if (*p == '"') {
+            return p + 1;
+        }
+    }
+    return NULL;
+}
+
+/* Skips one value (string, object, array, number or literal); NULL if malformed. */
+static const char *br_scan_value(const char *p, const char *end)
+{
+    p = br_scan_space(p, end);
+    if (p >= end) {
+        return NULL;
+    }
+    if (*p == '"') {
+        return br_scan_string(p, end);
+    }
+    if (*p != '{' && *p != '[') {
+        while (p < end && *p != ',' && *p != '}' && *p != ']') {
+            p++;
+        }
+        return p;
+    }
+    uint32_t depth = 0;
+    while (p < end) {
+        if (*p == '"') {
+            p = br_scan_string(p, end);
+            if (p == NULL) {
+                return NULL;
+            }
+            continue;
+        }
+        if (*p == '{' || *p == '[') {
+            depth++;
+        } else if (*p == '}' || *p == ']') {
+            depth--;
+            if (depth == 0) {
+                return p + 1;
+            }
+        }
+        p++;
+    }
+    return NULL;
+}
+
+/* The value of member `key` of the object at p (first character of the value), NULL if p is no
+ * object or has no such member. Only top-level members of that object are looked at. */
+static const char *br_scan_member(const char *p, const char *end, const char *key)
+{
+    size_t key_len = SDL_strlen(key);
+    p = br_scan_space(p, end);
+    if (p >= end || *p != '{') {
+        return NULL;
+    }
+    p++;
+    for (;;) {
+        p = br_scan_space(p, end);
+        if (p >= end || *p != '"') {
+            return NULL; /* '}' (no more members) or malformed */
+        }
+        const char *name = p + 1;
+        p = br_scan_string(p, end);
+        if (p == NULL) {
+            return NULL;
+        }
+        bool match = (size_t)(p - 1 - name) == key_len && SDL_memcmp(name, key, key_len) == 0;
+        p = br_scan_space(p, end);
+        if (p >= end || *p != ':') {
+            return NULL;
+        }
+        p = br_scan_space(p + 1, end);
+        if (match) {
+            return p < end ? p : NULL;
+        }
+        p = br_scan_value(p, end);
+        p = p != NULL ? br_scan_space(p, end) : NULL;
+        if (p == NULL || p >= end || *p != ',') {
+            return NULL;
+        }
+        p++;
+    }
+}
+
+/* Claims .json files shaped like TexturePacker output: top-level "frames" (an object or array)
+ * and "meta" with an "image" string. Other JSON ("meta" without an image, nested "frames")
+ * is left to the plain json loader. */
 static bool br_spritesheet_test(const char *path, const void *bytes, size_t size)
 {
     (void)path;
-    (void)size;
-    return SDL_strstr(bytes, "\"frames\"") != NULL && SDL_strstr(bytes, "\"meta\"") != NULL;
+    const char *begin = bytes;
+    const char *end = begin + size;
+    if (size >= 3 && SDL_memcmp(begin, "\xEF\xBB\xBF", 3) == 0) {
+        begin += 3; /* a UTF-8 byte order mark (cJSON skips it too) */
+    }
+    const char *frames = br_scan_member(begin, end, "frames");
+    const char *meta = br_scan_member(begin, end, "meta");
+    const char *image = meta != NULL ? br_scan_member(meta, end, "image") : NULL;
+    return frames != NULL && (*frames == '{' || *frames == '[') && image != NULL && *image == '"';
 }
 
 void br_spritesheet_register_loader(br_engine *e)

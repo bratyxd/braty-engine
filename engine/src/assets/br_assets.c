@@ -87,18 +87,18 @@ static void br_assets_log_no_loader(const char *path, const char *type)
     }
 }
 
-/* The first candidate whose test accepts the bytes. Thread-safe (tests are pure). */
-static const br_loader_entry *br_assets_pick(const br_loader_entry *const *candidates, uint32_t count, bool forced,
-                                             const char *path, const void *bytes, size_t size)
+/* Index of the first candidate from `first` on whose test accepts the bytes, `count` if none.
+ * Thread-safe (tests are pure). */
+static uint32_t br_assets_pick(const br_loader_entry *const *candidates, uint32_t count, uint32_t first, bool forced,
+                               const char *path, const void *bytes, size_t size)
 {
-    for (uint32_t i = 0; i < count; i++) {
+    for (uint32_t i = first; i < count; i++) {
         const br_loader_entry *l = candidates[i];
         if (forced || l->test == NULL || l->test(path, bytes, size)) {
-            return l;
+            return i;
         }
     }
-    br_log_error("asset '%s': no loader accepts the file contents", path);
-    return NULL;
+    return count;
 }
 
 /* ---- cache helpers (main thread) */
@@ -160,6 +160,32 @@ static void *br_assets_run_loader(br_engine *e, const br_loader_entry *l, const 
     return asset;
 }
 
+/* Runs the candidates from `first` on, on the main thread, until one returns an asset: a loader
+ * whose test claimed the file may still fail, and then the next candidate gets the file (a .json
+ * that looks like a spritesheet but is not one still loads as JSON). NULL if all fail (logged). */
+static void *br_assets_try_loaders(br_engine *e, const br_loader_entry *const *candidates, uint32_t count,
+                                   uint32_t first, bool forced, const char *path, const void *bytes, size_t size,
+                                   const br_loader_entry **used)
+{
+    uint32_t i = br_assets_pick(candidates, count, first, forced, path, bytes, size);
+    if (i == count && first == 0) {
+        br_log_error("asset '%s': no loader accepts the file contents", path);
+    }
+    while (i < count) {
+        void *asset = br_assets_run_loader(e, candidates[i], path, bytes, size);
+        if (asset != NULL) {
+            *used = candidates[i];
+            return asset;
+        }
+        br_log_error("asset '%s': the %s loader failed", path, candidates[i]->type_name);
+        i = br_assets_pick(candidates, count, i + 1, forced, path, bytes, size);
+        if (i < count) {
+            br_log_info("asset '%s': trying the %s loader instead", path, candidates[i]->type_name);
+        }
+    }
+    return NULL;
+}
+
 /* Records a reference taken outside any loader while a capture is open. */
 static void br_assets_capture_ref(br_assets_state *a, const char *path)
 {
@@ -191,6 +217,10 @@ void *br_assets_load_resolved(br_engine *e, const char *path, const br_asset_opt
 {
     br_assets_state *a = e->assets;
     br_asset_entry *entry = br_assets_entry(a, path);
+    if (entry != NULL && entry->sync_loading) {
+        br_log_error("asset '%s' loads itself (directly or through an asset it loads); refused", path);
+        return NULL;
+    }
     if (entry != NULL && !entry->loading) {
         entry->refs++;
         br_assets_capture_ref(a, path);
@@ -210,22 +240,41 @@ void *br_assets_load_resolved(br_engine *e, const char *path, const br_asset_opt
         br_log_error("asset '%s': cannot read the file", path);
         return NULL;
     }
-    const br_loader_entry *loader = br_assets_pick(candidates, count, type != NULL, path, bytes, size);
-    void *asset = loader != NULL ? br_assets_run_loader(e, loader, path, bytes, size) : NULL;
+    /* The entry exists while the loader runs, marked: a loader that loads its own path (a
+     * spritesheet listing itself as a linked pack) gets an error instead of a second copy. */
+    bool placeholder = entry == NULL;
+    if (placeholder) {
+        br_asset_entry fresh;
+        SDL_zero(fresh);
+        fresh.loading = true;
+        fresh.serial = ++a->next_serial;
+        entry = br_map_set(&a->cache, path, &fresh);
+        if (entry == NULL) {
+            br_free(bytes);
+            return NULL;
+        }
+    }
+    entry->sync_loading = true;
+    const br_loader_entry *loader = NULL;
+    void *asset = br_assets_try_loaders(e, candidates, count, 0, type != NULL, path, bytes, size, &loader);
     br_free(bytes);
+    /* The loader may have loaded or unloaded other assets (the map moved): look it up again. */
+    entry = br_assets_entry(a, path);
+    if (entry != NULL) {
+        entry->sync_loading = false;
+    }
     if (asset == NULL) {
-        if (loader != NULL) {
-            br_log_error("asset '%s': the %s loader failed", path, loader->type_name);
+        if (placeholder && entry != NULL && entry->refs == 0) {
+            br_assets_free_entry(e, path); /* nobody asked for it meanwhile */
         }
         return NULL;
     }
     float resolution = br_assets_option_resolution(path, options);
     br_assets_apply_resolution(e, loader, asset, resolution);
-    /* The loader may have loaded other assets (the map moved): look the entry up again. */
-    entry = br_assets_entry(a, path);
     if (entry == NULL) {
         br_asset_entry fresh;
         SDL_zero(fresh);
+        fresh.serial = ++a->next_serial;
         entry = br_map_set(&a->cache, path, &fresh);
         if (entry == NULL) {
             if (loader->unload != NULL) {
@@ -367,13 +416,19 @@ uint32_t br_assets_list(br_engine *e, br_asset_info *out, uint32_t max)
             info->ref_count = entry->refs;
             info->loading = entry->loading;
             info->byte_size = entry->file_size;
-            if (!entry->loading && entry->loader->byte_size != NULL) {
+            if (!entry->loading && entry->loader != NULL && entry->loader->byte_size != NULL) {
                 info->byte_size = entry->loader->byte_size(e, entry->asset);
             }
         }
         n++;
     }
     return n;
+}
+
+uint32_t br_assets_serial(br_assets_state *a, const char *path)
+{
+    const br_asset_entry *entry = br_assets_entry(a, path);
+    return entry != NULL ? entry->serial : 0;
 }
 
 uint32_t br_assets_owners(br_engine *e, const char *name, const char **out, uint32_t max)
@@ -433,20 +488,27 @@ static br_asset_result br_assets_run_job(br_engine *e, const br_asset_job *job)
         br_log_error("asset '%s': cannot read the file", job->path);
         return r;
     }
-    const br_loader_entry *l = br_assets_pick(job->candidates, job->candidate_count, job->forced, job->path,
-                                              r.bytes, r.size);
-    if (l != NULL && l->decode != NULL) {
-        r.decoded = l->decode(e, job->path, r.bytes, r.size);
+    SDL_memcpy(r.candidates, job->candidates, sizeof(r.candidates));
+    r.candidate_count = job->candidate_count;
+    r.forced = job->forced;
+    uint32_t i = br_assets_pick(job->candidates, job->candidate_count, 0, job->forced, job->path, r.bytes, r.size);
+    if (i == job->candidate_count) {
+        br_log_error("asset '%s': no loader accepts the file contents", job->path);
         br_free(r.bytes);
         r.bytes = NULL;
+        return r;
+    }
+    const br_loader_entry *l = job->candidates[i];
+    r.next = i + 1;
+    if (l->decode != NULL) {
+        r.decoded = l->decode(e, job->path, r.bytes, r.size);
         if (r.decoded == NULL) {
             br_log_error("asset '%s': the %s loader failed", job->path, l->type_name);
-            l = NULL;
+            l = NULL; /* the bytes stay: the main thread tries the next candidates */
+        } else {
+            br_free(r.bytes);
+            r.bytes = NULL;
         }
-    }
-    if (l == NULL) {
-        br_free(r.bytes);
-        r.bytes = NULL;
     }
     r.loader = l;
     return r;
@@ -550,6 +612,7 @@ void br_assets_load_async_resolved(br_engine *e, const char *path, const br_asse
         br_asset_entry fresh;
         SDL_zero(fresh);
         fresh.loading = true;
+        fresh.serial = ++a->next_serial;
         fresh.refs = 1;
         fresh.resolution = br_assets_option_resolution(path, options);
         if (br_map_set(&a->cache, path, &fresh) != NULL) {
@@ -593,6 +656,7 @@ void br_assets_background_load(br_engine *e, const char *const *names, uint32_t 
         SDL_zero(fresh);
         fresh.loading = true;
         fresh.background = true;
+        fresh.serial = ++a->next_serial;
         fresh.resolution = br_assets_resolution_of(path);
         if (br_map_set(&a->cache, path, &fresh) != NULL) {
             br_assets_enqueue(a, path, NULL, true);
@@ -635,10 +699,16 @@ static void br_assets_finish_result(br_engine *e, br_asset_result *r)
         asset = l->load(e, r->path, r->bytes, r->size);
     }
     a->loader_depth--;
-    br_free(r->bytes);
     if (l != NULL && asset == NULL && wanted) {
         br_log_error("asset '%s': the %s loader failed", r->path, l->type_name);
     }
+    if (asset == NULL && wanted && r->bytes != NULL) {
+        /* the claimed loader failed: the next candidates get the file */
+        l = NULL;
+        asset = br_assets_try_loaders(e, r->candidates, r->candidate_count, r->next, r->forced, r->path, r->bytes,
+                                      r->size, &l);
+    }
+    br_free(r->bytes);
     entry = br_assets_entry(a, r->path); /* finish/load may have changed the cache */
     if (entry == NULL || !entry->loading) {
         /* unloaded meanwhile, or loaded synchronously meanwhile: drop this copy */
@@ -646,7 +716,7 @@ static void br_assets_finish_result(br_engine *e, br_asset_result *r)
             l->unload(e, asset);
         }
     } else if (asset == NULL) {
-        br_assets_free_entry(e, r->path); /* failed: forget it, waiters get NULL */
+        br_assets_free_entry(e, r->path); /* failed: forget it (groups notice by its serial); waiters get NULL */
     } else {
         entry->loader = l;
         entry->asset = asset;
@@ -767,6 +837,11 @@ static void br_assets_shutdown(br_engine *e, void *user)
         br_free(*(char **)value);
     }
     br_assets_bundles_free(a);
+    slot = 0;
+    while (br_map_next(&a->frame_sheets, &slot, &key, &value)) {
+        br_free(*(char **)value); /* empty unless a sheet outlived unload_all */
+    }
+    br_map_free(&a->frame_sheets);
     br_array_free(&a->loaders);
     br_array_free(&a->waiters);
     br_array_free(&a->jobs);
@@ -792,6 +867,7 @@ void br_assets_register(br_engine *e)
     br_array_init(&a->loaders, sizeof(br_loader_entry *));
     br_map_init(&a->cache, sizeof(br_asset_entry));
     br_map_init(&a->aliases, sizeof(char *));
+    br_map_init(&a->frame_sheets, sizeof(char *));
     br_array_init(&a->waiters, sizeof(br_asset_waiter));
     br_array_init(&a->bundles, sizeof(br_bundle));
     br_array_init(&a->bundle_loads, sizeof(br_bundle_load *));

@@ -8,6 +8,8 @@
 
 #define BR_DATA_PATH_SIZE 512
 #define BR_DATA_NAME_SIZE 64
+#define BR_PREFAB_MAX_DEPTH 16     /* prefabs inside prefabs (children or "based on") */
+#define BR_DATA_MAX_NODE_DEPTH 256 /* nested "children": deeper would risk the C stack */
 
 /* Creates a node for a JSON "type" whose creation needs data (rope meshes, rich text, ...). */
 typedef br_node (*br_data_create_fn)(br_engine *e, const cJSON *json);
@@ -82,6 +84,10 @@ typedef struct br_data_state {
     int      load_depth;   /* > 0 while a file is being built (refs are deferred) */
     br_map   handlers;     /* name -> br_data_handler */
     br_map   prefabs;      /* path -> cJSON * (parsed prefab files) */
+    /* prefab files whose nodes are being built, outermost first: a path already here is a cycle */
+    char     prefab_stack[BR_PREFAB_MAX_DEPTH][BR_DATA_PATH_SIZE];
+    uint32_t prefab_depth;
+    uint32_t node_depth;   /* nodes being built (nesting of br_data_build_node) */
 
     br_array watches;      /* br_data_watch */
     bool     hot_reload;
@@ -121,6 +127,11 @@ void br_data_end_file(br_engine *e, const br_data_scope *saved);
 bool br_data_value_float(br_engine *e, const cJSON *v, float *out);
 bool br_data_value_vec2(br_engine *e, const cJSON *v, br_vec2 *out);
 bool br_data_value_color(br_engine *e, const cJSON *v, br_color *out);
+/* A count / size / index from data: a whole number in [min, max] (else "out of range" at the
+ * current path). Check before any cast to an integer type. */
+bool br_data_value_count(br_engine *e, double v, uint32_t min, uint32_t max, uint32_t *out);
+/* A whole JSON number in [min, max] as an int (errors at the current path). */
+bool br_data_value_int(br_engine *e, const cJSON *v, int min, int max, int *out);
 
 /* Adds a JSON type name for a node type (with optional factory and live writer). */
 void br_data_add_type(br_engine *e, const char *name, uint32_t type_id, br_data_create_fn create,
@@ -214,7 +225,9 @@ int64_t br_data_modify_time(br_engine *e, const char *path);
 
 /* ---- br_prefab.c */
 
-/* Expands { "prefab": path, ...overrides } into a new JSON object (caller deletes), NULL on error. */
+/* Expands { "prefab": path, ...overrides } into a new JSON object (caller deletes), NULL on error.
+ * Pushes the prefab paths onto prefab_stack (a path already there is reported as a cycle); the
+ * caller restores prefab_depth once the node's subtree is built. */
 cJSON *br_data_expand_prefab(br_engine *e, const cJSON *json);
 /* Frees cached prefab documents. */
 void br_data_prefabs_free(br_engine *e);

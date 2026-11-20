@@ -70,11 +70,11 @@ static bool br_gltf_read_field(br_engine *e, uint8_t *base, const br_field_desc 
         return true;
     }
     case BR_FIELD_INT: {
-        if (!cJSON_IsNumber(value) || value->valuedouble != (double)(int32_t)value->valuedouble) {
-            br_data_errorf(e, "expected a whole number");
+        int whole = 0;
+        if (!br_data_value_int(e, value, INT32_MIN, INT32_MAX, &whole)) {
             return false;
         }
-        int32_t i = (int32_t)value->valuedouble;
+        int32_t i = (int32_t)whole;
         SDL_memcpy(p, &i, sizeof(i));
         return true;
     }

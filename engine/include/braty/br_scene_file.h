@@ -3,7 +3,7 @@
  * A scene file is one node object; children nest:
  *
  *   { "type": "container", "label": "level",
- *     "assets": ["atlas.json"],                         (root only: loaded first)
+ *     "assets": ["atlas.json"],                         (any node: loaded before it)
  *     "children": [
  *       { "type": "sprite", "label": "hero", "texture": "atlas.json#hero.png",
  *         "position": [100, 200], "anchor": [0.5, 0.5], "tint": "#ffcc00",
@@ -90,9 +90,14 @@ const char *br_scene_file_last_error(br_engine *e);
 
 /* true / false. */
 bool br_data_get_bool(br_engine *e, const cJSON *obj, const char *key, bool *out);
-/* A whole number. */
+/* A whole number that fits an int ("1e20" and "1.5" are errors). */
 bool br_data_get_int(br_engine *e, const cJSON *obj, const char *key, int *out);
-/* A number. */
+/* A whole number in [min, max] ("... is out of range" otherwise). */
+bool br_data_get_int_range(br_engine *e, const cJSON *obj, const char *key, int min, int max, int *out);
+/* A count, size or index: a whole number in [min, max]. Use it for every number that becomes a
+ * loop bound or an allocation size, so a data file cannot ask for a billion of something. */
+bool br_data_get_count(br_engine *e, const cJSON *obj, const char *key, uint32_t min, uint32_t max, uint32_t *out);
+/* A number (finite, within float range). */
 bool br_data_get_float(br_engine *e, const cJSON *obj, const char *key, float *out);
 /* [x, y], { "x": .., "y": .. } or one number for both. */
 bool br_data_get_vec2(br_engine *e, const cJSON *obj, const char *key, br_vec2 *out);
@@ -103,7 +108,8 @@ bool br_data_get_color(br_engine *e, const cJSON *obj, const char *key, br_color
 /* A string copied into out (truncation is an error). */
 bool br_data_get_string(br_engine *e, const cJSON *obj, const char *key, char *out, size_t out_size);
 /* A texture: "images/a.png" (asset path), "sheet.json#frame" (spritesheet frame), or a frame
- * name found in any loaded spritesheet. Missing ones log and give the magenta texture. */
+ * name of a loaded spritesheet (the first loaded with that name). Takes a reference on the
+ * texture or sheet (a scene load owns it). Missing ones log and give the magenta texture. */
 bool br_data_get_texture(br_engine *e, const cJSON *obj, const char *key, br_texture *out);
 /* [x, y, width, height]. */
 bool br_data_get_rect(br_engine *e, const cJSON *obj, const char *key, br_rect *out);

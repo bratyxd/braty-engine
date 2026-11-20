@@ -105,7 +105,7 @@ void br_assets_set_base_path(br_engine *e, const char *base_path);
  * ("dds,png"; NULL or "" = no preference). Defaults: 1, no preference. */
 void br_assets_set_preferences(br_engine *e, float resolution, const char *formats);
 /* Resolves a name to the path that load/get/unload use: alias, cached path, pattern choice,
- * base path. False if the result does not fit `out`. */
+ * base path. False if the result does not fit `out`, or a pattern gives more than 16 names. */
 bool br_assets_resolve(br_engine *e, const char *name, char *out, size_t out_size);
 /* The "@Nx" resolution in a file name ("hero@2x.png" -> 2), 1 if none. */
 float br_assets_resolution_of(const char *path);

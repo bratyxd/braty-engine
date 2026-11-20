@@ -62,36 +62,71 @@ static bool br_append(char *dst, size_t *used, const char *s, size_t len)
     return true;
 }
 
-static void br_expand(const char *pattern, br_candidates *c)
+/* The `{` ... `}` group starting the search at p, false if there is none (the rest is literal). */
+static bool br_next_group(const char *p, const char **open, const char **close)
 {
-    const char *open = SDL_strchr(pattern, '{');
-    const char *close = open != NULL ? SDL_strchr(open, '}') : NULL;
-    if (open == NULL || close == NULL) {
-        if (c->count < BR_RESOLVE_MAX && br_str_copy(c->items[c->count], BR_RESOLVE_PATH, pattern)) {
-            c->count++;
-        }
-        return;
+    *open = SDL_strchr(p, '{');
+    *close = *open != NULL ? SDL_strchr(*open, '}') : NULL;
+    return *close != NULL;
+}
+
+/* Number of options in the group open..close (commas + 1). */
+static uint32_t br_group_options(const char *open, const char *close)
+{
+    uint32_t n = 1;
+    for (const char *p = open + 1; p < close; p++) {
+        n += *p == ',' ? 1 : 0;
     }
-    const char *option = open + 1;
-    for (;;) {
-        const char *end = option;
-        while (end < close && *end != ',') {
-            end++;
+    return n;
+}
+
+/* Expands every group into c. The number of names is counted first, so a name with many groups
+ * fails at once (and the work is linear in the names produced). False (logged) if more than
+ * the free slots in c. Names that do not fit BR_RESOLVE_PATH are dropped. */
+static bool br_expand(const char *pattern, br_candidates *c)
+{
+    uint32_t total = 1;
+    const char *open = NULL;
+    const char *close = NULL;
+    for (const char *p = pattern; br_next_group(p, &open, &close); p = close + 1) {
+        total *= br_group_options(open, close);
+        if (total > BR_RESOLVE_MAX - c->count) {
+            br_log_error("assets: '%s' expands to more than %d names", pattern, BR_RESOLVE_MAX);
+            return false;
         }
+    }
+    for (uint32_t index = 0; index < total; index++) {
+        /* index is a mixed-radix number: one digit per group, the last group varies fastest */
+        uint32_t rest = index;
+        uint32_t divisor = total;
         char buf[BR_RESOLVE_PATH];
         size_t used = 0;
         buf[0] = 0;
-        bool ok = br_append(buf, &used, pattern, (size_t)(open - pattern)) &&
-                  br_append(buf, &used, option, (size_t)(end - option)) &&
-                  br_append(buf, &used, close + 1, SDL_strlen(close + 1));
+        bool ok = true;
+        const char *p = pattern;
+        while (ok && br_next_group(p, &open, &close)) {
+            uint32_t options = br_group_options(open, close);
+            divisor /= options;
+            uint32_t pick = rest / divisor;
+            rest %= divisor;
+            const char *option = open + 1;
+            for (uint32_t k = 0; k < pick; k++) {
+                option = SDL_strchr(option, ',') + 1;
+            }
+            const char *end = option;
+            while (end < close && *end != ',') {
+                end++;
+            }
+            ok = br_append(buf, &used, p, (size_t)(open - p)) && br_append(buf, &used, option, (size_t)(end - option));
+            p = close + 1;
+        }
+        ok = ok && br_append(buf, &used, p, SDL_strlen(p));
         if (ok) {
-            br_expand(buf, c);
+            SDL_memcpy(c->items[c->count], buf, used + 1);
+            c->count++;
         }
-        if (end >= close) {
-            break;
-        }
-        option = end + 1;
     }
+    return true;
 }
 
 /* Position of ext in the comma-separated formats list; large if absent. */
@@ -127,7 +162,10 @@ static bool br_assets_resolve_srcs(br_assets_state *a, const char *const *srcs, 
         return false;
     }
     for (uint32_t i = 0; i < count; i++) {
-        br_expand(srcs[i], c);
+        if (!br_expand(srcs[i], c)) {
+            br_free(c);
+            return false;
+        }
     }
     if (c->count == 0) {
         br_log_error("assets: cannot resolve '%s'", count > 0 ? srcs[0] : "");

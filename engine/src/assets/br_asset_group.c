@@ -24,9 +24,12 @@ static br_group_entry *br_group_find(const br_asset_group *g, const char *path)
     return NULL;
 }
 
-static bool br_group_holds(const br_group_entry *entry)
+/* True if the group holds a reference on the entry's path: it took one, and the cache entry it
+ * went into is still there (a failed async load drops its entry with every reference in it). */
+static bool br_group_holds(br_engine *e, const br_group_entry *entry)
 {
-    return entry->state == BR_GROUP_LOADING || entry->state == BR_GROUP_LOADED;
+    return (entry->state == BR_GROUP_LOADING || entry->state == BR_GROUP_LOADED) &&
+           br_assets_serial(e->assets, entry->path) == entry->serial;
 }
 
 br_asset_group *br_asset_group_create(br_engine *e, const char *name)
@@ -148,17 +151,20 @@ static void br_group_load_entry(br_asset_group *g, br_group_entry *entry)
     br_asset_options options;
     SDL_zero(options);
     options.type = entry->type;
-    bool had_reference = entry->state == BR_GROUP_LOADING;
+    /* our async reference counts only while the entry it went into is the cached one */
+    bool had_reference = entry->state == BR_GROUP_LOADING && br_assets_serial(e->assets, entry->path) == entry->serial;
     void *asset = br_assets_load_resolved(e, entry->path, &options);
     if (asset == NULL) {
         /* a failed sync load of an entry that was loading cancels nothing: our async reference
          * is still in the cache entry, if that entry survived */
-        entry->state = had_reference && br_assets_ref_count(e, entry->path) > 0 ? BR_GROUP_LOADING : BR_GROUP_FAILED;
+        bool still = had_reference && br_assets_serial(e->assets, entry->path) == entry->serial;
+        entry->state = still ? BR_GROUP_LOADING : BR_GROUP_FAILED;
         return;
     }
     if (had_reference) {
         br_assets_unload_resolved(e, entry->path); /* keep one reference, not two */
     }
+    entry->serial = br_assets_serial(e->assets, entry->path);
     entry->state = BR_GROUP_LOADED;
 }
 
@@ -182,15 +188,16 @@ bool br_asset_group_load(br_asset_group *g)
 /* Requests one entry in the background (reference taken now). */
 static void br_group_request(br_asset_group *g, br_group_entry *entry)
 {
-    if (entry->lazy || br_group_holds(entry)) {
+    if (entry->lazy || br_group_holds(g->engine, entry)) {
         return;
     }
     br_asset_options options;
     SDL_zero(options);
     options.type = entry->type;
     br_assets_load_async_resolved(g->engine, entry->path, &options, NULL, NULL);
-    /* without worker threads the load already happened (or failed) */
-    entry->state = br_assets_ref_count(g->engine, entry->path) > 0 ? BR_GROUP_LOADING : BR_GROUP_FAILED;
+    /* without worker threads the load already happened (or failed: then nothing is cached) */
+    entry->serial = br_assets_serial(g->engine->assets, entry->path);
+    entry->state = entry->serial != 0 ? BR_GROUP_LOADING : BR_GROUP_FAILED;
 }
 
 void br_asset_group_load_async(br_asset_group *g, br_asset_group_progress_fn on_progress,
@@ -227,7 +234,7 @@ void br_asset_group_unload(br_asset_group *g)
     }
     for (uint32_t i = 0; i < g->entries.count; i++) {
         br_group_entry *entry = br_group_entry_at(g, i);
-        if (br_group_holds(entry)) {
+        if (br_group_holds(g->engine, entry)) {
             br_assets_unload_resolved(g->engine, entry->path);
         }
         entry->state = BR_GROUP_IDLE;
@@ -327,10 +334,11 @@ void br_asset_group_adopt(br_asset_group *g, const char *path)
         br_assets_unload_resolved(g->engine, path);
         return;
     }
-    if (br_group_holds(entry)) {
+    if (br_group_holds(g->engine, entry)) {
         br_assets_unload_resolved(g->engine, path); /* the group already holds its one reference */
         return;
     }
+    entry->serial = br_assets_serial(g->engine->assets, path);
     entry->state = BR_GROUP_LOADED;
 }
 
@@ -350,8 +358,9 @@ static bool br_group_update(br_asset_group *g)
         if (entry->state != BR_GROUP_LOADING) {
             continue;
         }
-        uint32_t refs = br_assets_ref_count(e, entry->path);
-        if (refs == 0) {
+        /* by serial, not by count: after a failure dropped our entry, another owner may have
+         * loaded the path again, and that reference is not ours */
+        if (br_assets_serial(e->assets, entry->path) != entry->serial) {
             entry->state = BR_GROUP_FAILED; /* the failed load was dropped from the cache */
         } else if (br_assets_get(e, entry->path) != NULL) {
             entry->state = BR_GROUP_LOADED;
@@ -412,7 +421,7 @@ uint32_t br_asset_groups_owners(br_engine *e, const char *path, const char **out
     for (uint32_t i = 0; i < a->groups.count; i++) {
         br_asset_group *g = *(br_asset_group **)br_array_at(&a->groups, i);
         br_group_entry *entry = g->dead ? NULL : br_group_find(g, path);
-        if (entry != NULL && br_group_holds(entry)) {
+        if (entry != NULL && br_group_holds(g->engine, entry)) {
             if (out != NULL && n < max) {
                 out[n] = g->name;
             }

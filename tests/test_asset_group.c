@@ -5,6 +5,7 @@
 #include "braty/braty.h"
 #include "br_test.h"
 
+#include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_timer.h>
 #include <string.h>
 
@@ -186,12 +187,62 @@ static void test_deterministic(void)
     br_engine_destroy(e); /* the group is freed at shutdown */
 }
 
+/* ---- a failed async load, then another owner loads the path in the same frame */
+
+typedef struct other_owner {
+    bool  done;
+    void *asset;
+} other_owner;
+
+/* Waiter of the failed load: the file appears and someone else loads it synchronously. */
+static void load_after_failure(br_engine *e, const char *path, void *asset, void *user)
+{
+    (void)path;
+    (void)asset;
+    other_owner *o = user;
+    o->done = true;
+    br_file_write_all(e, "group_appears.txt", "hi", 2);
+    o->asset = br_assets_load(e, "group_appears.txt");
+}
+
+static void remove_fixture(br_engine *e, const char *name)
+{
+    char full[1024];
+    if (br_file_resolve(e, name, full, sizeof(full))) {
+        SDL_RemovePath(full);
+    }
+}
+
+static void test_failure_then_other_owner(br_engine *e)
+{
+    remove_fixture(e, "group_appears.txt");
+    br_asset_group *g = br_asset_group_create(e, "appear");
+    BR_CHECK(br_asset_group_add(g, "group_appears.txt"));
+    br_asset_group_load_async(g, NULL, NULL, NULL); /* fails: no such file yet */
+    other_owner o = { false, NULL };
+    br_assets_load_async(e, "group_appears.txt", NULL, load_after_failure, &o);
+    for (int i = 0; i < 4000 && !o.done; i++) {
+        br_engine_step(e, DT);
+        SDL_Delay(1);
+    }
+    settle(e);
+    BR_CHECK(o.done && o.asset != NULL);
+    BR_CHECK(br_asset_group_failed(g) == 1); /* the group's own load failed */
+    BR_CHECK(br_assets_ref_count(e, "group_appears.txt") == 1);
+    br_asset_group_destroy(g); /* must not drop the other owner's reference */
+    BR_CHECK(br_assets_get(e, "group_appears.txt") != NULL);
+    BR_CHECK(br_assets_ref_count(e, "group_appears.txt") == 1);
+    br_assets_unload(e, "group_appears.txt");
+    remove_fixture(e, "group_appears.txt");
+}
+
 int main(void)
 {
     br_engine *e = br_engine_create("test_asset_group", BRATY_SOURCE_DIR "/tests/data"); /* the source tree (CMake) */
     test_sync_and_shared(e);
     test_async(e);
     test_lazy_bundle_capture(e);
+    test_failure_then_other_owner(e);
     br_engine_destroy(e);
     test_deterministic();
     return br_test_finish();

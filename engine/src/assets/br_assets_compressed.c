@@ -128,9 +128,12 @@ static uint32_t br_level_size(const br_block_format *f, uint32_t width, uint32_t
     return blocks_x * blocks_y * f->block_bytes;
 }
 
-/* Checks sizes and lays the levels out at aligned offsets. Data is copied in by the caller. */
+/* Checks sizes and lays the levels out at aligned offsets. Data is copied in by the caller.
+ * `available` is the file size after the header: the levels must fit in it (checked before
+ * allocating, so a short file cannot ask for gigabytes). The level count is clamped to the full
+ * mip chain of the size (a 4x4 texture has 3 levels). */
 static br_compressed_image *br_image_create(const char *path, const br_block_format *f, uint32_t width,
-                                            uint32_t height, uint32_t levels)
+                                            uint32_t height, uint32_t levels, size_t available)
 {
     if (width == 0 || height == 0 || width > 16384 || height > 16384) {
         br_log_error("texture '%s': bad size %ux%u", path, width, height);
@@ -143,8 +146,24 @@ static br_compressed_image *br_image_create(const char *path, const br_block_for
     if (levels == 0) {
         levels = 1;
     }
+    uint32_t chain = 1;
+    for (uint32_t side = width > height ? width : height; side > 1; side >>= 1) {
+        chain++;
+    }
+    if (levels > chain) {
+        levels = chain;
+    }
     if (levels > BR_COMPRESSED_MAX_LEVELS) {
         levels = BR_COMPRESSED_MAX_LEVELS;
+    }
+    size_t needed = 0;
+    for (uint32_t i = 0; i < levels; i++) {
+        needed += br_level_size(f, width, height, i);
+    }
+    if (needed > available) {
+        br_log_error("texture '%s': truncated (%u levels need %u bytes, the file has %u)", path, levels,
+                     (unsigned)needed, (unsigned)available);
+        return NULL;
     }
     br_compressed_image *img = br_alloc(sizeof(br_compressed_image));
     if (img == NULL) {
@@ -254,7 +273,7 @@ static br_compressed_image *br_dds_decode(const char *path, const uint8_t *p, si
         br_log_error("texture '%s': unsupported DDS pixel format", path);
         return NULL;
     }
-    br_compressed_image *img = br_image_create(path, f, width, height, mips);
+    br_compressed_image *img = br_image_create(path, f, width, height, mips, size - data_start);
     if (img == NULL) {
         return NULL;
     }
@@ -305,11 +324,11 @@ static br_compressed_image *br_ktx_decode(const char *path, const uint8_t *p, si
                      etc ? " (ETC1/ETC2/EAC: SDL_GPU has no such formats)" : "");
         return NULL;
     }
-    br_compressed_image *img = br_image_create(path, f, width, height, mips);
+    size_t at = (size_t)BR_KTX_HEADER + kv_bytes;
+    br_compressed_image *img = br_image_create(path, f, width, height, mips, at < size ? size - at : 0);
     if (img == NULL) {
         return NULL;
     }
-    size_t at = (size_t)BR_KTX_HEADER + kv_bytes;
     for (uint32_t i = 0; i < img->levels; i++) {
         if (at + 4 > size || br_read_u32(p, at) < img->level_size[i] || at + 4 + img->level_size[i] > size) {
             br_log_error("texture '%s': truncated or bad size (mip %u of %u)", path, i, img->levels);

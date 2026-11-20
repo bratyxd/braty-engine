@@ -2,7 +2,8 @@
  * formats, trimmed and rotated frames, pivots (default anchors), 9-slice borders, animations,
  * multi-packs (meta.related_multi_packs).
  *
- * A spritesheet is an asset of type "spritesheet" (a .json file with "frames" and "meta").
+ * A spritesheet is an asset of type "spritesheet": a .json file with a top-level "frames" object
+ * or array and a "meta" object with an "image" string (other .json files load as "json").
  * Loading it loads its image (meta.image, relative to the json) as a texture asset and creates
  * one frame texture per frame. Unloading it destroys the frames and drops the image reference.
  *

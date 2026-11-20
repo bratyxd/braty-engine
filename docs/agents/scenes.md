@@ -103,7 +103,10 @@ game.json names the scenes (`examples/scenes/game.json`):
 - Automatic collection only adds paths that exist as files or are already cached (a bare frame
   name like `"hero.png"` is resolved by the node, not loaded as a file).
 - `br_system_add_for_scene`: the system is removed (`br_system_remove`) when its scene unloads,
-  so a later scene can add the same name with its own phase and priority.
+  so a later scene can add the same name with its own phase and priority. A name that an engine
+  or game system already has is refused (logged): the unload only removes what the scene added.
+- A switch whose target is unloaded during the fade-out keeps the scenes that are there and fades
+  back in (nothing is unloaded).
 - Assets of an unloaded scene are freed at the next frame's flush (or at once outside a frame):
   a report printed in the same frame still lists them.
 - Nodes are built in one frame once the assets are in (not time-sliced).

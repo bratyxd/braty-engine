@@ -38,19 +38,20 @@ static br_vec2 *br_data_points(br_engine *e, const cJSON *obj, const char *key, 
     return points;
 }
 
+/* Most vertices per side of a plane / perspective grid (1024 x 1024 is already a million). */
+#define BR_DATA_MAX_GRID 1024
+
+/* "plane" / "verts": [columns, rows] of vertices, each a whole number 2..BR_DATA_MAX_GRID. */
 static bool br_data_grid(br_engine *e, const cJSON *obj, const char *key, uint32_t *vx, uint32_t *vy)
 {
     br_vec2 v;
     if (!br_data_get_vec2(e, obj, key, &v)) {
         return false;
     }
-    if (v.x < 2.0f || v.y < 2.0f) {
-        br_data_error(e, key, "a grid needs at least [2, 2] vertices");
-        return false;
-    }
-    *vx = (uint32_t)v.x;
-    *vy = (uint32_t)v.y;
-    return true;
+    size_t mark = br_data_path_push_key(e, key);
+    bool ok = br_data_value_count(e, v.x, 2, BR_DATA_MAX_GRID, vx) && br_data_value_count(e, v.y, 2, BR_DATA_MAX_GRID, vy);
+    br_data_path_pop(e, mark);
+    return ok;
 }
 
 /* Plain geometry: positions (+ uvs, colours, indices). */
@@ -97,7 +98,9 @@ static bool br_data_mesh_geometry(br_engine *e, br_node n, const cJSON *json)
         indices = ni > 0 && ni % 3 == 0 ? br_alloc(sizeof(uint32_t) * (size_t)ni) : NULL;
         for (int i = 0; indices != NULL && i < ni; i++) {
             const cJSON *item = cJSON_GetArrayItem(iv, i);
-            if (!cJSON_IsNumber(item) || item->valuedouble < 0 || (uint32_t)item->valuedouble >= count) {
+            /* compared as doubles: casting 1e20 to uint32_t first would be undefined */
+            double index = cJSON_IsNumber(item) ? item->valuedouble : -1.0;
+            if (!(index >= 0.0 && index < (double)count && index == SDL_floor(index))) {
                 br_free(indices);
                 indices = NULL;
             } else {

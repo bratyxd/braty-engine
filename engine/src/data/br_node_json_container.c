@@ -343,8 +343,8 @@ static bool br_data_read_filter(br_engine *e, const cJSON *item, br_filter *out)
         int quality = 4;
         int kernel = 5;
         br_data_get_float(e, p, "strength", &strength);
-        br_data_get_int(e, p, "quality", &quality);
-        br_data_get_int(e, p, "kernel_size", &kernel);
+        br_data_get_int_range(e, p, "quality", 1, 16, &quality); /* passes per frame */
+        br_data_get_int(e, p, "kernel_size", &kernel); /* clamped to 5..15 by the filter */
         *out = br_filter_blur(strength, quality, kernel);
         br_data_get_float(e, p, "blur_x", &out->blur_x);
         br_data_get_float(e, p, "blur_y", &out->blur_y);

@@ -283,6 +283,54 @@ static void test_switch(br_engine *e, event_log *log)
     BR_CHECK(br_assets_count(e) == assets);
 }
 
+/* ---- a scene system named like an existing system is refused, and unloading the scene
+ * leaves that system alone */
+
+static bool system_exists(br_engine *e, const char *name)
+{
+    for (uint32_t i = 0; i < br_system_count(e); i++) {
+        br_system_info info;
+        if (br_system_get_info(e, i, &info) && strcmp(info.name, name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void test_scoped_name_collision(br_engine *e)
+{
+    int game = 0;
+    int scoped = 0;
+    br_system_add(e, "test.game_system", BR_PHASE_UPDATE, 0, count_system, &game);
+    br_scene a = br_scene_load(e, "scenes/a.scene.json", BR_SCENE_SINGLE);
+    br_system_add_for_scene(e, a, "test.game_system", BR_PHASE_UPDATE, 0, count_system, &scoped);
+    br_system_add_for_scene(e, a, "assets.update", BR_PHASE_UPDATE, 0, count_system, &scoped);
+    step(e, 2);
+    BR_CHECK(game == 2 && scoped == 0); /* both refused */
+    br_scene_unload(e, a);
+    step(e, 2);
+    BR_CHECK(system_exists(e, "test.game_system") && system_exists(e, "assets.update"));
+    BR_CHECK(game == 4);
+    br_system_remove(e, "test.game_system");
+}
+
+/* ---- the switch target unloaded during the fade-out: the old scene stays */
+
+static void test_switch_target_unloaded(br_engine *e)
+{
+    br_scene a = br_scene_load(e, "scenes/a.scene.json", BR_SCENE_SINGLE);
+    br_scene_switch(e, "scenes/b.scene.json", BR_TRANSITION_FADE, 0.1f);
+    step(e, 2);
+    br_scene_unload(e, br_scene_switch_target(e));
+    for (int i = 0; i < 600 && br_scene_switching(e); i++) {
+        br_engine_step(e, DT);
+    }
+    BR_CHECK(!br_scene_switching(e));
+    BR_CHECK(br_scene_is_loaded(e, a) && br_scene_count(e) == 1);
+    br_scene_unload(e, a);
+    step(e, 2);
+}
+
 /* ---- lazy vs preload */
 
 static void test_lazy_assets(br_engine *e)
@@ -501,6 +549,8 @@ int main(void)
     test_persistent_nodes(e);
     test_scene_systems(e);
     test_switch(e, &log);
+    test_scoped_name_collision(e);
+    test_switch_target_unloaded(e);
     test_lazy_assets(e);
     test_view3d_resources(e);
     test_scene_file_roots(e);
