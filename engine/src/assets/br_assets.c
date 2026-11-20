@@ -488,7 +488,7 @@ static br_asset_result br_assets_run_job(br_engine *e, const br_asset_job *job)
         br_log_error("asset '%s': cannot read the file", job->path);
         return r;
     }
-    SDL_memcpy(r.candidates, job->candidates, sizeof(r.candidates));
+    SDL_memcpy(r.candidates, (const void *)job->candidates, sizeof(r.candidates)); /* cast: MSVC C4090 on const 2D arrays */
     r.candidate_count = job->candidate_count;
     r.forced = job->forced;
     uint32_t i = br_assets_pick(job->candidates, job->candidate_count, 0, job->forced, job->path, r.bytes, r.size);
