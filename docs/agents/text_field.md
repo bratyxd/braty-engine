@@ -20,7 +20,8 @@ Test: `tests/test_text_field.c` (play-test command in `tests/test_playtest.c`). 
 - Built on the public text API only: a child text node shows the text, its char boxes and lines
   give the caret stops; a child white sprite scissor-masks the box. The field's own render
   callback draws background, border, selection, IME underline and caret.
-- Works inside a canvas3d: clicks arrive through the 3D pick as normal 2D events.
+- Works inside a canvas3d in `BR_CANVAS3D_TEXTURE` mode (the field clips with a scissor mask,
+  which geometry mode does not apply): clicks arrive through the 3D pick as normal 2D events.
 
 ## Functions you actually need
 
