@@ -85,7 +85,11 @@ Key names are SDL scancode names, buttons SDL gamepad names (`"a"` = south face 
   `OVER` (bubbles) on the new target, `ENTER` on each node entered (outer to inner), then `MOVE`.
 - `UP_OUTSIDE`: on the pressed node and each ancestor up to the common ancestor with the release
   target; `CLICK`/`RIGHT_CLICK`/`TAP` then go to that common ancestor (or the pressed node).
-- `GLOBAL_MOVE`: every move, to every node with such a listener and mode != NONE.
+- Mouse motion is coalesced: the latest position is hit-tested and dispatched once per frame by
+  `events.ticker` (INPUT phase), or right before a mouse button, wheel or window-leave event (a
+  press sees the hover of where the mouse went). Tests that inject a move and check hover at once
+  call `br_events_flush(e)`. Touch and pen moves dispatch immediately.
+- `GLOBAL_MOVE`: every dispatched move, to every node with such a listener and mode != NONE.
 - Touch fingers and pens are separate pointers (`ev->pointer_id`); a touch gets OVER/ENTER on
   down and OUT/LEAVE on up. SDL's synthetic mouse events from touch/pen are ignored here.
 - `DYNAMIC` nodes: while one is under a still mouse, `events.ticker` replays a move each frame.
@@ -97,7 +101,8 @@ Key names are SDL scancode names, buttons SDL gamepad names (`"a"` = south face 
   outside `br_engine_step`, so a destroy inside a listener is usually immediate - keep handles,
   not pointers.
 - Listener tables are cleaned through `br_scene_on_node_destroy`; a new node reusing a slot starts
-  with no listeners.
+  with no listeners. Removed rows are compacted per list (only lists marked dirty), so unloading a
+  scene of N listened nodes is linear.
 - Coordinates are window coordinates = stage units. Touch coordinates are scaled by the window
   size (headless engines pass them through unscaled).
 - `br_sprite_set_size` sets the node scale: put children and per-state scaling on a parent

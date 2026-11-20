@@ -18,6 +18,11 @@
  * inside a listener is safe: removed rows are skipped, rows added during a dispatch run from
  * the next dispatch, destroyed nodes are skipped for the rest of the path.
  *
+ * Mouse motion is coalesced: the latest position is hit-tested once per frame, by the
+ * "events.ticker" system (INPUT phase), or earlier when a mouse button, wheel or leave event
+ * arrives (so a press sees the hover of where the mouse went first). Code that injects moves
+ * and checks hover without stepping calls br_events_flush. Touch and pen moves dispatch at once.
+ *
  * Synthetic mouse events SDL makes from touch/pen are ignored here (touch and pen produce
  * their own pointer events with pointer_type TOUCH/PEN). Coordinates are window coordinates,
  * which is the stage space.
@@ -37,8 +42,8 @@ typedef enum br_event_type {
     BR_EVENT_POINTER_ENTER,       /* does not bubble */
     BR_EVENT_POINTER_LEAVE,       /* does not bubble */
     BR_EVENT_TAP,                 /* touch down+up on the same node */
-    BR_EVENT_CLICK,               /* mouse/pen primary button down+up on the same node */
-    BR_EVENT_RIGHT_CLICK,         /* mouse right button down+up on the same node */
+    BR_EVENT_CLICK,               /* mouse/pen primary button down+up (released elsewhere: the common ancestor) */
+    BR_EVENT_RIGHT_CLICK,         /* mouse right button down+up (released elsewhere: the common ancestor) */
     BR_EVENT_WHEEL,
     BR_EVENT_GLOBAL_MOVE,         /* every move, to every node listening (hit or not; mode != NONE) */
     BR_EVENT_TYPE_COUNT
@@ -109,8 +114,10 @@ br_vec2 br_event_local(br_engine *e, const br_event *ev);
 
 /* Top-most interactive node at a stage point (zero handle if none). */
 br_node br_events_hit_test(br_engine *e, br_vec2 point);
-/* The node the mouse is over (zero handle if none). */
+/* The node the mouse is over (zero handle if none), as of the last dispatched move. */
 br_node br_events_hovered(br_engine *e);
+/* Dispatches the pending coalesced mouse motion now (normally done once per frame). */
+void br_events_flush(br_engine *e);
 /* Dispatches a custom event to ev->target with full propagation (Pixi dispatchEvent). */
 void br_events_dispatch(br_engine *e, br_event *ev);
 

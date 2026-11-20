@@ -20,6 +20,7 @@ typedef struct br_listener {
 /* Listener rows of one node, at table index = node index. */
 typedef struct br_listener_list {
     uint32_t generation;        /* generation of the owning node, 0 = unused */
+    bool     dirty;             /* has removed rows; its index is in br_events_state.dirty */
     br_array rows;              /* br_listener */
 } br_listener_list;
 
@@ -41,12 +42,14 @@ typedef struct br_pointer {
 typedef struct br_events_state {
     br_array lists;             /* br_listener_list, indexed by node index */
     uint32_t dispatch_depth;    /* > 0 while listeners run */
-    bool     needs_compact;     /* rows were removed while dispatching */
+    br_array dirty;             /* uint32_t: indices of lists with removed rows, compacted lazily */
     br_array scratch;           /* uint32_t: sorted child copies during hit tests */
     br_array global_nodes;      /* br_node: GLOBAL_MOVE receivers of one dispatch */
     br_pointer pointers[BR_EVENTS_MAX_POINTERS];
     bool     dynamic_seen;      /* a DYNAMIC node was visited by the last mouse hit test */
-    bool     mouse_moved;       /* the mouse moved since the last ticker update */
+    bool     move_pending;      /* mouse motion not dispatched yet (coalesced to one per frame) */
+    br_vec2  move_position;     /* stage position of the latest pending motion */
+    uint64_t move_timestamp;
     int      cursor;            /* SDL_SystemCursor shown, -1 = default */
     SDL_Cursor *cursors[SDL_SYSTEM_CURSOR_COUNT];
 } br_events_state;
@@ -63,10 +66,15 @@ static br_listener_list *br_events_list(br_engine *e, br_node n)
     return list;
 }
 
+/* Drops the removed rows of the lists marked dirty: only those, so unloading a scene of N
+ * listened nodes is O(N), not O(N^2) (it used to walk every list on every removal). */
 static void br_events_compact(br_events_state *s)
 {
-    for (uint32_t i = 0; i < s->lists.count; i++) {
-        br_listener_list *list = br_array_at(&s->lists, i);
+    for (uint32_t d = 0; d < s->dirty.count; d++) {
+        br_listener_list *list = br_array_at(&s->lists, *(uint32_t *)br_array_at(&s->dirty, d));
+        if (list == NULL) {
+            continue;
+        }
         uint32_t kept = 0;
         for (uint32_t j = 0; j < list->rows.count; j++) {
             br_listener *row = br_array_at(&list->rows, j);
@@ -76,17 +84,28 @@ static void br_events_compact(br_events_state *s)
             }
         }
         list->rows.count = kept;
+        list->dirty = false;
         if (kept == 0) {
             br_array_free(&list->rows);
         }
     }
-    s->needs_compact = false;
+    br_array_clear(&s->dirty);
 }
 
-/* Marks rows removed; compacts now unless listeners are running. */
-static void br_events_rows_removed(br_events_state *s)
+/* Marks a list as having removed rows. */
+static void br_events_mark_dirty(br_events_state *s, uint32_t index)
 {
-    s->needs_compact = true;
+    br_listener_list *list = br_array_at(&s->lists, index);
+    if (list != NULL && !list->dirty) {
+        list->dirty = true;
+        br_array_push(&s->dirty, &index);
+    }
+}
+
+/* Marks rows of list `index` removed; compacts now unless listeners are running. */
+static void br_events_rows_removed(br_events_state *s, uint32_t index)
+{
+    br_events_mark_dirty(s, index);
     if (s->dispatch_depth == 0) {
         br_events_compact(s);
     }
@@ -113,7 +132,9 @@ static void br_events_add(br_engine *e, br_node n, br_event_type type, br_event_
             br_array_init(&list->rows, sizeof(br_listener));
         }
         list->generation = n.generation;
-        s->needs_compact = list->rows.count > 0 || s->needs_compact;
+        if (list->rows.count > 0) {
+            br_events_mark_dirty(s, n.index);
+        }
     }
     br_listener row;
     SDL_zero(row);
@@ -152,7 +173,7 @@ void br_node_off(br_engine *e, br_node n, br_event_type type, br_event_listener_
             row->fn = NULL;
         }
     }
-    br_events_rows_removed(e->events);
+    br_events_rows_removed(e->events, n.index);
 }
 
 void br_node_off_all(br_engine *e, br_node n)
@@ -164,7 +185,7 @@ void br_node_off_all(br_engine *e, br_node n)
     for (uint32_t j = 0; j < list->rows.count; j++) {
         ((br_listener *)br_array_at(&list->rows, j))->fn = NULL;
     }
-    br_events_rows_removed(e->events);
+    br_events_rows_removed(e->events, n.index);
 }
 
 uint32_t br_node_listener_count(br_engine *e, br_node n)
@@ -189,7 +210,7 @@ static void br_events_node_destroyed(br_engine *e, br_node n, void *user)
         ((br_listener *)br_array_at(&list->rows, j))->fn = NULL;
     }
     list->generation = 0;
-    br_events_rows_removed(s);
+    br_events_rows_removed(s, n.index);
 }
 
 /* ---- dispatch */
@@ -233,7 +254,7 @@ static void br_events_notify(br_engine *e, br_node n, br_event *ev, br_event_pha
         void *user = row->user;
         if (row->once) {
             row->fn = NULL;
-            e->events->needs_compact = true;
+            br_events_mark_dirty(e->events, n.index);
         }
         ev->current_target = n;
         ev->phase = phase;
@@ -271,7 +292,7 @@ static void br_events_begin(br_events_state *s)
 static void br_events_end(br_events_state *s)
 {
     s->dispatch_depth--;
-    if (s->dispatch_depth == 0 && s->needs_compact) {
+    if (s->dispatch_depth == 0 && s->dirty.count > 0) {
         br_events_compact(s);
     }
 }
@@ -721,6 +742,28 @@ static br_vec2 br_events_touch_position(br_engine *e, float nx, float ny)
     return br_vec2_make(nx * (float)w, ny * (float)h);
 }
 
+/* Dispatches the pending (coalesced) mouse motion: one hit test however many motion events
+ * arrived (a 1000 Hz mouse sends ~16 per 60 Hz frame). */
+static void br_events_flush_move(br_engine *e)
+{
+    br_events_state *s = e->events;
+    if (!s->move_pending) {
+        return;
+    }
+    s->move_pending = false;
+    br_pointer *p = br_events_pointer(s, BR_POINTER_MOUSE, 0);
+    if (p != NULL) {
+        br_events_pointer_move(e, p, s->move_position, s->move_timestamp);
+    }
+}
+
+void br_events_flush(br_engine *e)
+{
+    if (e->events != NULL) {
+        br_events_flush_move(e);
+    }
+}
+
 static void br_events_sdl_event(br_engine *e, const SDL_Event *ev, void *user)
 {
     (void)user;
@@ -730,14 +773,16 @@ static void br_events_sdl_event(br_engine *e, const SDL_Event *ev, void *user)
     switch (ev->type) {
     case SDL_EVENT_MOUSE_MOTION:
         if (ev->motion.which != SDL_TOUCH_MOUSEID && ev->motion.which != SDL_PEN_MOUSEID) {
-            s->mouse_moved = true;
-            p = br_events_pointer(s, BR_POINTER_MOUSE, 0);
-            br_events_pointer_move(e, p, br_camera_screen_to_stage(e, br_vec2_make(ev->motion.x, ev->motion.y)), t);
+            /* kept until the frame's events.ticker (or the next button / wheel / leave) */
+            s->move_pending = true;
+            s->move_position = br_camera_screen_to_stage(e, br_vec2_make(ev->motion.x, ev->motion.y));
+            s->move_timestamp = t;
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
     case SDL_EVENT_MOUSE_BUTTON_UP:
         if (ev->button.which != SDL_TOUCH_MOUSEID && ev->button.which != SDL_PEN_MOUSEID) {
+            br_events_flush_move(e); /* the press sees the hover of where the mouse went first */
             p = br_events_pointer(s, BR_POINTER_MOUSE, 0);
             br_vec2 pos = br_camera_screen_to_stage(e, br_vec2_make(ev->button.x, ev->button.y));
             if (ev->button.down) {
@@ -749,6 +794,7 @@ static void br_events_sdl_event(br_engine *e, const SDL_Event *ev, void *user)
         break;
     case SDL_EVENT_MOUSE_WHEEL:
         if (ev->wheel.which != SDL_TOUCH_MOUSEID && ev->wheel.which != SDL_PEN_MOUSEID) {
+            br_events_flush_move(e);
             float dir = ev->wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -1.0f : 1.0f;
             p = br_events_pointer(s, BR_POINTER_MOUSE, 0);
             br_events_wheel(e, p, br_camera_screen_to_stage(e, br_vec2_make(ev->wheel.mouse_x, ev->wheel.mouse_y)),
@@ -756,6 +802,7 @@ static void br_events_sdl_event(br_engine *e, const SDL_Event *ev, void *user)
         }
         break;
     case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+        br_events_flush_move(e);
         p = br_events_pointer(s, BR_POINTER_MOUSE, 0);
         if (p != NULL) {
             br_events_pointer_gone(e, p, t);
@@ -811,13 +858,17 @@ static void br_events_sdl_event(br_engine *e, const SDL_Event *ev, void *user)
     }
 }
 
-/* Pixi's EventsTicker: when DYNAMIC nodes are under a still mouse, replay a move each frame so
- * nodes moving under the cursor get over/out. */
+/* Dispatches the frame's coalesced mouse motion. Pixi's EventsTicker: when DYNAMIC nodes are
+ * under a still mouse, replay a move each frame so nodes moving under the cursor get over/out. */
 static void br_events_ticker(br_engine *e, float dt, void *user)
 {
     (void)dt;
     (void)user;
     br_events_state *s = e->events;
+    if (s->move_pending) {
+        br_events_flush_move(e);
+        return;
+    }
     br_pointer *mouse = NULL;
     for (int i = 0; i < BR_EVENTS_MAX_POINTERS; i++) {
         if (s->pointers[i].used && s->pointers[i].type == BR_POINTER_MOUSE) {
@@ -826,10 +877,9 @@ static void br_events_ticker(br_engine *e, float dt, void *user)
     }
     /* ponytail: replays the stored stage position, so a camera moving under a still mouse does
      * not re-map it; keep the window position per pointer and map here if that matters */
-    if (mouse != NULL && s->dynamic_seen && !s->mouse_moved) {
+    if (mouse != NULL && s->dynamic_seen) {
         br_events_pointer_move(e, mouse, mouse->position, SDL_GetTicksNS());
     }
-    s->mouse_moved = false;
 }
 
 br_node br_events_hovered(br_engine *e)
@@ -854,6 +904,7 @@ static void br_events_shutdown(br_engine *e, void *user)
         br_array_free(&((br_listener_list *)br_array_at(&s->lists, i))->rows);
     }
     br_array_free(&s->lists);
+    br_array_free(&s->dirty);
     br_array_free(&s->scratch);
     br_array_free(&s->global_nodes);
     for (int i = 0; i < SDL_SYSTEM_CURSOR_COUNT; i++) {
@@ -873,6 +924,7 @@ void br_events_register(br_engine *e)
     }
     e->events = s;
     br_array_init(&s->lists, sizeof(br_listener_list));
+    br_array_init(&s->dirty, sizeof(uint32_t));
     br_array_init(&s->scratch, sizeof(uint32_t));
     br_array_init(&s->global_nodes, sizeof(br_node));
     s->cursor = -1;
