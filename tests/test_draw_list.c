@@ -1,6 +1,6 @@
 /* test_draw_list: the recorded draw lists, headless (br_render_debug_internal.h). 2D batching
  * (texture-slot limit, blend breaks, masks, render layers, culling, draw order) and the 3D
- * collect (frustum culling, sort order, shadow tiles, instancing). */
+ * collect (frustum culling, sort order, light selection, shadow tiles, instancing). */
 #include "braty/braty.h"
 #include "render/br_render_debug_internal.h"
 #include "br_test.h"
@@ -282,6 +282,50 @@ static br_node3d light_at(br_engine *e, br_node view, br_light3d l, br_vec3 p, b
     return n;
 }
 
+static void test_light_selection(br_engine *e)
+{
+    br_node view = view_on_stage(e);
+    br_vec3 origin = br_vec3_make(0.0f, 0.0f, 0.0f);
+    /* 24 point lights, farthest first: the old "first N" rule would keep the far ones */
+    for (int i = 24; i >= 1; i--) {
+        br_light3d p = br_light3d_default(BR_LIGHT3D_POINT);
+        p.intensity = 1.0f;
+        light_at(e, view, p, br_vec3_make((float)i * 10.0f, 0.0f, 0.0f), origin);
+    }
+    /* far but very bright beats a dim near one */
+    br_light3d bright = br_light3d_default(BR_LIGHT3D_POINT);
+    bright.intensity = 1.0e6f;
+    light_at(e, view, bright, br_vec3_make(0.0f, 0.0f, -900.0f), origin);
+    /* the directional light comes last and is still kept */
+    light_at(e, view, br_light3d_default(BR_LIGHT3D_DIRECTIONAL), br_vec3_make(0.0f, 10.0f, 0.0f), origin);
+    step(e);
+    const br_view3d_state *v = br_render_debug_view3d(e, view);
+    BR_CHECK(v != NULL);
+    if (v == NULL) {
+        return;
+    }
+    BR_CHECK(v->lights.count == BR_LIGHT3D_MAX);
+    const br_light3d_entry *l = v->lights.data;
+    uint32_t directional = 0;
+    uint32_t bright_kept = 0;
+    float farthest_point = 0.0f;
+    for (uint32_t i = 0; i < v->lights.count; i++) {
+        if (l[i].light.kind == BR_LIGHT3D_DIRECTIONAL) {
+            directional++;
+        } else if (l[i].light.intensity > 1.0f) {
+            bright_kept++;
+        } else {
+            farthest_point = SDL_max(farthest_point, l[i].world.m[12]);
+        }
+    }
+    BR_CHECK(directional == 1 && bright_kept == 1);
+    /* the 14 nearest unit lights: x = 10 .. 140 */
+    BR_CHECK(farthest_point == (float)(BR_LIGHT3D_MAX - 2) * 10.0f);
+    BR_CHECK(v->stats.lights == BR_LIGHT3D_MAX);
+    br_node_destroy(e, view);
+    step(e);
+}
+
 static void test_shadow_tiles(br_engine *e)
 {
     br_node view = view_on_stage(e);
@@ -388,6 +432,7 @@ int main(void)
     test_layers_and_order(e);
     test_culling(e);
     test_frustum_and_sort(e);
+    test_light_selection(e);
     test_shadow_tiles(e);
     test_instancing(e);
     br_engine_destroy(e);
