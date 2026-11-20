@@ -187,6 +187,35 @@ static void test_deterministic(void)
     br_engine_destroy(e); /* the group is freed at shutdown */
 }
 
+/* br_asset_group_load during an in-flight async load finishes that load: on_done still runs
+ * once, from a later engine step (the next one, unless a failing request is still on a worker). */
+static void test_sync_during_async(bool deterministic)
+{
+    br_engine *e = br_engine_create("test_asset_group_sync_async", BRATY_SOURCE_DIR "/tests/data");
+    br_app_set_deterministic(e, deterministic, 1);
+    uint32_t assets = br_assets_count(e);
+    br_asset_group *g = br_asset_group_create(e, "mixed");
+    br_asset_group_add(g, "scenes/red.png");
+    br_asset_group_add(g, "scenes/green.png");
+    br_asset_group_add(g, "scenes/missing.png");
+    progress_log log;
+    SDL_zero(log);
+    br_asset_group_load_async(g, on_progress, on_done, &log);
+    BR_CHECK(!br_asset_group_load(g)); /* missing.png fails */
+    BR_CHECK(log.done == 0 && br_assets_ref_count(e, "scenes/red.png") == 1);
+    if (deterministic) { /* nothing was requested yet: every entry is final now */
+        BR_CHECK(br_asset_group_is_loaded(g) && br_asset_group_failed(g) == 1);
+        br_engine_step(e, DT);
+        BR_CHECK(log.done == 1 && log.failed == 1);
+    }
+    settle(e);
+    BR_CHECK(log.done == 1 && log.failed == 1 && br_asset_group_is_loaded(g));
+    BR_CHECK(br_assets_ref_count(e, "scenes/red.png") == 1 && br_assets_pending(e) == 0);
+    br_asset_group_destroy(g);
+    BR_CHECK(br_assets_count(e) == assets);
+    br_engine_destroy(e);
+}
+
 /* ---- a failed async load, then another owner loads the path in the same frame */
 
 typedef struct other_owner {
@@ -245,5 +274,7 @@ int main(void)
     test_failure_then_other_owner(e);
     br_engine_destroy(e);
     test_deterministic();
+    test_sync_during_async(false);
+    test_sync_during_async(true);
     return br_test_finish();
 }

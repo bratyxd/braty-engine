@@ -42,10 +42,14 @@ bool br_asset_group_add(br_asset_group *g, const char *path);
 bool br_asset_group_add_lazy(br_asset_group *g, const char *path);
 /* Adds every asset of a manifest bundle (br_assets_load_manifest). False if the bundle is unknown. */
 bool br_asset_group_add_manifest_bundle(br_asset_group *g, const char *bundle);
-/* Loads every non-lazy asset now (one reference each). True if all of them loaded. */
+/* Loads every non-lazy asset now (one reference each). True if all of them loaded. During an
+ * async load it finishes that load instead of cancelling it: its on_done still runs once, from the
+ * next engine step (or when a failing request still on a worker ends). */
 bool br_asset_group_load(br_asset_group *g);
 /* Starts loading in the background; callbacks (may be NULL) run from later engine steps.
- * In deterministic mode assets load one per frame, in the order they were added. */
+ * In deterministic mode assets load one per frame, in the order they were added. Called again
+ * while one runs, the new callbacks replace the old ones (the first on_done is not called);
+ * _unload and _destroy cancel it (no on_done). */
 void br_asset_group_load_async(br_asset_group *g, br_asset_group_progress_fn on_progress,
                                br_asset_group_done_fn on_done, void *user);
 /* Drops every reference the group holds (loads in flight are cancelled when nobody else wants them). */
