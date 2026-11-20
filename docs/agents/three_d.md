@@ -12,7 +12,8 @@ Test: `tests/test_three_d.c`. Example: `examples/view3d_demo.c` (`--camera 0|1`,
 - **3D nodes** (`br_node3d { index, generation }`) live in ONE struct-of-arrays table per
   engine: parent / first child / siblings, label, position, rotation (quaternion), scale, cached
   world `br_mat4`, visible, pickable, layer bits. Stale handles are ignored. Destroy is deferred
-  inside a frame (freed by `three_d.flush_destroyed`, INPUT -999000), immediate outside.
+  inside a frame (freed by `three_d.flush_destroyed`, INPUT -999000), immediate outside. An
+  `on_destroy` or destroy listener may destroy other nodes: they join the running flush.
 - **3D node types** (`br_node3d_type_desc`) mirror the 2D registry: name, `data_size` (dense
   pool), `on_create/on_destroy`, `local_bounds`, `collect` (submit draw items), `pick` (ray in
   local space), `from_json`. `mesh3d`, `batched_mesh3d`, `light3d`, `camera3d` (and the plain

@@ -308,6 +308,76 @@ static void test_rejection(br_engine *e)
     br_free(text);
 }
 
+/* R6 S2: a skinned mesh3d moved out of its instance must not keep pointing at the destroyed
+ * instance's joint matrices. */
+static void test_detached_skin(br_engine *e)
+{
+    const char *json =
+        "{\"asset\":{\"version\":\"2.0\"},"
+        "\"buffers\":[{\"byteLength\":96,\"uri\":\"data:application/octet-stream;base64,"
+        "AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAA\"}],"
+        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":12},"
+        "{\"buffer\":0,\"byteOffset\":48,\"byteLength\":48}],"
+        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[0,0,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":1,\"componentType\":5121,\"count\":3,\"type\":\"VEC4\"},"
+        "{\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC4\"}],"
+        "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"JOINTS_0\":1,\"WEIGHTS_0\":2}}]}],"
+        "\"skins\":[{\"joints\":[1]}],"
+        "\"nodes\":[{\"name\":\"Body\",\"mesh\":0,\"skin\":0},{\"name\":\"Bone\"}],"
+        "\"scenes\":[{\"nodes\":[0,1]}],\"scene\":0}";
+    br_model *m = br_model_parse(e, "skinned.gltf", json, SDL_strlen(json));
+    BR_CHECK(m != NULL);
+    if (m == NULL) {
+        return;
+    }
+    br_node3d inst = br_model_instantiate(e, m);
+    br_node3d body = br_node3d_find_by_label(e, inst, "Body");
+    br_node3d mesh = br_node3d_first_child(e, body);
+    br_mesh3d *md = br_mesh3d_get(e, mesh);
+    BR_CHECK(md != NULL && md->joint_matrices != NULL && md->joint_count == 1);
+    br_node3d keep = br_node3d_create_group(e);
+    br_node3d_add_child(e, keep, mesh); /* the mesh leaves the instance */
+    br_node3d_destroy(e, inst);
+    md = br_mesh3d_get(e, mesh);
+    BR_CHECK(md != NULL && md->joint_matrices == NULL && md->joint_count == 0);
+    br_node3d_destroy(e, keep);
+    br_model_release(e, m);
+}
+
+/* R6 S2: an RGBA image feeding a colour slot (base) and a data slot (normal) gets two textures:
+ * an sRGB one premultiplied in linear space and a linear, unpremultiplied one (GPU-side content
+ * is checked by the gltf_demo golden; headless only the split is visible). */
+static void test_texture_spaces(br_engine *e)
+{
+    const char *json =
+        "{\"asset\":{\"version\":\"2.0\"},"
+        "\"buffers\":[{\"byteLength\":92,\"uri\":\"data:application/octet-stream;base64,"
+        "AACAvwAAgL8AAAAAAACAPwAAgL8AAAAAAACAPwAAgD8AAAAAAACAvwAAgD8AAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAAAAAAAAAAAAAAAAAAEAAgAAAAIAAwA=\"}],"
+        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":48},{\"buffer\":0,\"byteOffset\":48,\"byteLength\":32},"
+        "{\"buffer\":0,\"byteOffset\":80,\"byteLength\":12}],"
+        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":4,\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":1,\"componentType\":5126,\"count\":4,\"type\":\"VEC2\"},"
+        "{\"bufferView\":2,\"componentType\":5123,\"count\":6,\"type\":\"SCALAR\"}],"
+        "\"images\":[{\"uri\":\"data:image/png;base64,"
+        "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAEklEQVR4nGM4kfK/ARkzkC4AAK3XKrFlxUaxAAAAAElFTkSuQmCC\"}],"
+        "\"textures\":[{\"source\":0}],"
+        "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}},\"normalTexture\":{\"index\":0}}],"
+        "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"TEXCOORD_0\":1},\"indices\":2,\"material\":0}]}],"
+        "\"nodes\":[{\"mesh\":0}],\"scenes\":[{\"nodes\":[0]}],\"scene\":0}";
+    br_model *m = br_model_parse(e, "rgba_normal.gltf", json, SDL_strlen(json));
+    BR_CHECK(m != NULL);
+    if (m == NULL) {
+        return;
+    }
+    BR_CHECK(m->texture_count == 2);
+    const br_material3d_desc *md = br_material3d_params(e, m->materials[0]);
+    br_texture base = md->textures[BR_MATERIAL3D_BASE_COLOR].texture;
+    br_texture normal = md->textures[BR_MATERIAL3D_NORMAL].texture;
+    BR_CHECK(br_texture_valid(e, base) && br_texture_valid(e, normal));
+    BR_CHECK(base.index != normal.index);
+    br_model_release(e, m);
+}
+
 /* A view3d built from scene JSON: camera, light, a primitive mesh and a glTF child playing a clip. */
 static void test_scene_json(br_engine *e)
 {
@@ -355,6 +425,8 @@ int main(void)
     if (e != NULL) {
         test_parse(e);
         test_rejection(e);
+        test_detached_skin(e);
+        test_texture_spaces(e);
         test_scene_json(e);
         br_engine_destroy(e);
     }

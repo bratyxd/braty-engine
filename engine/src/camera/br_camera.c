@@ -617,7 +617,8 @@ static void br_camera_orbit_system(br_engine *e, float dt, void *user)
 
 void br_camera_shake_add(br_engine *e, br_node cam, float trauma)
 {
-    if (br_camera_data_get(e, cam) == NULL) {
+    br_camera_data *d = br_camera_data_get(e, cam);
+    if (d == NULL) {
         return;
     }
     br_camera_shake *sh = br_component_get(e, cam, e->camera->shake_id);
@@ -627,7 +628,7 @@ void br_camera_shake_add(br_engine *e, br_node cam, float trauma)
             return;
         }
         sh->decay = 1.0f;
-        sh->max_offset = 12.0f;
+        sh->max_offset = d->is_3d ? 0.3f : 12.0f; /* world units on a 3D camera, stage units in 2D */
         sh->max_angle = 0.05f;
         sh->frequency = 15.0f;
     }
@@ -659,8 +660,9 @@ static void br_camera_drive_3d(br_engine *e, br_camera_data *d, const br_camera_
         c3->projection = perspective ? BR_PROJECTION_PERSPECTIVE : BR_PROJECTION_ORTHOGRAPHIC;
         c3->fov_y = 2.0f * SDL_atanf(v->half_height);
         c3->ortho_size = v->half_height;
+        /* the same guards as br_camera_compute_view, so drawing and picking agree */
         c3->near_z = d->camera.near_z > 0.0f ? d->camera.near_z : 0.1f;
-        c3->far_z = d->camera.far_z;
+        c3->far_z = d->camera.far_z > c3->near_z ? d->camera.far_z : c3->near_z + 1000.0f;
         c3->aspect = v->half_width / v->half_height;
     }
     br_view3d_set_size(e, d->view3d, v->viewport.width, v->viewport.height);

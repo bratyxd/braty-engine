@@ -6,7 +6,8 @@
  * animator. The legacy br_animator3d struct stays the user-facing state: br_anim3d_sync_in copies
  * the user's edits (speed, loop, paused, time) into the animator before sampling, sync_out copies
  * time and fade state back and fires the LOOP / END callbacks. "gltf.animate" (LATE_UPDATE 0, after
- * the animators) only computes joint matrices into the skin slots.
+ * the animators) only computes joint matrices into the skin slots and syncs batched copies with
+ * their group nodes (br_gltf_sync_batches).
  */
 #include "animation/br_animation_internal.h"
 #include "three_d/br_gltf_internal.h"
@@ -352,6 +353,7 @@ void br_anim3d_system(br_engine *e, float dt, void *user)
         br_gltf_anim *slot = br_array_at(&s->anims, idx);
         if (br_node3d_valid(e, slot->instance->self)) {
             br_anim3d_skin(e, slot->instance); /* skins follow whatever moved the joints this frame */
+            br_gltf_sync_batches(e, slot->instance);
         }
     }
 }

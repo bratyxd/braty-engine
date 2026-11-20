@@ -29,15 +29,24 @@ Examples: `examples/gltf_demo.c` (`--foxes N`, `--novsync`, `--focus 0..6`; mode
 - **Clips** are flat data (`br_anim3d_clip`): channels with `times[]`, `values[]`, one
   interpolation (linear / step / cubic spline) and a target (model node index + path:
   translation, rotation, scale, weights). Phase 2's animation system reuses them as they are.
-- **Animators** live in one dense pool, one per instance. The system `gltf.animate`
-  (LATE_UPDATE) advances clocks, samples the clip (and the clip fading out), blends, writes node
-  TRS and the mesh3d morph slot, then recomputes joint matrices into per-instance buffers that
-  the mesh3d skin slots point at. No per-frame allocation.
+- **Animators** live in one dense pool, one per instance. The unified animation system
+  (`animation.update`) advances clocks, samples the clip (and the clip fading out), blends and
+  writes node TRS and the mesh3d morph slot; then `gltf.animate` (LATE_UPDATE) recomputes joint
+  matrices into per-instance buffers that the mesh3d skin slots point at, and syncs batched
+  copies with their group nodes. No per-frame allocation.
 - **Loading split:** `decode` (worker thread with `br_assets_load_async`) parses with cgltf,
   reads buffers (GLB chunk, base64 data URIs, external `.bin`) and images (bufferView, data URI,
   external file) and decodes them with stb_image, builds vertices/indices/morph deltas and the
   clips; `finish` (main thread) only creates textures (mip chain generated), materials and
   geometries.
+- **Untrusted files:** right after parsing, one pass (`br_gltf_check_uris`,
+  `br_gltf_check_data` in `br_gltf.c`) rejects the load, naming the file and field, when a
+  buffer or image URI leaves the model's folder (absolute, drive, scheme or a `..` segment), a
+  data URI holds fewer bytes than `byteLength`, a bufferView lies outside its buffer, an
+  accessor (or its sparse part) reads past its bufferView or has no data, an accessor count is
+  over 2^24 (2^20 without a bufferView), a scene lists a node twice, inverse binds are not float
+  MAT4, or a node has over 2^20 GPU instances. cgltf then rejects cycles, multi-parent nodes and
+  out-of-range indices; `tests/test_hostile_gltf.c` pins all of it.
 
 ## glTF as scene content
 
@@ -56,6 +65,9 @@ Examples: `examples/gltf_demo.c` (`--foxes N`, `--novsync`, `--focus 0..6`; mode
   extras or convention suffix) that share a mesh are drawn as one `batched_mesh3d` per primitive
   (labelled `batch:<mesh name>`, child of the instance root). Their group nodes stay (labels,
   positions) but moving them moves nothing: give such a node `"batch": false` (or any extras).
+  Destroying or hiding the group (or an ancestor below the instance) does hide its copy, from
+  the next `gltf.animate` (LATE_UPDATE) on: the copy collapses to zero scale (not drawn or
+  picked; the batch's bounds stay as they were).
   Opt out per file (scene extras `"batch": false`), per load (`br_gltf_options.no_batching`,
   `br_gltf_set_load_options`) or per JSON node (`"batch": false`).
 - **EXT_mesh_gpu_instancing** nodes become one `batched_mesh3d` per primitive under the node.
@@ -210,9 +222,13 @@ animator. Task 18 keys: `"source": "kit.glb#Node"`, `"camera"` (true / node name
 - Batching merges repeated meshes inside one instance; kit parts placed as separate instances
   are separate draws (`ponytail:` limit; a cross-instance merge pass would remove it).
 - A 3D component's `BR_FIELD_NODE` field holds a `br_node3d`; extras are parsed per instance.
-- Base colour / emissive textures are decoded from sRGB in the shader; textures are
-  premultiplied on upload (the 3D core undoes it for colour slots), so non-colour maps with
-  alpha < 1 would lose RGB precision.
+- Texture colour spaces per slot: an image feeding base colour / emissive becomes an
+  `R8G8B8A8_UNORM_SRGB` texture premultiplied in linear space (the sampler decodes before
+  filtering and mip generation; the shader unpremultiplies); one feeding normal /
+  metallic-roughness / occlusion becomes a plain UNORM texture, not premultiplied (an alpha
+  channel holding height or a mask leaves RGB alone). An image used both ways gets both:
+  `model->textures[2i]` (colour) and `[2i + 1]` (data). Textures you set on a material yourself
+  (`br_texture_load`, premultiplied UNORM) still work: the shader tells them apart by format.
 - Missing normals are generated smooth (glTF says flat); missing tangents use per-triangle
   accumulation, not MikkTSpace. Only triangle primitives (lists, strips, fans) are drawn.
 - 8 morph targets per mesh (extra ones are dropped with a warning). One filter and one wrap mode

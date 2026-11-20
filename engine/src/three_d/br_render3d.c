@@ -221,20 +221,35 @@ static void br_render3d_walk(br_engine *e, br_render3d_ctx *ctx)
     }
 }
 
-/* Insertion sort of item indices by depth (ascending or descending). Lists are short and
- * nearly sorted from frame to frame. */
+/* SDL_qsort_r comparators: by depth, then by collect order (a stable result, like before). */
+static int br_render3d_cmp_near_first(void *user, const void *a, const void *b)
+{
+    const br_item3d *items = user;
+    uint32_t ia = *(const uint32_t *)a;
+    uint32_t ib = *(const uint32_t *)b;
+    if (items[ia].depth != items[ib].depth) {
+        return items[ia].depth < items[ib].depth ? -1 : 1;
+    }
+    return ia < ib ? -1 : (ia > ib ? 1 : 0);
+}
+
+static int br_render3d_cmp_far_first(void *user, const void *a, const void *b)
+{
+    const br_item3d *items = user;
+    uint32_t ia = *(const uint32_t *)a;
+    uint32_t ib = *(const uint32_t *)b;
+    if (items[ia].depth != items[ib].depth) {
+        return items[ia].depth > items[ib].depth ? -1 : 1;
+    }
+    return ia < ib ? -1 : (ia > ib ? 1 : 0);
+}
+
+/* Sorts item indices by depth (ascending = near first). O(n log n) whatever the frame order. */
 static void br_render3d_sort(br_array *order, const br_item3d *items, bool ascending)
 {
-    uint32_t *idx = order->data;
-    for (uint32_t i = 1; i < order->count; i++) {
-        uint32_t key = idx[i];
-        float d = items[key].depth;
-        uint32_t j = i;
-        while (j > 0 && (ascending ? items[idx[j - 1]].depth > d : items[idx[j - 1]].depth < d)) {
-            idx[j] = idx[j - 1];
-            j--;
-        }
-        idx[j] = key;
+    if (order->count > 1) {
+        SDL_qsort_r(order->data, order->count, sizeof(uint32_t),
+                    ascending ? br_render3d_cmp_near_first : br_render3d_cmp_far_first, (void *)items);
     }
 }
 
@@ -695,19 +710,22 @@ static void br_render3d_draw_item(br_engine *e, br_view3d_state *v, SDL_GPURende
     SDL_BindGPUGraphicsPipeline(pass, pipeline);
     br_bind_geometry(e, v, pass, cmd, item, geo);
     if (custom) {
+        /* the desc is editable in place (br_material3d_params): clamp what create checked */
+        uint32_t texture_count = SDL_min(mat->custom_texture_count, (uint32_t)BR_MATERIAL3D_CUSTOM_TEXTURES);
+        uint32_t uniform_size = SDL_min(mat->custom_uniform_size, (uint32_t)BR_MATERIAL3D_CUSTOM_UNIFORM_SIZE);
         SDL_GPUTextureSamplerBinding bindings[BR_MATERIAL3D_CUSTOM_TEXTURES];
-        for (uint32_t i = 0; i < mat->custom_texture_count; i++) {
+        for (uint32_t i = 0; i < texture_count; i++) {
             br_material3d_texture slot;
             SDL_zero(slot);
             slot.texture = mat->custom_textures[i];
             bool present = false;
             bindings[i] = br_slot_binding(e, g, &slot, &present);
         }
-        if (mat->custom_texture_count > 0) {
-            SDL_BindGPUFragmentSamplers(pass, 0, bindings, mat->custom_texture_count);
+        if (texture_count > 0) {
+            SDL_BindGPUFragmentSamplers(pass, 0, bindings, texture_count);
         }
-        if (mat->custom_uniform_size > 0) {
-            SDL_PushGPUFragmentUniformData(cmd, 1, mat->custom_uniforms, mat->custom_uniform_size);
+        if (uniform_size > 0) {
+            SDL_PushGPUFragmentUniformData(cmd, 1, mat->custom_uniforms, uniform_size);
         }
     } else {
         SDL_GPUTextureSamplerBinding bindings[BR_MATERIAL3D_SLOT_COUNT + 1];
@@ -716,6 +734,11 @@ static void br_render3d_draw_item(br_engine *e, br_view3d_state *v, SDL_GPURende
             bool present = false;
             bindings[s] = br_slot_binding(e, g, &mat->textures[s], &present);
             bits |= present ? (1u << s) : 0u;
+            /* bit 8 + slot: an sRGB-format texture (glTF colour slots): the sampler decodes it */
+            br_gpu_texture *gt = present ? br_texture_gpu(e, mat->textures[s].texture) : NULL;
+            if (gt != NULL && gt->format == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB) {
+                bits |= 1u << (8 + s);
+            }
         }
         br_render_target *atlas = v->shadow_tiles != 0 ? v->shadow_atlas : NULL;
         br_gpu_texture *shadow = atlas != NULL ? atlas->color : br_texture_gpu(e, br_texture_white(e));
@@ -829,7 +852,8 @@ static void br_render3d_post(br_engine *e, br_view3d_state *v, SDL_GPUCommandBuf
             continue;
         }
         br_render_target *dst = v->post_temp[done % 2];
-        br_post_blit(e, cmd, dst, true, pp->fragment_shader, no_blend, image, NULL, pp->uniforms, pp->uniform_size);
+        uint32_t uniform_size = SDL_min(pp->uniform_size, (uint32_t)BR_POST3D_UNIFORM_SIZE); /* editable in place */
+        br_post_blit(e, cmd, dst, true, pp->fragment_shader, no_blend, image, NULL, pp->uniforms, uniform_size);
         image = dst->color;
         done++;
     }

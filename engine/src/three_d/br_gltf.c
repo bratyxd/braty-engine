@@ -195,6 +195,192 @@ static bool br_gltf_check_extensions(const char *path, const cgltf_data *data, b
     return true;
 }
 
+/* ---- trust boundary: every count, offset and URI of the file is checked here, once, before
+ * cgltf_validate (whose size maths can wrap) and before br_gltf_convert reads anything */
+
+#define BR_GLTF_MAX_ELEMENTS (1u << 24)      /* per accessor: 96 bytes * count still fits a uint32 */
+#define BR_GLTF_MAX_ZERO_ELEMENTS (1u << 20) /* accessors without a bufferView (implicit zeros) */
+#define BR_GLTF_MAX_INSTANCES (1u << 20)     /* EXT_mesh_gpu_instancing copies per node */
+
+/* True if offset + stride * (count - 1) + elem <= size, computed without overflow. */
+static bool br_gltf_range_ok(size_t offset, size_t count, size_t stride, size_t elem, size_t size)
+{
+    if (offset > size) {
+        return false;
+    }
+    if (count == 0) {
+        return true;
+    }
+    if (elem > size - offset) {
+        return false;
+    }
+    size_t room = size - offset - elem;
+    return stride == 0 || count - 1 <= room / stride;
+}
+
+/* A URI must stay inside the model's folder: no absolute path, drive, scheme or ".." segment. */
+static bool br_gltf_uri_ok(const char *uri)
+{
+    if (uri == NULL || SDL_strncmp(uri, "data:", 5) == 0) {
+        return true;
+    }
+    char *u = br_strdup(uri);
+    if (u == NULL) {
+        return false;
+    }
+    cgltf_decode_uri(u);
+    bool ok = u[0] != '/' && u[0] != '\\' && SDL_strchr(u, ':') == NULL;
+    const char *seg = u;
+    while (ok) {
+        size_t len = 0;
+        while (seg[len] != '\0' && seg[len] != '/' && seg[len] != '\\') {
+            len++;
+        }
+        ok = !(len == 2 && seg[0] == '.' && seg[1] == '.');
+        if (seg[len] == '\0') {
+            break;
+        }
+        seg += len + 1;
+    }
+    br_free(u);
+    return ok;
+}
+
+/* Before cgltf_load_buffers: URIs stay in the model's folder, data URIs hold what they claim. */
+static bool br_gltf_check_uris(const char *path, const cgltf_data *data)
+{
+    for (size_t i = 0; i < data->buffers_count; i++) {
+        const cgltf_buffer *b = &data->buffers[i];
+        if (!br_gltf_uri_ok(b->uri)) {
+            br_log_error("glTF '%s': buffers[%u].uri '%s' leaves the model's folder", path, (unsigned)i, b->uri);
+            return false;
+        }
+        const char *b64 = b->uri != NULL && SDL_strncmp(b->uri, "data:", 5) == 0 ? SDL_strstr(b->uri, ";base64,") : NULL;
+        if (b64 != NULL && b->size > SDL_strlen(b64 + 8) / 4 * 3) {
+            br_log_error("glTF '%s': buffers[%u].byteLength %llu is larger than its data URI", path, (unsigned)i,
+                         (unsigned long long)b->size);
+            return false;
+        }
+    }
+    for (size_t i = 0; i < data->images_count; i++) {
+        if (!br_gltf_uri_ok(data->images[i].uri)) {
+            br_log_error("glTF '%s': images[%u].uri '%s' leaves the model's folder", path, (unsigned)i,
+                         data->images[i].uri);
+            return false;
+        }
+    }
+    return true;
+}
+
+/* A bufferView an accessor reads must point into a buffer that has data. */
+static bool br_gltf_view_ok(const char *path, const cgltf_data *data, const cgltf_buffer_view *v, size_t accessor)
+{
+    if (v->buffer == NULL || v->buffer->data == NULL) {
+        br_log_error("glTF '%s': accessors[%u] uses bufferViews[%u] whose buffer has no data", path,
+                     (unsigned)accessor, (unsigned)cgltf_buffer_view_index(data, v));
+        return false;
+    }
+    return true;
+}
+
+static bool br_gltf_check_accessor(const char *path, const cgltf_data *data, const cgltf_accessor *a, size_t i)
+{
+    if (a->component_type == cgltf_component_type_invalid || a->type == cgltf_type_invalid) {
+        br_log_error("glTF '%s': accessors[%u] has an invalid type", path, (unsigned)i);
+        return false;
+    }
+    size_t elem = cgltf_calc_size(a->type, a->component_type);
+    size_t cap = a->buffer_view != NULL ? BR_GLTF_MAX_ELEMENTS : BR_GLTF_MAX_ZERO_ELEMENTS;
+    if (a->count > cap) {
+        br_log_error("glTF '%s': accessors[%u].count %llu is over the limit of %u", path, (unsigned)i,
+                     (unsigned long long)a->count, (unsigned)cap);
+        return false;
+    }
+    if (a->buffer_view != NULL) {
+        if (!br_gltf_view_ok(path, data, a->buffer_view, i)) {
+            return false;
+        }
+        if (!br_gltf_range_ok(a->offset, a->count, a->stride, elem, a->buffer_view->size)) {
+            br_log_error("glTF '%s': accessors[%u] (count %llu) reads past the end of its bufferView", path,
+                         (unsigned)i, (unsigned long long)a->count);
+            return false;
+        }
+    }
+    if (a->is_sparse) {
+        const cgltf_accessor_sparse *sp = &a->sparse;
+        size_t isize = cgltf_component_size(sp->indices_component_type);
+        if (sp->count > a->count || sp->indices_buffer_view == NULL || sp->values_buffer_view == NULL || isize == 0) {
+            br_log_error("glTF '%s': accessors[%u].sparse is invalid", path, (unsigned)i);
+            return false;
+        }
+        if (!br_gltf_view_ok(path, data, sp->indices_buffer_view, i) ||
+            !br_gltf_view_ok(path, data, sp->values_buffer_view, i)) {
+            return false;
+        }
+        if (!br_gltf_range_ok(sp->indices_byte_offset, sp->count, isize, isize, sp->indices_buffer_view->size) ||
+            !br_gltf_range_ok(sp->values_byte_offset, sp->count, elem, elem, sp->values_buffer_view->size)) {
+            br_log_error("glTF '%s': accessors[%u].sparse reads past the end of its bufferViews", path, (unsigned)i);
+            return false;
+        }
+    }
+    return true;
+}
+
+/* After cgltf_load_buffers, before cgltf_validate: bufferViews, accessors, scene node lists,
+ * skins and instancing attributes. Fails the load naming the file and the field. */
+static bool br_gltf_check_data(const char *path, const cgltf_data *data)
+{
+    for (size_t i = 0; i < data->buffer_views_count; i++) {
+        const cgltf_buffer_view *v = &data->buffer_views[i];
+        if (v->buffer != NULL && !br_gltf_range_ok(v->offset, 1, 0, v->size, v->buffer->size)) {
+            br_log_error("glTF '%s': bufferViews[%u] lies outside its buffer", path, (unsigned)i);
+            return false;
+        }
+    }
+    for (size_t i = 0; i < data->accessors_count; i++) {
+        if (!br_gltf_check_accessor(path, data, &data->accessors[i], i)) {
+            return false;
+        }
+    }
+    uint8_t *listed = br_alloc(data->nodes_count > 0 ? data->nodes_count : 1);
+    if (listed == NULL) {
+        return false;
+    }
+    bool ok = true;
+    for (size_t i = 0; ok && i < data->scenes_count; i++) {
+        const cgltf_scene *sc = &data->scenes[i];
+        SDL_memset(listed, 0, data->nodes_count);
+        for (size_t k = 0; ok && k < sc->nodes_count; k++) {
+            size_t n = cgltf_node_index(data, sc->nodes[k]);
+            if (listed[n]) {
+                br_log_error("glTF '%s': scenes[%u].nodes lists node %u twice", path, (unsigned)i, (unsigned)n);
+                ok = false;
+            }
+            listed[n] = 1;
+        }
+    }
+    br_free(listed);
+    for (size_t i = 0; ok && i < data->skins_count; i++) {
+        const cgltf_accessor *ibm = data->skins[i].inverse_bind_matrices;
+        if (ibm != NULL && (ibm->type != cgltf_type_mat4 || ibm->component_type != cgltf_component_type_r_32f)) {
+            br_log_error("glTF '%s': skins[%u].inverseBindMatrices is not a float MAT4 accessor", path, (unsigned)i);
+            ok = false;
+        }
+    }
+    for (size_t i = 0; ok && i < data->nodes_count; i++) {
+        const cgltf_mesh_gpu_instancing *gi = &data->nodes[i].mesh_gpu_instancing;
+        for (size_t k = 0; ok && k < gi->attributes_count; k++) {
+            const cgltf_accessor *a = gi->attributes[k].data;
+            if (a != NULL && a->count > BR_GLTF_MAX_INSTANCES) {
+                br_log_error("glTF '%s': nodes[%u] EXT_mesh_gpu_instancing: %llu instances, over the limit of %u",
+                             path, (unsigned)i, (unsigned long long)a->count, (unsigned)BR_GLTF_MAX_INSTANCES);
+                ok = false;
+            }
+        }
+    }
+    return ok;
+}
+
 /* ---- images */
 
 static void br_gltf_decode_image(br_engine *e, const char *path, const cgltf_options *options,
@@ -216,8 +402,8 @@ static void br_gltf_decode_image(br_engine *e, const char *path, const cgltf_opt
             while (pad < 2 && len > pad && b64[len - 1 - pad] == '=') {
                 pad++;
             }
-            size = len / 4 * 3 - pad;
-            if (cgltf_load_buffer_base64(options, size, b64, &owned) == cgltf_result_success) {
+            size = len / 4 * 3 > pad ? len / 4 * 3 - pad : 0;
+            if (size > 0 && cgltf_load_buffer_base64(options, size, b64, &owned) == cgltf_result_success) {
                 bytes = owned;
                 owned_by_cgltf = true;
             }
@@ -726,7 +912,7 @@ static bool br_gltf_convert(br_engine *e, const char *path, const cgltf_options 
     for (uint32_t i = 0; ok && i < d->image_count; i++) {
         br_gltf_decode_image(e, path, options, &data->images[i], &d->images[i]);
     }
-    m->texture_count = d->image_count;
+    m->texture_count = d->image_count * 2; /* [2i] colour (sRGB), [2i + 1] data (linear) */
     m->textures = br_gltf_alloc_array(m->texture_count, sizeof(br_texture), &ok);
 
     /* materials */
@@ -870,7 +1056,8 @@ static bool br_gltf_convert(br_engine *e, const char *path, const cgltf_options 
     const cgltf_scene *scene = data->scene != NULL ? data->scene : (data->scenes_count > 0 ? &data->scenes[0] : NULL);
     m->path = br_strdup(path);
     m->scene_extras = scene != NULL && scene->extras.data != NULL ? br_strdup(scene->extras.data) : NULL;
-    m->roots = br_gltf_alloc_array(m->node_count, sizeof(uint32_t), &ok);
+    /* br_gltf_check_data rejected duplicate scene roots: either count is enough */
+    m->roots = br_gltf_alloc_array(scene != NULL ? scene->nodes_count : m->node_count, sizeof(uint32_t), &ok);
     for (uint32_t i = 0; ok && scene != NULL && i < scene->nodes_count; i++) {
         m->roots[m->root_count++] = (uint32_t)cgltf_node_index(data, scene->nodes[i]);
     }
@@ -935,13 +1122,16 @@ static void *br_gltf_decode(br_engine *e, const char *path, const void *bytes, s
         br_free(d);
         return NULL;
     }
-    bool ok = br_gltf_check_extensions(path, data, d);
+    bool ok = br_gltf_check_extensions(path, data, d) && br_gltf_check_uris(path, data);
     if (ok) {
         r = cgltf_load_buffers(&options, data, path);
         if (r != cgltf_result_success) {
             br_log_error("glTF '%s': cannot load buffers: %s", path, br_gltf_result_text(r));
             ok = false;
         }
+    }
+    if (ok) {
+        ok = br_gltf_check_data(path, data);
     }
     if (ok) {
         r = cgltf_validate(data);
@@ -963,6 +1153,74 @@ static void *br_gltf_decode(br_engine *e, const char *path, const void *bytes, s
 
 /* ---- finish: GPU resources (main thread) */
 
+static bool br_gltf_colour_slot(int slot)
+{
+    return slot == BR_MATERIAL3D_BASE_COLOR || slot == BR_MATERIAL3D_EMISSIVE;
+}
+
+/* Premultiplies sRGB RGBA8 pixels in linear space and re-encodes them as sRGB, so a sampler of
+ * an sRGB-format texture returns linear premultiplied colour (filtered without dark fringes). */
+static void br_gltf_premultiply_linear(uint8_t *pixels, size_t pixel_count)
+{
+    float to_linear[256];
+    for (int i = 0; i < 256; i++) {
+        float c = (float)i / 255.0f;
+        to_linear[i] = c <= 0.04045f ? c / 12.92f : SDL_powf((c + 0.055f) / 1.055f, 2.4f);
+    }
+    for (size_t i = 0; i < pixel_count; i++) {
+        uint8_t *p = pixels + i * 4;
+        if (p[3] == 255) {
+            continue;
+        }
+        float a = (float)p[3] / 255.0f;
+        for (int k = 0; k < 3; k++) {
+            float l = to_linear[p[k]] * a;
+            float c = l <= 0.0031308f ? l * 12.92f : 1.055f * SDL_powf(l, 1.0f / 2.4f) - 0.055f;
+            p[k] = (uint8_t)(c * 255.0f + 0.5f);
+        }
+    }
+}
+
+/* One texture of a decoded image. Colour (base, emissive): sRGB format, so the sampler decodes
+ * to linear before filtering and mip generation, premultiplied in linear space. Data (normal,
+ * metallic-roughness, occlusion): plain UNORM, not premultiplied, so RGB never gets scaled by an
+ * alpha channel that means something else (a height or mask). */
+static br_texture br_gltf_texture(br_engine *e, const br_gltf_image *img, bool colour, const br_texture_style *style)
+{
+    br_texture none = { 0, 0 };
+    if (img->pixels == NULL) {
+        return none;
+    }
+    uint32_t w = (uint32_t)img->width;
+    uint32_t h = (uint32_t)img->height;
+    br_gpu *g = br_engine_gpu(e);
+    if (g == NULL) {
+        return br_texture_create_rgba8(e, w, h, img->pixels, style); /* headless: a CPU record only */
+    }
+    size_t bytes = (size_t)w * h * 4;
+    uint8_t *texels = colour ? br_alloc(bytes) : NULL;
+    if (texels != NULL) {
+        SDL_memcpy(texels, img->pixels, bytes);
+        br_gltf_premultiply_linear(texels, (size_t)w * h);
+    }
+    SDL_GPUTextureFormat format = colour ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    br_gpu_texture *t = br_gpu_texture_create(g, w, h, format, SDL_GPU_TEXTUREUSAGE_SAMPLER, true);
+    bool ok = t != NULL && (!colour || texels != NULL) &&
+              br_gpu_texture_upload(g, t, 0, 0, w, h, texels != NULL ? texels : img->pixels);
+    br_free(texels);
+    if (!ok) {
+        br_gpu_texture_destroy(g, t);
+        return none;
+    }
+    br_texture tex = br_texture_wrap_gpu(e, t, true);
+    if (tex.generation == 0) {
+        br_gpu_texture_destroy(g, t);
+        return none;
+    }
+    br_texture_set_style(e, tex, style);
+    return tex;
+}
+
 static void *br_gltf_finish(br_engine *e, const char *path, void *decoded)
 {
     br_gltf_decoded *d = decoded;
@@ -980,22 +1238,37 @@ static void *br_gltf_finish(br_engine *e, const char *path, void *decoded)
         }
     }
 
+    /* which images feed colour slots and which data slots (an image can feed both) */
+    uint8_t *use = br_alloc(d->image_count > 0 ? d->image_count : 1);
+    for (uint32_t i = 0; use != NULL && i < m->material_count; i++) {
+        for (int slot = 0; slot < BR_MATERIAL3D_SLOT_COUNT; slot++) {
+            int32_t img = d->mats[i].image[slot];
+            if (img >= 0) {
+                use[img] |= br_gltf_colour_slot(slot) ? 1u : 2u;
+            }
+        }
+    }
     br_texture_style style;
     SDL_zero(style);
     style.address_mode = BR_ADDRESS_REPEAT;
     style.mipmaps = true; /* generates the mip chain; material slots pick their own sampler */
     style.max_anisotropy = 4.0f;
     for (uint32_t i = 0; i < d->image_count; i++) {
-        const br_gltf_image *img = &d->images[i];
-        if (img->pixels != NULL) {
-            m->textures[i] = br_texture_create_rgba8(e, (uint32_t)img->width, (uint32_t)img->height, img->pixels, &style);
+        uint8_t u = use != NULL ? use[i] : 1u;
+        if (u & 1u || u == 0) { /* an unused image still gets its colour texture */
+            m->textures[2 * i] = br_gltf_texture(e, &d->images[i], true, &style);
+        }
+        if (u & 2u) {
+            m->textures[2 * i + 1] = br_gltf_texture(e, &d->images[i], false, &style);
         }
     }
+    br_free(use);
     for (uint32_t i = 0; i < m->material_count; i++) {
         br_gltf_material_data *md = &d->mats[i];
         for (int slot = 0; slot < BR_MATERIAL3D_SLOT_COUNT; slot++) {
             if (md->image[slot] >= 0) {
-                md->desc.textures[slot].texture = m->textures[md->image[slot]];
+                uint32_t variant = br_gltf_colour_slot(slot) ? 0u : 1u;
+                md->desc.textures[slot].texture = m->textures[2 * (uint32_t)md->image[slot] + variant];
             }
         }
         m->materials[i] = br_material3d_create(e, &md->desc);

@@ -85,6 +85,15 @@ br_geometry3d br_geometry3d_create(br_engine *e, const br_geometry3d_desc *desc)
         return none;
     }
     uint32_t index_count = desc->indices != NULL ? desc->index_count : desc->vertex_count;
+    /* GPU buffer sizes are uint32: reject counts whose byte sizes would wrap */
+    uint64_t vertex_bytes = (uint64_t)desc->vertex_count * sizeof(br_vertex3d);
+    uint64_t index_bytes = (uint64_t)index_count * sizeof(uint32_t);
+    uint64_t morph_bytes = (uint64_t)desc->morph_target_count * desc->vertex_count * 2 * sizeof(br_vec4);
+    if (vertex_bytes > UINT32_MAX || index_bytes > UINT32_MAX || morph_bytes > UINT32_MAX) {
+        br_log_error("br_geometry3d_create: %u vertices, %u indices, %u morph targets do not fit a GPU buffer",
+                     desc->vertex_count, index_count, desc->morph_target_count);
+        return none;
+    }
     for (uint32_t i = 0; desc->indices != NULL && i < index_count; i++) {
         if (desc->indices[i] >= desc->vertex_count) {
             br_log_error("br_geometry3d_create: index %u out of range (%u vertices)", desc->indices[i],

@@ -284,6 +284,34 @@ static void test_engine(void)
     br_engine_destroy(e);
 }
 
+/* 3D camera: far_z = 0 (SDL_zero) reaches the camera3d guarded like the view maths; shake
+ * defaults are world units, not stage units. */
+static void test_engine_3d(void)
+{
+    br_engine *e = br_engine_create("test_camera_3d", NULL);
+    br_camera_set_headless_screen(e, 1280.0f, 720.0f);
+    br_node3d scene = br_node3d_create_group(e);
+    br_camera c;
+    SDL_zero(c);
+    c.projection = BR_CAMERA_PERSPECTIVE;
+    c.field_of_view = 1.0f;
+    c.enabled = true;
+    c.viewport_rect = br_rect_make(0.0f, 0.0f, 1.0f, 1.0f);
+    br_node cam = br_camera_create_3d(e, scene, &c);
+    BR_CHECK(br_node_valid(e, cam));
+    br_engine_step(e, 1.0f / 60.0f);
+    br_node3d cam3 = br_view3d_camera(e, br_camera_view3d(e, cam));
+    br_camera3d *c3 = br_camera3d_get(e, cam3);
+    BR_CHECK(c3 != NULL && c3->far_z > c3->near_z && near_eq(c3->far_z, c3->near_z + 1000.0f));
+
+    br_camera_shake_add(e, cam, 1.0f);
+    br_camera_shake *sh = br_component_get(e, cam, br_camera_shake_component(e));
+    BR_CHECK(sh != NULL && sh->max_offset < 1.0f); /* world units */
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(br_vec3_length(br_node3d_position(e, cam3)) <= sh->max_offset + 1e-4f);
+    br_engine_destroy(e);
+}
+
 /* ---- pointer events through a zoomed, offset 2D camera reach the node drawn under the pointer */
 
 static int s_target_clicks;
@@ -345,6 +373,7 @@ int main(void)
     test_pixel_perfect();
     test_helpers();
     test_engine();
+    test_engine_3d();
     test_pointer_events();
     return br_test_finish();
 }

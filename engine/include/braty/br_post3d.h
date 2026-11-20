@@ -50,7 +50,8 @@ br_post3d_settings *br_view3d_post(br_engine *e, br_node view);
 /* Appends a custom pass (uniforms copied). Returns its index, or -1 when full. */
 int br_view3d_add_post_pass(br_engine *e, br_node view, const br_shader_blob *fragment_shader,
                             const void *uniforms, uint32_t uniform_size);
-/* A custom pass, editable in place (uniforms, enabled). NULL if out of range. */
+/* A custom pass, editable in place (uniforms, enabled; uniform_size is clamped to
+ * BR_POST3D_UNIFORM_SIZE when drawn). NULL if out of range. */
 br_post3d_pass *br_view3d_post_pass(br_engine *e, br_node view, int index);
 
 #endif

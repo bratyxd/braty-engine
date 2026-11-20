@@ -208,6 +208,7 @@ typedef struct br_three_d_state {
     br_array        destroy_listeners;
     br_array        listeners;        /* br_listener3d */
     uint32_t        dispatch_depth;   /* > 0 while 3D listeners run */
+    bool            flushing;         /* br_node3d_flush is running: nested destroys only append */
     br_pool         geometries;       /* br_geometry3d_data */
     br_pool         materials;        /* br_material3d_desc */
     br_array        views;            /* br_view3d_state * */
