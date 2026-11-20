@@ -45,6 +45,7 @@ static br_tween br_tween_make(br_engine *e, br_anim_target target, const char *p
         br_log_error("tween: '%s' is a texture; animate it with a clip", property);
         return none;
     }
+    d.owner = target;
     d.count = br_anim_value_components(d.prop.type);
     d.set = d.prop.property != BR_ANIM_NONE ? br_anim_property_get_desc(e, d.prop.property)->set : NULL;
     if (from != NULL) {
@@ -191,7 +192,8 @@ uint32_t br_tween_kill_target(br_engine *e, br_anim_target target)
     uint32_t n = 0;
     for (uint32_t i = s != NULL ? s->tweens.count : 0; i > 0; i--) {
         br_tween_data *d = br_array_at(&s->tweens, i - 1);
-        if (!d->dead && br_anim_target_equal(d->target, target)) {
+        bool hit = br_anim_target_equal(d->target, target) || br_anim_target_equal(d->owner, target);
+        if (!d->dead && hit) {
             br_tween_kill_data(e, d);
             n++;
         }

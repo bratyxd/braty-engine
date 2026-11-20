@@ -17,6 +17,8 @@ static void br_animation_shutdown(br_engine *e, void *user)
     br_array_free(&s->by_node3d);
     br_array_free(&s->events);
     br_array_free(&s->model_clips);
+    br_array_free(&s->dead_model_clips);
+    br_array_free(&s->dead_assets);
     br_array_free(&s->tweens);
     br_pool_free(&s->tween_handles);
     br_free(s);
@@ -47,6 +49,8 @@ br_animation_state *br_anim_state(br_engine *e)
     br_array_init(&s->by_node3d, sizeof(uint32_t));
     br_array_init(&s->events, sizeof(br_anim_event));
     br_array_init(&s->model_clips, sizeof(br_anim_model_clips));
+    br_array_init(&s->dead_model_clips, sizeof(br_anim_model_clips));
+    br_array_init(&s->dead_assets, sizeof(char *));
     br_array_init(&s->tweens, sizeof(br_tween_data));
     br_pool_init(&s->tween_handles, sizeof(uint32_t));
     e->animation = s;

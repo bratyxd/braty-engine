@@ -1,7 +1,9 @@
 /* test_tween - tweens, headless: to / from / from_to, easing, delay, repeat and yoyo counts,
  * on_complete once, sequence and parallel ordering, kill by handle / node / tag, automatic kill
  * when the node is destroyed, 3D nodes and component fields, and the "tween" / "animator"
- * scene-file components (with a real *.anim.json and *.animgraph.json through the asset loaders). */
+ * scene-file components (with a real *.anim.json and *.animgraph.json through the asset loaders:
+ * asset references released, events valid when a callback destroys its node, glTF node extras
+ * on 3D nodes). */
 #include "braty/braty.h"
 #include "br_test.h"
 
@@ -188,6 +190,17 @@ static void test_sequences(br_engine *e)
     step(e, 0.0f);
 }
 
+static br_tween g_victim;
+static br_anim_target g_kill_target;
+
+static void on_done_kill(br_engine *e, br_tween t, void *user)
+{
+    (void)t;
+    (void)user;
+    br_tween_kill(e, g_victim);
+    br_tween_to_f(e, g_kill_target, "y", 5.0f, 0.1f, BR_EASE_LINEAR); /* starts next frame */
+}
+
 static void test_kill(br_engine *e)
 {
     br_node n = make_node(e, "victim");
@@ -205,10 +218,31 @@ static void test_kill(br_engine *e)
     br_node_destroy(e, n);
     step(e, 0.1f);
     BR_CHECK(br_tween_count(e) == 1 && br_tween_alive(e, keep));
-    /* killing from inside an on_complete callback, and the tween count from a callback */
     br_node_destroy(e, other);
     step(e, 0.1f);
     BR_CHECK(br_tween_count(e) == 0);
+
+    /* a tween made through a child path is killed by the node the path was given from */
+    br_node parent = make_node(e, "kparent");
+    br_node child = br_node_create_container(e);
+    br_node_set_label(e, child, "label");
+    br_node_add_child(e, parent, child);
+    br_tween_to_f(e, br_anim_target_2d(parent), "label:alpha", 0.0f, 1.0f, BR_EASE_LINEAR);
+    BR_CHECK(br_tween_kill_target(e, br_anim_target_2d(parent)) == 1 && br_tween_count(e) == 0);
+    br_tween_to_f(e, br_anim_target_2d(parent), "label:alpha", 0.0f, 1.0f, BR_EASE_LINEAR);
+    BR_CHECK(br_tween_kill_target(e, br_anim_target_2d(child)) == 1); /* the resolved node still works */
+
+    /* killing and creating tweens from inside an on_complete callback */
+    g_kill_target = br_anim_target_2d(parent);
+    g_victim = br_tween_to_f(e, g_kill_target, "alpha", 0.0f, 1.0f, BR_EASE_LINEAR);
+    br_tween first = br_tween_to_f(e, g_kill_target, "x", 10.0f, 0.1f, BR_EASE_LINEAR);
+    br_tween_set_on_complete(e, first, on_done_kill, NULL);
+    step(e, 0.15f);
+    BR_CHECK(!br_tween_alive(e, first) && !br_tween_alive(e, g_victim) && br_tween_count(e) == 1);
+    step(e, 0.2f);
+    BR_CHECK(br_tween_count(e) == 0 && near_eq(br_node_position(e, parent).y, 5.0f));
+    br_node_destroy(e, parent);
+    step(e, 0.0f);
 }
 
 static void test_3d_and_components(br_engine *e)
@@ -252,6 +286,17 @@ static void test_delay_call(br_engine *e)
     BR_CHECK(g_done == 1 && !br_tween_alive(e, c));
 }
 
+static int g_destroyed = 0;
+
+static void on_destroy_root(br_engine *e, const br_anim_event *ev, void *user)
+{
+    (void)user;
+    if (br_node_valid(e, br_anim_target_node(ev->root))) {
+        br_node_destroy(e, br_anim_target_node(ev->root));
+        g_destroyed++;
+    }
+}
+
 /* The scene-file components, with data files written next to the test executable. */
 static void test_scene_components(void)
 {
@@ -261,7 +306,8 @@ static void test_scene_components(void)
         BR_CHECK(e != NULL);
         return;
     }
-    const char *anim = "{ \"clips\": [ { \"name\": \"slide\", \"tracks\": [ { \"target\": \"arm:x\", \"keys\": [[0, 0], [1, 100]] } ] },"
+    const char *anim = "{ \"clips\": [ { \"name\": \"slide\", \"tracks\": [ { \"target\": \"arm:x\", \"keys\": [[0, 0], [1, 100]] } ],"
+                       "    \"events\": [ { \"time\": 0.25, \"name\": \"mid\" } ] },"
                        "  { \"name\": \"rest\", \"tracks\": [ { \"target\": \"arm:x\", \"keys\": [[0, -5]] } ] } ] }";
     const char *graph = "{ \"parameters\": { \"go\": false }, \"entry\": \"still\","
                         "  \"states\": [ { \"name\": \"still\", \"clip\": \"rest\" }, { \"name\": \"moving\", \"clip\": \"slide\" } ],"
@@ -300,9 +346,46 @@ static void test_scene_components(void)
     br_animator_set_bool(e, a, "go", true);
     br_engine_step(e, 0.1f);
     BR_CHECK(SDL_strcmp(br_animator_state(e, a), "moving") == 0);
+
+    /* each animator component holds one reference per asset (plus the test's own) */
+    const char *lib_path = "tween_test.anim.json";
+    const char *graph_path = "tween_test.animgraph.json";
+    BR_CHECK(br_assets_ref_count(e, lib_path) == 3 && br_assets_ref_count(e, graph_path) == 2);
+    /* a callback destroying its node: the update's events stay valid, the reference goes next update */
+    br_animator_set_event_callback(e, br_animator_get(e, br_anim_target_2d(rig)), on_destroy_root, NULL);
+    br_engine_step(e, 0.5f); /* clip time 0.7 -> 1.7: passes "mid" */
+    uint32_t count = 0;
+    const br_anim_event *ev = br_animation_events(e, &count);
+    BR_CHECK(g_destroyed == 1 && !br_node_valid(e, rig) && count >= 1 && SDL_strcmp(ev[0].name, "mid") == 0);
+    BR_CHECK(br_assets_ref_count(e, lib_path) == 3);
+    br_engine_step(e, 0.0f);
+    BR_CHECK(br_assets_ref_count(e, lib_path) == 2);
     br_node_destroy(e, root);
     br_engine_step(e, 0.0f);
     BR_CHECK(br_animator_count(e) == 0 && br_tween_count(e) == 0);
+    BR_CHECK(br_assets_ref_count(e, lib_path) == 1 && br_assets_ref_count(e, graph_path) == 1);
+
+    /* glTF node extras start an animator and a tween on 3D nodes */
+    const char *rise = "{ \"clips\": [ { \"name\": \"rise\", \"tracks\": [ { \"target\": \":position\", \"keys\": [[0, [0, 0, 0]], [1, [0, 10, 0]]] } ] } ] }";
+    const char *gltf =
+        "{ \"asset\": { \"version\": \"2.0\" }, \"scene\": 0, \"scenes\": [ { \"nodes\": [0, 1] } ],"
+        "  \"nodes\": [ { \"name\": \"lift\", \"extras\": { \"animator.clips\": \"tween_test3d.anim.json\", \"animator.play\": \"rise\" } },"
+        "               { \"name\": \"slider\", \"extras\": { \"tween.property\": \"position\", \"tween.to3\": [2, 4, 6], \"tween.duration\": 1 } } ] }";
+    BR_CHECK(br_file_write_all(e, "tween_test3d.anim.json", rise, SDL_strlen(rise)));
+    BR_CHECK(br_file_write_all(e, "tween_test.gltf", gltf, SDL_strlen(gltf)));
+    br_node3d none = { 0, 0 };
+    br_node3d inst = br_gltf_instantiate(e, "tween_test.gltf", none, NULL);
+    BR_CHECK(br_node3d_valid(e, inst));
+    br_engine_step(e, 0.5f);
+    br_node3d lift = br_model3d_node(e, inst, 0);
+    br_node3d slider = br_model3d_node(e, inst, 1);
+    BR_CHECK(near_eq(br_node3d_position(e, lift).y, 5.0f));
+    br_vec3 sp = br_node3d_position(e, slider);
+    BR_CHECK(near_eq(sp.x, 1.0f) && near_eq(sp.y, 2.0f) && near_eq(sp.z, 3.0f));
+    BR_CHECK(br_assets_ref_count(e, "tween_test3d.anim.json") == 1);
+    br_node3d_destroy(e, inst);
+    br_engine_step(e, 0.0f);
+    BR_CHECK(br_animator_count(e) == 0 && br_tween_count(e) == 0 && br_assets_ref_count(e, "tween_test3d.anim.json") == 0);
     br_engine_destroy(e);
 }
 

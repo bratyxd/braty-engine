@@ -3,7 +3,8 @@
  * events (exactly once, across loops and large steps), queue, state machines, root motion,
  * bindings to destroyed nodes / missing properties (one warning, the rest keeps playing),
  * the property registry round trip for every built-in property, anim.json parsing, flipbook
- * and glTF clip sources, and determinism. */
+ * and glTF clip sources, determinism, and the R7 review fixes (fades from the pose on screen,
+ * track-based root motion, typed parameters, malformed anim / animgraph JSON, rebind). */
 #include "braty/braty.h"
 #include "br_test.h"
 
@@ -17,6 +18,7 @@ static bool near_eq(float a, float b)
 /* ---- warnings are counted through SDL's log output */
 
 static int g_warnings = 0;
+static int g_errors = 0;
 static SDL_LogOutputFunction g_prev_log = NULL;
 static void *g_prev_log_user = NULL;
 
@@ -25,6 +27,9 @@ static void count_log(void *user, int category, SDL_LogPriority priority, const 
     (void)user;
     if (priority == SDL_LOG_PRIORITY_WARN && SDL_strstr(message, "animation:") != NULL) {
         g_warnings++;
+    }
+    if (priority == SDL_LOG_PRIORITY_ERROR) {
+        g_errors++;
     }
     if (g_prev_log != NULL) {
         g_prev_log(g_prev_log_user, category, priority, message);
@@ -790,6 +795,427 @@ static void test_root_motion(br_engine *e)
     br_anim_clip_destroy(c);
 }
 
+/* ---- review fixes (R7) */
+
+/* cross_fade to the motion already fading in changes nothing (it used to restart it on every
+ * call: frozen clip, popping pose); a fade starts from the pose on screen. */
+static void test_fade_fixes(br_engine *e)
+{
+    br_node n = make_node(e, br_scene_root(e), "fades");
+    br_anim_clip *clips[6] = {
+        ramp("walk", ":x", 0.0f, 10.0f, 1.0f, BR_ANIM_LOOP), ramp("run", ":x", 100.0f, 200.0f, 2.0f, BR_ANIM_LOOP),
+        ramp("a", ":x", 0.0f, 0.0f, 1.0f, BR_ANIM_LOOP),      ramp("b", ":x", 10.0f, 10.0f, 1.0f, BR_ANIM_LOOP),
+        ramp("c", ":x", 20.0f, 20.0f, 1.0f, BR_ANIM_LOOP),    ramp("once", ":x", 0.0f, 100.0f, 1.0f, BR_ANIM_ONCE),
+    };
+    br_animator an = br_animator_add(e, br_anim_target_2d(n));
+    for (int i = 0; i < 6; i++) {
+        br_animator_add_clip(e, an, clips[i]);
+    }
+    /* the "ask for the state you want every frame" pattern */
+    br_animator_play(e, an, "walk");
+    br_engine_step(e, 0.5f);
+    float before = node_x(e, n);
+    bool smooth = true;
+    for (int i = 0; i < 60; i++) {
+        br_animator_cross_fade(e, an, "run", 0.2f);
+        br_engine_step(e, 1.0f / 60.0f);
+        smooth = smooth && SDL_fabsf(node_x(e, n) - before) < 20.0f;
+        before = node_x(e, n);
+    }
+    BR_CHECK(smooth && near_eq(br_animator_fade_progress(e, an, 0), 1.0f) && br_animator_time(e, an, 0) > 0.9f);
+
+    /* a fade interrupted half-way starts from the blend on screen (5), not from "b" (10) */
+    br_animator_play(e, an, "a");
+    br_engine_step(e, 0.1f);
+    br_animator_cross_fade(e, an, "b", 1.0f);
+    br_engine_step(e, 0.5f);
+    BR_CHECK(near_eq(node_x(e, n), 5.0f));
+    br_animator_cross_fade(e, an, "c", 1.0f);
+    br_engine_step(e, 0.25f);
+    BR_CHECK(near_eq(node_x(e, n), 5.0f + (20.0f - 5.0f) * 0.25f));
+    br_engine_step(e, 1.0f);
+    BR_CHECK(near_eq(node_x(e, n), 20.0f) && near_eq(br_animator_fade_progress(e, an, 0), 1.0f));
+
+    /* a finished ONCE clip (no longer writing) fades out from its end pose */
+    br_animator_play(e, an, "once");
+    br_engine_step(e, 1.1f);
+    br_engine_step(e, 0.1f);
+    br_engine_step(e, 0.1f);
+    BR_CHECK(br_animator_current(e, an, 0) == NULL && near_eq(node_x(e, n), 100.0f));
+    br_animator_cross_fade(e, an, "a", 1.0f);
+    br_engine_step(e, 0.25f);
+    BR_CHECK(near_eq(node_x(e, n), 75.0f));
+    br_node_destroy(e, n);
+    br_engine_step(e, 0.0f);
+    for (int i = 0; i < 6; i++) {
+        br_anim_clip_destroy(clips[i]);
+    }
+}
+
+/* Root motion is the track's own movement: the first frame counts, a clip change does not
+ * teleport, a loop wrap does not hitch, and the root node itself can take the delta. */
+static void test_root_motion_track(br_engine *e)
+{
+    br_node n = make_node(e, br_scene_root(e), "mover");
+    br_node_set_position(e, n, 5.0f, 7.0f);
+    float t[2] = { 0.0f, 1.0f };
+    float walk_v[4] = { 0.0f, 0.0f, 10.0f, 4.0f };
+    float idle_v[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    br_anim_clip *walk = br_anim_clip_create("walk", 0.0f, BR_ANIM_LOOP);
+    br_anim_clip *idle = br_anim_clip_create("idle", 0.0f, BR_ANIM_LOOP);
+    br_anim_clip_add_track(walk, ":position", BR_ANIM_LINEAR, 2, 2, t, walk_v);
+    br_anim_clip_add_track(idle, ":position", BR_ANIM_LINEAR, 2, 2, t, idle_v);
+    br_animator a = br_animator_add(e, br_anim_target_2d(n));
+    br_animator_add_clip(e, a, walk);
+    br_animator_add_clip(e, a, idle);
+    BR_CHECK(br_animator_set_root_motion(e, a, ""));
+    br_animator_play(e, a, "walk");
+    br_engine_step(e, 0.9f);
+    BR_CHECK(near_eq(br_animator_root_motion(e, a).x, 9.0f));
+    br_animator_play(e, a, "idle"); /* was: -9 (back to the new clip's start) */
+    br_engine_step(e, 0.1f);
+    BR_CHECK(near_eq(br_animator_root_motion(e, a).x, 0.0f) && near_eq(br_animator_root_motion(e, a).y, 0.0f));
+    br_animator_play(e, a, "walk");
+    br_engine_step(e, 0.9f);
+    br_engine_step(e, 0.2f); /* 0.9 -> 1 -> 0.1: was 0 (the wrap frame) */
+    BR_CHECK(near_eq(br_animator_root_motion(e, a).x, 2.0f));
+    /* the game moves the node itself by the delta */
+    br_node_set_position(e, n, 5.0f, 7.0f);
+    br_animator_play(e, a, "walk");
+    for (int i = 0; i < 10; i++) {
+        br_engine_step(e, 0.05f);
+        br_vec3 d = br_animator_root_motion(e, a);
+        br_vec2 p = br_node_position(e, n);
+        br_node_set_position(e, n, p.x + d.x, p.y + d.y);
+    }
+    BR_CHECK(near_eq(node_x(e, n), 10.0f) && near_eq(br_node_position(e, n).y, 9.0f));
+    br_node_destroy(e, n);
+    br_engine_step(e, 0.0f);
+    br_anim_clip_destroy(walk);
+    br_anim_clip_destroy(idle);
+}
+
+/* Markers playing backwards: landing exactly on 0 is not one more pass. */
+static void test_markers_backwards(br_engine *e)
+{
+    br_node n = make_node(e, br_scene_root(e), "backwards");
+    br_anim_clip *c = ramp("ev", ":x", 0.0f, 1.0f, 1.0f, BR_ANIM_LOOP);
+    br_anim_clip_add_marker(c, 0.5f, "half");
+    br_animator a = br_animator_add(e, br_anim_target_2d(n));
+    br_animator_add_clip(e, a, c);
+    br_animator_set_speed(e, a, -1.0f);
+    br_animator_play(e, a, "ev");
+    br_engine_step(e, 0.25f);
+    br_engine_step(e, 0.25f); /* time 0.5: "half" here */
+    int start = 0;
+    int half = 0;
+    br_engine_step(e, 1.5f);  /* 0.5 -> 0, 1 -> 0: "half" once */
+    count_events(e, &start, &half);
+    BR_CHECK(half == 1 && near_eq(br_animator_time(e, a, 0), 0.0f));
+    br_node_destroy(e, n);
+    br_engine_step(e, 0.0f);
+    br_anim_clip_destroy(c);
+}
+
+/* A narrow weights track on a slot widened by another clip writes the rest values, not stack
+ * garbage, into the extra weights. */
+static void test_morph_weight_counts(br_engine *e)
+{
+    br_material3d_desc md = br_material3d_default(BR_MATERIAL3D_PBR);
+    br_node3d mesh = br_mesh3d_create(e, br_geometry3d_cube(e, br_vec3_make(1.0f, 1.0f, 1.0f)), br_material3d_create(e, &md));
+    float t[2] = { 0.0f, 1.0f };
+    float wide_v[8] = { 0.9f, 0.9f, 0.9f, 0.9f, 0.9f, 0.9f, 0.9f, 0.9f };
+    float narrow_v[4] = { 0.1f, 0.1f, 0.1f, 0.1f };
+    br_anim_clip *wide = br_anim_clip_create("wide", 0.0f, BR_ANIM_LOOP);
+    br_anim_clip *narrow = br_anim_clip_create("narrow", 0.0f, BR_ANIM_LOOP);
+    br_anim_clip_add_track(wide, ":morph_weights", BR_ANIM_LINEAR, 4, 2, t, wide_v);
+    br_anim_clip_add_track(narrow, ":morph_weights", BR_ANIM_LINEAR, 2, 2, t, narrow_v);
+    br_anim_value rest;
+    SDL_zero(rest);
+    rest.count = 4;
+    for (int i = 0; i < 4; i++) {
+        rest.f[i] = 0.5f;
+    }
+    BR_CHECK(br_anim_set(e, br_anim_target_3d(mesh), ":morph_weights", &rest));    br_animator a = br_animator_add(e, br_anim_target_3d(mesh));
+    br_animator_add_clip(e, a, wide);
+    br_animator_add_clip(e, a, narrow);
+    br_animator_play(e, a, "wide");
+    br_engine_step(e, 0.1f);
+    br_animator_play(e, a, "narrow");
+    br_engine_step(e, 0.1f);
+    const br_mesh3d *m = br_mesh3d_get(e, mesh);    BR_CHECK(m != NULL && near_eq(m->morph_weights[0], 0.1f) && near_eq(m->morph_weights[1], 0.1f));
+    BR_CHECK(m != NULL && near_eq(m->morph_weights[2], 0.5f) && near_eq(m->morph_weights[3], 0.5f)); /* rest */
+    br_node3d_destroy(e, mesh);
+    br_engine_step(e, 0.0f);
+    br_anim_clip_destroy(wide);
+    br_anim_clip_destroy(narrow);
+}
+
+/* Parameters: an undeclared trigger is consumed; a setter of another type warns once; names
+ * that do not fit are reported; a blend state named like a clip plays the blend. */
+static void test_parameters(br_engine *e)
+{
+    const char *graph =
+        "{ \"states\": [ { \"name\": \"idle\", \"clip\": \"c0\" }, { \"name\": \"jump\", \"clip\": \"c2\", \"loop\": \"once\" } ],"
+        "  \"transitions\": [ { \"from\": \"idle\", \"to\": \"jump\", \"when\": [[\"jump\"]], \"duration\": 0 },"
+        "                     { \"from\": \"jump\", \"to\": \"idle\", \"exit_time\": 1.0, \"duration\": 0 } ] }";
+    br_anim_graph *g = br_anim_graph_parse(e, "trigger.animgraph.json", graph, SDL_strlen(graph));
+    BR_CHECK(g != NULL);
+    br_node n = make_node(e, br_scene_root(e), "params");
+    br_anim_clip *c0 = ramp("c0", ":x", 0.0f, 0.0f, 1.0f, BR_ANIM_LOOP);
+    br_anim_clip *c1 = ramp("c1", ":x", 10.0f, 10.0f, 1.0f, BR_ANIM_LOOP);
+    br_anim_clip *c2 = ramp("c2", ":x", 30.0f, 30.0f, 0.5f, BR_ANIM_LOOP);
+    br_animator a = br_animator_add(e, br_anim_target_2d(n));
+    br_animator_add_clip(e, a, c0);
+    br_animator_add_clip(e, a, c1);
+    br_animator_add_clip(e, a, c2);
+    BR_CHECK(g != NULL && br_animator_set_graph(e, a, g));
+    br_animator_set_trigger(e, a, "jump");
+    int entered = 0;
+    bool was_jump = false;
+    for (int i = 0; i < 40; i++) {
+        br_engine_step(e, 0.05f);
+        const char *st = br_animator_state(e, a);
+        bool is_jump = st != NULL && SDL_strcmp(st, "jump") == 0;
+        entered += is_jump && !was_jump ? 1 : 0;
+        was_jump = is_jump;
+    }
+    BR_CHECK(entered == 1 && near_eq(br_animator_get_float(e, a, "jump"), 0.0f));
+    g_warnings = 0;
+    br_animator_set_bool(e, a, "jump", false); /* a trigger set as a bool: one warning */
+    br_animator_set_bool(e, a, "jump", false);
+    BR_CHECK(g_warnings == 1);
+    g_errors = 0;
+    const char *long_name = "a_parameter_name_that_is_far_too_long_40";
+    br_animator_set_float(e, a, long_name, 1.0f);
+    BR_CHECK(g_errors == 1 && near_eq(br_animator_get_float(e, a, long_name), 0.0f));
+    g_errors = 0;
+    const char *long_state = "{ \"states\": [ { \"name\": \"a_state_name_that_is_far_too_long_to_fit\", \"clip\": \"c0\" } ] }";
+    BR_CHECK(br_anim_graph_parse(e, "long.animgraph.json", long_state, SDL_strlen(long_state)) == NULL && g_errors > 0);
+    br_animator_set_graph(e, a, NULL);
+    br_anim_graph_free(g);
+
+    /* a blend state named "c1" on an animator with a clip "c1" */
+    const char *clash = "{ \"parameters\": { \"p\": 1 }, \"states\": [ { \"name\": \"c1\", \"blend\": { \"parameter\": \"p\","
+                        "  \"motions\": [ { \"clip\": \"c0\", \"at\": 0 }, { \"clip\": \"c2\", \"at\": 1 } ] } } ] }";
+    g = br_anim_graph_parse(e, "clash.animgraph.json", clash, SDL_strlen(clash));
+    BR_CHECK(g != NULL && br_animator_set_graph(e, a, g));
+    br_engine_step(e, 0.1f);
+    BR_CHECK(near_eq(node_x(e, n), 30.0f)); /* the blend (all c2), not the clip c1 (10) */
+    br_node_destroy(e, n);
+    br_engine_step(e, 0.0f);
+    br_anim_graph_free(g);
+    br_anim_clip_destroy(c0);
+    br_anim_clip_destroy(c1);
+    br_anim_clip_destroy(c2);
+}
+
+/* A node destroyed while the clip animating it is not playing is noticed too; rebind picks up a
+ * node attached after the clip was bound. */
+static void test_dead_and_rebind(br_engine *e)
+{
+    br_node root = make_node(e, br_scene_root(e), "dead2");
+    br_node x = make_node(e, root, "x");
+    br_anim_clip *ca = ramp("on_x", "x:x", 0.0f, 10.0f, 1.0f, BR_ANIM_LOOP);
+    br_anim_clip *cb = ramp("on_root", ":alpha", 1.0f, 1.0f, 1.0f, BR_ANIM_LOOP);
+    br_anim_clip *cw = ramp("grab", "weapon:x", 0.0f, 10.0f, 1.0f, BR_ANIM_LOOP);
+    br_animator a = br_animator_add(e, br_anim_target_2d(root));
+    br_animator_add_clip(e, a, ca);
+    br_animator_add_clip(e, a, cb);
+    br_animator_add_clip(e, a, cw);
+    br_animator_play(e, a, "on_x");
+    br_engine_step(e, 0.1f);
+    br_animator_play(e, a, "on_root");
+    br_engine_step(e, 0.1f);
+    g_warnings = 0;
+    br_node_destroy(e, x);
+    br_engine_step(e, 0.1f);
+    br_animator_play(e, a, "on_x");
+    br_engine_step(e, 0.1f);
+    BR_CHECK(g_warnings == 1);
+
+    g_warnings = 0;
+    br_animator_play(e, a, "grab"); /* no "weapon" yet: dropped with a warning */
+    BR_CHECK(g_warnings == 1);
+    br_node weapon = make_node(e, root, "weapon");
+    BR_CHECK(br_animator_rebind(e, a) == 1);
+    br_engine_step(e, 0.5f);
+    BR_CHECK(near_eq(node_x(e, weapon), 5.0f));
+    br_node_destroy(e, root);
+    br_engine_step(e, 0.0f);
+    br_anim_clip_destroy(ca);
+    br_anim_clip_destroy(cb);
+    br_anim_clip_destroy(cw);
+}
+
+/* Malformed animgraph / anim JSON: wrong types everywhere, missing fields, infinities and absurd
+ * counts log and fail (or skip the bad part); nothing crashes. */
+static void test_hostile_data(br_engine *e)
+{
+    static const char *const graphs[] = {
+        "{ \"parameters\": [1, 2], \"states\": [ { \"name\": \"idle\", \"clip\": \"c0\" } ] }",
+        "{ \"parameters\": 5, \"states\": [ { \"name\": \"idle\", \"clip\": \"c0\" } ] }",
+        "{ \"parameters\": { \"a\": [1], \"b\": null, \"c\": {}, \"d\": 1e999 }, \"states\": [ { \"name\": \"idle\", \"clip\": \"c0\" } ] }",
+        "{ \"states\": { \"name\": \"idle\" } }",
+        "{ \"states\": [ 1, \"two\", null, [] ] }",
+        "{ \"states\": [ { \"name\": 3, \"clip\": 4 } ] }",
+        "{ \"states\": [ { \"name\": \"b\", \"blend\": { \"parameter\": \"p\", \"motions\": { \"clip\": \"c0\", \"at\": 0 } } } ] }",
+        "{ \"states\": [ { \"name\": \"b\", \"blend\": { \"parameter\": \"p\", \"motions\": [ { \"clip\": \"c0\", \"at\": \"x\" } ] } } ] }",
+        "{ \"states\": [ { \"name\": \"b\", \"blend2d\": { \"x\": \"p\", \"y\": \"q\", \"motions\": [ { \"clip\": \"c0\", \"at\": { \"a\": 1, \"b\": 2 } } ] } } ] }",
+        "{ \"states\": [ { \"name\": \"b\", \"blend\": { \"parameter\": \"p\", \"motions\": [ { \"clip\": \"c0\", \"at\": 1e999 } ] } } ] }",
+        "{ \"states\": [ { \"name\": \"b\", \"blend\": 7 } ] }",
+        "{ \"states\": [ { \"name\": \"s\", \"clip\": \"c0\", \"speed\": 1e999 } ] }",
+        "{ \"states\": [ { \"name\": \"s\", \"clip\": \"c0\" } ], \"transitions\": { \"from\": \"s\" } }",
+        "{ \"states\": [ { \"name\": \"s\", \"clip\": \"c0\" } ], \"transitions\": [ 1, { \"from\": \"s\", \"to\": \"s\", \"when\": 5 },"
+        "  { \"from\": \"s\", \"to\": \"s\", \"when\": [[1]] }, { \"from\": \"s\", \"to\": \"s\", \"duration\": 1e999 },"
+        "  { \"from\": \"s\", \"to\": \"s\", \"exit_time\": \"late\" }, { \"from\": \"s\", \"to\": \"s\", \"when\": [[\"p\", \">\", \"x\"]] } ] }",
+        "{ \"states\": [ { \"name\": \"s\", \"clip\": \"c0\" } ], \"entry\": 5 }",
+        "[1, 2, 3]", "\"just a string\"", "{}", "",
+    };
+    br_node n = make_node(e, br_scene_root(e), "hostile");
+    br_anim_clip *c0 = ramp("c0", ":x", 0.0f, 1.0f, 1.0f, BR_ANIM_LOOP);
+    br_animator a = br_animator_add(e, br_anim_target_2d(n));
+    br_animator_add_clip(e, a, c0);
+    uint32_t parsed = 0;
+    for (uint32_t i = 0; i < BR_ARRAY_COUNT(graphs); i++) {
+        g_errors = 0;
+        br_anim_graph *g = br_anim_graph_parse(e, "hostile.animgraph.json", graphs[i], SDL_strlen(graphs[i]));
+        BR_CHECK(g_errors > 0); /* every case is reported */
+        if (g != NULL) {
+            parsed++;
+            br_animator_set_graph(e, a, g);
+            br_engine_step(e, 0.1f);
+            BR_CHECK(SDL_fabsf(node_x(e, n)) <= 1.0f); /* finite, inside the clip */
+            br_animator_set_graph(e, a, NULL);
+            br_anim_graph_free(g);
+        }
+    }
+    BR_CHECK(parsed == 4); /* bad parameters (3 files) or bad transitions: the rest of the graph loads */
+    /* absurd counts */
+    char *big = SDL_malloc(2100 * 40 + 64);
+    if (big != NULL) {
+        SDL_strlcpy(big, "{ \"states\": [", 64);
+        for (int i = 0; i < 2000; i++) {
+            SDL_strlcat(big, i == 0 ? "{\"name\":\"s\",\"clip\":\"c0\"}" : ",{\"name\":\"s\",\"clip\":\"c0\"}", 2100 * 40 + 64);
+        }
+        SDL_strlcat(big, "] }", 2100 * 40 + 64);
+        BR_CHECK(br_anim_graph_parse(e, "huge.animgraph.json", big, SDL_strlen(big)) == NULL);
+        SDL_free(big);
+    }
+
+    static const char *const anims[] = {
+        "{ \"clips\": 5 }",
+        "{ \"clips\": [ 1, \"x\", null ] }",
+        "{ \"clips\": [ { \"name\": 1, \"loop\": 2, \"duration\": \"long\", \"tracks\": \"none\", \"events\": 3 } ] }",
+        "{ \"clips\": [ { \"tracks\": [ { \"target\": 1, \"keys\": [[0, 1]] }, { \"target\": \"a:x\", \"keys\": { \"a\": 1 } },"
+        "  { \"target\": \"a:x\", \"keys\": [\"k\", [0], [0, 1, 2], { \"time\": \"0\" }] } ] } ] }",
+        "{ \"clips\": [ { \"tracks\": [ { \"target\": \"a:x\", \"keys\": [[1e999, 1]] }, { \"target\": \"a:x\", \"keys\": [[0, 1e999]] },"
+        "  { \"target\": \"a:x\", \"keys\": [[0, [1, 2, 3, 4, 5, 6, 7, 8, 9]]] },"
+        "  { \"target\": \"a:x\", \"interpolation\": \"cubic\", \"keys\": [ { \"time\": 0, \"value\": 1, \"in\": [1, 2] } ] },"
+        "  { \"target\": \"a:x\", \"interpolation\": \"bezier\", \"keys\": [ { \"time\": 0, \"value\": 1, \"out\": -1e999 } ] } ] } ] }",
+        "{ \"clips\": [ { \"duration\": 1e999, \"events\": [ { \"time\": 1e999, \"name\": \"x\" }, { \"time\": 0.5 }, 7 ], \"tracks\": [] } ] }",
+        "{ \"tracks\": 5 }", "[]", "",
+    };
+    for (uint32_t i = 0; i < BR_ARRAY_COUNT(anims); i++) {
+        g_errors = 0;
+        br_anim_library *lib = br_anim_library_parse(e, "hostile.anim.json", anims[i], SDL_strlen(anims[i]));
+        BR_CHECK(g_errors > 0);
+        for (uint32_t k = 0; lib != NULL && k < lib->count; k++) {
+            const br_anim_clip *c = lib->clips[k];
+            BR_CHECK(c->track_count == 0 && c->marker_count == 0 && c->duration >= 0.0f && c->duration < 1.0e30f);
+        }
+        br_anim_library_free(lib);
+    }
+    /* a track with more keys than any file needs */
+    size_t big_size = 120000 * 8 + 128;
+    big = SDL_malloc(big_size);
+    if (big != NULL) {
+        SDL_strlcpy(big, "{ \"clips\": [ { \"tracks\": [ { \"target\": \"a:x\", \"keys\": [[0,1]", big_size);
+        size_t len = SDL_strlen(big);
+        for (int i = 0; i < 100001; i++) {
+            SDL_memcpy(big + len, ",[0,1]", 6);
+            len += 6;
+        }
+        big[len] = '\0';
+        SDL_strlcat(big, "] } ] } ] }", big_size);
+        g_errors = 0;
+        br_anim_library *lib = br_anim_library_parse(e, "keys.anim.json", big, SDL_strlen(big));
+        BR_CHECK(lib != NULL && lib->count == 1 && lib->clips[0]->track_count == 0 && g_errors == 1);
+        br_anim_library_free(lib);
+        SDL_free(big);
+    }
+    br_node_destroy(e, n);
+    br_engine_step(e, 0.0f);
+    br_anim_clip_destroy(c0);
+}
+
+/* Clock and layer paths with no test before: ping-pong over more than 8 passes, the LOOP span
+ * cap, set_time, stop_layer, a queued fade on a loop wrap, additive quaternion layers. */
+static void test_clock_and_layers(br_engine *e)
+{
+    br_node n = make_node(e, br_scene_root(e), "clock");
+    br_anim_clip *r = ramp("r", ":x", 0.0f, 10.0f, 1.0f, BR_ANIM_LOOP);
+    br_anim_clip *hold = ramp("hold", ":x", 50.0f, 50.0f, 1.0f, BR_ANIM_LOOP);
+    br_animator a = br_animator_add(e, br_anim_target_2d(n));
+    br_animator_add_clip(e, a, r);
+    br_animator_add_clip(e, a, hold);
+    br_animator_play(e, a, "r");
+    br_animator_set_loop(e, a, 0, BR_ANIM_PING_PONG);
+    br_engine_step(e, 10.25f); /* 10 passes and a quarter: forwards at 0.25 */
+    BR_CHECK(near_eq(node_x(e, n), 2.5f));
+    br_engine_step(e, 0.25f);
+    BR_CHECK(near_eq(node_x(e, n), 5.0f));
+    br_animator_play(e, a, "r");
+    br_engine_step(e, 20.5f);  /* LOOP: 20 wraps in one step */
+    BR_CHECK(near_eq(br_animator_time(e, a, 0), 0.5f) && near_eq(node_x(e, n), 5.0f));
+    br_animator_set_time(e, a, 0, 0.75f);
+    br_engine_step(e, 0.0f);
+    BR_CHECK(near_eq(node_x(e, n), 7.5f));
+    BR_CHECK(br_animator_set_layer(e, a, 1, 1.0f, false) && br_animator_play_layer(e, a, 1, "hold", 0.0f));
+    br_engine_step(e, 0.0f);
+    BR_CHECK(near_eq(node_x(e, n), 50.0f));
+    br_animator_stop_layer(e, a, 1);
+    br_engine_step(e, 0.0f);
+    BR_CHECK(near_eq(node_x(e, n), 7.5f) && br_animator_current(e, a, 1) == NULL);
+    /* a queued motion with a fade starts when the loop wraps */
+    br_animator_play(e, a, "r");
+    BR_CHECK(br_animator_queue(e, a, "hold", 0.5f));
+    br_engine_step(e, 0.6f);
+    BR_CHECK(SDL_strcmp(br_animator_current(e, a, 0), "r") == 0);
+    br_engine_step(e, 0.6f); /* wraps */
+    br_engine_step(e, 0.1f);
+    float f = br_animator_fade_progress(e, a, 0);
+    BR_CHECK(SDL_strcmp(br_animator_current(e, a, 0), "hold") == 0 && f > 0.0f && f < 1.0f);
+    br_node_destroy(e, n);
+
+    /* additive quaternion layer: adds its rotation since its first key */
+    br_node3d g = br_node3d_create_group(e);
+    br_anim_clip *base = br_anim_clip_create("base", 1.0f, BR_ANIM_LOOP);
+    br_anim_clip *turn = br_anim_clip_create("turn", 1.0f, BR_ANIM_LOOP);
+    float t1[1] = { 0.0f };
+    float t2[2] = { 0.0f, 1.0f };
+    br_quat q90 = br_quat_from_axis_angle(br_vec3_make(0.0f, 1.0f, 0.0f), BR_PI * 0.5f);
+    float qbase[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    float qturn[8] = { 0.0f, 0.0f, 0.0f, 1.0f, q90.x, q90.y, q90.z, q90.w };
+    br_anim_clip_add_track(base, "rotation", BR_ANIM_LINEAR, 4, 1, t1, qbase);
+    br_anim_clip_add_track(turn, "rotation", BR_ANIM_LINEAR, 4, 2, t2, qturn);
+    br_animator a3 = br_animator_add(e, br_anim_target_3d(g));
+    br_animator_add_clip(e, a3, base);
+    br_animator_add_clip(e, a3, turn);
+    br_animator_play(e, a3, "base");
+    br_animator_set_layer(e, a3, 1, 1.0f, true);
+    br_animator_play_layer(e, a3, 1, "turn", 0.0f);
+    br_engine_step(e, 0.5f);
+    br_quat want = br_quat_from_axis_angle(br_vec3_make(0.0f, 1.0f, 0.0f), BR_PI * 0.25f);
+    BR_CHECK(near_eq(SDL_fabsf(br_quat_dot(br_node3d_rotation(e, g), want)), 1.0f));
+    br_node3d_destroy(e, g);
+    br_engine_step(e, 0.0f);
+    br_anim_clip_destroy(r);
+    br_anim_clip_destroy(hold);
+    br_anim_clip_destroy(base);
+    br_anim_clip_destroy(turn);
+}
+
 /* ---- determinism: the same script twice gives the same bits */
 
 static void run_script(br_engine *e, float *out)
@@ -862,6 +1288,14 @@ int main(void)
         test_anim_json(e);
         test_sources(e);
         test_root_motion(e);
+        test_fade_fixes(e);
+        test_root_motion_track(e);
+        test_markers_backwards(e);
+        test_morph_weight_counts(e);
+        test_parameters(e);
+        test_dead_and_rebind(e);
+        test_hostile_data(e);
+        test_clock_and_layers(e);
         BR_CHECK(br_animator_count(e) == 0);
         br_engine_destroy(e);
     }

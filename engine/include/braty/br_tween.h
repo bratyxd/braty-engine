@@ -50,7 +50,8 @@ void br_tween_set_tag(br_engine *e, br_tween t, uint32_t tag);
 
 /* Stops a tween where it is (no on_complete). */
 void br_tween_kill(br_engine *e, br_tween t);
-/* Stops every tween on a node. Returns how many. */
+/* Stops every tween made on a node (its target argument) or writing it (through a child path such
+ * as "label:alpha"). Returns how many. */
 uint32_t br_tween_kill_target(br_engine *e, br_anim_target target);
 /* Stops every tween with a tag. Returns how many. */
 uint32_t br_tween_kill_tag(br_engine *e, uint32_t tag);

@@ -5,6 +5,8 @@
 #include "cjson/cJSON.h"
 
 #define BR_ANIM_GRAPH_MAX_CONDS 4
+#define BR_ANIM_GRAPH_MAX_STATES 1024
+#define BR_ANIM_GRAPH_MAX_TRANSITIONS 4096
 
 typedef enum br_anim_op { BR_ANIM_OP_GT, BR_ANIM_OP_LT, BR_ANIM_OP_GE, BR_ANIM_OP_LE, BR_ANIM_OP_EQ, BR_ANIM_OP_NE, BR_ANIM_OP_SET } br_anim_op;
 
@@ -75,16 +77,43 @@ static const char *br_ag_string(const cJSON *obj, const char *key)
     return cJSON_IsString(v) ? v->valuestring : NULL;
 }
 
-static bool br_ag_state(const char *file, const cJSON *js, uint32_t i, br_anim_graph_state *st)
+/* Copies a name into a fixed-size field; false (logged) if it does not fit. */
+static bool br_ag_copy(const char *file, const char *where, char *dst, size_t size, const char *src)
 {
-    const char *name = br_ag_string(js, "name");
-    if (name == NULL) {
-        br_log_error("%s: states[%u]: a state needs a \"name\"", file, i);
+    if (SDL_strlen(src) >= size) {
+        br_log_error("%s: %s: '%s' is longer than %u bytes", file, where, src, (unsigned)(size - 1));
         return false;
     }
-    SDL_strlcpy(st->name, name, sizeof(st->name));
-    const cJSON *speed = cJSON_GetObjectItemCaseSensitive(js, "speed");
-    st->speed = cJSON_IsNumber(speed) ? (float)speed->valuedouble : 1.0f;
+    SDL_strlcpy(dst, src, size);
+    return true;
+}
+
+/* An optional number: absent gives `fallback`; present must be finite. */
+static bool br_ag_number(const char *file, const char *where, const cJSON *obj, const char *key, float fallback,
+                         float *out)
+{
+    const cJSON *v = cJSON_GetObjectItemCaseSensitive(obj, key);
+    *out = fallback;
+    if (v != NULL && !br_anim_json_number(v, out)) {
+        br_log_error("%s: %s.%s: expected a number", file, where, key);
+        return false;
+    }
+    return true;
+}
+
+static bool br_ag_state(const char *file, const cJSON *js, uint32_t i, br_anim_graph_state *st)
+{
+    char where[48];
+    SDL_snprintf(where, sizeof(where), "states[%u]", i);
+    const char *name = br_ag_string(js, "name");
+    if (name == NULL) {
+        br_log_error("%s: %s: a state needs a \"name\"", file, where);
+        return false;
+    }
+    if (!br_ag_copy(file, where, st->name, sizeof(st->name), name) ||
+        !br_ag_number(file, where, js, "speed", 1.0f, &st->speed)) {
+        return false;
+    }
     st->loop = -1;
     br_anim_loop loop;
     const char *lname = br_ag_string(js, "loop");
@@ -92,13 +121,12 @@ static bool br_ag_state(const char *file, const cJSON *js, uint32_t i, br_anim_g
         if (br_anim_loop_from_name(lname, &loop)) {
             st->loop = (int)loop;
         } else {
-            br_log_error("%s: states[%u].loop: '%s' is not loop, once, ping_pong or clamp", file, i, lname);
+            br_log_error("%s: %s.loop: '%s' is not loop, once, ping_pong or clamp", file, where, lname);
         }
     }
     const char *clip = br_ag_string(js, "clip");
     if (clip != NULL) {
-        SDL_strlcpy(st->clip, clip, sizeof(st->clip));
-        return true;
+        return br_ag_copy(file, where, st->clip, sizeof(st->clip), clip);
     }
     const cJSON *blend = cJSON_GetObjectItemCaseSensitive(js, "blend");
     st->dims = 1;
@@ -109,30 +137,35 @@ static bool br_ag_state(const char *file, const cJSON *js, uint32_t i, br_anim_g
     const cJSON *motions = cJSON_GetObjectItemCaseSensitive(blend, "motions");
     const char *px = br_ag_string(blend, st->dims == 1 ? "parameter" : "x");
     const char *py = br_ag_string(blend, "y");
-    int n = cJSON_GetArraySize(motions);
+    int n = cJSON_IsArray(motions) ? cJSON_GetArraySize(motions) : 0;
     if (!cJSON_IsObject(blend) || px == NULL || (st->dims == 2 && py == NULL) || n < 1 || n > BR_ANIM_TREE_MAX) {
-        br_log_error("%s: states[%u]: needs \"clip\", \"blend\": { \"parameter\", \"motions\" } or \"blend2d\": "
-                     "{ \"x\", \"y\", \"motions\" } with 1..%d motions", file, i, BR_ANIM_TREE_MAX);
+        br_log_error("%s: %s: needs \"clip\", \"blend\": { \"parameter\", \"motions\" } or \"blend2d\": "
+                     "{ \"x\", \"y\", \"motions\" } with 1..%d motions", file, where, BR_ANIM_TREE_MAX);
         return false;
     }
-    SDL_strlcpy(st->param[0], px, sizeof(st->param[0]));
-    SDL_strlcpy(st->param[1], py != NULL ? py : "", sizeof(st->param[1]));
+    if (!br_ag_copy(file, where, st->param[0], sizeof(st->param[0]), px) ||
+        !br_ag_copy(file, where, st->param[1], sizeof(st->param[1]), py != NULL ? py : "")) {
+        return false;
+    }
     for (int k = 0; k < n; k++) {
         const cJSON *m = cJSON_GetArrayItem(motions, k);
         const char *mc = br_ag_string(m, "clip");
         const cJSON *at = cJSON_GetObjectItemCaseSensitive(m, "at");
-        bool ok = mc != NULL && (st->dims == 1 ? cJSON_IsNumber(at) : cJSON_GetArraySize(at) == 2);
-        if (!ok) {
-            br_log_error("%s: states[%u].motions[%d]: expected { \"clip\": name, \"at\": %s }", file, i, k,
+        bool ok;
+        if (st->dims == 1) {
+            ok = br_anim_json_number(at, &st->pos[k][0]);
+        } else {
+            ok = cJSON_IsArray(at) && cJSON_GetArraySize(at) == 2 &&
+                 br_anim_json_number(cJSON_GetArrayItem(at, 0), &st->pos[k][0]) &&
+                 br_anim_json_number(cJSON_GetArrayItem(at, 1), &st->pos[k][1]);
+        }
+        if (mc == NULL || !ok) {
+            br_log_error("%s: %s.motions[%d]: expected { \"clip\": name, \"at\": %s }", file, where, k,
                          st->dims == 1 ? "number" : "[x, y]");
             return false;
         }
-        SDL_strlcpy(st->clips[k], mc, sizeof(st->clips[k]));
-        if (st->dims == 1) {
-            st->pos[k][0] = (float)at->valuedouble;
-        } else {
-            st->pos[k][0] = (float)cJSON_GetArrayItem(at, 0)->valuedouble;
-            st->pos[k][1] = (float)cJSON_GetArrayItem(at, 1)->valuedouble;
+        if (!br_ag_copy(file, where, st->clips[k], sizeof(st->clips[k]), mc)) {
+            return false;
         }
     }
     st->count = (uint32_t)n;
@@ -147,7 +180,9 @@ static bool br_ag_cond(const char *file, const cJSON *jc, const char *where, br_
         br_log_error("%s: %s: a condition is [\"param\"] or [\"param\", \"op\", value]", file, where);
         return false;
     }
-    SDL_strlcpy(c->param, p->valuestring, sizeof(c->param));
+    if (!br_ag_copy(file, where, c->param, sizeof(c->param), p->valuestring)) {
+        return false;
+    }
     c->op = BR_ANIM_OP_SET;
     c->value = 1.0f;
     if (n == 1) {
@@ -163,12 +198,49 @@ static bool br_ag_cond(const char *file, const cJSON *jc, const char *where, br_
             found = true;
         }
     }
-    if (!found || !(cJSON_IsNumber(v) || cJSON_IsBool(v))) {
+    bool value_ok = cJSON_IsBool(v) || br_anim_json_number(v, &c->value);
+    if (!found || !value_ok) {
         br_log_error("%s: %s: operator must be > < >= <= == != and the value a number or bool", file, where);
         return false;
     }
-    c->value = cJSON_IsNumber(v) ? (float)v->valuedouble : (cJSON_IsTrue(v) ? 1.0f : 0.0f);
+    if (cJSON_IsBool(v)) {
+        c->value = cJSON_IsTrue(v) ? 1.0f : 0.0f;
+    }
     return true;
+}
+
+static void br_ag_params(const char *file, const cJSON *params, br_anim_graph *g)
+{
+    if (params == NULL) {
+        return;
+    }
+    if (!cJSON_IsObject(params)) {
+        br_log_error("%s: \"parameters\" must be an object { \"name\": start value }", file);
+        return;
+    }
+    for (const cJSON *p = params->child; p != NULL; p = p->next) {
+        if (g->param_count >= BR_ANIMATOR_MAX_PARAMS) {
+            br_log_error("%s: parameters: more than %d (the rest are ignored)", file, BR_ANIMATOR_MAX_PARAMS);
+            return;
+        }
+        br_anim_graph_param *gp = &g->params[g->param_count];
+        if (!br_ag_copy(file, "parameters", gp->name, sizeof(gp->name), p->string)) {
+            continue;
+        }
+        if (br_anim_json_number(p, &gp->value)) {
+            gp->type = BR_ANIM_PARAM_FLOAT;
+        } else if (cJSON_IsBool(p)) {
+            gp->type = BR_ANIM_PARAM_BOOL;
+            gp->value = cJSON_IsTrue(p) ? 1.0f : 0.0f;
+        } else if (cJSON_IsString(p) && SDL_strcmp(p->valuestring, "trigger") == 0) {
+            gp->type = BR_ANIM_PARAM_TRIGGER;
+            gp->value = 0.0f;
+        } else {
+            br_log_error("%s: parameters.%s: expected a number, a bool or \"trigger\"", file, p->string);
+            continue;
+        }
+        g->param_count++;
+    }
 }
 
 br_anim_graph *br_anim_graph_parse(br_engine *e, const char *name, const char *json, size_t size)
@@ -182,12 +254,17 @@ br_anim_graph *br_anim_graph_parse(br_engine *e, const char *name, const char *j
     }
     const cJSON *states = cJSON_GetObjectItemCaseSensitive(root, "states");
     const cJSON *transitions = cJSON_GetObjectItemCaseSensitive(root, "transitions");
-    int sn = cJSON_GetArraySize(states);
-    int tn = cJSON_GetArraySize(transitions);
+    int sn = cJSON_IsArray(states) ? cJSON_GetArraySize(states) : 0;
+    int tn = cJSON_IsArray(transitions) ? cJSON_GetArraySize(transitions) : 0;
+    if (sn == 0 || sn > BR_ANIM_GRAPH_MAX_STATES || tn > BR_ANIM_GRAPH_MAX_TRANSITIONS ||
+        (transitions != NULL && !cJSON_IsArray(transitions))) {
+        br_log_error("%s: a graph needs a \"states\" array of 1..%d states and a \"transitions\" array of at most %d",
+                     file, BR_ANIM_GRAPH_MAX_STATES, BR_ANIM_GRAPH_MAX_TRANSITIONS);
+        cJSON_Delete(root);
+        return NULL;
+    }
     br_anim_graph *g = br_alloc(sizeof(br_anim_graph));
-    if (g == NULL || !cJSON_IsArray(states) || sn == 0) {
-        br_log_error("%s: a graph needs a non-empty \"states\" array", file);
-        br_free(g);
+    if (g == NULL) {
         cJSON_Delete(root);
         return NULL;
     }
@@ -199,51 +276,39 @@ br_anim_graph *br_anim_graph_parse(br_engine *e, const char *name, const char *j
             g->state_count++;
         }
     }
-    const cJSON *params = cJSON_GetObjectItemCaseSensitive(root, "parameters");
-    for (const cJSON *p = params != NULL ? params->child : NULL; p != NULL && g->param_count < BR_ANIMATOR_MAX_PARAMS; p = p->next) {
-        br_anim_graph_param *gp = &g->params[g->param_count];
-        SDL_strlcpy(gp->name, p->string, sizeof(gp->name));
-        if (cJSON_IsNumber(p)) {
-            gp->type = BR_ANIM_PARAM_FLOAT;
-            gp->value = (float)p->valuedouble;
-        } else if (cJSON_IsBool(p)) {
-            gp->type = BR_ANIM_PARAM_BOOL;
-            gp->value = cJSON_IsTrue(p) ? 1.0f : 0.0f;
-        } else if (cJSON_IsString(p) && SDL_strcmp(p->valuestring, "trigger") == 0) {
-            gp->type = BR_ANIM_PARAM_TRIGGER;
-            gp->value = 0.0f;
-        } else {
-            br_log_error("%s: parameters.%s: expected a number, a bool or \"trigger\"", file, p->string);
-            continue;
-        }
-        g->param_count++;
-    }
+    br_ag_params(file, cJSON_GetObjectItemCaseSensitive(root, "parameters"), g);
     for (int i = 0; ok && i < tn; i++) {
         const cJSON *jt = cJSON_GetArrayItem(transitions, i);
         br_anim_graph_transition *t = &g->transitions[g->transition_count];
         SDL_zerop(t);
+        char where[48];
+        SDL_snprintf(where, sizeof(where), "transitions[%d]", i);
         const char *from = br_ag_string(jt, "from");
         const char *to = br_ag_string(jt, "to");
         t->from = from != NULL && SDL_strcmp(from, "*") == 0 ? -1 : br_anim_graph_find(g, from);
         t->to = br_anim_graph_find(g, to);
         if ((t->from < 0 && (from == NULL || SDL_strcmp(from, "*") != 0)) || t->to < 0) {
-            br_log_error("%s: transitions[%d]: \"from\" (a state or \"*\") and \"to\" must name states", file, i);
+            br_log_error("%s: %s: \"from\" (a state or \"*\") and \"to\" must name states", file, where);
             continue;
         }
-        const cJSON *exit_time = cJSON_GetObjectItemCaseSensitive(jt, "exit_time");
-        const cJSON *duration = cJSON_GetObjectItemCaseSensitive(jt, "duration");
-        t->exit_time = cJSON_IsNumber(exit_time) ? (float)exit_time->valuedouble : -1.0f;
-        t->duration = cJSON_IsNumber(duration) ? (float)duration->valuedouble : 0.25f;
+        if (!br_ag_number(file, where, jt, "exit_time", -1.0f, &t->exit_time) ||
+            !br_ag_number(file, where, jt, "duration", 0.25f, &t->duration)) {
+            continue;
+        }
         const cJSON *when = cJSON_GetObjectItemCaseSensitive(jt, "when");
-        bool conds_ok = true;
-        for (int k = 0; k < cJSON_GetArraySize(when) && conds_ok; k++) {
-            char where[48];
-            SDL_snprintf(where, sizeof(where), "transitions[%d].when[%d]", i, k);
+        int wn = cJSON_GetArraySize(when);
+        bool conds_ok = when == NULL || cJSON_IsArray(when);
+        if (!conds_ok) {
+            br_log_error("%s: %s.when: expected an array of conditions", file, where);
+        }
+        for (int k = 0; k < wn && conds_ok; k++) {
+            char cwhere[64];
+            SDL_snprintf(cwhere, sizeof(cwhere), "%s.when[%d]", where, k);
             if (t->cond_count >= BR_ANIM_GRAPH_MAX_CONDS) {
-                br_log_error("%s: %s: at most %d conditions", file, where, BR_ANIM_GRAPH_MAX_CONDS);
+                br_log_error("%s: %s: at most %d conditions", file, cwhere, BR_ANIM_GRAPH_MAX_CONDS);
                 conds_ok = false;
             } else {
-                conds_ok = br_ag_cond(file, cJSON_GetArrayItem(when, k), where, &t->conds[t->cond_count]);
+                conds_ok = br_ag_cond(file, cJSON_GetArrayItem(when, k), cwhere, &t->conds[t->cond_count]);
                 t->cond_count += conds_ok ? 1 : 0;
             }
         }
@@ -251,9 +316,9 @@ br_anim_graph *br_anim_graph_parse(br_engine *e, const char *name, const char *j
             g->transition_count++;
         }
     }
-    const char *entry = br_ag_string(root, "entry");
-    g->entry = entry != NULL ? br_anim_graph_find(g, entry) : 0;
-    if (g->entry < 0 || g->state_count == 0) {
+    const cJSON *jentry = cJSON_GetObjectItemCaseSensitive(root, "entry");
+    g->entry = jentry != NULL ? br_anim_graph_find(g, cJSON_IsString(jentry) ? jentry->valuestring : NULL) : 0;
+    if (ok && (g->entry < 0 || g->state_count == 0)) {
         br_log_error("%s: \"entry\" names no state", file);
         ok = false;
     }
@@ -296,6 +361,7 @@ bool br_anim_graph_attach(br_engine *e, br_animator_data *d)
         if (p != BR_ANIM_NONE) {
             d->params[p].type = g->params[i].type;
             d->params[p].value = g->params[i].value;
+            d->params[p].typed = true;
         }
     }
     br_free(d->state_motion);
@@ -305,16 +371,22 @@ bool br_anim_graph_attach(br_engine *e, br_animator_data *d)
     if (d->state_motion == NULL || d->cond_params == NULL) {
         return false;
     }
-    /* conditions read parameters by index every frame: resolve the names once */
+    /* conditions read parameters by index every frame: resolve the names once. A parameter the
+     * graph does not declare gets its type from the first setter (a trigger is then consumed). */
     for (uint32_t i = 0; i < g->transition_count; i++) {
         for (uint32_t k = 0; k < g->transitions[i].cond_count; k++) {
-            d->cond_params[i * BR_ANIM_GRAPH_MAX_CONDS + k] =
-                br_animator_param_index(d, g->transitions[i].conds[k].param, BR_ANIM_PARAM_FLOAT, true);
+            uint32_t before = d->param_count;
+            uint32_t p = br_animator_param_index(d, g->transitions[i].conds[k].param, BR_ANIM_PARAM_FLOAT, true);
+            if (p != BR_ANIM_NONE && p >= before) {
+                d->params[p].typed = false;
+            }
+            d->cond_params[i * BR_ANIM_GRAPH_MAX_CONDS + k] = p;
         }
     }
     for (uint32_t i = 0; i < g->state_count; i++) {
         const br_anim_graph_state *st = &g->states[i];
-        if (st->clip[0] == '\0' && br_animator_find_motion(d, st->name) == INT32_MIN) {
+        /* blend states are looked up among the trees only, so a clip of the same name cannot win */
+        if (st->clip[0] == '\0' && br_animator_find_tree(d, st->name) == INT32_MIN) {
             const char *clips[BR_ANIM_TREE_MAX];
             float pos[BR_ANIM_TREE_MAX * 2];
             for (uint32_t k = 0; k < st->count; k++) {
@@ -338,7 +410,7 @@ bool br_anim_graph_attach(br_engine *e, br_animator_data *d)
                 return false;
             }
         }
-        int32_t m = br_animator_find_motion(d, st->clip[0] != '\0' ? st->clip : st->name);
+        int32_t m = st->clip[0] != '\0' ? br_animator_find_motion(d, st->clip) : br_animator_find_tree(d, st->name);
         if (m == INT32_MIN) {
             br_log_error("animgraph: state '%s': the animator has no clip '%s'", st->name, st->clip);
             return false;
@@ -367,7 +439,7 @@ void br_anim_graph_update(br_engine *e, br_animator_data *d)
 {
     const br_anim_graph *g = d->graph;
     const br_anim_layer *l = &d->layers[0];
-    if (d->state < 0 || l->prev.active) {
+    if (d->state < 0 || l->prev.active || l->snap) {
         return; /* no transition interrupts a running one */
     }
     for (uint32_t i = 0; i < g->transition_count; i++) {

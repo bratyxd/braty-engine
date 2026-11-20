@@ -45,6 +45,9 @@ typedef struct br_anim_slot {
     float              faded[BR_ANIM_MAX_COMPONENTS];  /* the pose fading out (cross-fades) */
     br_texture         faded_texture;
     bool               has_faded;
+    float              snap[BR_ANIM_MAX_COMPONENTS];   /* base layer pose frozen when a fade started from it */
+    br_texture         snap_texture;
+    bool               has_snap;
 } br_anim_slot;
 
 /* Tracks of one clip bound to one animator's slots (made once, at first play). */
@@ -92,6 +95,7 @@ typedef struct br_anim_layer {
     uint32_t       mask_count;
     br_anim_player cur;
     br_anim_player prev;            /* fading out */
+    bool           snap;            /* fading out of the slots' snapshot instead of prev (layer 0) */
     float          fade_elapsed;
     float          fade_duration;
     br_anim_queued queue[BR_ANIMATOR_MAX_QUEUE];
@@ -104,6 +108,8 @@ typedef struct br_anim_param {
     char               name[BR_ANIM_NAME_SIZE];
     br_anim_param_type type;
     float              value;
+    bool               typed;     /* false: made for a graph condition; the first setter decides the type */
+    bool               warned;    /* a setter of another type was reported */
 } br_anim_param;
 
 /* Legacy br_animator3d shadow (the gltf.animate API drives a unified animator). */
@@ -133,9 +139,8 @@ typedef struct br_animator_data {
     uint32_t              *cond_params;   /* per graph condition: parameter index */
     bool                   root_motion;
     br_anim_target         root_node;
-    float                  root_prev[3];
-    bool                   root_has_prev;
     br_vec3                root_delta;
+    br_array               owned_assets;  /* char *: asset paths this animator holds a reference to */
     br_anim_event_fn       on_event;
     void                  *event_user;
     const br_model        *model;         /* model clip cache reference, NULL if none */
@@ -156,6 +161,7 @@ typedef struct br_tween_data {
     uint32_t         handle;
     uint32_t         handle_generation;
     br_anim_target   target;          /* kind NONE: a callback-only tween */
+    br_anim_target   owner;           /* the node the path was given relative to (kill_target) */
     br_anim_prop_ref prop;
     br_anim_set_fn   set;             /* the registry row's setter (NULL: component field) */
     uint32_t         count;
@@ -185,6 +191,9 @@ typedef struct br_animation_state {
     br_array by_node3d;       /* same for 3D nodes */
     br_array events;          /* br_anim_event of the last update */
     br_array model_clips;     /* br_anim_model_clips */
+    /* freed at the start of the next update, so event names of the last one stay valid */
+    br_array dead_model_clips; /* br_anim_model_clips without users */
+    br_array dead_assets;     /* char *: asset paths to unload */
     br_array tweens;          /* br_tween_data, dense */
     br_pool  tween_handles;   /* uint32_t: dense index of each tween */
     uint32_t animator_component;
@@ -216,6 +225,8 @@ bool br_anim_target_equal(br_anim_target a, br_anim_target b);
 void br_anim_clip_register_loader(br_engine *e);
 /* Reads one JSON value (number, array, "#colour", texture reference) into floats. */
 uint32_t br_anim_json_value(br_engine *e, br_anim_clip *clip, const void *json, float *out, uint32_t max);
+/* True (and *out set) if json is a number a float can hold (finite, |x| <= 1e30). */
+bool br_anim_json_number(const void *json, float *out);
 /* "loop" / "once" / "ping_pong" / "clamp". */
 bool br_anim_loop_from_name(const char *name, br_anim_loop *out);
 
@@ -225,6 +236,10 @@ br_animator_data *br_animator_data_get(br_engine *e, br_animator a);
 void br_animator_free_all(br_engine *e);
 /* Index of a clip or tree by name in the animator's motion space, or INT32_MIN if none. */
 int32_t br_animator_find_motion(br_animator_data *d, const char *name);
+/* Motion index of a blend tree by name (clips are not searched), INT32_MIN if none. */
+int32_t br_animator_find_tree(br_animator_data *d, const char *name);
+/* The animator takes over one reference to the asset at `path` (released when it is removed). */
+void br_animator_own_asset(br_engine *e, br_animator a, const char *path);
 /* Starts a motion on a layer (fade 0 = at once). */
 bool br_animator_start(br_engine *e, br_animator_data *d, uint32_t layer, int32_t motion, float fade);
 uint32_t br_animator_param_index(br_animator_data *d, const char *name, br_anim_param_type type, bool create);

@@ -88,6 +88,7 @@ br_animator br_animator_add(br_engine *e, br_anim_target root)
     br_array_init(&d.bounds, sizeof(br_anim_bound));
     br_array_init(&d.slots, sizeof(br_anim_slot));
     br_array_init(&d.trees, sizeof(br_anim_tree));
+    br_array_init(&d.owned_assets, sizeof(char *));
     d.layer_count = 1;
     d.layers[0].weight = 1.0f;
     d.speed = 1.0f;
@@ -121,18 +122,52 @@ static void br_animator_model_unref(br_engine *e, const br_model *model)
         }
         mc->refs--;
         if (mc->refs == 0) {
-            for (uint32_t k = 0; k < mc->count; k++) {
-                br_anim_clip_destroy(mc->clips[k]);
-            }
-            br_free(mc->clips);
+            /* freed at the next update: this update's events may still point at the clips */
+            br_array_push(&s->dead_model_clips, mc);
             br_array_remove_swap(&s->model_clips, i);
         }
         return;
     }
 }
 
+/* Frees what removed animators released (clips of unused models, asset references). */
+static void br_animator_free_dead(br_engine *e)
+{
+    br_animation_state *s = e->animation;
+    for (uint32_t i = 0; i < s->dead_model_clips.count; i++) {
+        br_anim_model_clips *mc = br_array_at(&s->dead_model_clips, i);
+        for (uint32_t k = 0; k < mc->count; k++) {
+            br_anim_clip_destroy(mc->clips[k]);
+        }
+        br_free(mc->clips);
+    }
+    br_array_clear(&s->dead_model_clips);
+    for (uint32_t i = 0; i < s->dead_assets.count; i++) {
+        char *path = *(char **)br_array_at(&s->dead_assets, i);
+        br_assets_unload(e, path);
+        br_free(path);
+    }
+    br_array_clear(&s->dead_assets);
+}
+
+void br_animator_own_asset(br_engine *e, br_animator a, const char *path)
+{
+    br_animator_data *d = br_animator_data_get(e, a);
+    char *copy = path != NULL ? br_strdup(path) : NULL;
+    if (d == NULL || copy == NULL || br_array_push(&d->owned_assets, &copy) == NULL) {
+        br_free(copy);
+        if (path != NULL) {
+            br_assets_unload(e, path); /* nobody would release it */
+        }
+    }
+}
+
 static void br_animator_free_data(br_engine *e, br_animator_data *d)
 {
+    for (uint32_t i = 0; i < d->owned_assets.count; i++) {
+        br_array_push(&e->animation->dead_assets, br_array_at(&d->owned_assets, i));
+    }
+    br_array_free(&d->owned_assets);
     for (uint32_t i = 0; i < d->bounds.count; i++) {
         br_anim_bound *b = br_array_at(&d->bounds, i);
         br_free(b->slots);
@@ -231,6 +266,7 @@ void br_animator_free_all(br_engine *e)
         br_free(mc->clips);
     }
     br_array_clear(&s->model_clips);
+    br_animator_free_dead(e);
 }
 
 /* ---- clips */
@@ -314,7 +350,12 @@ int32_t br_animator_find_motion(br_animator_data *d, const char *name)
             return (int32_t)i;
         }
     }
-    for (uint32_t i = 0; i < d->trees.count; i++) {
+    return br_animator_find_tree(d, name);
+}
+
+int32_t br_animator_find_tree(br_animator_data *d, const char *name)
+{
+    for (uint32_t i = 0; name != NULL && i < d->trees.count; i++) {
         const br_anim_tree *t = br_array_at(&d->trees, i);
         if (SDL_strcmp(t->name, name) == 0) {
             return -(int32_t)i - 1;
@@ -448,17 +489,29 @@ uint32_t br_animator_param_index(br_animator_data *d, const char *name, br_anim_
             return i;
         }
     }
-    if (!create || name == NULL || d->param_count >= BR_ANIMATOR_MAX_PARAMS) {
-        if (create) {
-            br_log_error("animator: more than %d parameters", BR_ANIMATOR_MAX_PARAMS);
-        }
+    if (!create || name == NULL) {
+        return BR_ANIM_NONE;
+    }
+    if (SDL_strlen(name) >= BR_ANIM_NAME_SIZE) {
+        br_log_error("animator: parameter name '%s' is longer than %d bytes", name, BR_ANIM_NAME_SIZE - 1);
+        return BR_ANIM_NONE;
+    }
+    if (d->param_count >= BR_ANIMATOR_MAX_PARAMS) {
+        br_log_error("animator: more than %d parameters ('%s')", BR_ANIMATOR_MAX_PARAMS, name);
         return BR_ANIM_NONE;
     }
     br_anim_param *p = &d->params[d->param_count];
     SDL_strlcpy(p->name, name, sizeof(p->name));
     p->type = type;
     p->value = 0.0f;
+    p->typed = true;
+    p->warned = false;
     return d->param_count++;
+}
+
+static const char *br_anim_param_type_name(br_anim_param_type type)
+{
+    return type == BR_ANIM_PARAM_TRIGGER ? "trigger" : (type == BR_ANIM_PARAM_BOOL ? "bool" : "float");
 }
 
 static void br_animator_set_param(br_engine *e, br_animator a, const char *name, br_anim_param_type type, float value)
@@ -468,9 +521,19 @@ static void br_animator_set_param(br_engine *e, br_animator a, const char *name,
         return;
     }
     uint32_t i = br_animator_param_index(d, name, type, true);
-    if (i != BR_ANIM_NONE) {
-        d->params[i].value = value;
+    if (i == BR_ANIM_NONE) {
+        return;
     }
+    br_anim_param *p = &d->params[i];
+    if (!p->typed) {
+        p->type = type; /* made for a graph condition: the first setter decides */
+        p->typed = true;
+    } else if (p->type != type && !p->warned) {
+        p->warned = true;
+        br_log_warn("animation: parameter '%s' is a %s but was set as a %s", p->name, br_anim_param_type_name(p->type),
+                    br_anim_param_type_name(type));
+    }
+    p->value = value;
 }
 
 void br_animator_set_float(br_engine *e, br_animator a, const char *name, float value)
@@ -502,6 +565,13 @@ static bool br_animator_add_tree(br_engine *e, br_animator a, const char *name, 
     if (d == NULL || name == NULL || clips == NULL || pos == NULL || count == 0 || count > BR_ANIM_TREE_MAX) {
         br_log_error("animator: a blend tree needs 1..%d clips", BR_ANIM_TREE_MAX);
         return false;
+    }
+    if (SDL_strlen(name) >= BR_ANIM_NAME_SIZE) {
+        br_log_error("animator: blend tree name '%s' is longer than %d bytes", name, BR_ANIM_NAME_SIZE - 1);
+        return false;
+    }
+    if (br_animator_find_motion(d, name) >= 0) {
+        br_log_warn("animation: blend tree '%s' has the name of a clip; playing '%s' by name plays the clip", name, name);
     }
     br_anim_tree t;
     SDL_zero(t);
@@ -628,6 +698,8 @@ static bool br_animator_layer_ok(br_animator_data *d, uint32_t layer)
     return d != NULL && layer < d->layer_count;
 }
 
+static void br_anim_snapshot(br_engine *e, br_animator_data *d);
+
 bool br_animator_start(br_engine *e, br_animator_data *d, uint32_t layer, int32_t motion, float fade)
 {
     br_anim_layer *l = &d->layers[layer];
@@ -639,12 +711,24 @@ bool br_animator_start(br_engine *e, br_animator_data *d, uint32_t layer, int32_
             br_animator_bind(e, d, t->clips[i]);
         }
     }
-    if (fade > 0.0f && l->cur.active) {
+    bool fading = l->prev.active || l->snap;
+    bool once_ended = !l->cur.active && l->cur.ended;
+    if (fade > 0.0f && layer == 0 && (fading || once_ended)) {
+        /* fade from the pose on screen: the fade that runs, or the end pose of a finished clip */
+        br_anim_snapshot(e, d);
+        l->snap = true;
+        l->prev.active = false;
+        l->fade_elapsed = 0.0f;
+        l->fade_duration = fade;
+    } else if (fade > 0.0f && l->cur.active) {
+        // ponytail: layers 1-3 drop an older fading motion when a fade is interrupted; per-layer snapshots if it shows.
         l->prev = l->cur;
+        l->snap = false;
         l->fade_elapsed = 0.0f;
         l->fade_duration = fade;
     } else {
         l->prev.active = false;
+        l->snap = false;
     }
     br_anim_player *p = &l->cur;
     SDL_zerop(p);
@@ -688,8 +772,8 @@ bool br_animator_cross_fade(br_engine *e, br_animator a, const char *motion, flo
     }
     int32_t m = br_animator_find_motion(d, motion);
     const br_anim_layer *l = &d->layers[0];
-    if (m != INT32_MIN && l->cur.active && l->cur.motion == m && !l->prev.active) {
-        return true; /* already playing it */
+    if (m != INT32_MIN && l->cur.active && l->cur.motion == m) {
+        return true; /* already playing it, or already fading into it */
     }
     return br_animator_play_on(e, a, 0, motion, seconds, true);
 }
@@ -719,6 +803,7 @@ void br_animator_stop(br_engine *e, br_animator a)
     for (uint32_t l = 0; d != NULL && l < d->layer_count; l++) {
         d->layers[l].cur.active = false;
         d->layers[l].prev.active = false;
+        d->layers[l].snap = false;
         d->layers[l].queue_count = 0;
     }
 }
@@ -789,7 +874,8 @@ bool br_animator_finished(br_engine *e, br_animator a, uint32_t layer)
 float br_animator_fade_progress(br_engine *e, br_animator a, uint32_t layer)
 {
     br_animator_data *d = br_animator_data_get(e, a);
-    if (!br_animator_layer_ok(d, layer) || !d->layers[layer].prev.active || d->layers[layer].fade_duration <= 0.0f) {
+    if (!br_animator_layer_ok(d, layer) || !(d->layers[layer].prev.active || d->layers[layer].snap) ||
+        d->layers[layer].fade_duration <= 0.0f) {
         return 1.0f;
     }
     return br_clamp01f(d->layers[layer].fade_elapsed / d->layers[layer].fade_duration);
@@ -843,6 +929,7 @@ void br_animator_stop_layer(br_engine *e, br_animator a, uint32_t layer)
     if (br_animator_layer_ok(d, layer)) {
         d->layers[layer].cur.active = false;
         d->layers[layer].prev.active = false;
+        d->layers[layer].snap = false;
     }
 }
 
@@ -879,7 +966,6 @@ bool br_animator_set_root_motion(br_engine *e, br_animator a, const char *node_p
         }
         d->root_motion = true;
     }
-    d->root_has_prev = false;
     for (uint32_t i = 0; i < d->slots.count; i++) {
         br_anim_slot *slot = br_array_at(&d->slots, i);
         slot->root = d->root_motion && br_anim_target_equal(slot->target, d->root_node) &&
@@ -892,6 +978,26 @@ br_vec3 br_animator_root_motion(br_engine *e, br_animator a)
 {
     br_animator_data *d = br_animator_data_get(e, a);
     return d != NULL ? d->root_delta : br_vec3_make(0.0f, 0.0f, 0.0f);
+}
+
+uint32_t br_animator_rebind(br_engine *e, br_animator a)
+{
+    br_animator_data *d = br_animator_data_get(e, a);
+    uint32_t n = 0;
+    for (uint32_t k = 0; d != NULL && k < d->bounds.count; k++) {
+        br_anim_bound *b = br_array_at(&d->bounds, k);
+        for (uint32_t i = 0; b->bound && i < b->clip->track_count; i++) {
+            uint32_t si = b->slots[i];
+            if (si != BR_ANIM_NONE && !((br_anim_slot *)br_array_at(&d->slots, si))->dead) {
+                continue;
+            }
+            si = br_animator_slot_for(e, d, b->clip, &b->clip->tracks[i]);
+            b = br_array_at(&d->bounds, k);
+            b->slots[i] = si;
+            n += si != BR_ANIM_NONE ? 1 : 0;
+        }
+    }
+    return n;
 }
 
 void br_animation_stats(br_engine *e, uint32_t *animators, uint32_t *tracks)
@@ -953,7 +1059,8 @@ static uint32_t br_anim_tick(br_anim_player *p, float duration, float step, br_a
         }
         float start = dir > 0.0f ? 0.0f : duration;
         float end = dir > 0.0f ? duration : 0.0f;
-        float crossings = dir > 0.0f ? SDL_floorf(raw / duration) : SDL_floorf(-raw / duration) + 1.0f;
+        /* backwards, landing exactly on 0 is one crossing less than floor + 1 */
+        float crossings = dir > 0.0f ? SDL_floorf(raw / duration) : SDL_ceilf(-raw / duration);
         n = br_anim_add_span(spans, n, t, end, include);
         // ponytail: a step longer than ~8 passes skips the markers of the extra passes; fine for frame steps.
         for (float k = 1.0f; k < crossings && n + 1 < BR_ANIM_MAX_SPANS; k += 1.0f) {
@@ -1164,6 +1271,9 @@ static void br_anim_sample_clip(br_engine *e, br_animator_data *d, uint32_t laye
         bool quat = slot->prop.type == BR_ANIM_QUAT;
         float v[BR_ANIM_MAX_COMPONENTS];
         br_anim_track_sample(track, t, quat, &b->hints[i], v);
+        for (uint32_t c = track->components; c < slot->count; c++) {
+            v[c] = slot->rest[c]; /* a weights slot wider than this track (other clips have more targets) */
+        }
         br_texture tex = { 0, 0 };
         if (slot->prop.type == BR_ANIM_TEXTURE) {
             uint32_t ti = (uint32_t)SDL_max(0.0f, v[0]);
@@ -1179,6 +1289,9 @@ static void br_anim_sample_clip(br_engine *e, br_animator_data *d, uint32_t laye
             /* additive: the change from the clip's first key */
             float r[BR_ANIM_MAX_COMPONENTS] = { 0 };
             br_anim_track_sample(track, track->times[0], quat, NULL, r);
+            for (uint32_t c = track->components; c < slot->count; c++) {
+                r[c] = slot->rest[c]; /* no change where the track has no values */
+            }
             if (quat) {
                 br_quat q = { v[0], v[1], v[2], v[3] };
                 br_quat ref = { r[0], r[1], r[2], r[3] };
@@ -1316,6 +1429,111 @@ static float br_anim_player_step(br_animator_data *d, const br_anim_player *p, f
     return duration > 0.0f ? step * p->speed / duration : 0.0f;
 }
 
+/* Root movement of clip k over the spans a player crossed this tick (spans scaled to clip
+ * seconds by `scale`): each span's end sample minus its start sample, so loop wraps and clip
+ * changes add only the clip's own movement. */
+static br_vec3 br_anim_clip_root_delta(br_engine *e, br_animator_data *d, uint32_t k, const br_anim_span *spans,
+                                       uint32_t n, float scale)
+{
+    br_vec3 sum = br_vec3_make(0.0f, 0.0f, 0.0f);
+    br_anim_bound *b = br_animator_bind(e, d, k);
+    for (uint32_t i = 0; b != NULL && i < b->clip->track_count; i++) {
+        const br_anim_slot *slot = b->slots[i] != BR_ANIM_NONE ? br_array_at(&d->slots, b->slots[i]) : NULL;
+        if (slot == NULL || !slot->root || slot->dead) {
+            continue;
+        }
+        const br_anim_track *track = &b->clip->tracks[i];
+        bool three_d = slot->target.kind == BR_ANIM_TARGET_3D;
+        for (uint32_t s = 0; s < n; s++) {
+            float from[BR_ANIM_MAX_COMPONENTS] = { 0 };
+            float to[BR_ANIM_MAX_COMPONENTS] = { 0 };
+            br_anim_track_sample(track, spans[s].from * scale, false, NULL, from);
+            br_anim_track_sample(track, spans[s].to * scale, false, NULL, to);
+            sum.x += to[0] - from[0];
+            if (three_d) {
+                sum.z += to[2] - from[2];
+            } else {
+                sum.y += to[1] - from[1];
+            }
+        }
+        break; /* one root track per clip */
+    }
+    return sum;
+}
+
+/* Root movement of a player this tick (blend trees: their children by weight). */
+static br_vec3 br_anim_player_root_delta(br_engine *e, br_animator_data *d, const br_anim_player *p,
+                                         const br_anim_span *spans, uint32_t n)
+{
+    if (p->motion >= 0) {
+        return br_anim_clip_root_delta(e, d, (uint32_t)p->motion, spans, n, 1.0f);
+    }
+    br_vec3 sum = br_vec3_make(0.0f, 0.0f, 0.0f);
+    const br_anim_tree *t = br_array_at(&d->trees, (uint32_t)(-p->motion - 1));
+    for (uint32_t i = 0; i < t->count; i++) {
+        if (t->weights[i] > 0.0f) {
+            float duration = br_animator_clip(d, t->clips[i])->duration;
+            br_vec3 child = br_anim_clip_root_delta(e, d, t->clips[i], spans, n, duration);
+            sum = br_vec3_add(sum, br_vec3_scale(child, t->weights[i]));
+        }
+    }
+    return sum;
+}
+
+/* Copies the pose fading out (the old motion's, in acc, or the snapshot) into slot->faded. */
+static void br_anim_keep_faded(br_animator_data *d, bool from_snapshot)
+{
+    for (uint32_t i = 0; i < d->slots.count; i++) {
+        br_anim_slot *slot = br_array_at(&d->slots, i);
+        slot->has_faded = from_snapshot ? slot->has_snap : slot->acc_weight > 0.0f;
+        if (slot->has_faded) {
+            SDL_memcpy(slot->faded, from_snapshot ? slot->snap : slot->acc, sizeof(float) * slot->count);
+            slot->faded_texture = from_snapshot ? slot->snap_texture : slot->acc_texture;
+        }
+    }
+}
+
+/* Freezes the pose the base layer shows now into slot->snap: the running fade (old motion or
+ * older snapshot, blended with the current motion), else the current motion (a finished ONCE
+ * clip). Runs between updates, where the base layer starts from the rest values. */
+static void br_anim_snapshot(br_engine *e, br_animator_data *d)
+{
+    br_anim_layer *l = &d->layers[0];
+    bool fading = l->prev.active || l->snap;
+    float f = fading && l->fade_duration > 0.0f ? br_clamp01f(l->fade_elapsed / l->fade_duration) : 1.0f;
+    br_anim_reset_acc(d);
+    br_anim_sample_player(e, d, 0, &l->prev, 1.0f);
+    br_anim_keep_faded(d, !l->prev.active && l->snap);
+    br_anim_player cur = l->cur;
+    cur.active = true; /* a finished ONCE clip still shows its end pose */
+    br_anim_reset_acc(d);
+    br_anim_sample_player(e, d, 0, &cur, 1.0f);
+    for (uint32_t i = 0; i < d->slots.count; i++) {
+        br_anim_slot *slot = br_array_at(&d->slots, i);
+        bool has_a = fading && slot->has_faded;
+        bool has_b = slot->acc_weight > 0.0f;
+        slot->has_snap = has_a || has_b;
+        if (!slot->has_snap) {
+            continue;
+        }
+        float a[BR_ANIM_MAX_COMPONENTS];
+        float b[BR_ANIM_MAX_COMPONENTS];
+        SDL_memcpy(a, has_a ? slot->faded : slot->rest, sizeof(a));
+        SDL_memcpy(b, has_b ? slot->acc : slot->rest, sizeof(b));
+        br_texture ta = has_a ? slot->faded_texture : slot->rest_texture;
+        br_texture tb = has_b ? slot->acc_texture : slot->rest_texture;
+        if (br_anim_discrete(slot->prop.type)) {
+            SDL_memcpy(slot->snap, f >= 0.5f ? b : a, sizeof(slot->snap));
+            slot->snap_texture = f >= 0.5f ? tb : ta;
+        } else {
+            br_anim_blend(slot->prop.type, a, b, slot->count, f);
+            SDL_memcpy(slot->snap, a, sizeof(slot->snap));
+            slot->snap_texture = tb;
+        }
+    }
+    br_anim_reset_acc(d);
+}
+
 static void br_anim_update_layer(br_engine *e, br_animator_data *d, uint32_t layer, float step, float fade_step)
 {
     br_anim_layer *l = &d->layers[layer];
@@ -1330,19 +1548,29 @@ static void br_anim_update_layer(br_engine *e, br_animator_data *d, uint32_t lay
     } else if (l->cur.active && l->cur.ended && l->cur.loop == BR_ANIM_ONCE) {
         l->cur.active = false; /* ONCE: the end pose was written last frame; stop writing */
     }
-    if (l->prev.active) {
+    if (!l->cur.active) {
+        l->snap = false; /* a snapshot only fades into a playing motion */
+    }
+    if (l->prev.active || l->snap) {
         l->fade_elapsed += fade_step;
         if (l->fade_elapsed >= l->fade_duration) {
             l->prev.active = false;
+            l->snap = false;
         }
     }
-    float f = l->prev.active && l->fade_duration > 0.0f ? l->fade_elapsed / l->fade_duration : 1.0f;
+    bool fading = l->prev.active || l->snap;
+    float f = fading && l->fade_duration > 0.0f ? l->fade_elapsed / l->fade_duration : 1.0f;
     bool contributes = layer == 0 || l->weight > 0.0f;
+    bool root = layer == 0 && d->root_motion;
     br_anim_span spans[BR_ANIM_MAX_SPANS];
     if (l->prev.active) {
         uint32_t n = br_anim_tick(&l->prev, br_anim_player_duration(d, &l->prev), br_anim_player_step(d, &l->prev, step), spans);
         if (contributes && f < 1.0f) {
             br_anim_fire_player(e, d, &l->prev, spans, n);
+        }
+        if (root) {
+            br_vec3 moved = br_anim_player_root_delta(e, d, &l->prev, spans, n);
+            d->root_delta = br_vec3_add(d->root_delta, br_vec3_scale(moved, 1.0f - f));
         }
     }
     if (l->cur.active) {
@@ -1350,22 +1578,19 @@ static void br_anim_update_layer(br_engine *e, br_animator_data *d, uint32_t lay
         if (contributes) {
             br_anim_fire_player(e, d, &l->cur, spans, n);
         }
+        if (root) {
+            br_vec3 moved = br_anim_player_root_delta(e, d, &l->cur, spans, n);
+            d->root_delta = br_vec3_add(d->root_delta, br_vec3_scale(moved, f)); /* a snapshot does not move */
+        }
     }
-    if (!contributes || (!l->cur.active && !l->prev.active)) {
+    if (!contributes || (!l->cur.active && !fading)) {
         return;
     }
-    if (l->prev.active) {
-        /* cross-fade: the old motion's pose, then the new one's, then blend the two by f */
+    if (fading) {
+        /* cross-fade: the pose fading out (old motion or snapshot), the new one, blended by f */
         br_anim_reset_acc(d);
         br_anim_sample_player(e, d, layer, &l->prev, 1.0f);
-        for (uint32_t i = 0; i < d->slots.count; i++) {
-            br_anim_slot *slot = br_array_at(&d->slots, i);
-            slot->has_faded = slot->acc_weight > 0.0f;
-            if (slot->has_faded) {
-                SDL_memcpy(slot->faded, slot->acc, sizeof(float) * slot->count);
-                slot->faded_texture = slot->acc_texture;
-            }
-        }
+        br_anim_keep_faded(d, !l->prev.active);
         br_anim_reset_acc(d);
         br_anim_sample_player(e, d, layer, &l->cur, 1.0f);
         br_anim_blend_fade(d, layer, f);
@@ -1379,27 +1604,17 @@ static void br_anim_update_layer(br_engine *e, br_animator_data *d, uint32_t lay
     br_anim_combine(d, layer);
 }
 
-/* Root motion: report the root slot's movement, keep the node in place horizontally. */
-static void br_anim_root_motion(br_animator_data *d, br_anim_slot *slot)
+/* Root motion: the movement is reported (br_animator_root_motion); horizontally the node keeps
+ * the position it has, so the game can apply the delta to the node itself or to a parent. */
+static void br_anim_root_hold(br_engine *e, br_anim_slot *slot)
 {
-    bool three_d = slot->target.kind == BR_ANIM_TARGET_3D;
-    float now[3] = { slot->final.f[0], slot->final.f[1], three_d ? slot->final.f[2] : 0.0f };
-    if (d->root_has_prev && !d->layers[0].cur.wrapped) {
-        // ponytail: the frame a loop wraps reports no motion (one-frame hitch); split the delta at the wrap if it shows.
-        d->root_delta.x += now[0] - d->root_prev[0];
-        if (three_d) {
-            d->root_delta.z += now[2] - d->root_prev[2];
-        } else {
-            d->root_delta.y += now[1] - d->root_prev[1];
-        }
-    }
-    SDL_memcpy(d->root_prev, now, sizeof(now));
-    d->root_has_prev = true;
-    slot->final.f[0] = slot->rest[0];
-    if (three_d) {
-        slot->final.f[2] = slot->rest[2];
+    br_anim_value now;
+    br_anim_prop_get(e, slot->target, &slot->prop, &now);
+    slot->final.f[0] = now.f[0];
+    if (slot->target.kind == BR_ANIM_TARGET_3D) {
+        slot->final.f[2] = now.f[2];
     } else {
-        slot->final.f[1] = slot->rest[1];
+        slot->final.f[1] = now.f[1];
     }
 }
 
@@ -1421,17 +1636,18 @@ static void br_animator_update(br_engine *e, br_animator_data *d, float dt)
     br_anim_slot *slots = d->slots.data;
     for (uint32_t i = 0; i < d->slots.count; i++) {
         br_anim_slot *slot = &slots[i];
+        if (check_targets && !slot->dead && !br_anim_target_valid(e, slot->target)) {
+            /* every slot, animated this frame or not */
+            slot->dead = true;
+            slot->touched = false;
+            br_log_warn("animation: a node animated by an animator was destroyed; its tracks are dropped");
+        }
         if (!slot->touched || slot->dead) {
             continue;
         }
         slot->touched = false; /* final is valid only while touched (see br_anim_slot_base) */
-        if (check_targets && !br_anim_target_valid(e, slot->target)) {
-            slot->dead = true;
-            br_log_warn("animation: a node animated by an animator was destroyed; its tracks are dropped");
-            continue;
-        }
         if (slot->root && d->root_motion) {
-            br_anim_root_motion(d, slot);
+            br_anim_root_hold(e, slot);
         }
         slot->final.count = slot->count;
         if (slot->set != NULL) {
@@ -1449,6 +1665,7 @@ void br_animator_system(br_engine *e, float dt, void *user)
     br_animation_state *s = e->animation;
     br_anim3d_sync_in(e);
     br_array_clear(&s->events);
+    br_animator_free_dead(e); /* the last update's events pointed into these */
     s->stat_animators = 0;
     s->stat_tracks = 0;
     s->updating = true;

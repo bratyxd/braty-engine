@@ -220,6 +220,9 @@ void br_animator_remove(br_engine *e, br_animator a);
 bool br_animator_valid(br_engine *e, br_animator a);
 /* Number of live animators (the dense pool the system walks). */
 uint32_t br_animator_count(br_engine *e);
+/* Binds again the tracks that were dropped (node or property missing, node destroyed), e.g.
+ * after attaching a weapon node the clips animate. Returns how many tracks now resolve. */
+uint32_t br_animator_rebind(br_engine *e, br_animator a);
 /* Makes a clip playable by name (the clip must outlive the animator). */
 bool br_animator_add_clip(br_engine *e, br_animator a, const br_anim_clip *clip);
 /* Adds every clip of a library. Returns how many. */
@@ -230,7 +233,10 @@ uint32_t br_animator_add_model_clips(br_engine *e, br_animator a, const br_model
 
 /* Plays a clip or blend tree on the base layer from its start (cancels fades and the queue). */
 bool br_animator_play(br_engine *e, br_animator a, const char *motion);
-/* Starts a motion on the base layer and blends to it over `seconds` (the old one keeps playing). */
+/* Starts a motion on the base layer and blends to it over `seconds` (the old one keeps playing).
+ * The fade starts from the pose on screen: a fade that is still running, or the end pose of a
+ * finished ONCE clip, is frozen and faded out. Nothing happens while `motion` is already playing
+ * or fading in, so it can be called every frame. */
 bool br_animator_cross_fade(br_engine *e, br_animator a, const char *motion, float seconds);
 /* Plays `motion` after the current base-layer motion ends (or wraps), fading over fade_seconds. */
 bool br_animator_queue(br_engine *e, br_animator a, const char *motion, float fade_seconds);
@@ -267,11 +273,14 @@ void br_animator_stop_layer(br_engine *e, br_animator a, uint32_t layer);
 
 /* ---- parameters and blend trees */
 
-/* Sets a float parameter (created on first use). Blend trees and state machines read them. */
+/* Sets a float parameter (created on first use; names up to 31 bytes, longer ones are reported
+ * and ignored). Blend trees and state machines read them. A parameter's type comes from the
+ * graph's "parameters", else from the first setter; a setter of another type sets the value and
+ * warns once. */
 void br_animator_set_float(br_engine *e, br_animator a, const char *name, float value);
 /* Sets a bool parameter. */
 void br_animator_set_bool(br_engine *e, br_animator a, const char *name, bool value);
-/* Sets a trigger (a bool that a state-machine transition consumes). */
+/* Sets a trigger (a bool that a state-machine transition consumes, declared in the graph or not). */
 void br_animator_set_trigger(br_engine *e, br_animator a, const char *name);
 /* A parameter's value (bools/triggers as 0/1), 0 if unknown. */
 float br_animator_get_float(br_engine *e, br_animator a, const char *name);
@@ -296,7 +305,8 @@ br_anim_graph *br_anim_graph_parse(br_engine *e, const char *name, const char *j
 /* Frees a parsed graph. */
 void br_anim_graph_free(br_anim_graph *graph);
 /* Runs a state machine on the base layer (add the clips first; the graph must outlive the
- * animator). Starts in the entry state. NULL removes it. */
+ * animator). Starts in the entry state. Blend states become blend trees named after the state
+ * (a clip of the same name does not replace them). NULL removes it. */
 bool br_animator_set_graph(br_engine *e, br_animator a, const br_anim_graph *graph);
 /* Name of the current state, NULL without a graph. */
 const char *br_animator_state(br_engine *e, br_animator a);
@@ -307,7 +317,7 @@ const char *br_animator_state(br_engine *e, br_animator a);
 typedef struct br_anim_event {
     br_animator    animator;
     br_anim_target root;       /* the animator's node */
-    const char    *name;       /* the marker name (valid while the clip lives) */
+    const char    *name;       /* the marker name (valid until the next animation update) */
     const char    *clip;
     float          time;       /* the marker time in the clip */
 } br_anim_event;
@@ -322,8 +332,10 @@ void br_animator_set_event_callback(br_engine *e, br_animator a, br_anim_event_f
 /* ---- root motion */
 
 /* Extracts root motion from the position track of node_path ("" = the root, "#0", "Hips"): the
- * node stays in place horizontally (2D: x and y, 3D: x and z) and the movement is reported by
- * br_animator_root_motion for the game to apply. NULL turns it off. */
+ * animator stops writing that node's horizontal position (2D: x and y, 3D: x and z) and reports
+ * the track's movement with br_animator_root_motion, for the game to apply to the node itself or
+ * to a parent. Base layer only; a clip change, a set_time or a loop wrap adds only the clip's own
+ * movement. NULL turns it off. */
 bool br_animator_set_root_motion(br_engine *e, br_animator a, const char *node_path);
 /* The root movement extracted in the last update (in the root node's parent space). */
 br_vec3 br_animator_root_motion(br_engine *e, br_animator a);
