@@ -358,7 +358,8 @@ typedef struct br_component_desc {
     const char *name; size_t size; const br_field_desc *fields; uint32_t field_count;
 } br_component_desc;
 
-/* Registers a component (desc, name and field list are copied). Returns its id, 0 on failure. */
+/* Registers a component (desc, name and field list are copied). Returns its id, 0 on failure
+ * (logged): duplicate name, size 0, or a field without a name, of unknown type or not inside size. */
 uint32_t br_component_register(br_engine *e, const br_component_desc *desc);
 /* Finds a component id by name, 0 if unknown. */
 uint32_t br_component_find(br_engine *e, const char *name);

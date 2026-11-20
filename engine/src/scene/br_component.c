@@ -9,12 +9,39 @@ static br_component_entry *br_component_entry_get(br_engine *e, uint32_t compone
     return br_array_at(&e->scene->components, component_id - 1);
 }
 
+/* Bytes a field of this type takes in the struct (0 = unknown type). */
+static size_t br_field_type_size(br_field_type type)
+{
+    switch (type) {
+    case BR_FIELD_BOOL: return sizeof(bool);
+    case BR_FIELD_INT: return sizeof(int32_t);
+    case BR_FIELD_FLOAT: return sizeof(float);
+    case BR_FIELD_VEC2: return sizeof(br_vec2);
+    case BR_FIELD_VEC3: return sizeof(br_vec3);
+    case BR_FIELD_COLOR: return sizeof(br_color);
+    case BR_FIELD_STRING: return BR_FIELD_STRING_SIZE;
+    case BR_FIELD_ASSET: return BR_FIELD_STRING_SIZE;
+    case BR_FIELD_NODE: return sizeof(br_node);
+    }
+    return 0;
+}
+
 uint32_t br_component_register(br_engine *e, const br_component_desc *desc)
 {
     br_scene_state *s = e->scene;
     if (desc == NULL || desc->name == NULL || desc->size == 0) {
         br_log_error("br_component_register: a component needs a name and a size");
         return 0;
+    }
+    /* scene files and glTF extras write at base + offset: a field must lie inside the struct */
+    for (uint32_t i = 0; desc->fields != NULL && i < desc->field_count; i++) {
+        const br_field_desc *f = &desc->fields[i];
+        size_t size = br_field_type_size(f->type);
+        if (f->name == NULL || size == 0 || f->offset > desc->size || size > desc->size - f->offset) {
+            br_log_error("component '%s': field %u ('%s') has no name, an unknown type or does not fit in %u bytes",
+                         desc->name, i, f->name != NULL ? f->name : "", (unsigned)desc->size);
+            return 0;
+        }
     }
     if (br_component_find(e, desc->name) != 0) {
         br_log_error("component '%s' is already registered", desc->name);

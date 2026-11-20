@@ -43,6 +43,18 @@ int main(void)
     BR_CHECK(copy != NULL && copy->field_count == 3 && copy->fields != velocity_fields);
     BR_CHECK(copy != NULL && SDL_strcmp(copy->fields[1].name, "damping") == 0);
 
+    /* a field that does not fit the struct (wrong offsetof) would let data write past it */
+    br_field_desc past_end[] = { { "far", BR_FIELD_VEC2, sizeof(velocity) - 4 } };
+    br_component_desc bad = { "bad_offset", sizeof(velocity), past_end, 1 };
+    BR_CHECK(br_component_register(e, &bad) == 0);
+    br_field_desc unknown_type[] = { { "odd", (br_field_type)99, 0 } };
+    br_component_desc bad_type = { "bad_type", sizeof(velocity), unknown_type, 1 };
+    BR_CHECK(br_component_register(e, &bad_type) == 0);
+    br_field_desc no_name[] = { { NULL, BR_FIELD_INT, 0 } };
+    br_component_desc bad_name = { "bad_name", sizeof(velocity), no_name, 1 };
+    BR_CHECK(br_component_register(e, &bad_name) == 0);
+    BR_CHECK(br_component_find(e, "bad_offset") == 0);
+
     br_node nodes[5];
     for (int i = 0; i < 5; i++) {
         nodes[i] = br_node_create_container(e);
