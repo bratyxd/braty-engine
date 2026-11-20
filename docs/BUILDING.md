@@ -12,7 +12,7 @@
 ```sh
 cmake --preset windows-gcc          # configure into build/windows-gcc
 cmake --build --preset windows-gcc  # engine, tests, examples
-ctest --preset windows-gcc          # every tests/test_*.c
+ctest --preset windows-gcc          # unit tests, headless examples, play-tests, golden images
 build/windows-gcc/hello_quad.exe --frames 3 --screenshot out.png
 ```
 
@@ -74,7 +74,8 @@ A release preset is its platform preset plus:
 What a release build does **not** do yet (ship around it or wait for the fixes): executables are
 console-subsystem programs on Windows (a console window opens next to the game; add
 `WIN32_EXECUTABLE` to your game target), logs go to stderr only (no log file), a failed start-up
-shows no message box, the debug overlay (F1) is still compiled in, and nothing installs or packs
+shows no message box, the debug overlay (F1 / F2) is still compiled in (game.json
+`"debug": {"keys": false}` or `br_debug_set_keys_enabled` switches its keys off), and nothing installs or packs
 the assets (`data/` is copied next to the executable as loose files; no `install()` rules). For
 profiling numbers use a Release build with `-DBRATY_PROFILER=ON`.
 
@@ -89,7 +90,7 @@ hello_quad --gpu-driver vulkan     --frames 3 --screenshot vulkan.png
 
 Verified on the dev machine (RTX 3060 Ti): both drivers run every example and both games, but
 the screenshots are not identical: Vulkan differs from the Direct3D 12 goldens by a few edge
-pixels in 9 of 24 golden cases (`docs/TESTING.md`, "Driver"). `metal` is not testable here.
+pixels in 10 of 27 golden cases (`docs/TESTING.md`, "Driver"). `metal` is not testable here.
 
 Debug builds create the device with SDL's debug mode on (D3D12 debug layer / Vulkan validation
 if installed). Release builds (`NDEBUG`, the release presets) turn it off.
@@ -138,7 +139,7 @@ struct, `SV_Position` included, or Direct3D 12 rejects the pipeline.
 
 | Option | Default | What |
 |---|---|---|
-| `BRATY_BUILD_TESTS` | ON | `tests/test_*.c`, the play-test script and the golden-image test (needs Python 3) |
+| `BRATY_BUILD_TESTS` | ON | `tests/test_*.c`, a `--headless --frames 5` run of every example, the play-test scripts and the golden-image test (needs Python 3) |
 | `BRATY_BUILD_EXAMPLES` | ON | `examples/*.c` (they read their data from the source tree: `BRATY_EXAMPLES_DIR`) |
 | `BRATY_BUILD_SAMPLES` | ON | `sample_projects/*` |
 | `BRATY_PLAYTEST_STDIN` | ON on desktop, OFF on Android / iOS / Emscripten and in release presets | `--playtest-stdin`: the one engine file that uses C stdio (`engine/src/playtest/br_playtest_stdin.c`) |

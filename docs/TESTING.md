@@ -8,11 +8,13 @@ ctest --preset windows-gcc              # everything: unit tests, the play-test,
 ctest --preset windows-gcc -LE golden   # without the golden images (no windows open)
 ctest --preset windows-gcc -L golden    # only the golden images
 ctest --preset windows-gcc -L playtest  # only the play-test scripts
+ctest --preset windows-gcc -L headless  # only the examples run with --headless --frames 5
 ```
 
 | Kind | Where | Needs |
 |---|---|---|
-| Unit tests | `tests/test_<module>.c`, one CTest each | nothing (headless engine) |
+| Unit tests | `tests/test_<module>.c`, one CTest each | nothing (headless engine); `test_gpu`, `test_debug` and one `test_profiler` case open a window and skip without a GPU |
+| Headless examples | every `examples/*.c` as `headless_<name>` (`--headless --frames 5`), label `headless` | nothing: catches code that assumes a GPU (`br_engine_gpu` is NULL headless) |
 | Play-test scripts | `sample_projects/<game>/playtest/*.json`, label `playtest` | nothing (`--headless`) |
 | Getting-started guide | `python tools/check_getting_started.py` (by hand, not in CTest: builds 13 programs) | a GPU for the screenshots |
 | Golden images | `tools/golden.py` + `tests/golden/*.png`, test `golden`, label `golden` | a GPU; reported **skipped** without one |
@@ -88,12 +90,14 @@ Ti), and CTest's `golden` test passes `--gpu-driver direct3d12` on Windows inste
 whatever SDL picks. Vulkan screenshots are *not* identical; Vulkan runs are informative, not
 gating, and other GPUs and drivers may need goldens of their own.
 
-**Tolerance, measured 2026-11-20** (all 24 cases, downsampled pixels, worst channel difference):
+**Tolerance, measured 2026-11-20** (downsampled pixels, worst channel difference; the 24 cases of
+the first measurement, re-run with all 27):
 
 | Run against the goldens | Worst difference | Cases with a pixel off by more than 2 |
 |---|---|---|
 | Direct3D 12, three runs | 0 (one run: 1 in `canvas3d_demo`) | none (after updating `profiler_demo`, below) |
-| Vulkan, one run | up to 29 | 9: `graphics_demo` 130 px, `view3d_demo` 993, `filters_demo` 303, `canvas3d_demo` 141, `gltf_demo` 36, `crate_rush_play` 53, `text_demo` 2, `animation_demo` 2, `crate_rush_menu` 2 |
+| Direct3D 12, one run of all 27 cases | 0 | none |
+| Vulkan, one run (27 cases) | up to 29 | 10: `view3d_demo` 993 px, `filters_demo` 303, `canvas3d_demo` 141, `graphics_demo` 128, `crate_rush_play` 52, `gltf_demo` 50, `animation_demo` 6, `gltf_scene_demo` 5, `text_demo` 2, `crate_rush_menu` 2 |
 
 Direct3D 12 is deterministic, so the check is the tightest value that is stable there: channel
 tolerance 2, zero pixels over it. The previous rule (6 per channel, 0.2 % = 115 pixels per case)
@@ -104,7 +108,7 @@ bloom around thin lines), not missing content. If a driver update makes D3D12 dr
 two, look at the diff, then raise `MAX_BAD_PIXELS` in `tools/golden.py` by that much, not the
 channel tolerance.
 
-**Size.** 24 PNGs, RGB, 320 x 180, 776 KB in total. Keep new ones at this size.
+**Size.** 27 PNGs, RGB, 320 x 180, about 790 KB in total. Keep new ones at this size.
 
 ## Determinism
 

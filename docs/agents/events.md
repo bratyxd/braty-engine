@@ -108,3 +108,5 @@ Key names are SDL scancode names, buttons SDL gamepad names (`"a"` = south face 
 - `br_sprite_set_size` sets the node scale: put children and per-state scaling on a parent
   container (as the snippet does).
 - Paths are capped at 64 ancestors (`// ponytail:` in br_events.c).
+- Hit tests (and stencil-mask geometry tests) recurse once per level and stop at 2048 levels,
+  where the render walk stops drawing: deeper nodes are not hit (logged once).

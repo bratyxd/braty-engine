@@ -15,7 +15,7 @@ readback, and the frame target.
 
 | Function | What for |
 |---|---|
-| `br_engine_gpu(e)` | Get the `br_gpu` (NULL when headless). |
+| `br_engine_gpu(e)` | Get the `br_gpu` (NULL when headless: every example runs `--headless` in CTest, so guard GPU calls made outside RENDER; `br_gpu_set_clear_color` and `br_gpu_pipeline_count` accept NULL). |
 | `br_gpu_pipeline_get(g, &desc)` | Cached pipeline for shaders + layout + blend + formats. |
 | `br_gpu_sampler_get(g, &style)` | Cached sampler (filter, address mode, mips, anisotropy). |
 | `br_gpu_texture_create_rgba8(g, w, h, pixels, mipmaps)` | Upload an image. |

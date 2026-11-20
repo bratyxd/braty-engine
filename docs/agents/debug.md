@@ -3,7 +3,7 @@
 Header: `engine/include/braty/br_debug.h`. Source: `engine/src/debug/`.
 Example: `examples/data_demo.c --debug`, `examples/profiler_demo.c` (F2 panel). Tests:
 `tests/test_scene_file.c` (log capture, toggle), `tests/test_profiler.c` (input taken by the
-overlay).
+overlay), `tests/test_debug.c` (the font replaced while the overlay is open; needs a window).
 
 ## What it does
 
@@ -68,3 +68,6 @@ A shipped game turns the keys off in game.json:
   injected with `br_input_inject_*` (play-tests) skips SDL's queue and therefore the filter: an
   injected click on a window reaches microui and the game.
 - Glyphs are rasterised at 1 pixel per unit (soft on HiDPI; `ponytail:` in br_debug.c).
+- The glyphs are the bitmap font installed as `"braty.debug"`, looked up by name on every draw: a
+  game may install its own font under that name (the overlay uses it) or uninstall it (the
+  overlay installs its own again on the next frame).

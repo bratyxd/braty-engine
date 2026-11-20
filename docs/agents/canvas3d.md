@@ -61,4 +61,7 @@ demo clicks it with `br_input_inject_pointer_*` at `br_view3d_world_to_screen` o
 - Canvases do not cast shadows; lit canvases get no shadows either.
 - Colours and the tint are sRGB like all 2D content; the view's tone map still applies (ACES by
   default), so pure UI colours look slightly different than on the stage.
-- Hit tests inside a canvas ignore z-index, render layers and masks (`ponytail:` in the source).
+- Hit tests inside a canvas ignore z-index, render layers and masks (`ponytail:` in the source)
+  and stop at 2048 levels, like the render walk.
+- Distance-field bitmap fonts (`.fnt` with `distanceField` `sdf`, `msdf` or `mtsdf`) work in
+  geometry mode too; `examples/sdf_fonts_demo.c` draws all three on the stage and on a canvas.

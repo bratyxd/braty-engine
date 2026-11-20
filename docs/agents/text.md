@@ -3,7 +3,8 @@
 Headers: `engine/include/braty/br_text.h` (styles, text node, measure, UTF-8), `br_font.h`
 (TTF fonts, families), `br_bitmap_font.h` (AngelCode / installed fonts, bitmap text),
 `br_rich_text.h` (tags, split text). Source: `engine/src/text/`, shader
-`engine/shaders/text_sdf.frag.hlsl`. Test: `tests/test_text.c`. Example: `examples/text_demo.c`.
+`engine/shaders/text_sdf.frag.hlsl`. Test: `tests/test_text.c`. Examples: `examples/text_demo.c`,
+`examples/sdf_fonts_demo.c`.
 
 ## What it does
 
@@ -17,7 +18,10 @@ Headers: `engine/include/braty/br_text.h` (styles, text node, measure, UTF-8), `
   grows 256 -> 4096; an old atlas texture is kept alive until the next frame.
 - `br_font_options.sdf = true` makes a font store distance fields at one base size; it is drawn
   with `text_sdf.frag` through `br_render_push_custom` and stays sharp at any scale (use it for
-  zoomed or 3D text). AngelCode fonts with `distanceField` (sdf / msdf) use the same shader.
+  zoomed or 3D text). AngelCode fonts with `distanceField` (`sdf`, `msdf`, `mtsdf`) use the same
+  shader (and `canvas3d_sdf.frag` on a canvas3d); pages are premultiplied on upload, so the
+  multi-channel mode divides by alpha before the median (`examples/sdf_fonts_demo.c`, golden
+  `sdf_fonts_demo`, draws one glyph of each kind inside a reference ring).
 
 ## Functions you actually need
 

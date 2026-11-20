@@ -7,7 +7,7 @@ ever been built and run.** Everything else below is configured, written down, an
 
 | Platform | Preset | GPU backend | Status |
 |---|---|---|---|
-| Windows 10/11, MinGW-w64 GCC | `windows-gcc`, `windows-gcc-release` | Direct3D 12, Vulkan | **Tested**: all tests (Debug and release presets), every example, both sample games. Goldens are D3D12; Vulkan screenshots differ by a few edge pixels in 9 of 24 cases (`docs/TESTING.md`) |
+| Windows 10/11, MinGW-w64 GCC | `windows-gcc`, `windows-gcc-release` | Direct3D 12, Vulkan | **Tested**: all tests (Debug and release presets), every example, both sample games. Goldens are D3D12; Vulkan screenshots differ by a few edge pixels in 10 of 27 cases (`docs/TESTING.md`) |
 | Windows, MSVC | `windows-msvc` | Direct3D 12, Vulkan | **Never built, never run** (no MSVC on the dev machine). The CI workflow has a `windows-msvc` job, but the workflow itself has never run |
 | Linux (GCC/Clang) | `linux` | Vulkan | Configured, never built. CI builds it once the workflow runs |
 | macOS (Apple Clang) | `macos` | Metal | Configured, never built. **MSL shaders are generated but have never run** |
@@ -92,8 +92,10 @@ What a console port needs, once the platform holder's SDL3 port (with SDL_GPU) e
    storage. Saves already use `SDL_OpenUserStorage` (`br_save_*`); data files are read with
    `SDL_IOFromFile` on paths under the executable directory, which needs to become title storage.
 4. **Platform rules** (suspend/resume, user sign-in, save-data size limits, controller
-   disconnect prompts). SDL delivers the events (`br_engine_add_event_handler`), but the engine
-   itself did not react to the app lifecycle at the 2026-11-20 review (below).
+   disconnect prompts). Since the 2026-11-20 review the engine tracks focus, minimise and
+   background events: game time and audio pause while inactive (`window.pause_when_inactive`)
+   and games get `br_app_on_lifecycle` callbacks (DEACTIVATED, ACTIVATED, LOW_MEMORY,
+   TERMINATING); sign-in, size limits and disconnect prompts are still the game's.
 
 The platform-sensitive spots known today (from the 2026-11-20 review; nothing has been ported, so
 expect more):
@@ -103,8 +105,8 @@ expect more):
 | `engine/src/gpu/br_gpu_device.c`, `br_gpu_create` | Requests `SPIRV | DXIL | MSL` from `SDL_CreateGPUDevice`; add `SDL_GPU_SHADERFORMAT_PRIVATE` (one flag). |
 | `tools/compile_shaders.py` (+ regenerated `engine/shaders/compiled/*.h`) | Emit the console's format into the PRIVATE slot. |
 | `engine/src/core/br_file.c`, `br_file_read_all` / `br_file_write_all` / `br_file_exists` | Use `SDL_OpenTitleStorage` instead of `SDL_IOFromFile` / `SDL_SaveFile` / `SDL_GetPathInfo`. |
-| `engine/src/core/br_file.c`, save storage | User storage is opened once and kept open for the whole session; platforms that commit on close only commit at exit. |
-| `engine/src/app/br_app.c`, app lifecycle | Background / minimise / low-memory / terminate events were not handled by the engine at the 2026-11-20 review; consoles and mobile require it. |
+| `engine/src/core/br_file.c`, save storage | User storage is opened once (under the org + app identity, `br_engine_set_save_name`) and kept open for the whole session; platforms that commit on close only commit at exit. Writes go to `<path>.tmp` and are renamed over the save. |
+| `engine/src/app/br_app.c`, app lifecycle | Handled since the review (pause when inactive, `br_app_on_lifecycle`), but only tested with injected SDL events on desktop; a real suspend / resume on a phone or console has never run. |
 | `engine/src/playtest/br_playtest_stdin.c` | C stdio (`--playtest-stdin`); off with `BRATY_PLAYTEST_STDIN=OFF` (default on Android / iOS / Emscripten and in the release presets). |
 | `sample_projects/*/CMakeLists.txt`, the guide's step 2 | Games are `add_executable`; Android needs a shared library named `main`, iOS `MACOSX_BUNDLE`. |
 | `engine/src/data/br_scene_reload.c`, `br_data_modify_time` | Hot reload polls `SDL_GetPathInfo`; development only, turn it off (`debug.hot_reload`). |

@@ -20,7 +20,7 @@ state, a 9th texture, 65535 vertices, a pass switch, a custom draw or a callback
 |---|---|
 | `br_texture_load(e, path)` | PNG/JPG/... (missing file -> logged + magenta fallback). |
 | `br_texture_create_rgba8`, `br_texture_create_frame`, `br_texture_white` | Textures from code, atlas frames. |
-| `br_render_texture_create(e, w, h, res)`, `br_render_to_texture(e, node, rt)` | Pixi RenderTexture. |
+| `br_render_texture_create(e, w, h, res)`, `br_render_to_texture(e, node, rt)` | Pixi RenderTexture (each edge 1..`BR_RENDER_TEXTURE_MAX_SIZE` = 16384 pixels; NaN, negative or larger sizes fail, logged). |
 | `br_node_set_mask(e, n, mask, BR_MASK_SCISSOR or BR_MASK_STENCIL, inverse)` | Masks. |
 | `br_render_get_stats(e, &stats)` | Draw calls, batches, vertices, passes of the last frame. |
 | In a render callback: `br_render_node_transform`, `br_render_node_color`, `br_render_texture_info`, `br_render_push_quad/triangles/custom/callback` | Drawing. |
@@ -166,7 +166,8 @@ window coordinates, same push functions. Overlays added later draw on top.
   the mask forever); `br_node_set_mask` already rejects that relation, the guard covers trees
   rearranged afterwards.
 - The walk recurses once per level and stops at `BR_RENDER_MAX_DEPTH` (2048) levels, logging
-  once: deeper nodes are not drawn (the scene's other walks have no limit).
+  once: deeper nodes are not drawn (the scene's other walks have no limit; pointer hit tests stop
+  at the same depth).
 - Render layer: `br_node_layer_attach(e, layer, n)` draws n where `layer` is in the order.
 - Render group: children drawn with the group matrix on the GPU.
 - Views (the camera hook): `br_render_set_views(e, views, count)` replaces the default "stage in

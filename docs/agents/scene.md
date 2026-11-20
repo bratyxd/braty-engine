@@ -132,7 +132,8 @@ is layer 1) picks which cameras draw a node (`culling_mask`, `docs/agents/camera
 - The flush removes dead children from each live parent (and dead members from each layer) in one
   pass per list, so destroying thousands of children of one container is linear.
 - Tree walks (transform update, bounds, culling, destroy, label search) use explicit stacks:
-  hierarchies of any depth work. The render walk recurses and stops at 2048 levels (logged once).
+  hierarchies of any depth work. The render walk and pointer hit tests recurse and stop at 2048
+  levels (logged once).
 - Relations that would loop are rejected by the setters (logged): `br_node_set_mask` with `n`
   inside the mask's subtree, `br_node_layer_attach` with the layer inside the member's subtree.
   Rearranging the tree afterwards can still build such a loop: the renderer ignores masks met

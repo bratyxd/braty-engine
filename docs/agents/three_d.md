@@ -37,8 +37,13 @@ Test: `tests/test_three_d.c`. Example: `examples/view3d_demo.c` (`--camera 0|1`,
 - **Cameras are Unity-style:** `fov_y` (vertical) or `ortho_size` (half the visible height) is
   fixed; the horizontal extent follows the view's aspect (`camera.aspect > 0` overrides).
 - **Colours of materials and lights are linear.** Use `br_color_srgb_to_linear` for picker
-  colours. Base-colour and emissive textures are decoded from sRGB in the shader; the tone map
-  writes sRGB. HDR target: RGBA16F with depth (optional MSAA, resolved before post).
+  colours. Base-colour and emissive textures are sRGB: glTF images feeding them are
+  `R8G8B8A8_UNORM_SRGB` textures (decoded by the sampler, filtered in linear), textures you set
+  yourself are decoded in the shader (`docs/agents/gltf.md`, "Texture colour spaces"); the tone
+  map writes sRGB.
+- Double-sided materials light back faces with the whole tangent frame flipped, so a normal map
+  reads the same from both sides (`examples/backface_normal_demo.c`, golden
+  `backface_normal_demo`). HDR target: RGBA16F with depth (optional MSAA, resolved before post).
 - Screen points for `br_view3d_pick` / `screen_to_ray` / `world_to_screen` are stage (global 2D)
   coordinates; the view node's 2D transform is applied.
 - Camera hooks: a 3D camera (`br_camera_create_3d`) owns a View3D that is not on the stage and

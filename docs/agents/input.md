@@ -37,7 +37,9 @@ Pointer events on nodes are in `events.md`.
 - Rebinding: `br_input_capture_start(e, device)`, then each frame `br_input_capture_poll` until it
   returns the pressed binding; check `br_input_binding_conflict`, then
   `br_input_action_binding_set`. Actions are idle while capturing, and the captured press does
-  not fire its old action. `br_input_bindings_save/load` store all bindings as JSON in save data.
+  not fire its old action. `br_input_bindings_save/load` store all bindings as JSON in save data;
+  loading gives each saved action exactly the file's bindings, except that an action none of
+  whose saved entries still parse (a renamed key) keeps its current bindings (logged).
 - Glyphs: `br_input_glyph(e, "jump", &g)` gives `g.label` ("A", "Cross", "B", "Space", "LMB")
   and `g.frame` (sprite frame name) for the device used last; `br_input_format_prompt` expands
   `"{jump}"` in a string. Frame naming scheme (ship an atlas with these names):
