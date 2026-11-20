@@ -24,9 +24,21 @@ a unit test; anything visible gets a golden image.
 
 `tests/test_<module>.c` with a plain `main`, `BR_CHECK(cond)` from `tests/br_test.h`, and
 `return br_test_finish();`. CMake picks every `tests/test_*.c` up; the working directory is
-`tests/`. Use a headless engine (`br_engine_create("test", NULL)` + `br_engine_step`) or the
+`tests/`. Test data is read from the source tree through `BRATY_SOURCE_DIR` (set by CMake:
+`BRATY_SOURCE_DIR "/tests/data"`), never relative to the executable, so any build directory
+works. Use a headless engine (`br_engine_create("test", NULL)` + `br_engine_step`) or the
 whole app loop headless (`br_app_init` with `--headless`, see `tests/test_app.c`). Write
 temporary files next to the executable (`SDL_GetBasePath()`), not into the source tree.
+
+Wall-clock checks (`test_pacing`'s FPS cap, `test_profiler`'s scope overhead) print the measured
+number and assert only a gross bound (cap: not faster than the target, at most 25 % slower;
+200 scopes: under 1 ms), so a loaded CI runner does not fail them. Read the printed numbers when
+you change pacing or the profiler.
+
+**Release build.** `ctest --preset windows-gcc-release` runs the same tests optimised with
+`NDEBUG`, `BRATY_PROFILER=OFF` and `BRATY_PLAYTEST_STDIN=OFF`; the profiler-only tests and the
+`--playtest-stdin` session are compiled out or skipped there, and so is the `profiler_demo`
+golden. CI runs it in a build directory of a different depth.
 
 ## Play-test scripts
 
@@ -52,10 +64,12 @@ python tools/golden.py update --only text_demo     # re-create one golden
 Each case (the `CASES` table in `tools/golden.py`) runs an example or the sample game through a
 generated play-test script under `--deterministic --vsync off`: wait N frames (Star Courier:
 replay `round.json`'s input up to frame N), take a screenshot averaged down 4 x 4 (320 x 180),
-quit. A pixel differs when any channel is off by more than 6; a case fails when more than 0.2%
-of its pixels differ. On failure the new screenshot and a diff image (red = differing pixels over
+quit. A pixel differs when any channel is off by more than 2; a case fails when **any** pixel
+differs (why so tight: "Driver" below). On failure the new screenshot and a diff image (red = differing pixels over
 a dimmed golden) are in `build/golden/` (`build/<preset>/golden/` when run from CTest). Exit code
-77 (CTest: skipped) when no GPU device or window can be created.
+77 (CTest: skipped) when no GPU device or window can be created or the window cannot be claimed
+for the GPU (what `SDL_VIDEODRIVER=dummy` gives); exit code 2 when an `--only` name is not a case
+(a typo used to run nothing and pass).
 
 **Add a golden** for a new example: add a line to `CASES` (name, executable, frame, extra
 arguments, optional base script), `python tools/golden.py update --only <name>`, open the PNG in
@@ -70,11 +84,25 @@ unexplained difference is a regression until proven otherwise. Commit updated go
 commit as the change that caused them and say why in the message.
 
 **Driver.** The goldens are made with **Direct3D 12** on the dev machine (Windows 11, RTX 3060
-Ti). Three D3D12 runs give byte-identical screenshots. Vulkan on the same machine matched 14 of
-16 within the tolerance; `graphics_demo` (0.23% of pixels, antialiased edges) and `view3d_demo`
-(0.84%, edge pixels and the skinned figure) differ by more, so Vulkan runs are informative, not
-gating (measured with the first 16 cases; the two Crate Rush goldens match on Vulkan too: 0% and
-0.026% of pixels). Other GPUs and drivers may need goldens of their own.
+Ti), and CTest's `golden` test passes `--gpu-driver direct3d12` on Windows instead of taking
+whatever SDL picks. Vulkan screenshots are *not* identical; Vulkan runs are informative, not
+gating, and other GPUs and drivers may need goldens of their own.
+
+**Tolerance, measured 2026-11-20** (all 24 cases, downsampled pixels, worst channel difference):
+
+| Run against the goldens | Worst difference | Cases with a pixel off by more than 2 |
+|---|---|---|
+| Direct3D 12, three runs | 0 (one run: 1 in `canvas3d_demo`) | none (after updating `profiler_demo`, below) |
+| Vulkan, one run | up to 29 | 9: `graphics_demo` 130 px, `view3d_demo` 993, `filters_demo` 303, `canvas3d_demo` 141, `gltf_demo` 36, `crate_rush_play` 53, `text_demo` 2, `animation_demo` 2, `crate_rush_menu` 2 |
+
+Direct3D 12 is deterministic, so the check is the tightest value that is stable there: channel
+tolerance 2, zero pixels over it. The previous rule (6 per channel, 0.2 % = 115 pixels per case)
+let a changed glyph or HUD digit (tens of downsampled pixels) pass; it also hid a real 8-pixel
+change in `profiler_demo` (the panel's scrollbar thumb got shorter as systems were added), found
+while measuring this. Vulkan's differences are rasterisation (1-px line lists, antialiased edges,
+bloom around thin lines), not missing content. If a driver update makes D3D12 drift by a pixel or
+two, look at the diff, then raise `MAX_BAD_PIXELS` in `tools/golden.py` by that much, not the
+channel tolerance.
 
 **Size.** 24 PNGs, RGB, 320 x 180, 776 KB in total. Keep new ones at this size.
 

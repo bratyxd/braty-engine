@@ -21,10 +21,11 @@ profiler (18b); glTF as scene content (18); the second sample game, Crate Rush (
 (integration review) is open.
 
 `ctest` runs 31 headless test programs, the two sample games' play-test scripts (headless) and
-24 golden images; 21 examples and two sample games run on **Windows 11 + MinGW-w64 GCC with
-Direct3D 12 and Vulkan** (RTX 3060 Ti) - the only tested platform. Linux, macOS, iOS, Android and
-MSVC presets exist but have never been built; Metal shaders are generated but have never run.
-Details: `docs/PLATFORMS.md`.
+24 golden images (Direct3D 12; Vulkan differs by a few edge pixels in 9 of them); 21 examples and
+two sample games run on **Windows 11 + MinGW-w64 GCC with Direct3D 12 and Vulkan** (RTX 3060 Ti) -
+the only tested platform, in Debug and with the `windows-gcc-release` preset. Linux, macOS, iOS,
+Android and MSVC presets exist but have never been built; Metal shaders are generated but have
+never run. Details: `docs/PLATFORMS.md`. What is not there yet: "Not implemented yet" below.
 
 | Area | What | Modules | Status |
 |---|---|---|---|
@@ -42,7 +43,7 @@ Details: `docs/PLATFORMS.md`.
 | Play-testing | scripts, interactive stdin, record / replay, `expect` / `wait_until`, state queries, `profile` | playtest | Done |
 | Profiler | CPU scopes, GPU estimate, counters, bottleneck verdict, F2 panel, HUD, Chrome trace | profiler | Done |
 | Tests | 31 unit test programs, play-test scripts, 24 golden images (`docs/TESTING.md`) | tests, tools | Done |
-| Platforms | presets for Linux, macOS, iOS, Android, MSVC | - | Configured, untested |
+| Platforms | presets for Linux, macOS, iOS, Android, MSVC; a `-release` preset for each | - | Configured, untested (only `windows-gcc` / `windows-gcc-release` built) |
 
 ## Quick start
 
@@ -96,7 +97,8 @@ build/windows-gcc/sample_projects/star_courier/star_courier.exe --vsync off --fr
 build/windows-gcc/sample_projects/crate_rush/crate_rush.exe --level level3 --vsync off --profiler-hud --frames 600 --screenshot build/hud.png
 ```
 
-Crate Rush, Release build, vsync off, level 3 (RTX 3060 Ti, D3D12): ~2,000 FPS, CPU 0.18 ms,
+Crate Rush, Release build with the profiler on (`-DCMAKE_BUILD_TYPE=Release`; the release
+presets turn the profiler off), vsync off, level 3 (RTX 3060 Ti, D3D12): ~2,000 FPS, CPU 0.18 ms,
 GPU 0.43 ms (estimated), "GPU bound", top scope `render.submit`. The GPU number is an estimate
 from fence polling, not a timer query (`docs/PROFILING.md`).
 
@@ -122,7 +124,7 @@ follow the device). It is the Phase 2 showcase:
 
 - levels are `.glb` files loaded directly as scenes; their nodes carry `spawn_point`, `crate`,
   `hazard` and `sign` components in extras, `-colonly` collider boxes, a camera, a sun, and level
-  settings in the scene extras. `tools/build_assets.py` composes them from Kenney kit pieces the
+  settings in the scene extras. `sample_projects/crate_rush/tools/build_assets.py` composes them from Kenney kit pieces the
   way a Blender export would; the menu diorama uses kit parts as `models/kit/kit.glb#crate`;
 - a skinned character driven by `animation/character.animgraph.json` (idle, walk / sprint blend,
   jump, fall), footstep sounds from animation events, movement and box collision on a 60 Hz
@@ -141,7 +143,8 @@ build/windows-gcc/sample_projects/crate_rush/crate_rush.exe --playtest sample_pr
 ```
 
 Art, UI, fonts, prompts and sounds are Kenney CC0 packs, fetched by
-`tools/fetch_assets.py` (URLs and checksums in `tools/assets.lock.json`).
+`sample_projects/crate_rush/tools/fetch_assets.py` (URLs and checksums in
+`sample_projects/crate_rush/tools/assets.lock.json`).
 
 ### Star Courier (2D)
 
@@ -198,10 +201,32 @@ Draco / meshopt glTF compression (no C decoders; compressed files fail with the 
 point-light shadows, environment reflections (IBL), shadows from canvas3d content, a web target,
 SVG file import beyond path data, GPU compute culling.
 
+**Not implemented yet** (a shipped game needs these; found by the 2026-11-20 review, none started):
+
+- **Localisation:** no string tables, no `SDL_GetPreferredLocales`, text in scene files is
+  literal; **no font fallback chain** (a CJK or emoji glyph missing from the font is not drawn);
+  no bidi or complex shaping.
+- **Component fields:** strings are `char[64]` (63 UTF-8 bytes: a translated sign text does not
+  fit); no arrays, enums by name, vec4 / quat (`docs/API_REVIEW.md`, "Full review 2026-11-20").
+- **Window modes at runtime:** fullscreen only from game.json at start; no API to switch
+  fullscreen / borderless / resolution / display while running (call SDL on `br_engine_window`).
+- **Asset packaging:** data ships as loose files copied next to the executable; no pack / archive
+  format, no SDL title storage, no app-bundle / APK copy step, no `install()` rules.
+- **Shipping build polish:** no log file, no error message box on a failed start, console window
+  on Windows (`docs/BUILDING.md`, "Release builds").
+- **A text-field node:** `br_input_text*` and IME composition exist, but caret, selection and
+  clipboard UI are up to the game.
+- **glTF cameras as `br_camera`:** a camera in a `.glb` imports as a `camera3d` node, not a
+  Unity-style `br_camera` (API_REVIEW 23); following needs the hide-the-view workaround.
+- **Aspect-ratio goldens:** one 16:9 golden per case; nothing checks 21:9 or 9:16 automatically.
+
 ## Limits
 
 - **Platforms:** tested only on Windows 11 with MinGW-w64 GCC, D3D12 and Vulkan, one GPU (RTX
-  3060 Ti). Linux, macOS, iOS, Android and MSVC have presets and CI files that have never run.
+  3060 Ti). Linux, macOS, iOS, Android and MSVC have presets and CI jobs (MSVC, Linux, macOS)
+  that have never run.
+- **Golden images are Direct3D 12 images:** Vulkan and other GPUs differ by a few pixels and
+  would need goldens of their own (`docs/TESTING.md`).
 - **GPU time is an estimate:** SDL_GPU has no timer queries; the profiler polls fences (~0.5 ms
   resolution on Windows) and with vsync on the number includes display waits.
 - **Real controllers untested:** gamepad families, glyphs and rebinding are verified with SDL
@@ -255,7 +280,7 @@ tools/                  compile_shaders.py, playtest.py (drive a game), golden.p
                         check_getting_started.py (builds every step of the guide)
 docs/                   BUILDING, GETTING_STARTED, TESTING, PLAYTESTING, PLATFORMS, DATA_FORMATS, API_REVIEW,
                         agents/<module>.md (module guides), plans/
-.github/workflows/      CI (Windows, Linux, macOS; not yet run)
+.github/workflows/      CI (Windows MinGW + release, MSVC, Linux, macOS; never run)
 ```
 
 ## Licences

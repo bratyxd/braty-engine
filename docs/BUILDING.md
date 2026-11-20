@@ -52,7 +52,31 @@ configuration fails. `build-sdl` works.
 | `linux` | Configured, untested |
 | `macos` | Configured, untested |
 | `ios` | Configured (Xcode generator), untested; tests off |
-| `android` | Configured (needs `ANDROID_NDK`), untested; tests off. A real Android build also needs SDL's Java glue (`android-project`). |
+| `android` | Configured (needs `ANDROID_NDK`), untested; tests off. A real Android build also needs SDL's Java glue (`android-project`) and the game as a shared library (`docs/PLATFORMS.md`). |
+| `<preset>-release` | One per preset above (`windows-gcc-release` tested): see "Release builds" |
+
+## Release builds
+
+```sh
+cmake --preset windows-gcc-release            # build/windows-gcc-release
+cmake --build --preset windows-gcc-release
+ctest --preset windows-gcc-release            # all tests pass here too
+```
+
+A release preset is its platform preset plus:
+
+| Setting | Debug presets | Release presets | Effect |
+|---|---|---|---|
+| `CMAKE_BUILD_TYPE` | Debug | Release (`-O3`, `NDEBUG`) | `NDEBUG` turns off GPU validation (SDL GPU debug mode) and scene / data hot-reload polling |
+| `BRATY_PROFILER` | ON | OFF | profiler scopes and counters compile to nothing; `--profiler-hud`, F2 and `--profile` show nothing |
+| `BRATY_PLAYTEST_STDIN` | ON (desktop) | OFF | no `--playtest-stdin` (scripts with `--playtest` still work) |
+
+What a release build does **not** do yet (ship around it or wait for the fixes): executables are
+console-subsystem programs on Windows (a console window opens next to the game; add
+`WIN32_EXECUTABLE` to your game target), logs go to stderr only (no log file), a failed start-up
+shows no message box, the debug overlay (F1) is still compiled in, and nothing installs or packs
+the assets (`data/` is copied next to the executable as loose files; no `install()` rules). For
+profiling numbers use a Release build with `-DBRATY_PROFILER=ON`.
 
 ## GPU drivers
 
@@ -63,11 +87,12 @@ hello_quad --gpu-driver direct3d12 --frames 3 --screenshot d3d12.png
 hello_quad --gpu-driver vulkan     --frames 3 --screenshot vulkan.png
 ```
 
-Verified on the dev machine (RTX 3060 Ti): `direct3d12` and `vulkan` render identical screenshots.
-`metal` is not testable here.
+Verified on the dev machine (RTX 3060 Ti): both drivers run every example and both games, but
+the screenshots are not identical: Vulkan differs from the Direct3D 12 goldens by a few edge
+pixels in 9 of 24 golden cases (`docs/TESTING.md`, "Driver"). `metal` is not testable here.
 
 Debug builds create the device with SDL's debug mode on (D3D12 debug layer / Vulkan validation
-if installed). Release builds (`-DCMAKE_BUILD_TYPE=Release`) turn it off.
+if installed). Release builds (`NDEBUG`, the release presets) turn it off.
 
 ## Shaders
 
@@ -116,4 +141,9 @@ struct, `SV_Position` included, or Direct3D 12 rejects the pipeline.
 | `BRATY_BUILD_TESTS` | ON | `tests/test_*.c`, the play-test script and the golden-image test (needs Python 3) |
 | `BRATY_BUILD_EXAMPLES` | ON | `examples/*.c` (they read their data from the source tree: `BRATY_EXAMPLES_DIR`) |
 | `BRATY_BUILD_SAMPLES` | ON | `sample_projects/*` |
-| `BRATY_PLAYTEST_STDIN` | ON on desktop, OFF on Android / iOS / Emscripten | `--playtest-stdin`: the one engine file that uses C stdio (`engine/src/playtest/br_playtest_stdin.c`) |
+| `BRATY_PLAYTEST_STDIN` | ON on desktop, OFF on Android / iOS / Emscripten and in release presets | `--playtest-stdin`: the one engine file that uses C stdio (`engine/src/playtest/br_playtest_stdin.c`) |
+| `BRATY_PROFILER` | ON (OFF in release presets) | profiler scopes and counters (`docs/PROFILING.md`) |
+| `BRATY_WERROR` | OFF (ON in CI) | warnings in engine code are errors (`-Werror` / `/WX`) |
+
+Tests read their data from the source tree (`BRATY_SOURCE_DIR`, set by CMake), so a build
+directory can be anywhere: `cmake --preset windows-gcc -B build/any/depth` works with `ctest`.
