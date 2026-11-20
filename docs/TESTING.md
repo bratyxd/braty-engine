@@ -14,6 +14,7 @@ ctest --preset windows-gcc -L playtest  # only the play-test scripts
 |---|---|---|
 | Unit tests | `tests/test_<module>.c`, one CTest each | nothing (headless engine) |
 | Play-test scripts | `sample_projects/<game>/playtest/*.json`, label `playtest` | nothing (`--headless`) |
+| Getting-started guide | `python tools/check_getting_started.py` (by hand, not in CTest: builds 13 programs) | a GPU for the screenshots |
 | Golden images | `tools/golden.py` + `tests/golden/*.png`, test `golden`, label `golden` | a GPU; reported **skipped** without one |
 
 **Rule (AGENTS.md):** every behaviour change ships with a test that fails without it. Logic gets
@@ -69,12 +70,13 @@ unexplained difference is a regression until proven otherwise. Commit updated go
 commit as the change that caused them and say why in the message.
 
 **Driver.** The goldens are made with **Direct3D 12** on the dev machine (Windows 11, RTX 3060
-Ti). Three D3D12 runs give byte-identical screenshots. Vulkan on the same machine matches 14 of
+Ti). Three D3D12 runs give byte-identical screenshots. Vulkan on the same machine matched 14 of
 16 within the tolerance; `graphics_demo` (0.23% of pixels, antialiased edges) and `view3d_demo`
 (0.84%, edge pixels and the skinned figure) differ by more, so Vulkan runs are informative, not
-gating. Other GPUs and drivers may need goldens of their own.
+gating (measured with the first 16 cases; the two Crate Rush goldens match on Vulkan too: 0% and
+0.026% of pixels). Other GPUs and drivers may need goldens of their own.
 
-**Size.** 16 PNGs, RGB, 320 x 180, 548 KB in total. Keep new ones at this size.
+**Size.** 24 PNGs, RGB, 320 x 180, 776 KB in total. Keep new ones at this size.
 
 ## Determinism
 

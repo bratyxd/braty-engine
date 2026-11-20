@@ -326,13 +326,15 @@ content is the `scene` array.
 
 Every 3D node: `type` (`group` (default), `mesh`, `light`, `gltf`), `label`, `position`
 [x, y, z], `rotation` (Euler degrees [x, y, z]), `scale` (number or [x, y, z]), `target`
-(look at a point), `visible`, `children` (array of 3D nodes).
+(look at a point), `visible`, `children` (array of 3D nodes), `components` (3D components,
+`{ "spin": { "speed": 2 } }`; node fields name 3D labels in the same view, resolved after the
+whole view is built, so they may point forward).
 
 | Type | Keys |
 |---|---|
 | `mesh` | `shape` and `size`: `cube` [x, y, z], `sphere` [r], `plane` [w, d], `cylinder` [r, h], `cone` [r, h], `torus` [R, r], `capsule` [r, length]; `cast_shadows`; `material`: `model` (`pbr` (default), `phong`, `flat`, `toon`), `color`, `metallic`, `roughness`, `emissive`, `emissive_strength`, `specular`, `shininess`, `double_sided`, `alpha` (`opaque`, `mask`, `blend`), `texture` (base colour). |
 | `light` | `kind` (`directional` (default), `point`, `spot`), `color`, `intensity`, `range`, `shadows`, `shadow_distance`, `cascades` (1-4), `inner_angle` / `outer_angle` (degrees, spot). |
-| `gltf` | `source` (a .glb/.gltf path, required), `animation` (clip name or index), `speed`, `loop`, `time`. |
+| `gltf` | `source` (required): a `.glb` / `.gltf` path, or one node of a kit with its subtree, `"models/kit.glb#Tree"` (its translation is reset so it lands where the node is placed); `animation` (clip name, or index for unnamed clips), `speed`, `loop`, `time` (the animator); `autoplay` (a clip started at once, `""` = none; default: the file's scene extras `"autoplay"`); `batch` (`false` keeps repeated static meshes as separate nodes); `camera` (`true` = the file's first camera becomes the view's camera, or a framing camera if it has none; a string = the camera on that glTF node); `default_light` (`true` adds a sun when the file has no lights). |
 
 Colours are written as a colour picker shows them (sRGB) and converted to linear. 3D keys are
 not checked for typos, and `br_scene_file_save` writes a view3d as it was loaded (live changes
@@ -534,6 +536,20 @@ context the action belongs to (`br_input_action_set_context`). Details: `docs/ag
 
 **glTF 2.0** (`.gltf`, `.glb`; read with cgltf): models for `model3d` nodes and the `gltf` 3D
 node of a `view3d`. Supported features and extensions: `docs/agents/gltf.md`.
+
+A `.glb` / `.gltf` path also works **as a scene** and **as a prefab**, with no JSON around it:
+`br_scene_load(e, "levels/level1.glb", BR_SCENE_SINGLE)` (or a game.json `"scenes"` entry /
+`start_scene` naming it) builds a full-window `view3d` labelled after the file, with the file's
+nodes, lights and first camera; the glTF scene extras `background`, `msaa`, `sky`, `ground` and
+`ambient` set up the view, `autoplay` and `batch` apply to the instance.
+`br_prefab_instantiate(e, "props/tree.glb", parent, overrides)` makes a 640 x 360 `view3d` holding
+the model (overrides apply to the view). Either way, **node extras fill components**: register the
+component, then a node's `"extras": { "crate.value": 10 }` (Blender custom property
+`crate.value`) or `"extras": { "components": { "crate": { "value": 10 } } }` puts a `crate`
+component on that node's 3D node (`br_component3d_get`, `_count`, `_at`, `_owner_at`). Name
+suffixes and convention keys (`-col`, `-colonly`, `-trigger`, `-norender`, `collider`, `trigger`,
+`no_render`, `visible`, `layer`, `cast_shadows`, `batch`) are listed in `docs/agents/gltf.md`;
+`sample_projects/crate_rush/tools/build_assets.py` writes complete levels this way.
 
 **Play-test scripts** (`--playtest file.json`): a JSON array of commands (`{"cmd": "step",
 "frames": 60}`, `{"cmd": "expect", ...}`); the whole command list is in `docs/PLAYTESTING.md`.

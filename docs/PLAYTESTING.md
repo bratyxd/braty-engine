@@ -194,6 +194,13 @@ Star Courier's `playtest/round.json` was made this way: its old autoplay bot's i
 plus checks on state, score, best score, lives, pause and the final score text.
 `playtest/soak.json` is the 60-second soak (three rounds; compare the `round start` stats lines).
 
+Crate Rush's `playtest/round.json` is hand-written instead, and walks to waypoints rather than
+counting frames: hold a key (or a virtual pad's stick), `wait_until` the player's position passes
+a coordinate (`*/player:position.x`), release, `expect` the crate count. Such a script survives
+tuning changes. Its `playtest/soak.json` (written by `make_soak.py`) plays all three levels three
+times and `expect`s node, 3D node, asset, animator, tween and sound counts back at their menu
+baseline, and `profile:frame_ms_p95` under a budget.
+
 A recorded session replays exactly only against the same game code and data. When gameplay
 changes on purpose, record it again.
 
@@ -225,4 +232,7 @@ Also `br_playtest_set`, `br_playtest_screenshot`, `br_playtest_record_start/stop
 - Recording captures gamepad connect / disconnect, buttons and axes, not their touchpads,
   gyros or accelerometers. It records every mouse motion and stick event (large files for
   long sessions).
-- The current scene name is not reported: scenes become objects in Task 16.
+- Paths cannot name a component whose name has a dot (`camera.follow`), and 2D labels are
+  searched stage-wide (no `parent/child` for 2D): `docs/API_REVIEW.md` items 36-37.
+- There is no command to resize the window (API_REVIEW 38); start the game with another
+  game.json size to check other aspect ratios.
