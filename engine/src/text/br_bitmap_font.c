@@ -76,10 +76,32 @@ static bool br_fnt_attr(const char *start, const char *end, const char *name, ch
     return false;
 }
 
+/* An attribute as a number: the SVG number grammar (no nan / inf / hex, locale-independent),
+ * the whole value. `fallback` if missing or not a number. */
 static float br_fnt_float(const char *start, const char *end, const char *name, float fallback)
 {
     char value[64];
-    return br_fnt_attr(start, end, name, value, sizeof(value)) ? (float)SDL_atof(value) : fallback;
+    if (!br_fnt_attr(start, end, name, value, sizeof(value))) {
+        return fallback;
+    }
+    const char *p = value;
+    float v;
+    if (!br_gfx_parse_number(&p, &v) || *p != 0) {
+        br_log_warn("bitmap font: %s=\"%s\" is not a number", name, value);
+        return fallback;
+    }
+    return v;
+}
+
+/* A whole-number attribute in [0, max] (`missing` if absent); UINT32_MAX if not a number or
+ * out of range. */
+static uint32_t br_fnt_uint(const char *start, const char *end, const char *name, uint32_t max, float missing)
+{
+    float v = br_fnt_float(start, end, name, missing);
+    if (!(v >= 0.0f) || v > (float)max || v != SDL_floorf(v)) {
+        return UINT32_MAX;
+    }
+    return (uint32_t)v;
 }
 
 /* Handles one element ("info", "common", "page", "char", "kerning", "distanceField"). */
@@ -91,9 +113,9 @@ static void br_fnt_element(br_font *f, const char *tag, const char *start, const
         f->line_height = br_fnt_float(start, end, "lineHeight", 0.0f);
         f->base = br_fnt_float(start, end, "base", 0.0f);
     } else if (SDL_strcmp(tag, "page") == 0) {
-        int id = (int)br_fnt_float(start, end, "id", 0.0f);
-        if (id < 0 || id >= BR_FONT_MAX_PAGES) {
-            br_log_warn("bitmap font: page %d ignored (max %d pages)", id, BR_FONT_MAX_PAGES);
+        uint32_t id = br_fnt_uint(start, end, "id", BR_FONT_MAX_PAGES - 1, 0.0f);
+        if (id == UINT32_MAX) {
+            br_log_warn("bitmap font: a page id is not 0..%d; page ignored", BR_FONT_MAX_PAGES - 1);
             return;
         }
         br_fnt_attr(start, end, "file", f->page_files[id], sizeof(f->page_files[id]));
@@ -102,8 +124,12 @@ static void br_fnt_element(br_font *f, const char *tag, const char *start, const
         }
     } else if (SDL_strcmp(tag, "char") == 0) {
         br_bitmap_char c;
-        c.id = (uint32_t)br_fnt_float(start, end, "id", 0.0f);
-        c.page = (uint32_t)br_fnt_float(start, end, "page", 0.0f);
+        c.id = br_fnt_uint(start, end, "id", 0x10FFFF, -1.0f);
+        if (c.id == UINT32_MAX) {
+            br_log_warn("bitmap font: a char id is missing or not a codepoint; char ignored");
+            return;
+        }
+        c.page = br_fnt_uint(start, end, "page", BR_FONT_MAX_PAGES - 1, 0.0f); /* bad: never drawn */
         c.x = br_fnt_float(start, end, "x", 0.0f);
         c.y = br_fnt_float(start, end, "y", 0.0f);
         c.width = br_fnt_float(start, end, "width", 0.0f);
@@ -114,15 +140,21 @@ static void br_fnt_element(br_font *f, const char *tag, const char *start, const
         br_array_push(&f->chars, &c);
     } else if (SDL_strcmp(tag, "kerning") == 0) {
         br_bitmap_kerning k;
-        k.first = (uint32_t)br_fnt_float(start, end, "first", 0.0f);
-        k.second = (uint32_t)br_fnt_float(start, end, "second", 0.0f);
+        k.first = br_fnt_uint(start, end, "first", 0x10FFFF, -1.0f);
+        k.second = br_fnt_uint(start, end, "second", 0x10FFFF, -1.0f);
         k.amount = br_fnt_float(start, end, "amount", 0.0f);
-        br_array_push(&f->kernings, &k);
+        if (k.first != UINT32_MAX && k.second != UINT32_MAX) {
+            br_array_push(&f->kernings, &k);
+        }
     } else if (SDL_strcmp(tag, "distanceField") == 0) {
         char type[32];
         br_fnt_attr(start, end, "fieldType", type, sizeof(type));
         f->distance_field = SDL_strcmp(type, "msdf") == 0 || SDL_strcmp(type, "mtsdf") == 0 ? 2 : 1;
         f->distance_range = br_fnt_float(start, end, "distanceRange", 4.0f);
+        if (!(f->distance_range > 0.0f)) { /* 0 draws boxes, < 0 inverts the glyphs */
+            br_log_warn("bitmap font: distanceRange must be > 0; using 4");
+            f->distance_range = 4.0f;
+        }
     }
 }
 
@@ -255,7 +287,19 @@ br_font *br_bitmap_font_parse(br_engine *e, const char *data, size_t size, const
             } else {
                 br_str_copy(path, sizeof(path), f->page_files[i]);
             }
-            f->pages[i] = br_texture_load(e, path); /* cached by the assets module, magenta if missing */
+            /* cached by the assets module (one reference, released by br_font_free); magenta if missing */
+            br_texture *t = br_assets_load(e, path);
+            if (t != NULL && !br_str_equal(br_assets_type(e, path), "texture")) {
+                br_log_error("bitmap font: page '%s' is not a texture", path);
+                br_assets_unload(e, path);
+                t = NULL;
+            }
+            if (t == NULL) {
+                f->pages[i] = br_texture_missing(e);
+                continue;
+            }
+            f->pages[i] = *t;
+            br_str_copy(f->page_paths[i], sizeof(f->page_paths[i]), path);
         }
     }
     br_font_track(e, f);
@@ -288,6 +332,22 @@ static void br_bitmap_font_asset_unload(br_engine *e, void *asset)
     br_font_free(e, asset);
 }
 
+/* Claims every .fnt, but an .xml only when it is an AngelCode font (other XML is left to other
+ * loaders, or fails as "no loader accepts"). Pure: may run on a worker thread. */
+static bool br_bitmap_font_asset_test(const char *path, const void *bytes, size_t size)
+{
+    if (SDL_strcasecmp(br_path_extension(path), "xml") != 0) {
+        return true;
+    }
+    const char *s = bytes;
+    for (size_t i = 0; i + 5 <= size; i++) {
+        if (SDL_memcmp(s + i, "<font", 5) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 br_font *br_bitmap_font_load(br_engine *e, const char *path)
 {
     br_font *f = br_font_load(e, path);
@@ -304,6 +364,7 @@ void br_bitmap_font_module_init(br_engine *e)
     SDL_zero(desc);
     desc.type_name = "bitmap_font";
     desc.extensions = "fnt,xml";
+    desc.test = br_bitmap_font_asset_test;
     desc.load = br_bitmap_font_asset_load;
     desc.unload = br_bitmap_font_asset_unload;
     br_assets_register_loader(e, &desc);

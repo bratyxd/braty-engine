@@ -121,8 +121,8 @@ static bool br_rich_apply_tag(br_rich_parser *p, const char *tag, size_t len)
         }
         next.set_color = true;
     } else if (value != NULL && SDL_strcmp(buf, "size") == 0) {
-        next.size = (float)SDL_atof(value);
-        if (next.size <= 0.0f) {
+        const char *p = value; /* the SVG number grammar: no nan / inf / hex, any locale */
+        if (!br_gfx_parse_number(&p, &next.size) || *p != 0 || !(next.size > 0.0f)) {
             return false;
         }
     } else if (value != NULL && SDL_strcmp(buf, "font") == 0) {

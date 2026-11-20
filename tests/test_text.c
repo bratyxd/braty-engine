@@ -5,6 +5,8 @@
 #include <SDL3/SDL.h>
 #include <math.h>
 
+#include "stb/stb_image_write.h"
+
 /* A monospace bitmap font: every glyph advances 10, one kerning pair (a b = -2). */
 static const char *k_fnt_text =
     "info face=\"Test\" size=16 bold=0 italic=0\n"
@@ -547,6 +549,77 @@ static void test_atlas(br_engine *e)
     br_font_destroy(e, font);
 }
 
+typedef struct png_buffer {
+    uint8_t data[4096];
+    size_t  size;
+} png_buffer;
+
+static void png_append(void *context, void *data, int size)
+{
+    png_buffer *b = context;
+    if (b->size + (size_t)size <= sizeof(b->data)) {
+        SDL_memcpy(b->data + b->size, data, (size_t)size);
+        b->size += (size_t)size;
+    }
+}
+
+/* AngelCode loading through the assets module: pages, .xml claims, bad numbers. */
+static void test_fnt_assets(br_engine *e)
+{
+    uint8_t pixels[8 * 8 * 4];
+    SDL_memset(pixels, 255, sizeof(pixels));
+    png_buffer png;
+    png.size = 0;
+    stbi_write_png_to_func(png_append, &png, 8, 8, 4, pixels, 8 * 4);
+    BR_CHECK(br_file_write_all(e, "test_text_data/test page.png", png.data, png.size));
+    BR_CHECK(br_file_write_all(e, "test_text_data/paged.fnt", k_fnt_text, SDL_strlen(k_fnt_text)));
+
+    /* the page textures are released with the font */
+    br_font *f = br_bitmap_font_load(e, "test_text_data/paged.fnt");
+    BR_CHECK(f != NULL && br_bitmap_font_page_texture(f, 0).generation != 0);
+    BR_CHECK(br_assets_ref_count(e, "test_text_data/test page.png") == 1);
+    br_assets_unload(e, "test_text_data/paged.fnt");
+    BR_CHECK(br_assets_get(e, "test_text_data/test page.png") == NULL);
+
+    /* .xml: an AngelCode font loads; any other XML is not claimed by the font loader */
+    BR_CHECK(br_file_write_all(e, "test_text_data/font.xml", k_fnt_xml, SDL_strlen(k_fnt_xml)));
+    const char *settings = "<?xml version=\"1.0\"?><settings volume=\"3\"/>";
+    BR_CHECK(br_file_write_all(e, "test_text_data/settings.xml", settings, SDL_strlen(settings)));
+    f = br_bitmap_font_load(e, "test_text_data/font.xml");
+    BR_CHECK(f != NULL && br_bitmap_font_char_count(f) == 3);
+    br_assets_unload(e, "test_text_data/font.xml");
+    BR_CHECK(br_assets_load(e, "test_text_data/settings.xml") == NULL);
+
+    /* numbers: strict (no nan / hex), integers in range, distanceRange > 0 */
+    const char *bad =
+        "common lineHeight=20 base=16\n"
+        "distanceField fieldType=sdf distanceRange=0\n"
+        "char id=97 width=8 height=10 xadvance=10\n"
+        "char id=-5 width=8 height=10 xadvance=10\n"
+        "char id=1e20 width=8 height=10 xadvance=10\n"
+        "char id=0x62 width=8 height=10 xadvance=10\n"
+        "char id=99 width=nan height=10 xadvance=inf\n";
+    f = br_bitmap_font_parse(e, bad, SDL_strlen(bad), "", false);
+    BR_CHECK(f != NULL);
+    br_bitmap_char c;
+    BR_CHECK(br_bitmap_font_char_count(f) == 2); /* 97 and 99 */
+    BR_CHECK(br_bitmap_font_get_char(f, 99, &c) && c.width == 0.0f && c.xadvance == 0.0f);
+    br_text_style st = br_text_style_default();
+    st.font = f;
+    st.font_size = 20.0f;
+    BR_CHECK(br_text_measure(e, "ac", &st).width < 1000.0f);
+    br_font_destroy(e, f);
+
+    /* rich <size=...>: the same number grammar */
+    br_text_style rs = br_text_style_default();
+    br_node n = br_rich_text_create(e, "<size=0x20>a</size><size=nan>b</size><size=1e9>c</size>", &rs);
+    BR_CHECK(SDL_strcmp(br_rich_text_plain(e, n), "<size=0x20>a<size=nan>bc") == 0);
+    br_rich_char_style cs;
+    uint32_t last = br_text_char_count(e, n) - 1;
+    BR_CHECK(br_rich_text_char_style(e, n, last, &cs) && cs.font_size <= 4096.0f);
+    br_node_destroy(e, n);
+}
+
 int main(void)
 {
     test_utf8();
@@ -564,6 +637,7 @@ int main(void)
     test_bad_fonts(e);
     test_font_lifetime(e);
     test_atlas(e);
+    test_fnt_assets(e);
     if (f != NULL) {
         test_measure(e, f);
         test_wrap(e, f);

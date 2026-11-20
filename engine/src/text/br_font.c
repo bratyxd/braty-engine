@@ -323,6 +323,11 @@ void br_font_free(br_engine *e, br_font *font)
             }
         }
     }
+    for (uint32_t i = 0; i < font->page_count && e->assets != NULL; i++) {
+        if (font->page_paths[i][0] != 0) {
+            br_assets_unload(e, font->page_paths[i]); /* the page references of a loaded .fnt */
+        }
+    }
     if (font->owns_ttf) {
         br_free((void *)font->ttf);
     }

@@ -3,6 +3,7 @@
 #define BR_TEXT_INTERNAL_H
 
 #include "app/br_engine_internal.h"
+#include "graphics/br_graphics_internal.h"
 #include "scene/br_scene_internal.h"
 #include "braty/br_assets.h"
 #include "braty/br_bitmap_font.h"
@@ -15,6 +16,7 @@
 
 #define BR_FONT_MAX_PAGES 16
 #define BR_FONT_PAGE_FILE_SIZE 128
+#define BR_FONT_PAGE_PATH_SIZE 512
 #define BR_ATLAS_START_SIZE 256
 #define BR_ATLAS_MAX_SIZE 4096
 #define BR_RICH_TAG_NAME_SIZE 32
@@ -79,6 +81,7 @@ struct br_font {
     uint32_t   page_count;
     br_texture pages[BR_FONT_MAX_PAGES];
     char       page_files[BR_FONT_MAX_PAGES][BR_FONT_PAGE_FILE_SIZE];
+    char       page_paths[BR_FONT_MAX_PAGES][BR_FONT_PAGE_PATH_SIZE]; /* page assets to release, "" = none */
     bool       owns_pages;
     int        distance_field;        /* 0 none, 1 sdf, 2 msdf */
     float      distance_range;        /* page pixels */

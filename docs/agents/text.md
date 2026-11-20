@@ -110,8 +110,10 @@ Checked inside the module whatever the caller passes (`br_text_create`, `br_text
   gradients are exact; diagonal ones are sampled at glyph corners. Split pieces get their own box.
 - Rich-text line info offsets (`br_text_get_line`) refer to `br_rich_text_plain`, not the markup.
 - Fake bold/italic is used when a family has no such face (outline growth / 0.2 shear).
-- Asset loaders: `ttf,otf` -> `"font"`, `fnt,xml` -> `"bitmap_font"` (an XML file that is not an
-  AngelCode font fails to load with an error).
+- Asset loaders: `ttf,otf` -> `"font"`, `fnt,xml` -> `"bitmap_font"` (an `.xml` is claimed only
+  when it contains `<font`, so other XML goes to other loaders). A loaded `.fnt` holds one
+  asset reference per page texture and releases them when it is freed. Numbers in `.fnt` files
+  follow the SVG number grammar; ids out of range drop the char, `distanceRange <= 0` becomes 4.
 - Not done: complex shaping (Arabic, Indic, ligatures; stb_truetype has no shaper), bidi,
   colour emoji, and atlas eviction (a full 4096 atlas stops caching new glyphs: they are
   remembered as empty and not drawn; logged once).
