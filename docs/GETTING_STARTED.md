@@ -1,9 +1,10 @@
 # Getting started: a new game from zero
 
 This walks you through a tiny game, **Coin Rush** (move a ship with the keyboard or a gamepad,
-collect coins, hear a sound, watch the score), in eleven steps, then a 3D track (steps 12-15: a
-`.glb` level as the scene, components from glTF extras, a character with a following camera, a
-world-space label). Every step builds and runs (`tools/check_getting_started.py` checks it); every
+collect coins, hear a sound, watch the score), in eleven steps; three more get it ready to ship
+(steps 12-14: texts from a string table, a pack and an install folder, a text field); then a 3D
+track (steps 15-18: a `.glb` level as the scene, components from glTF extras, a character with a
+following camera, a world-space label). Every step builds and runs (`tools/check_getting_started.py` checks it); every
 code block below is the complete file at that step, so you can copy it as it is. For finished
 games built the same way, read `sample_projects/star_courier/` (2D) and
 `sample_projects/crate_rush/` (3D).
@@ -26,7 +27,9 @@ my_game/
     scenes/main.scene.json
     prefabs/coin.prefab.json
     manifest.json
+    strings/strings.en.json        step 12: every text the player reads
     sprites/  sounds/              copied from the sample game in step 8
+  playtest/name.json               step 14: a scripted play-test
 ```
 
 Put `my_game/` anywhere; it finds the engine through `BRATY_DIR`.
@@ -607,12 +610,543 @@ log. `"toggle_key"` in game.json picks another key.
 my_game/build/my_game --debug --frames 120 --screenshot debug.png
 ```
 
+## 12. Localisation: texts from a string table
+
+Player-visible text belongs in a **string table** per language, `strings/strings.<locale>.json`:
+a flat object of keys; a value is a text with `{name}` placeholders or a plural entry (`zero` /
+`one` / `other`). game.json's `"locale"` loads the default table before `init` (and picks the
+system language when a table for it exists; `--frames`, `--deterministic` and headless runs always
+use the default, so screenshots do not depend on the machine).
+
+<!-- file: data/assets/strings/strings.en.json -->
+```json
+{
+  "hud.title": "COIN RUSH",
+  "hud.coins": { "zero": "NO COINS YET", "one": "{count} COIN", "other": "{count} COINS" },
+  "hud.name_hint": "Your name, then Enter",
+  "hud.hello": "Hello, {name}!"
+}
+```
+
+<!-- file: data/assets/strings/strings.de.json -->
+```json
+{
+  "hud.title": "COIN RUSH",
+  "hud.coins": { "zero": "NOCH KEINE MÜNZEN", "one": "{count} MÜNZE", "other": "{count} MÜNZEN" },
+  "hud.name_hint": "Dein Name, dann Enter",
+  "hud.hello": "Hallo, {name}!"
+}
+```
+
+<!-- file: data/game.json -->
+```json
+{
+  "window": { "title": "Coin Rush", "width": 960, "height": 540, "resizable": false },
+  "asset_root": "assets",
+  "manifest": "manifest.json",
+  "start_scene": "scenes/main.scene.json",
+  "clear_color": "#14182b",
+  "input": {
+    "left":  { "keys": ["Left", "A"],  "buttons": ["dpleft"],  "axes": ["-leftx"] },
+    "right": { "keys": ["Right", "D"], "buttons": ["dpright"], "axes": ["+leftx"] },
+    "up":    { "keys": ["Up", "W"],    "buttons": ["dpup"],    "axes": ["-lefty"] },
+    "down":  { "keys": ["Down", "S"],  "buttons": ["dpdown"],  "axes": ["+lefty"] }
+  },
+  "audio": { "buses": { "sfx": 0.8 }, "sprites": { "sounds/sfx.wav": { "pickup": [0, 0.18] } } },
+  "locale": { "default": "en", "fallback": ["en"], "dir": "strings" },
+  "debug": { "overlay": false, "toggle_key": "F1" },
+  "game": { "coins_on_screen": 3 }
+}
+```
+
+A scene text names its key with `"text_key"` instead of `"text"`: it follows the language when
+it changes (`br_loc_set_locale(e, "de")`, or `set engine:locale "de"` in a play-test). Text made
+by code goes through `br_loc_format(e, key, args, count)`; the argument `count` picks the plural
+form. (Keep `"text_key"` for texts code does not change: a locale change sets a bound node back
+to its key's text.)
+
+<!-- file: data/assets/scenes/main.scene.json -->
+```json
+{
+  "type": "container",
+  "label": "main",
+  "children": [
+    { "type": "text", "label": "score", "text": "", "position": [20, 16],
+      "style": { "font_size": 28, "bold": true, "fill": "#ffd166" } },
+    { "type": "text", "text_key": "hud.title", "position": [940, 16], "anchor": [1, 0],
+      "style": { "font_size": 20, "fill": "#8b93b8" } },
+    { "type": "graphics", "label": "ship", "position": [480, 270],
+      "commands": [["poly", [0, -18, 14, 14, 0, 6, -14, 14], true], ["fill", "#4fd1c5"],
+                   ["stroke", { "width": 2, "color": "#0e3b46" }]],
+      "components": { "mover": {}, "pilot": { "speed": 320 } } }
+  ]
+}
+```
+
+<!-- file: src/main.c -->
+```c
+#include "braty/braty_main.h"
+
+typedef struct mover {
+    br_vec2 velocity;
+} mover;
+
+typedef struct pilot {
+    float speed;
+} pilot;
+
+typedef struct coin {
+    float   radius;
+    int32_t value;
+} coin;
+
+typedef struct game {
+    uint32_t  mover_id, pilot_id, coin_id;
+    bool      ready;      /* the "game" bundle finished loading */
+    br_sound *sfx;
+    int32_t   score;
+    int32_t   shown;      /* the score the text shows (-1 = none yet) */
+    uint32_t  rng;
+} game;
+
+static float random01(game *g)
+{
+    g->rng = g->rng * 1664525u + 1013904223u; /* deterministic: --frames runs repeat exactly */
+    return (float)(g->rng >> 8) / 16777216.0f;
+}
+
+static void on_bundle(br_engine *e, const char *bundle, float progress, void *user)
+{
+    game *g = user;
+    br_log_info("bundle %s: %.0f%%", bundle, (double)(progress * 100.0f));
+    if (progress >= 1.0f) {
+        g->sfx = br_sound_load(e, "sfx"); /* an alias from the manifest */
+        g->ready = true;
+    }
+}
+
+static void pilot_system(br_engine *e, float dt, void *user)
+{
+    (void)dt;
+    game *g = user;
+    br_vec2 dir = br_vec2_make(br_input_action_value(e, "right") - br_input_action_value(e, "left"),
+                               br_input_action_value(e, "down") - br_input_action_value(e, "up"));
+    for (uint32_t i = 0; i < br_component_count(e, g->pilot_id); i++) {
+        pilot *p = br_component_at(e, g->pilot_id, i);
+        mover *m = br_component_get(e, br_component_owner_at(e, g->pilot_id, i), g->mover_id);
+        if (m != NULL) {
+            m->velocity = br_vec2_scale(dir, p->speed);
+        }
+    }
+}
+
+static void mover_system(br_engine *e, float dt, void *user)
+{
+    game *g = user;
+    for (uint32_t i = 0; i < br_component_count(e, g->mover_id); i++) {
+        mover *m = br_component_at(e, g->mover_id, i);
+        br_node n = br_component_owner_at(e, g->mover_id, i);
+        br_vec2 p = br_node_position(e, n);
+        br_node_set_position(e, n, br_vec2_make(p.x + m->velocity.x * dt, p.y + m->velocity.y * dt));
+    }
+}
+
+static void coin_system(br_engine *e, float dt, void *user)
+{
+    (void)dt;
+    game *g = user;
+    if (!g->ready) {
+        return;
+    }
+    br_node ship = br_node_find_by_label(e, br_stage_root(e), "ship", true);
+    br_vec2 at = br_node_position(e, ship);
+    int alive = 0;
+    for (uint32_t i = 0; i < br_component_count(e, g->coin_id); i++) {
+        coin *c = br_component_at(e, g->coin_id, i);
+        br_node n = br_component_owner_at(e, g->coin_id, i);
+        if (!br_node_valid(e, n)) {
+            continue; /* destroyed this frame: freed at the start of the next one */
+        }
+        if (br_vec2_length(br_vec2_sub(br_node_position(e, n), at)) < c->radius + 16.0f) {
+            g->score += c->value;
+            br_node_destroy(e, n);
+            br_audio_play_desc play = br_audio_play_defaults();
+            play.sprite = "pickup";
+            br_audio_play(e, g->sfx, &play);
+        } else {
+            alive++;
+        }
+    }
+    if (g->shown != g->score) {
+        /* "hud.coins" is a plural entry: "NO COINS YET" / "1 COIN" / "3 COINS" */
+        char count[16];
+        SDL_snprintf(count, sizeof(count), "%d", (int)g->score);
+        br_loc_arg arg = { "count", count };
+        br_text_set_text(e, br_node_find_by_label(e, br_stage_root(e), "score", true), br_loc_format(e, "hud.coins", &arg, 1));
+        g->shown = g->score;
+    }
+    const cJSON *wanted = cJSON_GetObjectItemCaseSensitive(
+        cJSON_GetObjectItemCaseSensitive(br_game_config_json(e), "game"), "coins_on_screen");
+    for (; cJSON_IsNumber(wanted) && alive < wanted->valueint; alive++) {
+        br_node n = br_prefab_instantiate(e, "prefabs/coin.prefab.json", br_stage_root(e), NULL);
+        br_node_set_position(e, n, br_vec2_make(60.0f + random01(g) * 840.0f, 80.0f + random01(g) * 420.0f));
+    }
+}
+
+static void game_free(br_engine *e, void *user)
+{
+    (void)e;
+    br_free(user);
+}
+
+static bool game_init(br_engine *e)
+{
+    game *g = br_alloc(sizeof(game));
+    if (g == NULL) {
+        return false;
+    }
+    g->rng = 12345u;
+    g->shown = -1;
+    br_engine_on_shutdown(e, game_free, g);
+
+    static const br_field_desc mover_fields[] = {
+        { "velocity", BR_FIELD_VEC2, offsetof(mover, velocity) },
+    };
+    static const br_field_desc pilot_fields[] = {
+        { "speed", BR_FIELD_FLOAT, offsetof(pilot, speed) },
+    };
+    static const br_field_desc coin_fields[] = {
+        { "radius", BR_FIELD_FLOAT, offsetof(coin, radius) },
+        { "value", BR_FIELD_INT, offsetof(coin, value) },
+    };
+    br_component_desc mover_desc = { "mover", sizeof(mover), mover_fields, BR_ARRAY_COUNT(mover_fields) };
+    br_component_desc pilot_desc = { "pilot", sizeof(pilot), pilot_fields, BR_ARRAY_COUNT(pilot_fields) };
+    br_component_desc coin_desc = { "coin", sizeof(coin), coin_fields, BR_ARRAY_COUNT(coin_fields) };
+    g->mover_id = br_component_register(e, &mover_desc);
+    g->pilot_id = br_component_register(e, &pilot_desc);
+    g->coin_id = br_component_register(e, &coin_desc);
+    br_system_add(e, "game.pilot", BR_PHASE_UPDATE, 0, pilot_system, g);
+    br_system_add(e, "game.mover", BR_PHASE_UPDATE, 10, mover_system, g);
+    br_system_add(e, "game.coins", BR_PHASE_UPDATE, 20, coin_system, g);
+
+    br_assets_load_bundle(e, "game", on_bundle, g); /* game.json's manifest is registered already */
+    return true;
+}
+
+br_app_desc br_main(int argc, char **argv)
+{
+    return br_game_config_main("game.json", argc, argv, game_init);
+}
+```
+
+A missing key shows as the key itself and is logged once, so a typo is easy to spot. Limits:
+plural forms are zero / one / other only, no right-to-left text and no shaping (README, Limits).
+
+## 13. Shipping: a pack and an install folder
+
+A released game is the executable, game.json and one `.brpack` holding everything under
+`asset_root` (no compression; `docs/DATA_FORMATS.md` section 8). `braty_install_game` adds an
+install rule that packs `data/assets` with `tools/pack_assets.py` and writes the folder:
+
+<!-- file: CMakeLists.txt -->
+```cmake
+cmake_minimum_required(VERSION 3.24)
+project(my_game LANGUAGES C)
+
+set(BRATY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../braty" CACHE PATH "Braty engine checkout")
+set(BRATY_BUILD_TESTS OFF)      # only the library, not the engine's tests,
+set(BRATY_BUILD_EXAMPLES OFF)   # examples
+set(BRATY_BUILD_SAMPLES OFF)    # and sample games
+add_subdirectory(${BRATY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/braty)
+
+file(GLOB GAME_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c)
+add_executable(my_game ${GAME_SOURCES})
+set_target_properties(my_game PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
+target_compile_options(my_game PRIVATE $<IF:$<C_COMPILER_ID:MSVC>,/W4,-Wall;-Wextra;-Wpedantic>)
+target_link_libraries(my_game PRIVATE braty::braty)
+
+# data/ next to the executable: the game runs from any working directory
+add_custom_command(TARGET my_game POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/data $<TARGET_FILE_DIR:my_game>)
+
+# cmake --install <build> --prefix <folder>: <folder>/my_game/ = the executable, the SDL runtime
+# (if shared), game.json and assets.brpack (data/assets packed by tools/pack_assets.py)
+braty_install_game(my_game ${CMAKE_CURRENT_SOURCE_DIR}/data)
+```
+
+game.json lists the pack. A pack that is not there is skipped with an info line, so the
+development build keeps reading the loose files copied next to it:
+
+<!-- file: data/game.json -->
+```json
+{
+  "window": { "title": "Coin Rush", "width": 960, "height": 540, "resizable": false },
+  "asset_root": "assets",
+  "packs": ["assets.brpack"],
+  "manifest": "manifest.json",
+  "start_scene": "scenes/main.scene.json",
+  "clear_color": "#14182b",
+  "input": {
+    "left":  { "keys": ["Left", "A"],  "buttons": ["dpleft"],  "axes": ["-leftx"] },
+    "right": { "keys": ["Right", "D"], "buttons": ["dpright"], "axes": ["+leftx"] },
+    "up":    { "keys": ["Up", "W"],    "buttons": ["dpup"],    "axes": ["-lefty"] },
+    "down":  { "keys": ["Down", "S"],  "buttons": ["dpdown"],  "axes": ["+lefty"] }
+  },
+  "audio": { "buses": { "sfx": 0.8 }, "sprites": { "sounds/sfx.wav": { "pickup": [0, 0.18] } } },
+  "locale": { "default": "en", "fallback": ["en"], "dir": "strings" },
+  "debug": { "overlay": false, "toggle_key": "F1" },
+  "game": { "coins_on_screen": 3 }
+}
+```
+
+```sh
+cmake --install my_game/build --prefix dist       # dist/my_game/: my_game(.exe), game.json, assets.brpack
+dist/my_game/my_game --frames 60 --screenshot shot.png
+python <braty>/tools/pack_assets.py my_game/data/assets my.brpack   # a pack by hand
+my_game/build/my_game --pack my.brpack            # mount it first (wins over loose files)
+```
+
+Pack paths are case-sensitive and at most 255 bytes. If the game cannot start (no game.json, a
+broken pack, no GPU) a release build shows a message box and writes `log.txt` next to the
+executable.
+
+## 14. A text field
+
+`br_text_field_create` makes an editable box (caret, selection, clipboard, undo, IME). While it
+has the keyboard, game actions do not see the typed keys, so "wasd" in a name does not fly the
+ship. The listener hears CHANGED, SUBMITTED (Enter), FOCUSED and BLURRED. Add a greeting text
+to the scene:
+
+<!-- file: data/assets/scenes/main.scene.json -->
+```json
+{
+  "type": "container",
+  "label": "main",
+  "children": [
+    { "type": "text", "label": "score", "text": "", "position": [20, 16],
+      "style": { "font_size": 28, "bold": true, "fill": "#ffd166" } },
+    { "type": "text", "text_key": "hud.title", "position": [940, 16], "anchor": [1, 0],
+      "style": { "font_size": 20, "fill": "#8b93b8" } },
+    { "type": "text", "label": "greeting", "text": "", "position": [300, 506], "anchor": [0, 0.5],
+      "style": { "font_size": 22, "fill": "#ffffff" } },
+    { "type": "graphics", "label": "ship", "position": [480, 270],
+      "commands": [["poly", [0, -18, 14, 14, 0, 6, -14, 14], true], ["fill", "#4fd1c5"],
+                   ["stroke", { "width": 2, "color": "#0e3b46" }]],
+      "components": { "mover": {}, "pilot": { "speed": 320 } } }
+  ]
+}
+```
+
+<!-- file: src/main.c -->
+```c
+#include "braty/braty_main.h"
+
+typedef struct mover {
+    br_vec2 velocity;
+} mover;
+
+typedef struct pilot {
+    float speed;
+} pilot;
+
+typedef struct coin {
+    float   radius;
+    int32_t value;
+} coin;
+
+typedef struct game {
+    uint32_t  mover_id, pilot_id, coin_id;
+    bool      ready;      /* the "game" bundle finished loading */
+    br_sound *sfx;
+    int32_t   score;
+    int32_t   shown;      /* the score the text shows (-1 = none yet) */
+    uint32_t  rng;
+} game;
+
+static float random01(game *g)
+{
+    g->rng = g->rng * 1664525u + 1013904223u; /* deterministic: --frames runs repeat exactly */
+    return (float)(g->rng >> 8) / 16777216.0f;
+}
+
+static void on_bundle(br_engine *e, const char *bundle, float progress, void *user)
+{
+    game *g = user;
+    br_log_info("bundle %s: %.0f%%", bundle, (double)(progress * 100.0f));
+    if (progress >= 1.0f) {
+        g->sfx = br_sound_load(e, "sfx"); /* an alias from the manifest */
+        g->ready = true;
+    }
+}
+
+static void pilot_system(br_engine *e, float dt, void *user)
+{
+    (void)dt;
+    game *g = user;
+    br_vec2 dir = br_vec2_make(br_input_action_value(e, "right") - br_input_action_value(e, "left"),
+                               br_input_action_value(e, "down") - br_input_action_value(e, "up"));
+    for (uint32_t i = 0; i < br_component_count(e, g->pilot_id); i++) {
+        pilot *p = br_component_at(e, g->pilot_id, i);
+        mover *m = br_component_get(e, br_component_owner_at(e, g->pilot_id, i), g->mover_id);
+        if (m != NULL) {
+            m->velocity = br_vec2_scale(dir, p->speed);
+        }
+    }
+}
+
+static void mover_system(br_engine *e, float dt, void *user)
+{
+    game *g = user;
+    for (uint32_t i = 0; i < br_component_count(e, g->mover_id); i++) {
+        mover *m = br_component_at(e, g->mover_id, i);
+        br_node n = br_component_owner_at(e, g->mover_id, i);
+        br_vec2 p = br_node_position(e, n);
+        br_node_set_position(e, n, br_vec2_make(p.x + m->velocity.x * dt, p.y + m->velocity.y * dt));
+    }
+}
+
+static void coin_system(br_engine *e, float dt, void *user)
+{
+    (void)dt;
+    game *g = user;
+    if (!g->ready) {
+        return;
+    }
+    br_node ship = br_node_find_by_label(e, br_stage_root(e), "ship", true);
+    br_vec2 at = br_node_position(e, ship);
+    int alive = 0;
+    for (uint32_t i = 0; i < br_component_count(e, g->coin_id); i++) {
+        coin *c = br_component_at(e, g->coin_id, i);
+        br_node n = br_component_owner_at(e, g->coin_id, i);
+        if (!br_node_valid(e, n)) {
+            continue; /* destroyed this frame: freed at the start of the next one */
+        }
+        if (br_vec2_length(br_vec2_sub(br_node_position(e, n), at)) < c->radius + 16.0f) {
+            g->score += c->value;
+            br_node_destroy(e, n);
+            br_audio_play_desc play = br_audio_play_defaults();
+            play.sprite = "pickup";
+            br_audio_play(e, g->sfx, &play);
+        } else {
+            alive++;
+        }
+    }
+    if (g->shown != g->score) {
+        /* "hud.coins" is a plural entry: "NO COINS YET" / "1 COIN" / "3 COINS" */
+        char count[16];
+        SDL_snprintf(count, sizeof(count), "%d", (int)g->score);
+        br_loc_arg arg = { "count", count };
+        br_text_set_text(e, br_node_find_by_label(e, br_stage_root(e), "score", true), br_loc_format(e, "hud.coins", &arg, 1));
+        g->shown = g->score;
+    }
+    const cJSON *wanted = cJSON_GetObjectItemCaseSensitive(
+        cJSON_GetObjectItemCaseSensitive(br_game_config_json(e), "game"), "coins_on_screen");
+    for (; cJSON_IsNumber(wanted) && alive < wanted->valueint; alive++) {
+        br_node n = br_prefab_instantiate(e, "prefabs/coin.prefab.json", br_stage_root(e), NULL);
+        br_node_set_position(e, n, br_vec2_make(60.0f + random01(g) * 840.0f, 80.0f + random01(g) * 420.0f));
+    }
+}
+
+/* Enter in the name field: greet the player (the field keeps the keyboard until then, so typing
+ * "wasd" does not fly the ship). */
+static void on_name(br_engine *e, br_node field, br_text_field_event event, void *user)
+{
+    (void)user;
+    if (event != BR_TEXT_FIELD_SUBMITTED) {
+        return;
+    }
+    br_loc_arg arg = { "name", br_text_field_text(e, field) };
+    br_text_set_text(e, br_node_find_by_label(e, br_stage_root(e), "greeting", true), br_loc_format(e, "hud.hello", &arg, 1));
+    br_node none = { 0, 0 };
+    br_text_field_focus(e, none); /* give the keyboard back to the game */
+}
+
+static void game_free(br_engine *e, void *user)
+{
+    (void)e;
+    br_free(user);
+}
+
+static bool game_init(br_engine *e)
+{
+    game *g = br_alloc(sizeof(game));
+    if (g == NULL) {
+        return false;
+    }
+    g->rng = 12345u;
+    g->shown = -1;
+    br_engine_on_shutdown(e, game_free, g);
+
+    static const br_field_desc mover_fields[] = {
+        { "velocity", BR_FIELD_VEC2, offsetof(mover, velocity) },
+    };
+    static const br_field_desc pilot_fields[] = {
+        { "speed", BR_FIELD_FLOAT, offsetof(pilot, speed) },
+    };
+    static const br_field_desc coin_fields[] = {
+        { "radius", BR_FIELD_FLOAT, offsetof(coin, radius) },
+        { "value", BR_FIELD_INT, offsetof(coin, value) },
+    };
+    br_component_desc mover_desc = { "mover", sizeof(mover), mover_fields, BR_ARRAY_COUNT(mover_fields) };
+    br_component_desc pilot_desc = { "pilot", sizeof(pilot), pilot_fields, BR_ARRAY_COUNT(pilot_fields) };
+    br_component_desc coin_desc = { "coin", sizeof(coin), coin_fields, BR_ARRAY_COUNT(coin_fields) };
+    g->mover_id = br_component_register(e, &mover_desc);
+    g->pilot_id = br_component_register(e, &pilot_desc);
+    g->coin_id = br_component_register(e, &coin_desc);
+    br_system_add(e, "game.pilot", BR_PHASE_UPDATE, 0, pilot_system, g);
+    br_system_add(e, "game.mover", BR_PHASE_UPDATE, 10, mover_system, g);
+    br_system_add(e, "game.coins", BR_PHASE_UPDATE, 20, coin_system, g);
+
+    br_text_style style = br_text_style_default();
+    style.font_size = 20;
+    br_node name = br_text_field_create(e, br_vec2_make(260.0f, 36.0f), &style);
+    br_node_set_label(e, name, "name");
+    br_node_set_position(e, name, br_vec2_make(20.0f, 488.0f));
+    br_text_field_set_max_length(e, name, 16);
+    br_text_field_set_placeholder(e, name, br_loc_get(e, "hud.name_hint")); /* game.json "locale" is set up already */
+    br_text_field_set_listener(e, name, on_name, g);
+    br_node_add_child(e, br_stage_root(e), name);
+
+    br_assets_load_bundle(e, "game", on_bundle, g); /* game.json's manifest is registered already */
+    return true;
+}
+
+br_app_desc br_main(int argc, char **argv)
+{
+    return br_game_config_main("game.json", argc, argv, game_init);
+}
+```
+
+Click the box (or let your menu call `br_text_field_focus` when its "confirm" lands on it),
+type, press Enter. A play-test types for you: `type name "Ada"` focuses the field labelled `name`
+and sends the text.
+
+<!-- file: playtest/name.json -->
+```json
+[
+  {"cmd": "wait", "frames": 5},
+  {"cmd": "expect", "path": "score:text", "value": "NO COINS YET"},
+  {"cmd": "type", "label": "name", "text": "Ada"},
+  {"cmd": "expect", "path": "name:text", "value": "Ada"},
+  {"cmd": "key", "key": "Return"},
+  {"cmd": "wait", "frames": 2},
+  {"cmd": "expect", "path": "greeting:text", "value": "Hello, Ada!"},
+  {"cmd": "set", "path": "engine:locale", "value": "de"},
+  {"cmd": "expect", "path": "loc:hud.hello", "value": "Hallo, {name}!"},
+  {"cmd": "quit"}
+]
+```
+
+```sh
+my_game/build/my_game --headless --playtest my_game/playtest/name.json
+```
+
 ## The 3D track
 
 The same ideas in 3D, with glTF as the scene format. A level made in Blender (or, here, by Crate
 Rush's `tools/build_assets.py`, which writes exactly what a Blender export contains) is a `.glb`:
 meshes, a camera, a sun, and **node extras** (Blender custom properties) that become components.
-Steps 12-15 replace `main.c` again; game.json keeps its input actions.
+Steps 15-18 replace `main.c` again; game.json keeps its input actions.
 
 ```sh
 mkdir -p my_game/data/assets/levels my_game/data/assets/models
@@ -620,7 +1154,7 @@ cp <braty>/sample_projects/crate_rush/data/assets/levels/level1.glb my_game/data
 cp -r <braty>/sample_projects/crate_rush/data/assets/models/character my_game/data/assets/models/
 ```
 
-## 12. A .glb as the scene
+## 15. A .glb as the scene
 
 A `.glb` path works wherever a scene file does: `start_scene`, `br_scene_load`, `br_scene_switch`
 and `br_prefab_instantiate`. As a scene it becomes a full-window View3D with the file's nodes,
@@ -660,7 +1194,7 @@ br_app_desc br_main(int argc, char **argv)
 
 The screenshot shows the island through the file's camera, with shadows from its sun.
 
-## 13. A component from glTF extras, and a system over 3D components
+## 16. A component from glTF extras, and a system over 3D components
 
 Every crate node in `level1.glb` has the custom property `"crate.value": 10` (in the file:
 `"extras": { "crate.value": 10 }`). Register a `crate` component before the level loads and the
@@ -722,13 +1256,14 @@ br_app_desc br_main(int argc, char **argv)
 
 Extras the game did not register (the level's `hazard`, `sign`, ...) are skipped silently.
 
-## 14. A character and a following camera
+## 17. A character and a following camera
 
 The level's `Spawn` node carries `"spawn_point": { "yaw": 180 }`. The game puts the skinned
-character there, moves it with the input actions and plays its `idle` / `sprint` clips. The
-camera is a Unity-style `br_camera` (vertical field of view, horizontal follows the window) with a
-`camera.follow` component. It renders the level's 3D root through its own view, so the `.glb`'s
-view is hidden (otherwise the level would be drawn twice).
+character there, moves it with the input actions and plays its `idle` / `sprint` clips. With
+`br_gltf_options.camera_as_br_camera` set before the level loads, the `.glb`'s own camera (its
+lens, sky and background from the scene extras) arrives as a Unity-style `br_camera` labelled
+after its glTF node (`Camera`): give it a `camera.follow` component and it follows the character
+and looks at it. (`br_camera_create_3d` makes one by hand when a file has no camera.)
 
 <!-- file: src/main.c -->
 ```c
@@ -776,12 +1311,9 @@ static void spawn(br_engine *e, game *g)
     br_animator_add_model_clips(e, g->anim, br_model3d_model(e, g->player));
     br_animator_play(e, g->anim, "idle");
 
-    br_camera c = br_camera_default_3d();
-    c.field_of_view = 50.0f * BR_DEG_TO_RAD;           /* vertical, at any window shape */
-    c.background_color = br_color_from_hex(0x3f86c0, 1.0f);
-    br_node cam = br_camera_create_3d(e, root, &c);
-    br_node_add_child(e, br_scene_root_2d(e, level), cam); /* goes away with the level */
-    br_node_set_visible(e, br_node_find_by_label(e, br_scene_root_2d(e, level), "level1", true), false);
+    /* the file's camera is a br_camera (camera_as_br_camera in game_init), labelled after its
+     * glTF node: it follows the character */
+    br_node cam = br_node_find_by_label(e, br_scene_root_2d(e, level), "Camera", true);
     br_camera_follow *f = br_component_add(e, cam, br_camera_follow_component(e));
     f->target3d = g->player;
     f->offset3d = br_vec3_make(0.0f, 4.5f, 5.5f);
@@ -832,6 +1364,10 @@ static bool game_init(br_engine *e)
     br_component_desc spawn_desc = { "spawn_point", sizeof(spawn_point), spawn_fields, BR_ARRAY_COUNT(spawn_fields) };
     g->crate_id = br_component_register(e, &crate_desc);
     g->spawn_id = br_component_register(e, &spawn_desc);
+    br_gltf_options options;
+    SDL_zero(options);
+    options.camera_as_br_camera = true; /* .glb scenes: the file's camera becomes a br_camera */
+    br_gltf_set_load_options(e, &options);
     br_system_add(e, "game.crate_spin", BR_PHASE_UPDATE, 0, crate_spin_system, g);
     br_system_add(e, "game.player", BR_PHASE_UPDATE, 10, player_system, g);
     return true;
@@ -847,7 +1383,7 @@ There is no collision here (the character walks over water): Crate Rush's `src/p
 a fixed-step version with gravity, jumping and box colliders read from the level's `-colonly`
 nodes.
 
-## 15. A world-space label
+## 18. A world-space label
 
 `br_canvas3d` puts 2D content (sprites, nine-slices, text) into the 3D world. `br_text3d_create`
 is a canvas with one text node; with no font given it uses the default font as SDF glyphs, so the
@@ -923,12 +1459,7 @@ static void spawn(br_engine *e, game *g)
     br_node3d_set_position(e, g->label, br_vec3_make(0.0f, 1.1f, 0.0f));
     br_node3d_add_child(e, g->player, g->label);
 
-    br_camera c = br_camera_default_3d();
-    c.field_of_view = 50.0f * BR_DEG_TO_RAD;
-    c.background_color = br_color_from_hex(0x3f86c0, 1.0f);
-    br_node cam = br_camera_create_3d(e, root, &c);
-    br_node_add_child(e, br_scene_root_2d(e, level), cam);
-    br_node_set_visible(e, br_node_find_by_label(e, br_scene_root_2d(e, level), "level1", true), false);
+    br_node cam = br_node_find_by_label(e, br_scene_root_2d(e, level), "Camera", true);
     br_camera_follow *f = br_component_add(e, cam, br_camera_follow_component(e));
     f->target3d = g->player;
     f->offset3d = br_vec3_make(0.0f, 4.5f, 5.5f);
@@ -978,6 +1509,10 @@ static bool game_init(br_engine *e)
     br_component_desc spawn_desc = { "spawn_point", sizeof(spawn_point), spawn_fields, BR_ARRAY_COUNT(spawn_fields) };
     g->crate_id = br_component_register(e, &crate_desc);
     g->spawn_id = br_component_register(e, &spawn_desc);
+    br_gltf_options options;
+    SDL_zero(options);
+    options.camera_as_br_camera = true; /* .glb scenes: the file's camera becomes a br_camera */
+    br_gltf_set_load_options(e, &options);
     br_system_add(e, "game.player", BR_PHASE_UPDATE, 0, player_system, g);
     br_system_add(e, "game.crates", BR_PHASE_UPDATE, 10, crate_system, g);
     return true;
@@ -997,7 +1532,9 @@ through a second (2D) camera, scenes with a loading screen, and play-test script
 
 `python tools/check_getting_started.py` builds every step of this file in a scratch project
 (`build/getting_started/`), runs it with `--frames 60 --screenshot`, and writes
-`build/getting_started/step_<N>.png` for you to open.
+`build/getting_started/step_<N>.png` for you to open. A step whose CMakeLists has
+`braty_install_game` is also installed (`cmake --install`) and the installed copy run from
+another directory; a step that writes `playtest/*.json` runs each script headless.
 
 ## Where next
 

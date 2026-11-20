@@ -5,10 +5,13 @@
 
 Each "## N. Title" section's "<!-- file: PATH -->" code blocks are written into a scratch
 project (build/getting_started/my_game/), on top of the earlier steps' files, exactly as a reader
-would copy them. The guide's asset copies (steps 8 and 12) are done from the repository. From
+would copy them. The guide's asset copies (steps 8 and 15) are done from the repository. From
 step 3 on, every step is built (one CMake build directory, so steps rebuild incrementally) and run
-with --frames 60 --screenshot build/getting_started/step_N.png. Exit code 1 if a step fails to
-build, exits non-zero, or logs an ERROR line. Open the PNGs to check what each step shows.
+with --frames 60 --screenshot build/getting_started/step_N.png. A step that writes a CMakeLists
+with braty_install_game is also installed (cmake --install) and the installed game run from
+another directory; a step that writes playtest/*.json runs each script with --headless. Exit code
+1 if a step fails to build, exits non-zero, or logs an ERROR line. Open the PNGs to check what
+each step shows.
 """
 import argparse
 import os
@@ -26,7 +29,7 @@ GAME = os.path.join(OUT, "my_game")
 COPIES = {
     8: [("sample_projects/star_courier/data/assets/sprites", "data/assets/sprites"),
         ("sample_projects/star_courier/data/assets/sounds", "data/assets/sounds")],
-    12: [("sample_projects/crate_rush/data/assets/levels/level1.glb", "data/assets/levels/level1.glb"),
+    15: [("sample_projects/crate_rush/data/assets/levels/level1.glb", "data/assets/levels/level1.glb"),
          ("sample_projects/crate_rush/data/assets/models/character", "data/assets/models/character")],
 }
 
@@ -119,10 +122,33 @@ def main():
         cmd = [exe, "--frames", "60", "--screenshot", shot]
         if args.gpu_driver:
             cmd += ["--gpu-driver", args.gpu_driver]
-        result = run(cmd, timeout=120)
-        log = result.stdout + result.stderr
-        errors = [l for l in log.splitlines() if "ERROR" in l]
-        ok = result.returncode == 0 and not errors and not warnings and os.path.exists(shot)
+        runs = [(cmd, None)]
+        errors = []
+        if any(path == "CMakeLists.txt" and "braty_install_game" in content for path, content in files):
+            # the shipped folder (exe + game.json + assets.brpack), run from another directory
+            dist = os.path.join(OUT, "dist")
+            shutil.rmtree(dist, ignore_errors=True)
+            result = run(["cmake", "--install", build, "--prefix", dist])
+            if result.returncode != 0:
+                errors.append("cmake --install failed: " + (result.stdout + result.stderr)[-2000:])
+            installed = os.path.join(dist, "my_game", os.path.basename(exe))
+            shot_installed = os.path.join(OUT, "step_%d_installed.png" % number)
+            runs.append(([installed, "--frames", "60", "--screenshot", shot_installed] + cmd[4:], OUT))
+        for path, _ in files:
+            if path.startswith("playtest/") and path.endswith(".json"):
+                runs.append(([exe, "--headless", "--playtest", os.path.join(GAME, path)], GAME))
+        ok = not errors
+        for run_cmd, cwd in runs:
+            try:
+                result = run(run_cmd, timeout=120, cwd=cwd)
+            except OSError as err:
+                errors.append("%s: %s" % (run_cmd[0], err))
+                ok = False
+                continue
+            log = result.stdout + result.stderr
+            errors += [l for l in log.splitlines() if "ERROR" in l]
+            ok = ok and result.returncode == 0
+        ok = ok and not errors and not warnings and os.path.exists(shot)
         print("step %2d  %-48s %s" % (number, title, "ok  " + os.path.relpath(shot, ROOT) if ok else "FAILED"))
         for line in warnings + errors:
             print("         " + line)
