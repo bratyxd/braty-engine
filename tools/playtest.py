@@ -20,7 +20,7 @@ From a shell (each command is one argument; replies are printed one JSON line ea
 Short commands: step [N], key NAME [down|up|tap], action NAME [tap|down|up [VALUE]],
 gamepad connect TYPE [SLOT] | disconnect [SLOT] | tap|down|up BUTTON [SLOT] |
 axis AXIS VALUE [SLOT], click LABEL,
-text "...", screenshot FILE, get PATH, set PATH JSON, find LABEL, dump [FILE], window W H,
+text "...", type LABEL "...", screenshot FILE, get PATH, set PATH JSON, find LABEL, dump [FILE], window W H,
 stats, profile [N], logs [N], help, quit. Anything starting with "{" is sent as raw JSON.
 A failed command raises PlaytestError with the engine's message; the game process is ended when
 the with-block exits, on an exception, and at interpreter exit.
@@ -145,6 +145,10 @@ class Playtest:
     def text(self, text):
         return self.send({"cmd": "text", "text": text})
 
+    def type(self, label, text):
+        """Focuses the text field labelled `label` and types text into it."""
+        return self.send({"cmd": "type", "label": label, "text": text})
+
     # ---- looking at the game
     def screenshot(self, path):
         return self.send({"cmd": "screenshot", "file": path})
@@ -267,6 +271,8 @@ def parse_words(text, words):
         return {"cmd": name, "label": rest[0]}
     if name == "text":
         return {"cmd": "text", "text": " ".join(rest)}
+    if name == "type":
+        return {"cmd": "type", "label": rest[0], "text": " ".join(rest[1:])}
     if name == "screenshot":
         return {"cmd": "screenshot", "file": rest[0]}
     if name == "get":
