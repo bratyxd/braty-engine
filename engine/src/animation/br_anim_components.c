@@ -1,10 +1,13 @@
-/* br_anim_components: the "animator" and "tween" components, so scene files can start animation
- * through the data layer's component fields (no data-layer code needed):
+/* br_anim_components: the "animator" and "tween" components, so scene files and glTF node extras
+ * can start animation through the data layer's component fields (no data-layer code needed):
  *
  *   "components": { "animator": { "clips": "hero.anim.json", "play": "walk" } }
  *   "components": { "tween": { "property": "alpha", "from": 0, "to": 1, "mode": "from_to", "duration": 0.5 } }
+ *   glTF node extras: { "animator.clips": "door.anim.json", "animator.play": "open" }
  *
- * Each row is read once, the first frame after it appears, and turned into a real animator or tween. */
+ * Each row (2D or 3D node) is read once, the first frame after it appears, and turned into a real
+ * animator or tween. The animator keeps the asset references the row took and releases them when
+ * it is removed. */
 #include "animation/br_animation_internal.h"
 
 typedef struct br_anim_animator_config {
@@ -18,8 +21,10 @@ typedef struct br_anim_animator_config {
 
 typedef struct br_anim_tween_config {
     char     property[BR_FIELD_STRING_SIZE];
-    br_vec2  to;
+    br_vec2  to;                         /* float, vec2, bool and int properties */
     br_vec2  from;
+    br_vec3  to3;                        /* vec3 properties (3D position, scale) */
+    br_vec3  from3;
     br_color to_color;                   /* colour properties (tint) use these */
     br_color from_color;
     char     mode[BR_FIELD_STRING_SIZE]; /* "to" (default), "from", "from_to" */
@@ -45,6 +50,8 @@ void br_anim_components_register(br_engine *e)
         { "property", BR_FIELD_STRING, offsetof(br_anim_tween_config, property) },
         { "to", BR_FIELD_VEC2, offsetof(br_anim_tween_config, to) },
         { "from", BR_FIELD_VEC2, offsetof(br_anim_tween_config, from) },
+        { "to3", BR_FIELD_VEC3, offsetof(br_anim_tween_config, to3) },
+        { "from3", BR_FIELD_VEC3, offsetof(br_anim_tween_config, from3) },
         { "to_color", BR_FIELD_COLOR, offsetof(br_anim_tween_config, to_color) },
         { "from_color", BR_FIELD_COLOR, offsetof(br_anim_tween_config, from_color) },
         { "mode", BR_FIELD_STRING, offsetof(br_anim_tween_config, mode) },
@@ -60,19 +67,24 @@ void br_anim_components_register(br_engine *e)
     e->animation->tween_component = br_component_register(e, &t);
 }
 
-static void br_anim_start_animator(br_engine *e, br_node n, const br_anim_animator_config *c)
+static void br_anim_start_animator(br_engine *e, br_anim_target root, const br_anim_animator_config *c)
 {
-    br_animator a = br_animator_add(e, br_anim_target_2d(n));
+    br_animator a = br_animator_add(e, root);
     if (a.generation == 0) {
         return;
     }
     if (c->clips[0] != '\0') {
-        br_animator_add_library(e, a, br_anim_library_load(e, c->clips));
+        const br_anim_library *lib = br_anim_library_load(e, c->clips);
+        if (lib != NULL) {
+            br_animator_add_library(e, a, lib);
+            br_animator_own_asset(e, a, c->clips);
+        }
     }
     br_animator_set_speed(e, a, c->speed != 0.0f ? c->speed : 1.0f);
     if (c->graph[0] != '\0') {
         const br_anim_graph *g = br_anim_graph_load(e, c->graph);
         if (g != NULL) {
+            br_animator_own_asset(e, a, c->graph);
             br_animator_set_graph(e, a, g);
         }
     }
@@ -89,23 +101,48 @@ static void br_anim_start_animator(br_engine *e, br_node n, const br_anim_animat
     }
 }
 
-static void br_anim_start_tween(br_engine *e, br_node n, const br_anim_tween_config *c)
+static void br_anim_start_tween(br_engine *e, br_anim_target target, const br_anim_tween_config *c)
 {
-    br_anim_target target = br_anim_target_2d(n);
     br_anim_target node;
     br_anim_prop_ref prop;
     if (!br_anim_resolve(e, target, c->property, &node, &prop)) {
         br_log_error("tween component: '%s' does not resolve on this node", c->property);
         return;
     }
-    bool color = prop.type == BR_ANIM_COLOR;
-    float to[4] = { c->to.x, c->to.y, 0.0f, 0.0f };
-    float from[4] = { c->from.x, c->from.y, 0.0f, 0.0f };
-    if (color) {
-        float tc[4] = { c->to_color.r, c->to_color.g, c->to_color.b, c->to_color.a };
-        float fc[4] = { c->from_color.r, c->from_color.g, c->from_color.b, c->from_color.a };
-        SDL_memcpy(to, tc, sizeof(to));
-        SDL_memcpy(from, fc, sizeof(from));
+    float to[BR_ANIM_MAX_COMPONENTS] = { 0 };
+    float from[BR_ANIM_MAX_COMPONENTS] = { 0 };
+    switch (prop.type) {
+    case BR_ANIM_COLOR:
+        to[0] = c->to_color.r;
+        to[1] = c->to_color.g;
+        to[2] = c->to_color.b;
+        to[3] = c->to_color.a;
+        from[0] = c->from_color.r;
+        from[1] = c->from_color.g;
+        from[2] = c->from_color.b;
+        from[3] = c->from_color.a;
+        break;
+    case BR_ANIM_VEC3:
+        to[0] = c->to3.x;
+        to[1] = c->to3.y;
+        to[2] = c->to3.z;
+        from[0] = c->from3.x;
+        from[1] = c->from3.y;
+        from[2] = c->from3.z;
+        break;
+    case BR_ANIM_FLOAT:
+    case BR_ANIM_VEC2:
+    case BR_ANIM_BOOL:
+    case BR_ANIM_INT:
+        to[0] = c->to.x;
+        to[1] = c->to.y;
+        from[0] = c->from.x;
+        from[1] = c->from.y;
+        break;
+    default:
+        br_log_error("tween component: '%s' (a rotation, weights or texture) cannot be tweened from a component",
+                     c->property);
+        return;
     }
     br_ease_type ease = BR_EASE_LINEAR;
     br_tween t;
@@ -131,14 +168,25 @@ void br_anim_components_system(br_engine *e, float dt, void *user)
     (void)dt;
     (void)user;
     br_animation_state *s = e->animation;
+    /* copies: loading assets or starting animators may move the component arrays */
     uint32_t count = br_component_count(e, s->animator_component);
     for (uint32_t i = 0; i < count; i++) {
         br_anim_animator_config *c = br_component_at(e, s->animator_component, i);
         br_node n = br_component_owner_at(e, s->animator_component, i);
         if (!c->started && br_node_valid(e, n)) {
             c->started = true;
-            br_anim_animator_config copy = *c; /* loading assets may move component arrays */
-            br_anim_start_animator(e, n, &copy);
+            br_anim_animator_config copy = *c;
+            br_anim_start_animator(e, br_anim_target_2d(n), &copy);
+        }
+    }
+    count = br_component3d_count(e, s->animator_component);
+    for (uint32_t i = 0; i < count; i++) {
+        br_anim_animator_config *c = br_component3d_at(e, s->animator_component, i);
+        br_node3d n = br_component3d_owner_at(e, s->animator_component, i);
+        if (!c->started && br_node3d_valid(e, n)) {
+            c->started = true;
+            br_anim_animator_config copy = *c;
+            br_anim_start_animator(e, br_anim_target_3d(n), &copy);
         }
     }
     count = br_component_count(e, s->tween_component);
@@ -148,7 +196,17 @@ void br_anim_components_system(br_engine *e, float dt, void *user)
         if (!c->started && br_node_valid(e, n)) {
             c->started = true;
             br_anim_tween_config copy = *c;
-            br_anim_start_tween(e, n, &copy);
+            br_anim_start_tween(e, br_anim_target_2d(n), &copy);
+        }
+    }
+    count = br_component3d_count(e, s->tween_component);
+    for (uint32_t i = 0; i < count; i++) {
+        br_anim_tween_config *c = br_component3d_at(e, s->tween_component, i);
+        br_node3d n = br_component3d_owner_at(e, s->tween_component, i);
+        if (!c->started && br_node3d_valid(e, n)) {
+            c->started = true;
+            br_anim_tween_config copy = *c;
+            br_anim_start_tween(e, br_anim_target_3d(n), &copy);
         }
     }
 }

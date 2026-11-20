@@ -46,13 +46,23 @@ top of this module. Tests: `tests/test_animation.c`, `tests/test_tween.c`. Examp
 - **State machines** (`*.animgraph.json`, asset type `"animgraph"`) run on the base layer: states
   (a clip or a blend tree, speed, loop), transitions from a state or any state (`"*"`) with
   conditions on float / bool / trigger parameters, exit time and blend duration. A running
-  transition is not interrupted; triggers are consumed by the transition that used them.
+  transition is not interrupted; triggers are consumed by the transition that used them. A
+  parameter's type comes from the graph's `parameters`, else from the first setter (so an
+  undeclared trigger set with `br_animator_set_trigger` is consumed too); a setter of another type
+  warns once. Names (states, parameters) are at most 31 bytes; longer ones are reported.
 - **Events:** markers reached this frame are in `br_animation_events` (read them in any system
   after LATE_UPDATE -100) and go to the animator's callback after all animators were sampled.
-  A marker fires exactly once per pass - across loop wraps, ping-pong turns and big steps (more
+  Names stay valid until the next update, even if a callback destroys the node (clips and asset
+  references of removed animators are freed at the start of the next update). A marker fires exactly once per pass - across loop wraps, ping-pong turns and big steps (more
   than 8 passes in one step skip the extra passes' markers).
-- **Root motion:** `br_animator_set_root_motion(e, a, "Hips")` keeps that node's position track
-  in place horizontally and reports the movement with `br_animator_root_motion`.
+- **Root motion:** `br_animator_set_root_motion(e, a, "Hips")` stops writing that node's
+  horizontal position and reports the track's own movement (sample at the new time minus sample
+  at the old one, split at loop wraps, weighted like the cross-fade / blend tree) with
+  `br_animator_root_motion`; apply it to the node itself or to a parent. Base layer only.
+- **Fades start from the pose on screen.** A base-layer fade started while another runs, or after
+  a ONCE clip finished, fades out of a frozen snapshot of what was shown. `br_animator_cross_fade`
+  to the motion already playing or fading in does nothing, so "ask for the state you want every
+  frame" works.
 - **Tweens** live in one dense array advanced by `animation.tweens` (LATE_UPDATE -200, so an
   animator wins over a tween on the same property). A `to` tween reads its start value when it
   starts (after its delay). Sequences are a plain time cursor that turns "after" / "with" into
@@ -75,6 +85,7 @@ top of this module. Tests: `tests/test_animation.c`, `tests/test_tween.c`. Examp
 | `br_animator_add_library(e, a, br_anim_library_load(e, "x.anim.json"))` | Clips from a file. |
 | `br_animator_add_model_clips(e, a, model)` | A glTF model's clips (animator on the `model3d` node). |
 | `br_animator_add_clip(e, a, clip)`, `br_anim_clip_from_frames(name, frames, n)` | Your own / flipbook clips (you own them; they must outlive the animator). |
+| `br_animator_rebind(e, a)` | Re-resolve dropped tracks after attaching nodes (a weapon) under the animator. |
 | `br_animator_play`, `_cross_fade(e, a, "run", 0.2f)`, `_queue`, `_stop` | Base-layer playback. |
 | `br_animator_set_speed`, `_set_paused`, `_set_loop(e, a, layer, BR_ANIM_PING_PONG)`, `_set_time` | Clock control. |
 | `br_animator_set_layer(e, a, 1, weight, additive)`, `_layer_add_mask`, `_play_layer` | Layers. |
@@ -153,11 +164,15 @@ The module registers two components, so scene files and prefabs can start animat
 ```
 
 `animator`: `clips` (an anim.json, loaded through the asset cache), `graph` (optional
-animgraph.json), `play` (optional clip), `loop`, `speed` (0 = 1). `tween`: `property` (a
-property path), `to` / `from` (a number or `[x, y]`), `to_color` / `from_color` (colour
-properties such as `tint`), `mode` (`"to"` default, `"from"`, `"from_to"`), `duration`, `delay`,
-`ease` (easing name), `repeat` (-1 = forever), `yoyo`. Each row is turned into a real animator /
-tween the first frame after it appears (2D nodes; one tween component per node).
+animgraph.json), `play` (optional clip), `loop`, `speed` (0 = 1). The animator holds one reference
+to each asset and releases it when it is removed. `tween`: `property` (a property path), `to` /
+`from` (a number or `[x, y]`), `to3` / `from3` (`[x, y, z]`, vec3 properties such as a 3D
+`position`), `to_color` / `from_color` (colour properties such as `tint`), `mode` (`"to"`
+default, `"from"`, `"from_to"`), `duration`, `delay`, `ease` (easing name), `repeat` (-1 =
+forever), `yoyo`; rotations and weights cannot be tweened from a component. Each row is turned
+into a real animator / tween the first frame after it appears, on 2D and on 3D nodes, so glTF
+node extras work too: `{ "animator.clips": "door.anim.json", "animator.play": "open" }` (one
+tween component per node).
 
 ## `*.anim.json` (also docs/DATA_FORMATS.md, section 6)
 
@@ -186,6 +201,7 @@ tween the first frame after it appears (2D nodes; one tween component per node).
   name: 4 floats, sRGB) or a texture reference (`"sheet.json#frame"`, a path, or a frame name of a
   loaded sheet) for `sprite.texture`. Every key of a track has the same number of values.
 - Errors (`file: clips[0].tracks[2].keys[1]: reason`) skip that track or event; the rest loads.
+  Numbers must be finite; a track has at most 100,000 keys.
 - 3D rotations are quaternions `[x, y, z, w]`; material colours are sRGB.
 
 ## `*.animgraph.json` (also docs/DATA_FORMATS.md, section 7)
@@ -214,7 +230,11 @@ tween the first frame after it appears (2D nodes; one tween component per node).
   must be reached. `duration`: cross-fade seconds (default 0.25).
 - `entry`: the first state (default: the first in the list).
 - The animator must have the clips before `br_animator_set_graph`; blend states become blend
-  trees named after the state.
+  trees named after the state (a clip with the same name does not replace the blend; a warning
+  says `br_animator_play` by that name plays the clip).
+- Bad values are reported with their JSON path: wrong types, non-finite numbers, names over 31
+  bytes (clip names over 63), more than 1,024 states or 4,096 transitions. A bad state or
+  transition is skipped; a graph without a valid entry state fails to load.
 
 ## Numbers (RTX 3060 Ti, Release, 1280x720, vsync off; ms per frame)
 
@@ -237,7 +257,8 @@ D3D12, 0.460-0.469 ms on Vulkan, so no regression. "animation" = `animation.upda
   animator on the model3d node).
 - Rest values are read when a clip is first bound. A cross-fade blends properties the new clip
   does not animate towards that rest value (as the Phase 1 animator did).
-- Cross-fading while a cross-fade runs drops the older fading motion at once.
+- On layers 1-3 a fade started while another runs still drops the older fading motion
+  (`ponytail:`; the base layer fades from a snapshot).
 - `ONCE` stops writing after the end (the last pose stays); `CLAMP` keeps writing it, so other
   code cannot move that property.
 - Material properties write the material, which glTF instances share: pulse one instance's
@@ -246,7 +267,7 @@ D3D12, 0.460-0.469 ms on Vulkan, so no regression. "animation" = `animation.upda
   cross-fade switches at the half).
 - Blend tree markers come from the heaviest child; 2D trees use inverse-distance weights
   (`ponytail:` in br_animator.c), not gradient bands.
-- Root motion reports nothing on the frame a loop wraps (one-frame hitch; `ponytail:`).
+- Root motion and markers over more than 8 loop passes in one step skip the extra passes.
 - `br_animator3d_*` (Phase 1) still works: it puts a unified animator on the instance, copies
   `speed`, `loop`, `paused` and edited `time` in before sampling, writes `time` and the fade state
   back after, and fires its LOOP / END callbacks. Do not mix it with `br_animator_*` on the same

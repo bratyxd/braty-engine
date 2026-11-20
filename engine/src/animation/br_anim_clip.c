@@ -4,6 +4,8 @@
 
 #include "cjson/cJSON.h"
 
+#define BR_ANIM_JSON_MAX_KEYS 100000   /* keys per track in a file (27 minutes at 60 keys/s) */
+
 /* ---- building clips */
 
 br_anim_clip *br_anim_clip_create(const char *name, float duration, br_anim_loop loop)
@@ -331,12 +333,22 @@ br_anim_clip *br_anim_clip_from_gltf(const br_model *model, uint32_t index)
 
 /* ---- *.anim.json */
 
+bool br_anim_json_number(const void *json, float *out)
+{
+    const cJSON *v = json;
+    /* NaN fails both comparisons; 1e999 parses as infinity */
+    if (!cJSON_IsNumber(v) || !(v->valuedouble >= -1.0e30 && v->valuedouble <= 1.0e30)) {
+        return false;
+    }
+    *out = (float)v->valuedouble;
+    return true;
+}
+
 uint32_t br_anim_json_value(br_engine *e, br_anim_clip *clip, const void *json, float *out, uint32_t max)
 {
     const cJSON *v = json;
     if (cJSON_IsNumber(v)) {
-        out[0] = (float)v->valuedouble;
-        return 1;
+        return br_anim_json_number(v, out) ? 1 : 0;
     }
     if (cJSON_IsBool(v)) {
         out[0] = cJSON_IsTrue(v) ? 1.0f : 0.0f;
@@ -348,11 +360,9 @@ uint32_t br_anim_json_value(br_engine *e, br_anim_clip *clip, const void *json, 
             return 0;
         }
         for (uint32_t i = 0; i < n; i++) {
-            const cJSON *item = cJSON_GetArrayItem(v, (int)i);
-            if (!cJSON_IsNumber(item)) {
+            if (!br_anim_json_number(cJSON_GetArrayItem(v, (int)i), &out[i])) {
                 return 0;
             }
-            out[i] = (float)item->valuedouble;
         }
         return n;
     }
@@ -437,6 +447,10 @@ static void br_anim_json_track(br_engine *e, const char *file, br_anim_clip *cli
         }
     }
     uint32_t n = (uint32_t)cJSON_GetArraySize(keys);
+    if (n > BR_ANIM_JSON_MAX_KEYS) {
+        br_log_error("%s: %s.keys: %u keys, at most %d", file, where, n, BR_ANIM_JSON_MAX_KEYS);
+        return;
+    }
     uint32_t per_key = br_anim_floats_per_key((br_anim_interpolation)interp, BR_ANIM_MAX_COMPONENTS);
     float *times = br_alloc(sizeof(float) * n);
     float *values = br_alloc(sizeof(float) * n * per_key);
@@ -459,13 +473,12 @@ static void br_anim_json_track(br_engine *e, const char *file, br_anim_clip *cli
         }
         float v[BR_ANIM_MAX_COMPONENTS];
         uint32_t c = jvalue != NULL ? br_anim_json_value(e, clip, jvalue, v, BR_ANIM_MAX_COMPONENTS) : 0;
-        if (!cJSON_IsNumber(jtime) || c == 0 || (components != 0 && c != components)) {
+        if (!br_anim_json_number(jtime, &times[k]) || c == 0 || (components != 0 && c != components)) {
             br_log_error("%s: %s.keys[%u]: expected [time, value] or {\"time\", \"value\"} with %s", file, where, k,
                          components != 0 ? "the same number of values as the first key" : "a number, array or string");
             ok = false;
             break;
         }
-        times[k] = (float)jtime->valuedouble;
         if (k > 0 && times[k] < times[k - 1]) {
             br_log_error("%s: %s.keys[%u]: times must ascend", file, where, k);
             ok = false;
@@ -506,6 +519,10 @@ static void br_anim_json_track(br_engine *e, const char *file, br_anim_clip *cli
 
 static br_anim_clip *br_anim_json_clip(br_engine *e, const char *file, const cJSON *jc, uint32_t index)
 {
+    if (!cJSON_IsObject(jc)) {
+        br_log_error("%s: clips[%u]: expected a clip object", file, index);
+        return NULL;
+    }
     const char *name = br_anim_json_string(jc, "name");
     const cJSON *jd = cJSON_GetObjectItemCaseSensitive(jc, "duration");
     br_anim_loop loop = BR_ANIM_LOOP;
@@ -513,7 +530,11 @@ static br_anim_clip *br_anim_json_clip(br_engine *e, const char *file, const cJS
     if (lname != NULL && !br_anim_loop_from_name(lname, &loop)) {
         br_log_error("%s: clips[%u].loop: '%s' is not loop, once, ping_pong or clamp", file, index, lname);
     }
-    br_anim_clip *clip = br_anim_clip_create(name != NULL ? name : "", cJSON_IsNumber(jd) ? (float)jd->valuedouble : 0.0f, loop);
+    float duration = 0.0f;
+    if (jd != NULL && !br_anim_json_number(jd, &duration)) {
+        br_log_error("%s: clips[%u].duration: expected a number of seconds (the last key time is used)", file, index);
+    }
+    br_anim_clip *clip = br_anim_clip_create(name != NULL ? name : "", duration, loop);
     if (clip == NULL) {
         return NULL;
     }
@@ -526,13 +547,13 @@ static br_anim_clip *br_anim_json_clip(br_engine *e, const char *file, const cJS
     const cJSON *events = cJSON_GetObjectItemCaseSensitive(jc, "events");
     for (int i = 0; i < cJSON_GetArraySize(events); i++) {
         const cJSON *ev = cJSON_GetArrayItem(events, i);
-        const cJSON *jt = cJSON_GetObjectItemCaseSensitive(ev, "time");
+        float time = 0.0f;
         const char *ename = br_anim_json_string(ev, "name");
-        if (!cJSON_IsNumber(jt) || ename == NULL) {
+        if (!br_anim_json_number(cJSON_GetObjectItemCaseSensitive(ev, "time"), &time) || ename == NULL) {
             br_log_error("%s: clips[%u].events[%d]: expected { \"time\": seconds, \"name\": \"...\" }", file, index, i);
             continue;
         }
-        br_anim_clip_add_marker(clip, (float)jt->valuedouble, ename);
+        br_anim_clip_add_marker(clip, time, ename);
     }
     return clip;
 }
