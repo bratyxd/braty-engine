@@ -170,14 +170,17 @@ float4 main(Mesh3dVaryings input) : SV_Target0
     float3 p = input.world_position;
     float3 v = normalize(u_camera_position.xyz - p);
     float3 n = normalize(input.normal);
+    float face = 1.0;
     if (u_alpha.y > 0.5 && dot(n, v) < 0.0) {
         n = -n; // double sided: light the back face
+        face = -1.0;
     }
     if (has_texture(2)) {
         float3 t = input.tangent.xyz - n * dot(n, input.tangent.xyz);
         if (dot(t, t) > 1e-8) {
-            t = normalize(t);
-            float3 b = cross(n, t) * (input.tangent.w < 0.0 ? -1.0 : 1.0);
+            // back face: the whole TBN flips (n and b through n, t here), as the glTF viewer does
+            t = normalize(t) * face;
+            float3 b = cross(n, t) * (input.tangent.w < 0.0 ? -1.0 : 1.0) * face;
             float3 m = u_normal_tex.Sample(u_normal_smp, slot_uv(2, input.uv)).xyz * 2.0 - 1.0;
             m.xy *= u_pbr.z;
             n = normalize(t * m.x + b * m.y + n * m.z);
