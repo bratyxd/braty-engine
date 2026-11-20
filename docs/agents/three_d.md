@@ -73,6 +73,7 @@ Test: `tests/test_three_d.c`. Example: `examples/view3d_demo.c` (`--camera 0|1`,
 | `br_mesh3d_create(e, geo, mat)`, `br_mesh3d_get` (skin + morph slots) | A mesh node. |
 | `br_batched_mesh3d_create`, `_add(e, n, matrix, color)` | Instancing: one draw for N copies. |
 | `br_light3d_default(kind)` + `br_light3d_create` | Directional (cascaded shadows), point, spot (shadows). |
+| `br_light3d_spot_cone(&light)` | The (cos outer, cos inner) the shader gets: inner == outer (or inner > outer, NaN) becomes a hard edge instead of a division by zero in `smoothstep`. |
 | `br_camera_create_3d` + the `camera.orbit` component (`br_camera_orbit_make`, `br_camera.h`) | Mouse orbit camera. |
 | `br_view3d_pick`, `br_view3d_world_to_screen`, `br_node3d_on(e, n, BR_EVENT_CLICK, fn, user)` | Picking, 2D following 3D, 3D pointer events. |
 

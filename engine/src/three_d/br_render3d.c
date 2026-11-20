@@ -379,7 +379,8 @@ static void br_render3d_setup_lights(br_engine *e, br_view3d_state *v)
         br_vec4_store(f->light_direction[i], dir.x, dir.y, dir.z, l->range);
         br_vec4_store(f->light_color[i], l->color.r * l->intensity, l->color.g * l->intensity,
                       l->color.b * l->intensity, tile);
-        br_vec4_store(f->light_params[i], SDL_cosf(l->outer_angle), SDL_cosf(l->inner_angle), bias, l->shadow_normal_bias);
+        br_vec2 cone = br_light3d_spot_cone(l); /* inner == outer would divide by zero in smoothstep */
+        br_vec4_store(f->light_params[i], cone.x, cone.y, bias, l->shadow_normal_bias);
     }
     f->counts[0] = (float)v->lights.count;
 }

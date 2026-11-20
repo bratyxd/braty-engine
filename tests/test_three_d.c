@@ -4,6 +4,8 @@
 #include "braty/braty.h"
 #include "br_test.h"
 
+#include <math.h>
+
 static bool near_eq(float a, float b)
 {
     return SDL_fabsf(a - b) < 1e-3f;
@@ -418,6 +420,50 @@ static void test_picking(br_engine *e)
     BR_CHECK(!br_node3d_valid(e, root) && !br_node3d_valid(e, group));
 }
 
+/* CPU copy of the spot cone in mesh3d_common.hlsli: smoothstep(cos_outer, cos_inner, cd), with
+ * the division HLSL's smoothstep does before its saturate. */
+static float spot_t(float cos_outer, float cos_inner, float cd)
+{
+    return (cd - cos_outer) / (cos_inner - cos_outer);
+}
+
+static bool finite_unit(float t)
+{
+    return !SDL_isnan(t) && !SDL_isinf(t);
+}
+
+/* inner == outer: the shader's smoothstep divides by zero (0/0 = NaN on the cone edge, +-INF
+ * elsewhere; what saturate makes of those is driver-dependent). br_light3d_spot_cone, which the
+ * renderer packs, keeps the inner cosine above the outer one: finite everywhere, a hard edge. */
+static void test_spot_cone(void)
+{
+    br_light3d l = br_light3d_default(BR_LIGHT3D_SPOT);
+    l.inner_angle = 0.4f;
+    l.outer_angle = 0.4f;
+    float co = SDL_cosf(l.outer_angle);
+    BR_CHECK(SDL_isnan(spot_t(co, SDL_cosf(l.inner_angle), co))); /* unguarded: the bug */
+    BR_CHECK(SDL_isinf(spot_t(co, SDL_cosf(l.inner_angle), 1.0f)));
+    br_vec2 cone = br_light3d_spot_cone(&l);
+    BR_CHECK(cone.y > cone.x && near_eq(cone.x, co));
+    float samples[5] = { -1.0f, co - 0.01f, co, co + 0.01f, 1.0f };
+    for (int i = 0; i < 5; i++) {
+        BR_CHECK(finite_unit(spot_t(cone.x, cone.y, samples[i])));
+    }
+    BR_CHECK(spot_t(cone.x, cone.y, co + 0.01f) >= 1.0f && spot_t(cone.x, cone.y, co - 0.01f) <= 0.0f);
+    /* inner > outer (an inverted cone) and NaN angles are guarded the same way */
+    l.inner_angle = 0.6f;
+    cone = br_light3d_spot_cone(&l);
+    BR_CHECK(cone.y > cone.x);
+    l.inner_angle = NAN;
+    l.outer_angle = INFINITY;
+    cone = br_light3d_spot_cone(&l);
+    BR_CHECK(finite_unit(cone.x) && finite_unit(cone.y) && cone.y > cone.x);
+    /* a normal cone is passed through */
+    l = br_light3d_default(BR_LIGHT3D_SPOT);
+    cone = br_light3d_spot_cone(&l);
+    BR_CHECK(near_eq(cone.x, SDL_cosf(l.outer_angle)) && near_eq(cone.y, SDL_cosf(l.inner_angle)));
+}
+
 /* every View3D setter has a getter, and br_view3d_copy_settings carries them to another view */
 static void test_view_settings(br_engine *e)
 {
@@ -464,6 +510,7 @@ int main(void)
     test_rays();
     test_frustum();
     test_cascades();
+    test_spot_cone();
     br_engine *e = br_engine_create("test_three_d", NULL);
     BR_CHECK(e != NULL);
     if (e != NULL) {

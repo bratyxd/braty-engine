@@ -310,6 +310,19 @@ br_light3d br_light3d_default(br_light3d_kind kind)
     return l;
 }
 
+br_vec2 br_light3d_spot_cone(const br_light3d *light)
+{
+    float co = SDL_cosf(light->outer_angle);
+    float ci = SDL_cosf(light->inner_angle);
+    if (!(co >= -1.0f && co <= 1.0f)) {
+        co = SDL_cosf(30.0f * BR_DEG_TO_RAD); /* NaN / INF angle: the default */
+    }
+    if (!(ci >= co + 1e-4f)) {
+        ci = SDL_min(co + 1e-4f, 1.0001f); /* inner == outer (or wider, or NaN): a hard edge */
+    }
+    return br_vec2_make(co, ci);
+}
+
 static void br_light3d_collect(br_engine *e, br_node3d n, const void *data, br_render3d_ctx *ctx)
 {
     (void)e;
