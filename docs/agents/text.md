@@ -66,7 +66,28 @@ st.font = s->sdf_font;
 
 ## Scene JSON
 
-Type names `"text"`, `"bitmap_text"`, `"rich_text"`; their `from_json` is written by Task 10.
+Type names `"text"`, `"bitmap_text"`, `"rich_text"`:
+`{ "type": "text", "text": "Hello", "style": { "font_size": 32, "fill": "white" } }`,
+`{ "type": "bitmap_text", "text": "SCORE 0", "font": "fonts/pixel.fnt", "size": 24 }`,
+`{ "type": "rich_text", "text": "<b>Bold</b> <warn>red</warn>", "tag_styles": { "warn": { "color": "red" } } }`.
+All style keys: `docs/DATA_FORMATS.md` ("text, bitmap_text, rich_text") and
+`engine/src/data/br_node_json_text.c`.
+
+## Limits (bad data must not freeze the game)
+
+Checked inside the module whatever the caller passes (`br_text_create`, `br_text_set_style`,
+`br_text_measure`, split text, `br_bitmap_font_install`):
+
+- Non-finite style numbers fall back to 0 (`font_size` 0 = the default 26 px / native size);
+  `font_size`, `stroke_width`, `shadow_blur` and rich `<size=>` are capped at 4096; spacing,
+  leading, padding, wrap width and shadow distance at +-1e6.
+- Coverage glyphs are rasterised at an em size of at most 1024 pixels; bigger text is scaled up
+  from that (use an SDF font for huge titles).
+- Stroke and shadow growth / blur are capped at 64 raster pixels (their distance field costs grow
+  with the square of the size; logged once). Wider effects: an SDF font or a filter.
+- A glyph that does not fit the atlas (full, or larger than 4096) is remembered as empty: drawn
+  as nothing, rasterised once. SDF fonts: `sdf_size` <= 256, `sdf_padding` <= 64.
+- `br_text_prepare(e, node)` runs the rasterise pass of a draw now (warm the atlas at load time).
 
 ## Gotchas
 
@@ -92,4 +113,5 @@ Type names `"text"`, `"bitmap_text"`, `"rich_text"`; their `from_json` is writte
 - Asset loaders: `ttf,otf` -> `"font"`, `fnt,xml` -> `"bitmap_font"` (an XML file that is not an
   AngelCode font fails to load with an error).
 - Not done: complex shaping (Arabic, Indic, ligatures; stb_truetype has no shaper), bidi,
-  colour emoji, and atlas eviction (a full 4096 atlas stops caching new glyphs, logged once).
+  colour emoji, and atlas eviction (a full 4096 atlas stops caching new glyphs: they are
+  remembered as empty and not drawn; logged once).

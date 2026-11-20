@@ -3,6 +3,7 @@
 #include "br_test.h"
 
 #include <SDL3/SDL.h>
+#include <math.h>
 
 /* A monospace bitmap font: every glyph advances 10, one kerning pair (a b = -2). */
 static const char *k_fnt_text =
@@ -435,6 +436,97 @@ static void test_font_lifetime(br_engine *e)
     br_node_destroy(e, from_asset);
 }
 
+/* The glyph atlas through br_text_prepare (the rasterise pass of a draw). */
+static void test_atlas(br_engine *e)
+{
+    size_t size = 0;
+    const void *data = br_font_default_data(&size);
+    br_font *font = br_font_create(e, data, size, NULL);
+    br_text_style st = br_text_style_default();
+    st.font = font;
+    st.font_size = 32.0f;
+    uint32_t w, h;
+
+    /* growth: glyphs are added on demand and the atlas doubles when full */
+    br_node n = br_text_create(e, "abc", &st);
+    br_text_set_resolution(e, n, 1.0f);
+    br_text_prepare(e, n);
+    br_font_atlas_size(font, &w, &h);
+    BR_CHECK(w == 256 && h == 256 && br_font_cached_glyph_count(font) == 3);
+    br_text_prepare(e, n);
+    BR_CHECK(br_font_cached_glyph_count(font) == 3); /* cached */
+    st.font_size = 96.0f;
+    br_text_set_style(e, n, &st);
+    br_text_set_text(e, n, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789");
+    br_text_prepare(e, n);
+    br_font_atlas_size(font, &w, &h);
+    BR_CHECK(w * h > 256 * 256 && br_font_cached_glyph_count(font) == 3 + 62);
+
+    /* a huge font size is rasterised at most at 1024 px (scaled when drawn), not at 4095:
+     * the atlas does not jump to its 4096 maximum for one glyph */
+    st.font_size = 4095.0f;
+    br_text_set_style(e, n, &st);
+    br_text_set_text(e, n, "|");
+    br_text_prepare(e, n);
+    br_font_atlas_size(font, &w, &h);
+    BR_CHECK(w < 4096 || h < 4096);
+    st.font_size = NAN;
+    br_text_set_style(e, n, &st);
+    br_text_prepare(e, n); /* NaN: the default size, no undefined float-to-int conversion */
+    BR_CHECK(br_text_size(e, n).y > 0.0f && br_text_size(e, n).y < 100.0f);
+
+    /* a stroke / shadow far wider than the glyph is clamped: no seconds-long SDF per glyph */
+    st.font_size = 26.0f;
+    st.stroke_width = 1.0e4f;
+    st.drop_shadow = true;
+    st.shadow_blur = 1.0e4f;
+    br_text_set_style(e, n, &st);
+    br_text_set_text(e, n, "W");
+    uint64_t t0 = SDL_GetTicks();
+    br_text_prepare(e, n);
+    BR_CHECK(SDL_GetTicks() - t0 < 500);
+    br_node_destroy(e, n);
+    br_font_destroy(e, font);
+
+    /* a full atlas: glyphs that do not fit are remembered, not rasterised again every frame */
+    font = br_font_create(e, data, size, NULL);
+    st = br_text_style_default();
+    st.font = font;
+    st.font_size = 1024.0f;
+    n = br_text_create(e, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", &st);
+    br_text_set_resolution(e, n, 1.0f);
+    br_text_prepare(e, n);
+    br_font_atlas_size(font, &w, &h);
+    BR_CHECK(w == 4096 && h == 4096);
+    BR_CHECK(br_font_cached_glyph_count(font) == 36); /* placed or remembered as missing */
+    t0 = SDL_GetTicks();
+    br_text_prepare(e, n);
+    BR_CHECK(br_font_cached_glyph_count(font) == 36);
+    BR_CHECK(SDL_GetTicks() - t0 < 20);
+    br_node_destroy(e, n);
+    br_font_destroy(e, font);
+
+    /* SDF font: one distance field per glyph whatever the drawn size */
+    br_font_options opts;
+    SDL_zero(opts);
+    opts.sdf = true;
+    font = br_font_create(e, data, size, &opts);
+    BR_CHECK(br_font_is_sdf(font));
+    st = br_text_style_default();
+    st.font = font;
+    st.font_size = 20.0f;
+    st.stroke_width = 4.0f;
+    n = br_text_create(e, "Hi", &st);
+    br_text_prepare(e, n);
+    BR_CHECK(br_font_cached_glyph_count(font) == 2); /* stroke and fill share the field */
+    st.font_size = 200.0f;
+    br_text_set_style(e, n, &st);
+    br_text_prepare(e, n);
+    BR_CHECK(br_font_cached_glyph_count(font) == 2);
+    br_node_destroy(e, n);
+    br_font_destroy(e, font);
+}
+
 int main(void)
 {
     test_utf8();
@@ -451,6 +543,7 @@ int main(void)
     test_fnt_xml(e);
     test_bad_fonts(e);
     test_font_lifetime(e);
+    test_atlas(e);
     if (f != NULL) {
         test_measure(e, f);
         test_wrap(e, f);

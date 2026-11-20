@@ -269,11 +269,17 @@ static br_font *br_font_create_ttf(br_engine *e, const unsigned char *data, size
     if (opts != NULL) {
         f->opts = *opts;
     }
-    if (f->opts.sdf_size <= 0.0f) {
+    if (!(f->opts.sdf_size > 0.0f)) { /* NaN too */
         f->opts.sdf_size = 64.0f;
+    }
+    if (f->opts.sdf_size > 256.0f) { /* one distance field per glyph: keep it atlas-sized */
+        f->opts.sdf_size = 256.0f;
     }
     if (f->opts.sdf_padding <= 0) {
         f->opts.sdf_padding = 12;
+    }
+    if (f->opts.sdf_padding > 64) {
+        f->opts.sdf_padding = 64;
     }
     br_array_init(&f->glyphs, sizeof(br_atlas_glyph));
     br_array_init(&f->chars, sizeof(br_bitmap_char));
@@ -568,6 +574,14 @@ static bool br_font_atlas_place(br_engine *e, br_font *f, int w, int h, int *x, 
     if (f->pack_nodes == NULL) {
         return false; /* an earlier resize ran out of memory */
     }
+    if (w + 1 > BR_ATLAS_MAX_SIZE || h + 1 > BR_ATLAS_MAX_SIZE) {
+        /* can never fit: do not grow the atlas to its maximum for nothing */
+        if (!f->too_big_logged) {
+            br_log_error("font: a glyph image of %dx%d px is too large for the atlas; it is not drawn", w, h);
+            f->too_big_logged = true;
+        }
+        return false;
+    }
     for (;;) {
         stbrp_rect r;
         SDL_zero(r);
@@ -635,11 +649,14 @@ const br_atlas_glyph *br_font_atlas_glyph(br_engine *e, br_font *font, uint32_t 
     entry.key = key;
     uint8_t *image = br_font_render_glyph(font, codepoint, raster_size, effect, p1, p2, &entry.w, &entry.h,
                                           &entry.left, &entry.top);
+    if (image != NULL && !br_font_atlas_place(e, font, entry.w, entry.h, &entry.x, &entry.y)) {
+        /* remembered as an empty glyph so it is not rasterised again every frame */
+        br_free(image);
+        image = NULL;
+        entry.w = 0;
+        entry.h = 0;
+    }
     if (image != NULL) {
-        if (!br_font_atlas_place(e, font, entry.w, entry.h, &entry.x, &entry.y)) {
-            br_free(image);
-            return NULL;
-        }
         for (int y = 0; y < entry.h; y++) {
             SDL_memcpy(&font->atlas[(size_t)(entry.y + y) * font->atlas_w + (size_t)entry.x],
                        &image[(size_t)y * (size_t)entry.w], (size_t)entry.w);

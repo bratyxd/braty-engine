@@ -74,6 +74,53 @@ void br_text_style_set_vertical_gradient(br_text_style *style, br_color top, br_
     style->gradient.end = br_vec2_make(0.0f, 1.0f);
 }
 
+/* ---- limits */
+
+/* v if finite and within [lo, hi] (clamped), else `fallback`. */
+static float br_text_clamp(float v, float lo, float hi, float fallback)
+{
+    if (SDL_isnanf(v) || SDL_isinff(v)) {
+        return fallback;
+    }
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
+void br_text_style_sanitize(br_text_style *s)
+{
+    float big = BR_TEXT_MAX_LENGTH;
+    s->font_size = br_text_clamp(s->font_size, 0.0f, BR_TEXT_MAX_FONT_SIZE, 0.0f);
+    s->stroke_width = br_text_clamp(s->stroke_width, 0.0f, BR_TEXT_MAX_FONT_SIZE, 0.0f);
+    s->shadow_blur = br_text_clamp(s->shadow_blur, 0.0f, BR_TEXT_MAX_FONT_SIZE, 0.0f);
+    s->shadow_angle = br_text_clamp(s->shadow_angle, -big, big, 0.0f);
+    s->shadow_distance = br_text_clamp(s->shadow_distance, -big, big, 0.0f);
+    s->wrap_width = br_text_clamp(s->wrap_width, 0.0f, big, 0.0f);
+    s->line_height = br_text_clamp(s->line_height, 0.0f, big, 0.0f);
+    s->leading = br_text_clamp(s->leading, -big, big, 0.0f);
+    s->letter_spacing = br_text_clamp(s->letter_spacing, -big, big, 0.0f);
+    s->padding = br_text_clamp(s->padding, 0.0f, big, 0.0f);
+}
+
+float br_text_effect_clamp(br_engine *e, float raster_px)
+{
+    if (SDL_isnanf(raster_px)) {
+        return 0.0f;
+    }
+    if (raster_px <= BR_TEXT_MAX_EFFECT_PX) {
+        return raster_px;
+    }
+    if (e->text != NULL && !e->text->effect_clamp_logged) {
+        br_log_warn("text: stroke / shadow of %.0f raster pixels clamped to %.0f (use an SDF font or a filter "
+                    "for wider ones)", (double)raster_px, (double)BR_TEXT_MAX_EFFECT_PX);
+        e->text->effect_clamp_logged = true;
+    }
+    return BR_TEXT_MAX_EFFECT_PX;
+}
+
+int br_text_raster_size(float pixels)
+{
+    return (int)SDL_roundf(br_text_clamp(pixels, 1.0f, (float)BR_TEXT_MAX_RASTER, 1.0f));
+}
+
 /* ---- node data */
 
 br_text_node *br_text_node_get(br_engine *e, br_node n)
@@ -461,19 +508,18 @@ static void br_text_draw_layer(br_text_emit *em, br_text_node *t, br_text_layer 
         }
 
         /* coverage glyphs rasterised at the drawn pixel size */
-        int raster = (int)SDL_roundf(span->size * resolution);
-        raster = raster < 1 ? 1 : raster;
-        float k = span->size / (float)raster; /* local units per raster pixel */
+        int raster = br_text_raster_size(span->size * resolution);
+        float k = span->size / (float)raster; /* local units per raster pixel (of the clamped raster) */
         float bold = span->synth_bold ? SDL_max(0.5f, (float)raster * 0.03f) : 0.0f;
         br_glyph_effect effect = bold > 0.0f ? BR_GLYPH_OUTLINE : BR_GLYPH_FILL;
         float grow = bold;
         float blur = 0.0f;
         if (layer != BR_TEXT_LAYER_FILL) {
-            grow += stroke_r / k;
+            grow = br_text_effect_clamp(em->e, grow + stroke_r / k); /* SDF cost grows with its square */
             effect = grow > 0.0f ? BR_GLYPH_OUTLINE : BR_GLYPH_FILL;
         }
         if (layer == BR_TEXT_LAYER_SHADOW && st->shadow_blur > 0.0f) {
-            blur = st->shadow_blur / k;
+            blur = br_text_effect_clamp(em->e, st->shadow_blur / k);
             effect = BR_GLYPH_SOFT;
         }
         const br_atlas_glyph *ag = br_font_atlas_glyph(em->e, font, g->cp, raster, effect,
@@ -541,6 +587,19 @@ static void br_text_draw_decorations(br_text_emit *em, br_text_node *t)
     }
 }
 
+/* Shadow, stroke and fill layers: rasterise only (emit false) or draw. */
+static void br_text_draw_layers(br_text_emit *em, br_text_node *t, float resolution, bool emit)
+{
+    const br_text_style *st = &t->style;
+    if (st->drop_shadow) {
+        br_text_draw_layer(em, t, BR_TEXT_LAYER_SHADOW, resolution, emit);
+    }
+    if (st->stroke_width > 0.0f) {
+        br_text_draw_layer(em, t, BR_TEXT_LAYER_STROKE, resolution, emit);
+    }
+    br_text_draw_layer(em, t, BR_TEXT_LAYER_FILL, resolution, emit);
+}
+
 static void br_text_render(br_engine *e, br_node n, const void *data, br_render_ctx *rc)
 {
     (void)data;
@@ -563,20 +622,25 @@ static void br_text_render(br_engine *e, br_node n, const void *data, br_render_
     em.box_w = t->layout.width;
     em.box_h = t->layout.height;
     float resolution = t->resolution > 0.0f ? t->resolution : br_render_pixel_ratio(rc);
-    const br_text_style *st = &t->style;
     /* pass 0 rasterises every glyph first: if the atlas grows, it happens before any vertex of
      * this node points into it */
-    for (int pass = 0; pass < 2; pass++) {
-        bool emit = pass == 1;
-        if (st->drop_shadow) {
-            br_text_draw_layer(&em, t, BR_TEXT_LAYER_SHADOW, resolution, emit);
-        }
-        if (st->stroke_width > 0.0f) {
-            br_text_draw_layer(&em, t, BR_TEXT_LAYER_STROKE, resolution, emit);
-        }
-        br_text_draw_layer(&em, t, BR_TEXT_LAYER_FILL, resolution, emit);
-    }
+    br_text_draw_layers(&em, t, resolution, false);
+    br_text_draw_layers(&em, t, resolution, true);
     br_text_draw_decorations(&em, t);
+}
+
+void br_text_prepare(br_engine *e, br_node n)
+{
+    br_text_node *t = br_text_node_get(e, n);
+    if (t == NULL) {
+        return;
+    }
+    br_text_node_update(e, t);
+    br_text_emit em; /* the rasterise pass of br_text_render: no render context needed */
+    SDL_zero(em);
+    em.e = e;
+    float resolution = t->resolution > 0.0f ? t->resolution : br_engine_pixel_density(e);
+    br_text_draw_layers(&em, t, resolution > 0.0f ? resolution : 1.0f, false);
 }
 
 static bool br_text_local_bounds(br_engine *e, br_node n, const void *data, br_rect *out)
@@ -608,6 +672,7 @@ br_node br_text_node_create(br_engine *e, uint32_t type, const char *text, const
     if (t != NULL) {
         t->text = br_strdup(text != NULL ? text : "");
         t->style = style != NULL ? *style : br_text_style_default();
+        br_text_style_sanitize(&t->style);
         t->rich = rich;
         t->dirty = true;
     }
@@ -649,6 +714,7 @@ void br_text_set_style(br_engine *e, br_node n, const br_text_style *style)
     br_text_node *t = br_text_node_get(e, n);
     if (t != NULL && style != NULL) {
         t->style = *style;
+        br_text_style_sanitize(&t->style);
         t->dirty = true;
     }
 }
@@ -675,7 +741,7 @@ void br_text_set_resolution(br_engine *e, br_node n, float resolution)
 {
     br_text_node *t = br_text_node_get(e, n);
     if (t != NULL) {
-        t->resolution = resolution;
+        t->resolution = resolution > 0.0f && resolution <= 16.0f ? resolution : 0.0f; /* NaN = auto */
     }
 }
 

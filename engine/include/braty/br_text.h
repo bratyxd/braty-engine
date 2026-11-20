@@ -139,6 +139,9 @@ bool br_text_get_line(br_engine *e, br_node n, uint32_t i, br_text_line_info *ou
 uint32_t br_text_char_count(br_engine *e, br_node n);
 /* Local box of character i (before the anchor): x at its pen position, full line height. */
 bool br_text_get_char_box(br_engine *e, br_node n, uint32_t i, br_rect *out);
+/* Lays the node out and rasterises the glyphs its next draw needs (at the window's pixel
+ * density unless br_text_set_resolution), so the first frame showing it does not stall. */
+void br_text_prepare(br_engine *e, br_node n);
 
 /* ---- measuring without a node */
 

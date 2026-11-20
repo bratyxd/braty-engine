@@ -337,6 +337,7 @@ br_node br_split_text_create(br_engine *e, const char *utf8, const br_text_style
         return container;
     }
     br_text_style st = style != NULL ? *style : br_text_style_default();
+    br_text_style_sanitize(&st);
     br_array chars;
     br_array_init(&chars, sizeof(br_layout_char));
     br_text_decode(utf8, st.white_space, &chars);

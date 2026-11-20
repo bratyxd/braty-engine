@@ -453,13 +453,16 @@ static void br_install_free(br_install_glyph *glyphs, uint32_t count)
     br_free(glyphs);
 }
 
-br_font *br_bitmap_font_install(br_engine *e, const char *name, const br_text_style *style,
+br_font *br_bitmap_font_install(br_engine *e, const char *name, const br_text_style *style_in,
                                 const br_bitmap_font_options *opts)
 {
-    if (e->text == NULL || name == NULL || style == NULL) {
+    if (e->text == NULL || name == NULL || style_in == NULL) {
         br_log_error("br_bitmap_font_install: missing name or style");
         return NULL;
     }
+    br_text_style clean = *style_in;
+    br_text_style_sanitize(&clean);
+    const br_text_style *style = &clean;
     br_text_span span = br_text_span_from_style(e, style);
     br_font *src = span.font;
     if (src == NULL || src->is_bitmap) {
@@ -472,9 +475,9 @@ br_font *br_bitmap_font_install(br_engine *e, const char *name, const br_text_st
         o = *opts;
     }
     float res = o.resolution > 0.0f ? o.resolution : 1.0f;
-    int padding = o.padding > 0 ? o.padding : 2;
-    uint32_t page_size = o.page_size > 0 ? o.page_size : 512;
-    int raster = SDL_max(1, (int)SDL_roundf(span.size * res));
+    int padding = o.padding > 0 ? SDL_min(o.padding, 64) : 2;
+    uint32_t page_size = o.page_size > 0 ? SDL_min(o.page_size, 4096u) : 512;
+    int raster = br_text_raster_size(span.size * res);
     float texel = span.size / (float)raster; /* local units per raster pixel */
 
     /* the character set, without duplicates */
@@ -506,10 +509,12 @@ br_font *br_bitmap_font_install(br_engine *e, const char *name, const br_text_st
     }
     br_font_metrics fm = br_font_get_metrics(src, (float)raster);
     float bold = span.synth_bold ? SDL_max(0.5f, (float)raster * 0.03f) : 0.0f;
-    float stroke = style->stroke_width * 0.5f / texel;
-    int sdx = (int)SDL_roundf(SDL_cosf(style->shadow_angle) * style->shadow_distance / texel);
-    int sdy = (int)SDL_roundf(SDL_sinf(style->shadow_angle) * style->shadow_distance / texel);
-    float blur = style->shadow_blur / texel;
+    float stroke = br_text_effect_clamp(e, style->stroke_width * 0.5f / texel);
+    /* shadow offset in raster pixels, bounded so the glyph canvas stays page-sized */
+    float reach = (float)BR_ATLAS_MAX_SIZE;
+    int sdx = (int)SDL_roundf(SDL_clamp(SDL_cosf(style->shadow_angle) * style->shadow_distance / texel, -reach, reach));
+    int sdy = (int)SDL_roundf(SDL_clamp(SDL_sinf(style->shadow_angle) * style->shadow_distance / texel, -reach, reach));
+    float blur = br_text_effect_clamp(e, style->shadow_blur / texel);
     const br_text_gradient *gradient = span.use_gradient ? &style->gradient : NULL;
 
     for (uint32_t i = 0; i < count; i++) {

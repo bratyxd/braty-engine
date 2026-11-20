@@ -18,6 +18,11 @@
 #define BR_ATLAS_START_SIZE 256
 #define BR_ATLAS_MAX_SIZE 4096
 #define BR_RICH_TAG_NAME_SIZE 32
+/* Limits on numbers from styles (scene JSON included), checked inside the module. */
+#define BR_TEXT_MAX_FONT_SIZE 4096.0f   /* font_size, rich <size=>; also stroke_width and shadow_blur */
+#define BR_TEXT_MAX_LENGTH 1.0e6f       /* spacing, leading, padding, wrap width, shadow distance */
+#define BR_TEXT_MAX_RASTER 1024         /* em size coverage glyphs rasterise at; bigger text is scaled */
+#define BR_TEXT_MAX_EFFECT_PX 64.0f     /* stroke / shadow growth and blur in raster pixels */
 
 /* What a cached TTF glyph image holds. */
 typedef enum br_glyph_effect {
@@ -58,6 +63,7 @@ struct br_font {
     stbrp_node   *pack_nodes;
     br_texture    atlas_texture;
     bool          atlas_full_logged;
+    bool          too_big_logged;  /* a glyph larger than the maximum atlas was refused */
     bool          dirty;
     uint32_t      dirty_x0, dirty_y0, dirty_x1, dirty_y1;
     br_array      glyphs;      /* br_atlas_glyph */
@@ -163,6 +169,7 @@ typedef struct br_text_state {
     br_array retired;      /* br_texture: old atlas textures, destroyed next frame */
     br_array vertices;     /* br_vertex2d scratch for SDF draws */
     br_array indices;      /* uint32_t scratch */
+    bool     effect_clamp_logged;   /* a stroke / shadow was clamped to BR_TEXT_MAX_EFFECT_PX */
 } br_text_state;
 
 /* ---- br_font.c */
@@ -172,7 +179,8 @@ void br_font_module_shutdown(br_engine *e);
 void br_font_free(br_engine *e, br_font *font);
 /* Font-unit scale for an em size in pixels. */
 float br_font_ttf_scale(br_font *font, float size);
-/* Finds or rasterises a glyph image. NULL if it does not fit (atlas at max size). */
+/* Finds or rasterises a glyph image. A glyph that does not fit (atlas at max size, image too
+ * large) is cached as empty (w == 0) so it is not rasterised again. NULL only without memory. */
 const br_atlas_glyph *br_font_atlas_glyph(br_engine *e, br_font *font, uint32_t codepoint, int raster_size,
                                           br_glyph_effect effect, int p1, int p2);
 /* Renders a glyph image into new memory (free with br_free); NULL with *w == 0 for empty glyphs. */
@@ -210,6 +218,12 @@ void br_rich_text_parse(br_engine *e, br_text_node *node, br_array *chars);
 void br_rich_text_free(br_text_node *node);
 
 /* ---- br_text.c */
+/* Makes every number of a style finite and in range (where styles enter the module). */
+void br_text_style_sanitize(br_text_style *style);
+/* Clamps a stroke / shadow growth or blur in raster pixels to BR_TEXT_MAX_EFFECT_PX (logged once). */
+float br_text_effect_clamp(br_engine *e, float raster_px);
+/* Raster pixel size of coverage glyphs for a drawn size (1..BR_TEXT_MAX_RASTER, NaN-safe). */
+int br_text_raster_size(float pixels);
 /* The text-node data of n for any of the three types, NULL otherwise. */
 br_text_node *br_text_node_get(br_engine *e, br_node n);
 /* Called before a font is freed: text nodes holding it in their style drop it (the family or
