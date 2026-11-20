@@ -39,7 +39,7 @@ Test: `tests/test_audio.c` (headless mixer). Example: `examples/audio_demo.c`.
 | `br_audio_stop / set_paused / set_volume / set_pan / set_speed / set_loop / seek / position` | Control an instance. |
 | `br_audio_bus_create(e, "music")`, `br_audio_bus_set_volume/muted/paused` | Groups. |
 | `br_audio_set_master_volume`, `br_audio_set_muted`, `br_audio_set_global_paused` | Global. |
-| `br_audio_master_volume`, `br_audio_muted`, `br_audio_global_paused`, `br_audio_bus_volume` / `_bus_muted`, `br_audio_volume(e, instance)` | Read them back (settings screens). |
+| `br_audio_master_volume`, `br_audio_muted`, `br_audio_global_paused`, `br_audio_bus_volume` / `_bus_muted` / `_bus_paused`, `br_audio_volume(e, instance)` | Read them back (settings screens). |
 | `br_audio_mix(e, out, frames)` | The mixer (tests). |
 
 ## Snippet (from examples/audio_demo.c)

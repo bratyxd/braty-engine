@@ -176,6 +176,10 @@ static void test_getters_and_global_pause(br_engine *e, br_sound *ramp)
     br_audio_bus_set_muted(e, music, true);
     BR_CHECK(near(br_audio_master_volume(e), 0.25f) && near(br_audio_bus_volume(e, music), 0.75f));
     BR_CHECK(br_audio_bus_muted(e, music) && !br_audio_muted(e));
+    BR_CHECK(!br_audio_bus_paused(e, music) && !br_audio_bus_paused(e, 99));
+    br_audio_bus_set_paused(e, music, true);
+    BR_CHECK(br_audio_bus_paused(e, music));
+    br_audio_bus_set_paused(e, music, false);
     BR_CHECK(near(br_audio_bus_volume(e, 99), 0.0f)); /* no such bus */
     br_audio_bus_set_muted(e, music, false);
     br_audio_set_master_volume(e, 1.0f);

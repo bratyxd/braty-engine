@@ -41,7 +41,7 @@ next frame.
 | `br_system_remove(e, name)` | Remove a system (safe inside a frame: it stops at once, leaves the list after the frame). |
 | `br_engine_on_shutdown(e, fn, user)` | Free your state (runs after every node was destroyed, before the GPU is destroyed). |
 | `br_engine_add_event_handler(e, fn, user)` | Raw SDL events (input modules). |
-| `br_ticker_delta/elapsed/fps`, `br_ticker_set_speed/max_fps/min_fps` | Time. |
+| `br_ticker_delta/elapsed/fps`, `br_ticker_speed`, `br_ticker_set_speed/min_fps` | Time. |
 | `br_ticker_unscaled_delta(e)` | The frame's dt without the ticker speed: pause menus and UI animate with it while `br_ticker_set_speed(e, 0)` freezes the game. |
 | `br_app_on_lifecycle(e, fn, user)`, `br_app_is_active(e)`, `br_app_is_paused(e)` | Focus / minimise / background: show a pause menu on `DEACTIVATED`, save on `TERMINATING`, drop caches on `LOW_MEMORY`. |
 | `br_app_set_pause_when_inactive(e, on)` | Default on: while inactive, dt is 0 and audio output is paused (game.json `window.pause_when_inactive`, `br_app_desc.run_when_inactive`). |

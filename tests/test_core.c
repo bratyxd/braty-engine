@@ -343,7 +343,11 @@ static void test_ticker(void)
     BR_CHECK(br_ticker_compute_delta(0.016f, 10.0f, nan) == 0.0f);
     BR_CHECK(br_ticker_compute_delta(nan, 10.0f, 1.0f) == 0.0f);
     br_engine *e = br_engine_create("braty-test", NULL);
+    BR_CHECK(br_ticker_speed(e) == 1.0f);
+    br_ticker_set_speed(e, 0.5f);
+    BR_CHECK(br_ticker_speed(e) == 0.5f);
     br_ticker_set_speed(e, -1.0f);
+    BR_CHECK(br_ticker_speed(e) == 0.0f);
     br_engine_step(e, br_ticker_compute_delta(0.016f, 10.0f, -1.0f));
     BR_CHECK(br_ticker_delta(e) == 0.0f && br_ticker_elapsed(e) == 0.0);
     br_ticker_set_speed(e, nan);

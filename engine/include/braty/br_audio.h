@@ -122,6 +122,8 @@ bool br_audio_bus_muted(br_engine *e, int bus);
 void br_audio_bus_set_muted(br_engine *e, int bus, bool muted);
 /* Pauses or resumes every instance on a bus. */
 void br_audio_bus_set_paused(br_engine *e, int bus, bool paused);
+/* True if the bus is paused (false if no such bus). */
+bool br_audio_bus_paused(br_engine *e, int bus);
 /* Sets the master volume (default 1). */
 void br_audio_set_master_volume(br_engine *e, float volume);
 /* The master volume. */

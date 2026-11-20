@@ -964,6 +964,16 @@ void br_audio_bus_set_paused(br_engine *e, int bus, bool paused)
     SDL_UnlockMutex(s->lock);
 }
 
+bool br_audio_bus_paused(br_engine *e, int bus)
+{
+    br_audio_state *s = e->audio;
+    SDL_LockMutex(s->lock);
+    br_bus *b = br_audio_bus(s, bus);
+    bool paused = b != NULL && b->paused;
+    SDL_UnlockMutex(s->lock);
+    return paused;
+}
+
 void br_audio_set_master_volume(br_engine *e, float volume)
 {
     br_audio_state *s = e->audio;

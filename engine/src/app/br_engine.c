@@ -537,6 +537,7 @@ uint64_t br_ticker_frame(br_engine *e) { return e->ticker.frame; }
 float br_ticker_fps(br_engine *e) { return e->ticker.fps; }
 /* negative or NaN speed would run time backwards (or poison every dt): clamp to 0 = paused */
 void br_ticker_set_speed(br_engine *e, float speed) { e->ticker.speed = speed > 0.0f ? speed : 0.0f; }
+float br_ticker_speed(br_engine *e) { return e->ticker.speed; }
 void br_ticker_set_min_fps(br_engine *e, float min_fps) { e->ticker.min_fps = min_fps > 0.0f ? min_fps : 0.0f; }
 
 float br_ticker_compute_delta(float raw_seconds, float min_fps, float speed)
