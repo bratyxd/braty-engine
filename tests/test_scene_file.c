@@ -374,6 +374,47 @@ static void test_save_and_reload(br_engine *e, const char *dir)
     br_node_destroy(e, loaded);
 }
 
+/* ---- hot reload from inside a frame: the old tree's assets outlive its nodes until the flush */
+
+typedef struct reload_in_frame {
+    const char *path;
+    br_node     root;
+    bool        done;
+} reload_in_frame;
+
+static void reload_system(br_engine *e, float dt, void *user)
+{
+    (void)dt;
+    reload_in_frame *r = user;
+    if (!r->done) {
+        r->done = true;
+        BR_CHECK(br_scene_file_reload(e, r->path, r->root));
+    }
+}
+
+static void test_reload_in_frame(br_engine *e, const char *dir)
+{
+    char path[1024];
+    SDL_snprintf(path, sizeof(path), "%stest_reload_font.scene.json", dir);
+    const char *font = "fonts/pixel5x7.fnt";
+    uint32_t refs = br_assets_ref_count(e, font);
+    const char *with_text = "{ \"children\": [ { \"type\": \"bitmap_text\", \"text\": \"HI\", \"font\": \"fonts/pixel5x7.fnt\" } ] }";
+    BR_CHECK(br_file_write_all(e, path, with_text, strlen(with_text)));
+    br_node root = br_scene_file_load(e, path, br_scene_root(e));
+    BR_CHECK(br_assets_ref_count(e, font) == refs + 1);
+    const char *empty = "{ \"children\": [] }";
+    BR_CHECK(br_file_write_all(e, path, empty, strlen(empty)));
+    reload_in_frame r = { path, root, false };
+    br_system_add(e, "test.reload", BR_PHASE_UPDATE, 0, reload_system, &r);
+    br_engine_step(e, 1.0f / 60.0f); /* reloads; the text node dies at the next flush */
+    BR_CHECK(r.done);
+    BR_CHECK(br_assets_ref_count(e, font) == refs + 1); /* still held for the dying node */
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(br_assets_ref_count(e, font) == refs);
+    br_system_remove(e, "test.reload");
+    br_node_destroy(e, root);
+}
+
 /* ---- game.json */
 
 static void test_game_config(void)
@@ -408,6 +449,16 @@ static void test_game_config(void)
     BR_CHECK(!br_game_config_parse("{ \"window\": ", 12, "game.json", &c));
     BR_CHECK(c.width == 1280 && strcmp(c.title, "braty") == 0 && c.json == NULL);
     BR_CHECK(!br_game_config_load(NULL, "no_such_game.json", &c));
+
+    /* a string too long for its field keeps the default (it is not blanked) */
+    char long_json[512];
+    char title[200];
+    memset(title, 'x', sizeof(title) - 1);
+    title[sizeof(title) - 1] = '\0';
+    SDL_snprintf(long_json, sizeof(long_json), "{ \"window\": { \"title\": \"%s\" } }", title);
+    BR_CHECK(br_game_config_parse(long_json, strlen(long_json), "game.json", &c));
+    BR_CHECK(strcmp(c.title, "braty") == 0);
+    br_game_config_free(&c);
 }
 
 /* ---- game.json applied to a headless engine */
@@ -528,6 +579,7 @@ int main(void)
     test_errors(e);
     test_prefabs(e, dir);
     test_save_and_reload(e, dir);
+    test_reload_in_frame(e, dir);
     test_game_config();
     test_game_config_apply(e);
     test_debug(e);

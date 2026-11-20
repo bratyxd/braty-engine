@@ -550,6 +550,19 @@ static void test_async(br_engine *e)
 
 /* ---- loader choice: a claimed load that fails falls back; self-loads are refused */
 
+static int g_warnings = 0;
+static SDL_LogOutputFunction g_default_log = NULL;
+static void *g_default_log_user = NULL;
+
+static void count_warnings(void *unused, int category, SDL_LogPriority priority, const char *message)
+{
+    (void)unused;
+    if (priority == SDL_LOG_PRIORITY_WARN) {
+        g_warnings++;
+    }
+    g_default_log(g_default_log_user, category, priority, message);
+}
+
 static void test_loader_choice(br_engine *e)
 {
     /* game data that uses "frames" and "meta" is plain JSON */
@@ -585,6 +598,29 @@ static void test_loader_choice(br_engine *e)
     br_assets_unload(e, DIR "selfpack.json");
     BR_CHECK(br_assets_count(e) == baseline);
 
+    /* bare frame names: the first loaded sheet with the name wins (a warning names the other),
+     * and a scene using one owns a reference on that sheet */
+    write_text(e, DIR "dup_a.json",
+               "{ \"frames\": { \"dup.png\": { \"frame\": {\"x\":0,\"y\":0,\"w\":8,\"h\":8} } }, \"meta\": { \"image\": \"selfpack.png\" } }");
+    write_text(e, DIR "dup_b.json",
+               "{ \"frames\": { \"dup.png\": { \"frame\": {\"x\":8,\"y\":0,\"w\":4,\"h\":4} } }, \"meta\": { \"image\": \"selfpack.png\" } }");
+    SDL_GetLogOutputFunction(&g_default_log, &g_default_log_user);
+    SDL_SetLogOutputFunction(count_warnings, NULL);
+    br_spritesheet *a = br_spritesheet_load(e, DIR "dup_a.json");
+    br_spritesheet *b = br_spritesheet_load(e, DIR "dup_b.json");
+    SDL_SetLogOutputFunction(g_default_log, g_default_log_user);
+    BR_CHECK(a != NULL && b != NULL && g_warnings == 1);
+    BR_CHECK(br_data_texture(e, "dup.png").index == br_spritesheet_frame(e, a, "dup.png").index);
+    br_assets_unload(e, DIR "dup_a.json"); /* br_data_texture took one reference: still loaded */
+    BR_CHECK(br_assets_ref_count(e, DIR "dup_a.json") == 1);
+    br_assets_unload(e, DIR "dup_a.json");
+    const char *scene = "{ \"type\": \"sprite\", \"texture\": \"dup.png\" }";
+    br_node n = br_scene_file_load_json(e, scene, SDL_strlen(scene), "bare.scene.json", br_scene_root(e));
+    BR_CHECK(br_assets_ref_count(e, DIR "dup_b.json") == 2); /* the scene's reference */
+    br_assets_unload(e, DIR "dup_b.json");                   /* the other owner lets go */
+    BR_CHECK(br_assets_get(e, DIR "dup_b.json") != NULL);    /* still there for the scene */
+    br_node_destroy(e, n);
+    br_engine_step(e, 1.0f / 60.0f); /* node flush, then the scene's references go */
     BR_CHECK(br_assets_count(e) == baseline);
 }
 

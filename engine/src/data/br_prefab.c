@@ -2,9 +2,6 @@
 #include "data/br_data_internal.h"
 #include "data/br_gltf_scene_internal.h" /* a .glb / .gltf path is a prefab too */
 
-/* Prefabs may use prefabs; this caps the chain so a cycle is an error, not a hang. */
-#define BR_PREFAB_MAX_DEPTH 16
-
 static const cJSON *br_data_prefab_doc(br_engine *e, const char *path)
 {
     br_data_state *s = e->data;
@@ -64,15 +61,46 @@ static void br_data_merge(cJSON *target, const cJSON *overrides)
     }
 }
 
-static cJSON *br_data_expand(br_engine *e, const cJSON *json, int depth)
+/* Pushes path onto the stack of prefabs being built. False (logged with the chain) if it is
+ * already there - a prefab that includes itself, through children or "based on" - or if the
+ * stack is full. */
+static bool br_data_prefab_push(br_engine *e, const char *path)
+{
+    br_data_state *s = e->data;
+    for (uint32_t i = 0; i < s->prefab_depth; i++) {
+        if (SDL_strcmp(s->prefab_stack[i], path) == 0) {
+            char chain[400] = "";
+            for (uint32_t k = i; k < s->prefab_depth; k++) {
+                SDL_strlcat(chain, s->prefab_stack[k], sizeof(chain));
+                SDL_strlcat(chain, " -> ", sizeof(chain));
+            }
+            SDL_strlcat(chain, path, sizeof(chain));
+            size_t mark = br_data_path_push_key(e, "prefab");
+            br_data_errorf(e, "prefab '%s' includes itself (%s); node skipped", path, chain);
+            br_data_path_pop(e, mark);
+            return false;
+        }
+    }
+    if (s->prefab_depth >= BR_PREFAB_MAX_DEPTH) {
+        br_data_error(e, "prefab", "prefabs nest more than 16 deep; node skipped");
+        return false;
+    }
+    if (!br_str_copy(s->prefab_stack[s->prefab_depth], BR_DATA_PATH_SIZE, path)) {
+        br_data_error(e, "prefab", "prefab path too long; node skipped");
+        return false;
+    }
+    s->prefab_depth++;
+    return true;
+}
+
+cJSON *br_data_expand_prefab(br_engine *e, const cJSON *json)
 {
     const cJSON *path = cJSON_GetObjectItemCaseSensitive(json, "prefab");
     if (!cJSON_IsString(path)) {
         br_data_error(e, "prefab", "expected a prefab file path; node skipped");
         return NULL;
     }
-    if (depth >= BR_PREFAB_MAX_DEPTH) {
-        br_data_error(e, "prefab", "prefabs nest too deep (a prefab that uses itself?); node skipped");
+    if (!br_data_prefab_push(e, path->valuestring)) {
         return NULL;
     }
     const cJSON *doc = br_data_prefab_doc(e, path->valuestring);
@@ -81,7 +109,7 @@ static cJSON *br_data_expand(br_engine *e, const cJSON *json, int depth)
     }
     cJSON *out = NULL;
     if (cJSON_GetObjectItemCaseSensitive(doc, "prefab") != NULL) {
-        out = br_data_expand(e, doc, depth + 1); /* a prefab based on another prefab */
+        out = br_data_expand_prefab(e, doc); /* a prefab based on another prefab */
     } else {
         out = cJSON_Duplicate(doc, true);
     }
@@ -89,11 +117,6 @@ static cJSON *br_data_expand(br_engine *e, const cJSON *json, int depth)
         br_data_merge(out, json);
     }
     return out;
-}
-
-cJSON *br_data_expand_prefab(br_engine *e, const cJSON *json)
-{
-    return br_data_expand(e, json, 0);
 }
 
 void br_data_prefabs_free(br_engine *e)

@@ -41,6 +41,7 @@ Every format with full examples: `docs/DATA_FORMATS.md`.
 | `br_game_config_main(path, argc, argv, init)` | game.json for the whole app in one line (the engine owns the config). |
 | `br_game_config_load` / `_args` / `_app_desc` / `_apply` | The same in steps, when a game needs more control. |
 | `br_data_get_float/vec2/color/texture/enum/...` | Reading keys in your own type's `from_json` (errors carry the path). |
+| `br_data_get_count(e, obj, key, min, max, &n)`, `br_data_get_int_range` | A count, size or index from data, range-checked before any cast: use it for every number that sizes a loop or an allocation. |
 | `br_scene_file_parse_node`, `_apply_component`, `_read_field`, `_write_field`, `_collect_assets` | Building blocks for scenes/tools. |
 | `br_scene_file_set_hot_reload`, `br_scene_file_poll` | Hot-reload control. |
 
@@ -107,8 +108,18 @@ silently, wrong types log `file: children[3].my_key: expected a number`.
   (`level.scene.json: children[0].posiiton: unknown key`); your own types' keys are not checked.
   Game settings in game.json go under `"game"`.
 - Texture references: `"path.png"`, `"sheet.json#frame"`, `"alias#frame"` (a manifest alias of
-  the sheet: no extra reference, shorter), or a bare frame name of a sheet that is already loaded
-  (list sheets in the root's `"assets"` so they load first).
+  the sheet, shorter), or a bare frame name of a sheet that is already loaded (list sheets in the
+  root's `"assets"` so they load first). Each takes a reference on the texture or sheet, owned by
+  the load. A bare name is one map lookup; with several loaded sheets having it, the first loaded
+  wins (a warning names the others).
+- Prefab cycles (`a` includes `a`, or `a -> b -> a`) are reported with the chain and the closing
+  node is skipped; prefabs nest at most 16 deep, nodes 256 deep. Asset collection opens each
+  prefab file once per load.
+- Numbers from data are checked before they become counts or ints (`... is out of range`):
+  polygon sides 3..1024, star points 2..1024, mesh grids 2..1024 per side, blur quality 1..16,
+  colour numbers 0..0xFFFFFF, ints within 32 bits, floats within float range.
+- game.json: a value of the wrong type, out of range or too long for its field is logged and the
+  default is kept (`br_game_config_parse` still returns true; false only for a syntax error).
 - Root `"assets"` entries: a path, a manifest bundle name, or `{ "path" | "bundle": ..., "load":
   "preload" | "lazy" }`; `lazy` ones are listed in a br_scene's group but not loaded by the file.
 - Component pointers (`br_component_get/at`) die when any component of that kind is added (a

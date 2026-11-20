@@ -107,7 +107,7 @@ static bool br_data_sprite_from_json(br_engine *e, br_node n, void *data, const 
         return true;
     }
     float f;
-    int frame;
+    uint32_t frame = 0;
     if (br_data_get_float(e, json, "speed", &f)) {
         br_animated_sprite_set_speed(e, n, f);
     }
@@ -119,13 +119,13 @@ static bool br_data_sprite_from_json(br_engine *e, br_node n, void *data, const 
     }
     bool playing = true; /* data-driven animations play unless told not to */
     br_data_get_bool(e, json, "playing", &playing);
-    if (!br_data_get_int(e, json, "frame", &frame)) {
+    if (!br_data_get_count(e, json, "frame", 0, UINT32_MAX, &frame)) {
         frame = 0;
     }
     if (playing) {
-        br_animated_sprite_goto_and_play(e, n, (uint32_t)frame);
+        br_animated_sprite_goto_and_play(e, n, frame);
     } else {
-        br_animated_sprite_goto_and_stop(e, n, (uint32_t)frame);
+        br_animated_sprite_goto_and_stop(e, n, frame);
     }
     return true;
 }

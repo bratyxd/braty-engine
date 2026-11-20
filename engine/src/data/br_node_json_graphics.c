@@ -179,7 +179,11 @@ static bool br_data_flag(const cJSON *cmd, int index, bool fallback)
     return cJSON_IsBool(item) ? cJSON_IsTrue(item) : fallback;
 }
 
-/* Runs one command; false = bad arguments (the caller reports usage). */
+/* Most sides / star points a command may ask for (each costs vertices; more never looks different). */
+#define BR_DATA_MAX_SIDES 1024
+
+/* Runs one command; false = bad arguments (the caller reports usage). A count out of range is
+ * reported here and the command skipped. */
 static bool br_data_command(br_engine *e, br_graphics_context *ctx, const char *name, const cJSON *cmd,
                             const char **usage)
 {
@@ -311,19 +315,28 @@ static bool br_data_command(br_engine *e, br_graphics_context *ctx, const char *
         if (!br_data_args(cmd, 1, 4, 5, a)) {
             return false;
         }
-        br_graphics_regular_poly(ctx, a[0], a[1], a[2], (uint32_t)a[3], a[4]);
+        uint32_t sides = 0;
+        if (br_data_value_count(e, a[3], 3, BR_DATA_MAX_SIDES, &sides)) {
+            br_graphics_regular_poly(ctx, a[0], a[1], a[2], sides, a[4]);
+        }
     } else if (SDL_strcmp(name, "round_poly") == 0) {
         *usage = "[\"round_poly\", x, y, radius, sides, corner_radius, rotation?]";
         if (!br_data_args(cmd, 1, 5, 6, a)) {
             return false;
         }
-        br_graphics_round_poly(ctx, a[0], a[1], a[2], (uint32_t)a[3], a[4], a[5]);
+        uint32_t sides = 0;
+        if (br_data_value_count(e, a[3], 3, BR_DATA_MAX_SIDES, &sides)) {
+            br_graphics_round_poly(ctx, a[0], a[1], a[2], sides, a[4], a[5]);
+        }
     } else if (SDL_strcmp(name, "star") == 0) {
         *usage = "[\"star\", x, y, points, radius, inner_radius?, rotation?]";
         if (!br_data_args(cmd, 1, 4, 6, a)) {
             return false;
         }
-        br_graphics_star(ctx, a[0], a[1], (uint32_t)a[2], a[3], a[4], a[5]);
+        uint32_t points = 0;
+        if (br_data_value_count(e, a[2], 2, BR_DATA_MAX_SIDES, &points)) {
+            br_graphics_star(ctx, a[0], a[1], points, a[3], a[4], a[5]);
+        }
     } else if (SDL_strcmp(name, "chamfer_rect") == 0) {
         *usage = "[\"chamfer_rect\", x, y, w, h, chamfer]";
         if (!br_data_args(cmd, 1, 5, 5, a)) {

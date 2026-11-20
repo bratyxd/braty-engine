@@ -482,8 +482,11 @@ or from code: `br_prefab_instantiate(e, "prefabs/coin.prefab.json", parent, over
 
 Override rules: objects merge key by key, recursively (`components.mover.velocity` changes, `spin`
 stays); `children` are appended to the prefab's children; anything else replaces. A prefab may
-itself be `{ "prefab": ..., overrides }` (up to 16 levels). Parsed prefab files are cached
-(`br_prefab_clear_cache`; hot reload clears it).
+itself be `{ "prefab": ..., overrides }`. Prefabs nest up to 16 deep (counting both "based on"
+and prefabs among the children). A prefab that includes itself, directly or through others
+(`a -> b -> a`), is an error naming the chain (`prefab 'a' includes itself (a -> b -> a); node
+skipped`): the node that closes the cycle is skipped, the rest loads. Nodes nest at most 256
+deep. Parsed prefab files are cached (`br_prefab_clear_cache`; hot reload clears it).
 
 ---
 
@@ -491,10 +494,11 @@ itself be `{ "prefab": ..., overrides }` (up to 16 levels). Parsed prefab files 
 
 | Kind | Forms |
 |---|---|
-| colour | `"#rgb"`, `"#rgba"`, `"#rrggbb"`, `"#rrggbbaa"`, `"0xrrggbb"`, `"rgb(255, 128, 0)"`, `"rgba(255, 128, 0, 0.5)"`, CSS names (`"red"`, `"gold"`, `"transparent"`), a number `0xRRGGBB` (decimal in JSON), `[r, g, b]` / `[r, g, b, a]` in 0..1 |
+| colour | `"#rgb"`, `"#rgba"`, `"#rrggbb"`, `"#rrggbbaa"`, `"0xrrggbb"`, `"rgb(255, 128, 0)"`, `"rgba(255, 128, 0, 0.5)"`, CSS names (`"red"`, `"gold"`, `"transparent"`), a whole number `0xRRGGBB` (decimal in JSON, 0..16777215), `[r, g, b]` / `[r, g, b, a]` in 0..1 |
 | vec2 | `[x, y]`, `{ "x": 1, "y": 2 }`, or one number for both |
 | rect | `[x, y, width, height]` |
-| texture | `"images/hero.png"` (asset path or alias), `"atlas.json#hero.png"` (spritesheet frame), `"atlas#hero.png"` (frame of a sheet by its manifest alias), `"hero.png"` (a frame of any spritesheet already loaded, e.g. through `"assets"`) |
+| texture | `"images/hero.png"` (asset path or alias), `"atlas.json#hero.png"` (spritesheet frame), `"atlas#hero.png"` (frame of a sheet by its manifest alias), `"hero.png"` (a frame of a spritesheet already loaded, e.g. through `"assets"`; if several loaded sheets have the name, the one loaded first wins and loading the others logs a warning). The load takes a reference on the texture or sheet, so the scene keeps it alive. |
+| numbers | finite and within float range. Whole numbers (`z_index`, `BR_FIELD_INT`) must fit a 32-bit int. Counts have limits: polygon `sides` 3..1024, star `points` 2..1024, mesh `plane` / `perspective.verts` 2..1024 per side, blur `quality` 1..16, mesh `indices` whole and below the vertex count. Out of range is an error (`... is out of range`), the value is skipped |
 | angle | radians (`rotation`, `tile_rotation`, shadow `angle`), degrees only in `angle` |
 | enum | lower-case names listed with each key |
 

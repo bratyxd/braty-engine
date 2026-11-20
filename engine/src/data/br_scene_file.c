@@ -95,16 +95,20 @@ void br_data_resolve_refs(br_engine *e, br_node root)
 static bool br_data_value_vec3(br_engine *e, const cJSON *v, br_vec3 *out)
 {
     if (cJSON_IsArray(v) && cJSON_GetArraySize(v) == 3) {
-        float f[3];
+        float f[3] = { 0.0f, 0.0f, 0.0f };
         bool numbers = true;
         for (int i = 0; i < 3; i++) {
-            const cJSON *item = cJSON_GetArrayItem(v, i);
-            numbers = numbers && cJSON_IsNumber(item);
-            f[i] = numbers ? (float)item->valuedouble : 0.0f;
+            numbers = numbers && cJSON_IsNumber(cJSON_GetArrayItem(v, i));
         }
         if (numbers) {
-            *out = br_vec3_make(f[0], f[1], f[2]);
-            return true;
+            bool ok = true;
+            for (int i = 0; i < 3 && ok; i++) {
+                ok = br_data_value_float(e, cJSON_GetArrayItem(v, i), &f[i]);
+            }
+            if (ok) {
+                *out = br_vec3_make(f[0], f[1], f[2]);
+            }
+            return ok;
         }
     }
     br_data_errorf(e, "expected [x, y, z]");
@@ -127,13 +131,15 @@ bool br_scene_file_read_field(br_engine *e, br_node owner, uint32_t component_id
         }
         *(bool *)p = cJSON_IsTrue(value);
         return true;
-    case BR_FIELD_INT:
-        if (!cJSON_IsNumber(value) || value->valuedouble != (double)(int32_t)value->valuedouble) {
-            br_data_errorf(e, "expected a whole number");
+    case BR_FIELD_INT: {
+        int i = 0;
+        if (!br_data_value_int(e, value, INT32_MIN, INT32_MAX, &i)) {
             return false;
         }
-        *(int32_t *)p = (int32_t)value->valuedouble;
+        int32_t i32 = (int32_t)i;
+        SDL_memcpy(p, &i32, sizeof(i32));
         return true;
+    }
     case BR_FIELD_FLOAT: {
         float f;
         if (!br_data_value_float(e, value, &f)) {
@@ -513,7 +519,24 @@ void br_data_apply_node(br_engine *e, br_node n, const cJSON *json, bool build_c
     }
 }
 
+static br_node br_data_build_node_at(br_engine *e, const cJSON *json, br_node parent);
+
 br_node br_data_build_node(br_engine *e, const cJSON *json, br_node parent)
+{
+    br_data_state *s = e->data;
+    if (s->node_depth >= BR_DATA_MAX_NODE_DEPTH) {
+        br_data_errorf(e, "nodes nest deeper than %d levels; skipped", BR_DATA_MAX_NODE_DEPTH);
+        return br_data_zero_node();
+    }
+    uint32_t prefab_mark = s->prefab_depth; /* the prefabs this node pushes stay until its subtree is built */
+    s->node_depth++;
+    br_node n = br_data_build_node_at(e, json, parent);
+    s->node_depth--;
+    s->prefab_depth = prefab_mark;
+    return n;
+}
+
+static br_node br_data_build_node_at(br_engine *e, const cJSON *json, br_node parent)
 {
     if (!cJSON_IsObject(json)) {
         br_data_errorf(e, "a node must be an object; skipped");
@@ -704,7 +727,12 @@ bool br_scene_file_reload(br_engine *e, const char *path, br_node root)
     if (outermost) {
         br_data_capture_end(e, mark, root);
     }
-    br_asset_group_destroy(old_assets);
+    if (old_assets != NULL && e->stepping) {
+        /* the old children die at the next node flush and may still point at a font until then */
+        br_array_push(&s->release, &old_assets);
+    } else {
+        br_asset_group_destroy(old_assets);
+    }
     br_data_end_file(e, &saved);
     cJSON_Delete(doc);
     br_log_info("scene file: reloaded '%s'", path);
@@ -845,21 +873,25 @@ static bool br_data_is_asset_key(const char *key, const char *value)
     return SDL_strcmp(key, "animation") == 0 && SDL_strchr(value, '#') != NULL;
 }
 
-/* Collection state: the callback, and whether prefab files are opened (depth-limited). */
+/* Collection state: the callback, and whether prefab files are opened (each once per call, so
+ * prefabs used many times or in a cycle cost one read). */
 typedef struct br_data_collector {
     br_asset_path_fn fn;
     void            *user;
     bool             expand_prefabs;
     int              depth;
+    br_map           visited;  /* prefab path -> bool */
 } br_data_collector;
 
 static void br_data_collect(br_engine *e, const cJSON *json, br_data_collector *c);
 
 static void br_data_collect_prefab(br_engine *e, const char *path, br_data_collector *c)
 {
-    if (c->depth >= 16) {
-        return; /* a prefab that uses itself: the load reports it */
+    bool yes = true;
+    if (c->depth >= BR_PREFAB_MAX_DEPTH || br_map_get(&c->visited, path) != NULL) {
+        return; /* seen already, or a chain too deep (the build reports cycles and depth) */
     }
+    br_map_set(&c->visited, path, &yes);
     void *bytes = NULL;
     size_t size = 0;
     if (!br_file_read_all(e, path, &bytes, &size)) {
@@ -950,16 +982,27 @@ static void br_data_collect(br_engine *e, const cJSON *json, br_data_collector *
 void br_scene_file_collect_assets(br_engine *e, const cJSON *json, br_asset_path_fn fn, void *user)
 {
     if (json != NULL && fn != NULL) {
-        br_data_collector c = { fn, user, false, 0 };
+        br_data_collector c;
+        SDL_zero(c);
+        c.fn = fn;
+        c.user = user;
+        br_map_init(&c.visited, sizeof(bool));
         br_data_collect(e, json, &c);
+        br_map_free(&c.visited);
     }
 }
 
 void br_data_collect_expanded(br_engine *e, const cJSON *json, br_asset_path_fn fn, void *user)
 {
     if (json != NULL && fn != NULL) {
-        br_data_collector c = { fn, user, true, 0 };
+        br_data_collector c;
+        SDL_zero(c);
+        c.fn = fn;
+        c.user = user;
+        c.expand_prefabs = true;
+        br_map_init(&c.visited, sizeof(bool));
         br_data_collect(e, json, &c);
+        br_map_free(&c.visited);
     }
 }
 

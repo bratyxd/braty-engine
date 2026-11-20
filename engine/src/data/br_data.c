@@ -2,6 +2,8 @@
  * helpers every from_json callback uses. */
 #include "data/br_data_internal.h"
 
+#include <float.h>
+#include <limits.h>
 #include <stdarg.h>
 
 /* ---- errors and the JSON path */
@@ -235,29 +237,64 @@ bool br_data_value_float(br_engine *e, const cJSON *v, float *out)
         br_data_errorf(e, "expected a number");
         return false;
     }
+    if (!(SDL_fabs(v->valuedouble) <= FLT_MAX)) {
+        br_data_errorf(e, "%g is out of range for a float", v->valuedouble);
+        return false;
+    }
     *out = (float)v->valuedouble;
     return true;
 }
 
 bool br_data_value_vec2(br_engine *e, const cJSON *v, br_vec2 *out)
 {
+    const cJSON *x = NULL;
+    const cJSON *y = NULL;
     if (cJSON_IsNumber(v)) {
-        *out = br_vec2_make((float)v->valuedouble, (float)v->valuedouble);
-        return true;
+        x = v;
+        y = v;
+    } else if (cJSON_IsArray(v) && cJSON_GetArraySize(v) == 2) {
+        x = cJSON_GetArrayItem(v, 0);
+        y = cJSON_GetArrayItem(v, 1);
+    } else if (cJSON_IsObject(v)) {
+        x = cJSON_GetObjectItemCaseSensitive(v, "x");
+        y = cJSON_GetObjectItemCaseSensitive(v, "y");
     }
-    if (cJSON_IsArray(v) && cJSON_GetArraySize(v) == 2 && cJSON_IsNumber(cJSON_GetArrayItem(v, 0)) &&
-        cJSON_IsNumber(cJSON_GetArrayItem(v, 1))) {
-        *out = br_vec2_make((float)cJSON_GetArrayItem(v, 0)->valuedouble, (float)cJSON_GetArrayItem(v, 1)->valuedouble);
-        return true;
+    if (!cJSON_IsNumber(x) || !cJSON_IsNumber(y)) {
+        br_data_errorf(e, "expected [x, y]");
+        return false;
     }
-    const cJSON *x = cJSON_GetObjectItemCaseSensitive(v, "x");
-    const cJSON *y = cJSON_GetObjectItemCaseSensitive(v, "y");
-    if (cJSON_IsObject(v) && cJSON_IsNumber(x) && cJSON_IsNumber(y)) {
-        *out = br_vec2_make((float)x->valuedouble, (float)y->valuedouble);
-        return true;
+    float fx = 0.0f;
+    float fy = 0.0f;
+    if (!br_data_value_float(e, x, &fx) || !br_data_value_float(e, y, &fy)) {
+        return false;
     }
-    br_data_errorf(e, "expected [x, y]");
-    return false;
+    *out = br_vec2_make(fx, fy);
+    return true;
+}
+
+bool br_data_value_count(br_engine *e, double v, uint32_t min, uint32_t max, uint32_t *out)
+{
+    /* written so NaN fails too; a fraction is out of range as well (counts are whole) */
+    if (!(v >= (double)min && v <= (double)max && v == SDL_floor(v))) {
+        br_data_errorf(e, "%g is out of range (expected a whole number %u..%u)", v, (unsigned)min, (unsigned)max);
+        return false;
+    }
+    *out = (uint32_t)v;
+    return true;
+}
+
+bool br_data_value_int(br_engine *e, const cJSON *v, int min, int max, int *out)
+{
+    if (!cJSON_IsNumber(v) || v->valuedouble != SDL_floor(v->valuedouble)) {
+        br_data_errorf(e, "expected a whole number");
+        return false;
+    }
+    if (!(v->valuedouble >= (double)min && v->valuedouble <= (double)max)) {
+        br_data_errorf(e, "%g is out of range (expected %d..%d)", v->valuedouble, min, max);
+        return false;
+    }
+    *out = (int)v->valuedouble;
+    return true;
 }
 
 bool br_data_value_color(br_engine *e, const cJSON *v, br_color *out)
@@ -270,7 +307,11 @@ bool br_data_value_color(br_engine *e, const cJSON *v, br_color *out)
         return false;
     }
     if (cJSON_IsNumber(v)) {
-        *out = br_color_from_hex((uint32_t)v->valuedouble, 1.0f);
+        uint32_t hex = 0;
+        if (!br_data_value_count(e, v->valuedouble, 0, 0xFFFFFF, &hex)) {
+            return false; /* a 0xRRGGBB number */
+        }
+        *out = br_color_from_hex(hex, 1.0f);
         return true;
     }
     int n = cJSON_IsArray(v) ? cJSON_GetArraySize(v) : 0;
@@ -282,7 +323,9 @@ bool br_data_value_color(br_engine *e, const cJSON *v, br_color *out)
                 br_data_errorf(e, "expected a colour [r, g, b, a] of numbers 0..1");
                 return false;
             }
-            c[i] = (float)item->valuedouble;
+            if (!br_data_value_float(e, item, &c[i])) {
+                return false;
+            }
         }
         *out = br_color_make(c[0], c[1], c[2], c[3]);
         return true;
@@ -309,16 +352,36 @@ bool br_data_get_bool(br_engine *e, const cJSON *obj, const char *key, bool *out
 
 bool br_data_get_int(br_engine *e, const cJSON *obj, const char *key, int *out)
 {
+    return br_data_get_int_range(e, obj, key, INT_MIN, INT_MAX, out);
+}
+
+bool br_data_get_int_range(br_engine *e, const cJSON *obj, const char *key, int min, int max, int *out)
+{
     const cJSON *v = cJSON_GetObjectItemCaseSensitive(obj, key);
     if (v == NULL) {
         return false;
     }
-    if (!cJSON_IsNumber(v) || v->valuedouble != (double)(int)v->valuedouble) {
-        br_data_error(e, key, "expected a whole number");
+    size_t mark = br_data_path_push_key(e, key);
+    bool ok = br_data_value_int(e, v, min, max, out);
+    br_data_path_pop(e, mark);
+    return ok;
+}
+
+bool br_data_get_count(br_engine *e, const cJSON *obj, const char *key, uint32_t min, uint32_t max, uint32_t *out)
+{
+    const cJSON *v = cJSON_GetObjectItemCaseSensitive(obj, key);
+    if (v == NULL) {
         return false;
     }
-    *out = (int)v->valuedouble;
-    return true;
+    size_t mark = br_data_path_push_key(e, key);
+    bool ok = false;
+    if (!cJSON_IsNumber(v)) {
+        br_data_errorf(e, "expected a whole number");
+    } else {
+        ok = br_data_value_count(e, v->valuedouble, min, max, out);
+    }
+    br_data_path_pop(e, mark);
+    return ok;
 }
 
 bool br_data_get_float(br_engine *e, const cJSON *obj, const char *key, float *out)
@@ -351,21 +414,26 @@ bool br_data_get_vec3(br_engine *e, const cJSON *obj, const char *key, br_vec3 *
     if (v == NULL) {
         return false;
     }
-    if (cJSON_IsArray(v) && cJSON_GetArraySize(v) == 3 && cJSON_IsNumber(cJSON_GetArrayItem(v, 0)) &&
-        cJSON_IsNumber(cJSON_GetArrayItem(v, 1)) && cJSON_IsNumber(cJSON_GetArrayItem(v, 2))) {
-        *out = br_vec3_make((float)cJSON_GetArrayItem(v, 0)->valuedouble, (float)cJSON_GetArrayItem(v, 1)->valuedouble,
-                            (float)cJSON_GetArrayItem(v, 2)->valuedouble);
-        return true;
-    }
     const cJSON *x = cJSON_GetObjectItemCaseSensitive(v, "x");
     const cJSON *y = cJSON_GetObjectItemCaseSensitive(v, "y");
     const cJSON *z = cJSON_GetObjectItemCaseSensitive(v, "z");
-    if (cJSON_IsNumber(x) && cJSON_IsNumber(y) && cJSON_IsNumber(z)) {
-        *out = br_vec3_make((float)x->valuedouble, (float)y->valuedouble, (float)z->valuedouble);
-        return true;
+    if (cJSON_IsArray(v) && cJSON_GetArraySize(v) == 3) {
+        x = cJSON_GetArrayItem(v, 0);
+        y = cJSON_GetArrayItem(v, 1);
+        z = cJSON_GetArrayItem(v, 2);
     }
-    br_data_error(e, key, "expected [x, y, z]");
-    return false;
+    if (!cJSON_IsNumber(x) || !cJSON_IsNumber(y) || !cJSON_IsNumber(z)) {
+        br_data_error(e, key, "expected [x, y, z]");
+        return false;
+    }
+    float f[3] = { 0.0f, 0.0f, 0.0f };
+    size_t mark = br_data_path_push_key(e, key);
+    bool ok = br_data_value_float(e, x, &f[0]) && br_data_value_float(e, y, &f[1]) && br_data_value_float(e, z, &f[2]);
+    br_data_path_pop(e, mark);
+    if (ok) {
+        *out = br_vec3_make(f[0], f[1], f[2]);
+    }
+    return ok;
 }
 
 bool br_data_get_color(br_engine *e, const cJSON *obj, const char *key, br_color *out)
@@ -406,16 +474,22 @@ bool br_data_get_rect(br_engine *e, const cJSON *obj, const char *key, br_rect *
         return false;
     }
     if (cJSON_IsArray(v) && cJSON_GetArraySize(v) == 4) {
-        float f[4];
+        float f[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
         bool numbers = true;
         for (int i = 0; i < 4; i++) {
-            const cJSON *item = cJSON_GetArrayItem(v, i);
-            numbers = numbers && cJSON_IsNumber(item);
-            f[i] = numbers ? (float)item->valuedouble : 0.0f;
+            numbers = numbers && cJSON_IsNumber(cJSON_GetArrayItem(v, i));
         }
         if (numbers) {
-            *out = br_rect_make(f[0], f[1], f[2], f[3]);
-            return true;
+            size_t mark = br_data_path_push_key(e, key);
+            bool ok = true;
+            for (int i = 0; i < 4 && ok; i++) {
+                ok = br_data_value_float(e, cJSON_GetArrayItem(v, i), &f[i]);
+            }
+            br_data_path_pop(e, mark);
+            if (ok) {
+                *out = br_rect_make(f[0], f[1], f[2], f[3]);
+            }
+            return ok;
         }
     }
     br_data_error(e, key, "expected [x, y, width, height]");
@@ -457,39 +531,20 @@ const char *br_data_enum_name(const br_data_enum *table, uint32_t count, int val
 
 /* ---- textures by path or spritesheet frame */
 
+/* The sheet at path, with one more reference (owned by the load in progress, like a texture). */
 static br_spritesheet *br_data_sheet(br_engine *e, const char *path)
 {
-    const char *type = br_assets_type(e, path);
-    if (type != NULL && SDL_strcmp(type, "spritesheet") == 0) {
-        return br_assets_get(e, path); /* already loaded: no new reference */
-    }
     return br_spritesheet_load(e, path);
 }
 
-/* A frame of any loaded spritesheet called `name`; zero handle if none. */
+/* The frame `name` of the first loaded spritesheet that has it (a map kept by the spritesheet
+ * loader, so this costs one lookup); zero handle if none. Takes a reference on that sheet. */
 static br_texture br_data_find_frame(br_engine *e, const char *name)
 {
     br_texture none = { 0, 0 };
-    uint32_t count = br_assets_count(e);
-    if (count == 0) {
-        return none;
-    }
-    br_asset_info *list = br_alloc(sizeof(br_asset_info) * count);
-    if (list == NULL) {
-        return none;
-    }
-    count = br_assets_list(e, list, count);
-    br_texture found = none;
-    for (uint32_t i = 0; i < count && found.generation == 0; i++) {
-        if (list[i].type != NULL && SDL_strcmp(list[i].type, "spritesheet") == 0) {
-            br_spritesheet *sheet = br_assets_get(e, list[i].path);
-            if (sheet != NULL) {
-                found = br_spritesheet_frame(e, sheet, name);
-            }
-        }
-    }
-    br_free(list);
-    return found;
+    const char *sheet_path = br_spritesheet_frame_owner(e, name);
+    br_spritesheet *sheet = sheet_path != NULL ? br_data_sheet(e, sheet_path) : NULL;
+    return sheet != NULL ? br_spritesheet_frame(e, sheet, name) : none;
 }
 
 br_texture br_data_texture(br_engine *e, const char *ref)
@@ -522,7 +577,11 @@ br_texture br_data_texture(br_engine *e, const char *ref)
         return frame;
     }
     char resolved[BR_DATA_PATH_SIZE];
-    bool cached = br_assets_resolve(e, ref, resolved, sizeof(resolved)) && br_assets_get(e, resolved) != NULL;
+    if (!br_assets_resolve(e, ref, resolved, sizeof(resolved))) {
+        br_data_errorf(e, "texture name cannot be resolved (too long, or a bad pattern): '%s'", ref);
+        return br_texture_missing(e);
+    }
+    bool cached = br_assets_get(e, resolved) != NULL;
     if (!cached && !br_file_exists(e, resolved)) {
         br_data_errorf(e, "texture '%s' not found (no such file and no loaded spritesheet frame)", ref);
         return br_texture_missing(e);

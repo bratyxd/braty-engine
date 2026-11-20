@@ -55,10 +55,11 @@ static void br_config_int(br_config_reader *r, const cJSON *obj, const char *key
     if (v == NULL) {
         return;
     }
-    if (cJSON_IsNumber(v) && v->valuedouble > 0) {
+    /* range-checked as a double first: casting 1e20 to int would be undefined */
+    if (cJSON_IsNumber(v) && v->valuedouble >= 1.0 && v->valuedouble <= (double)INT32_MAX) {
         *out = (int)v->valuedouble;
     } else {
-        br_config_error(r, key, "expected a positive number");
+        br_config_error(r, key, "expected a positive number (at most 2147483647)");
     }
 }
 
@@ -68,7 +69,7 @@ static void br_config_float(br_config_reader *r, const cJSON *obj, const char *k
     if (v == NULL) {
         return;
     }
-    if (cJSON_IsNumber(v) && v->valuedouble >= 0) {
+    if (cJSON_IsNumber(v) && v->valuedouble >= 0 && v->valuedouble <= 1e30) {
         *out = (float)v->valuedouble;
     } else {
         br_config_error(r, key, "expected a number >= 0");
@@ -83,9 +84,10 @@ static void br_config_string(br_config_reader *r, const cJSON *obj, const char *
     }
     if (!cJSON_IsString(v)) {
         br_config_error(r, key, "expected a string");
-    } else if (!br_str_copy(out, size, v->valuestring)) {
-        br_config_error(r, key, "too long");
-        out[0] = '\0';
+    } else if (SDL_strlen(v->valuestring) >= size) {
+        br_config_error(r, key, "too long; the default is kept"); /* checked before copying: out is untouched */
+    } else {
+        br_str_copy(out, size, v->valuestring);
     }
 }
 
@@ -291,16 +293,27 @@ static void br_config_apply_audio(br_engine *e, const cJSON *audio)
     br_config_bool(&r, audio, "muted", &muted);
     br_audio_set_master_volume(e, volume);
     br_audio_set_muted(e, muted);
+    /* both are objects keyed by name: an array has no names (bus->string would be NULL) */
+    const cJSON *buses = cJSON_GetObjectItemCaseSensitive(audio, "buses");
+    const cJSON *sprites = cJSON_GetObjectItemCaseSensitive(audio, "sprites");
+    if (buses != NULL && !cJSON_IsObject(buses)) {
+        br_config_error(&r, "buses", "expected an object { \"name\": volume }");
+        buses = NULL;
+    }
+    if (sprites != NULL && !cJSON_IsObject(sprites)) {
+        br_config_error(&r, "sprites", "expected an object { \"sound path\": { \"name\": [start, duration] } }");
+        sprites = NULL;
+    }
     const cJSON *bus = NULL;
-    cJSON_ArrayForEach(bus, cJSON_GetObjectItemCaseSensitive(audio, "buses"))
+    cJSON_ArrayForEach(bus, buses)
     {
         int id = br_audio_bus_create(e, bus->string);
         float bus_volume = 1.0f;
         bool bus_muted = false;
+        r.section = "audio.buses";
         if (cJSON_IsNumber(bus)) {
-            bus_volume = (float)bus->valuedouble;
+            br_config_float(&r, buses, bus->string, &bus_volume);
         } else {
-            r.section = "audio.buses";
             br_config_float(&r, bus, "volume", &bus_volume);
             br_config_bool(&r, bus, "muted", &bus_muted);
         }
@@ -308,8 +321,12 @@ static void br_config_apply_audio(br_engine *e, const cJSON *audio)
         br_audio_bus_set_muted(e, id, bus_muted);
     }
     const cJSON *file = NULL;
-    cJSON_ArrayForEach(file, cJSON_GetObjectItemCaseSensitive(audio, "sprites"))
+    cJSON_ArrayForEach(file, sprites)
     {
+        if (!cJSON_IsObject(file)) {
+            br_log_error("game.json: audio.sprites.%s: expected an object of sprites", file->string);
+            continue;
+        }
         br_sound *sound = br_sound_load(e, file->string);
         const cJSON *sprite = NULL;
         cJSON_ArrayForEach(sprite, file)
