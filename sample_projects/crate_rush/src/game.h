@@ -232,7 +232,7 @@ typedef struct cr_game {
     br_node   tuning_node;
     uint32_t  rng;
     uint32_t  levels_completed;     /* for the soak log */
-    /* counts at the last cr_log_stats (the soak play-test compares them between menu visits) */
+    /* live counts (updated every frame by cr.flow; the soak play-test compares them between menu visits) */
     int32_t   stat_nodes, stat_nodes3d, stat_assets, stat_animators, stat_tweens, stat_sounds;
 } cr_game;
 

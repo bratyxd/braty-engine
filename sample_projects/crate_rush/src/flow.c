@@ -69,10 +69,9 @@ float cr_random(cr_game *g)
     return (float)(g->rng >> 8) / 16777216.0f;
 }
 
-void cr_log_stats(br_engine *e, cr_game *g, const char *when)
+/* Live counts for play-tests (the soak compares them between menu visits). */
+static void cr_update_stats(br_engine *e, cr_game *g)
 {
-    br_memory_stats heap;
-    br_memory_get_stats(&heap);
     uint32_t animators = 0;
     uint32_t tracks = 0;
     br_animation_stats(e, &animators, &tracks);
@@ -82,6 +81,15 @@ void cr_log_stats(br_engine *e, cr_game *g, const char *when)
     g->stat_animators = (int32_t)animators;
     g->stat_tweens = (int32_t)br_tween_count(e);
     g->stat_sounds = (int32_t)br_audio_instance_count(e);
+}
+
+void cr_log_stats(br_engine *e, cr_game *g, const char *when)
+{
+    br_memory_stats heap;
+    br_memory_get_stats(&heap);
+    uint32_t animators = 0;
+    uint32_t tracks = 0;
+    br_animation_stats(e, &animators, &tracks);
     br_log_info("crate_rush stats (%s): nodes %u, 3d nodes %u, assets %u, animators %u, tweens %u, sounds %u, "
                 "level arena %llu bytes, heap %llu blocks, levels done %u",
                 when, br_scene_node_count(e), br_node3d_count(e), br_assets_count(e), animators, br_tween_count(e),
@@ -562,6 +570,7 @@ static void cr_flow_system(br_engine *e, float dt, void *user)
     cr_game *g = user;
     const cr_tuning *t = cr_tuning_get(e, g);
     g->state_time += dt;
+    cr_update_stats(e, g);
     switch (g->state) {
     case CR_STATE_BOOT:
         break;
