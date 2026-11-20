@@ -59,6 +59,7 @@ void br_profiler_gpu_start(br_engine *e)
         return;
     }
     p->fence_device = br_gpu_device(e->gpu);
+    p->fence_stop = false;
     p->fence_lock = SDL_CreateMutex();
     p->fence_wake = SDL_CreateCondition();
     if (p->fence_lock == NULL || p->fence_wake == NULL) {
@@ -84,6 +85,14 @@ void br_profiler_gpu_stop(br_engine *e)
         SDL_WaitThread(p->fence_thread, NULL);
         p->fence_thread = NULL;
     }
+    /* a fence released while its frame is in flight could be reused by the next submit */
+    bool pending = false;
+    for (uint32_t i = 0; i < p->fence_count; i++) {
+        pending = pending || p->fences[i].done_ns == 0;
+    }
+    if (pending) {
+        SDL_WaitForGPUIdle(p->fence_device);
+    }
     for (uint32_t i = 0; i < p->fence_count; i++) {
         SDL_ReleaseGPUFence(p->fence_device, p->fences[i].fence);
     }
@@ -95,6 +104,19 @@ void br_profiler_gpu_stop(br_engine *e)
     SDL_DestroyMutex(p->fence_lock);
     p->fence_wake = NULL;
     p->fence_lock = NULL;
+}
+
+void br_profiler_gpu_want(br_engine *e, uint32_t frames)
+{
+    br_profiler_state *p = e->profiler;
+    if (p != NULL && p->recorded + frames > p->gpu_wanted_until) {
+        p->gpu_wanted_until = p->recorded + frames;
+    }
+}
+
+bool br_profiler_gpu_estimating(br_engine *e)
+{
+    return e->profiler != NULL && e->profiler->fence_thread != NULL;
 }
 
 /* The ring record of frame `number`, NULL if it was overwritten. */

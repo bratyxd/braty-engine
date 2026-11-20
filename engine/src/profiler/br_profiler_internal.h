@@ -118,6 +118,7 @@ typedef struct br_profiler_state {
     br_profiler_fence fences[BR_PROFILER_FENCES];
     uint32_t          fence_count;   /* oldest first */
     uint64_t          last_gpu_done_ns;
+    uint64_t          gpu_wanted_until; /* frame number until which a play-test "profile" wants it */
 } br_profiler_state;
 
 /* Name of id (the interned copy). */
@@ -139,6 +140,8 @@ uint64_t br_profiler_scope_self(const br_profiler_scope *scopes, uint32_t count,
 
 /* Starts the fence poll thread (when a GPU exists). */
 void br_profiler_gpu_start(br_engine *e);
+/* Keeps the GPU estimate running for the next `frames` frames (play-test "profile"). */
+void br_profiler_gpu_want(br_engine *e, uint32_t frames);
 /* Stops the thread and releases tracked fences. */
 void br_profiler_gpu_stop(br_engine *e);
 /* At frame end: takes the frame's fence from the GPU module, files finished estimates. */

@@ -299,8 +299,13 @@ void br_profiler_frame_begin(br_engine *e)
         return;
     }
     br_profiler_read_args(e, p);
-    if (e->gpu != NULL && p->fence_thread == NULL) {
+    /* the fence thread and a fence per frame cost every shipped game something: they run only
+     * while something shows or saves the GPU estimate */
+    bool want_gpu = p->open || p->hud || p->save_path != NULL || p->recorded < p->gpu_wanted_until;
+    if (e->gpu != NULL && want_gpu && p->fence_thread == NULL) {
         br_profiler_gpu_start(e);
+    } else if (!want_gpu && p->fence_thread != NULL) {
+        br_profiler_gpu_stop(e);
     }
     if (p->paused) {
         p->interval_pending = false; /* no interval across a pause */

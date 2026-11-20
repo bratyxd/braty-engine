@@ -4,6 +4,7 @@
 #include "playtest/br_playtest_internal.h"
 
 #include "data/br_data_internal.h"
+#include "profiler/br_profiler_internal.h"
 
 #include <stdarg.h>
 
@@ -850,6 +851,7 @@ static br_pt_result br_pt_exec(br_engine *e, const cJSON *cmd, cJSON *reply)
         /* the summary is read after the wait: br_playtest_command adds it, scripts use profile:<key> */
         double frames = br_pt_clamped(cmd, "frames", BR_PROFILER_FRAMES, 1.0, 1e9);
         e->playtest->profile_frames = frames < BR_PROFILER_FRAMES ? (uint32_t)frames : BR_PROFILER_FRAMES;
+        br_profiler_gpu_want(e, (uint32_t)frames + 1u); /* the estimate runs only while measured */
         e->playtest->waiting = true;
         e->playtest->until = NULL;
         e->playtest->resume_frame = e->ticker.frame + (uint64_t)frames;

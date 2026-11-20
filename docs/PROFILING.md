@@ -105,7 +105,11 @@ What this number is, case by case:
   and are not counted.
 
 A frame's estimate arrives 1-3 frames after the frame (when its fence signals); the graph fills
-the orange line in then. A GPU-side breakdown (which pass costs what) needs timer queries, which
+the orange line in then. The fence per frame and the poll thread run only while something uses
+the estimate: the panel or the HUD is shown, `--profile` was given, or a play-test `profile`
+command is measuring (`br_profiler_gpu_estimating`). A game that never shows the profiler pays
+nothing; closing the panel stops the thread (one wait for the GPU to go idle). The first frames
+after opening the panel have no GPU number yet. A GPU-side breakdown (which pass costs what) needs timer queries, which
 SDL 3.4 does not have.
 
 ## The verdict
