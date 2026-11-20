@@ -624,7 +624,7 @@ static void br_canvas3d_texture_system(br_engine *e, float dt, void *user)
             continue;
         }
         float res = c->desc.resolution > 0.0f ? c->desc.resolution : 2.0f;
-        br_texture_info info;
+        br_texture_info info = { 0 };
         if (c->target.generation != 0 && br_texture_get_info(e, c->target, &info) && info.resolution != res) {
             br_texture_destroy(e, c->target);
             c->target.generation = 0;

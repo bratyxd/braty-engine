@@ -6,10 +6,11 @@
 #include <stdarg.h>
 
 /* Every heap block starts with this header so br_free knows how many bytes leave.
- * max_align_t keeps the user pointer as aligned as SDL_malloc's. */
+ * 16 bytes on every platform so the user pointer stays 16-byte aligned (max_align_t is missing
+ * in MSVC's C headers and only 8 on Apple arm64). */
 typedef union br_alloc_header {
-    size_t      size;
-    max_align_t align;
+    size_t size;
+    char   pad[16];
 } br_alloc_header;
 
 // ponytail: process-wide counters under one spinlock (the heap itself is process-wide);

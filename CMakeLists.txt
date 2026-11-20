@@ -51,6 +51,8 @@ target_include_directories(braty
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/engine/include ${CMAKE_CURRENT_SOURCE_DIR}/engine/shaders/compiled
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/engine/src)
 target_compile_options(braty PRIVATE ${BR_WARNINGS})
+# No fused multiply-add: play-tests and goldens need the same float results on x64 and arm64.
+target_compile_options(braty PUBLIC $<$<NOT:$<C_COMPILER_ID:MSVC>>:-ffp-contract=off>)
 option(BRATY_WERROR "Treat warnings in engine code as errors (CI turns it on)" OFF)
 if(BRATY_WERROR)
     target_compile_options(braty PRIVATE $<IF:$<C_COMPILER_ID:MSVC>,/WX,-Werror>)

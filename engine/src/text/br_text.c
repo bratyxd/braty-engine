@@ -198,8 +198,8 @@ void br_text_forget_font(br_engine *e, const br_font *font)
             }
             for (uint32_t j = 0; j < t->spans.count && !t->dirty; j++) {
                 const br_text_span *span = br_array_at(&t->spans, j);
-                for (uint32_t k = 0; k < span->chain_count; k++) {
-                    if (span->chain[k] == font) {
+                for (uint32_t c = 0; c < span->chain_count; c++) {
+                    if (span->chain[c] == font) {
                         t->dirty = true; /* every reader of spans runs br_text_node_update first */
                         break;
                     }
