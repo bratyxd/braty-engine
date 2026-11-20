@@ -137,6 +137,7 @@ typedef struct br_frame3d_uniforms {
 typedef struct br_light3d_entry {
     br_light3d light;
     br_mat4    world;
+    float      score;   /* importance when over BR_LIGHT3D_MAX: FLT_MAX directional, else intensity / (1 + d^2) */
 } br_light3d_entry;
 
 /* Everything a view owns. Heap-allocated: its address is the render callback's user pointer. */

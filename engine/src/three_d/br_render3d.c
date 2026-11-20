@@ -2,6 +2,7 @@
  * PRE_RENDER, and the RENDER callback that runs the shadow pass, the main HDR pass and post. */
 #include "three_d/br_three_d_internal.h"
 #include "braty/br_profiler.h"
+#include "render/br_render_internal.h"
 
 #include "mesh3d.frag.h"
 #include "mesh3d.vert.h"
@@ -82,10 +83,9 @@ void br_render3d_submit_with_parent(br_render3d_ctx *ctx, const br_draw3d *draw,
 {
     br_engine *e = ctx->e;
     br_view3d_state *v = ctx->view;
-    br_gpu *g = br_engine_gpu(e);
     br_material3d_desc *mat = br_material3d_get(e, draw->material);
     br_geometry3d_data *geo = br_geometry3d_data_get(e, draw->geometry);
-    if (g == NULL || mat == NULL || geo == NULL || draw->instances == NULL || draw->instance_count == 0) {
+    if (mat == NULL || geo == NULL || draw->instances == NULL || draw->instance_count == 0) {
         return;
     }
     uint32_t passes = mat->alpha_mode == BR_ALPHA_BLEND ? BR_PASS3D_TRANSPARENT : BR_PASS3D_OPAQUE;
@@ -105,8 +105,9 @@ void br_render3d_submit_with_parent(br_render3d_ctx *ctx, const br_draw3d *draw,
     item.geometry = draw->geometry;
     item.material = draw->material;
     item.instance_count = draw->instance_count;
-    br_instance3d *dst = br_gpu_transient_alloc_vertices(g, draw->instance_count * (uint32_t)sizeof(br_instance3d),
-                                                         &item.instance_offset);
+    /* CPU memory (the GPU's transient stream, or the headless one); uploaded in RENDER */
+    br_instance3d *dst = br_render_transient_vertices(e, draw->instance_count * (uint32_t)sizeof(br_instance3d),
+                                                      &item.instance_offset);
     if (dst == NULL) {
         return;
     }
@@ -165,13 +166,30 @@ void br_render3d_submit_custom(br_render3d_ctx *ctx, uint32_t passes, br_vec3 so
 void br_render3d_add_light(br_render3d_ctx *ctx, const br_light3d *light, br_mat4 world)
 {
     br_view3d_state *v = ctx->view;
-    if (v->lights.count >= BR_LIGHT3D_MAX) {
-        return; /* documented limit: extra lights are ignored */
-    }
     br_light3d_entry entry;
     entry.light = *light;
     entry.world = world;
-    br_array_push(&v->lights, &entry);
+    entry.score = FLT_MAX; /* directional lights light everything: always kept first */
+    if (light->kind != BR_LIGHT3D_DIRECTIONAL) {
+        br_vec3 d = br_vec3_sub(br_vec3_make(world.m[12], world.m[13], world.m[14]), v->camera_position);
+        entry.score = light->intensity / (1.0f + br_vec3_dot(d, d));
+    }
+    if (v->lights.count < BR_LIGHT3D_MAX) {
+        br_array_push(&v->lights, &entry);
+        return;
+    }
+    /* full: the new light replaces the least important one if it matters more (the nearest /
+     * brightest BR_LIGHT3D_MAX win; slots keep their order so ties keep the earlier light) */
+    br_light3d_entry *lights = v->lights.data;
+    uint32_t weakest = 0;
+    for (uint32_t i = 1; i < v->lights.count; i++) {
+        if (lights[i].score < lights[weakest].score) {
+            weakest = i;
+        }
+    }
+    if (entry.score > lights[weakest].score) {
+        lights[weakest] = entry;
+    }
 }
 
 /* ---- collect: walk, sort, lights, shadows */

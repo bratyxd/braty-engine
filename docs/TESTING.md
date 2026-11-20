@@ -29,7 +29,9 @@ a unit test; anything visible gets a golden image.
 `tests/`. Test data is read from the source tree through `BRATY_SOURCE_DIR` (set by CMake:
 `BRATY_SOURCE_DIR "/tests/data"`), never relative to the executable, so any build directory
 works. Use a headless engine (`br_engine_create("test", NULL)` + `br_engine_step`) or the
-whole app loop headless (`br_app_init` with `--headless`, see `tests/test_app.c`). Write
+whole app loop headless (`br_app_init` with `--headless`, see `tests/test_app.c`). What the
+renderer would draw (2D batches, 3D items, lights, shadow tiles) is readable headless after
+`br_render_debug_set_screen` (`tests/test_draw_list.c`, `docs/agents/render.md`). Write
 temporary files next to the executable (`SDL_GetBasePath()`), not into the source tree.
 
 Wall-clock checks (`test_pacing`'s FPS cap, `test_profiler`'s scope overhead) print the measured

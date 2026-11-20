@@ -137,6 +137,9 @@ Mesh draws: fill a `br_draw3d` (geometry, material, instances with world matrice
 write) or TRANSPARENT (`BR_ALPHA_BLEND`: back to front, premultiplied blend, no depth write);
 `cast_shadows` adds the SHADOW pass. Items outside the camera frustum skip the main passes but
 still cast shadows. Instances are copied into this frame's transient vertex buffer at submit.
+Collect is CPU only (items, instances, joints, lights, shadow tiles); RENDER uploads and draws. A
+headless engine collects too (`br_render_debug_*`, `docs/agents/render.md`), so culling, sort
+order, light selection, tiles and instancing are unit-tested in `tests/test_draw_list.c`.
 
 Custom draws (own shaders, any geometry): allocate transient data during collect, then
 `br_render3d_submit_custom(ctx, BR_PASS3D_OPAQUE | BR_PASS3D_SHADOW ..., sort_point, fn, user)`.
@@ -186,7 +189,9 @@ In the SHADOW pass the target is the R32F shadow atlas: write `SV_Position.z` to
 
 ## Limits (documented, `// ponytail:` where it matters)
 
-- `BR_LIGHT3D_MAX` 16 lights per view (extra ignored); one directional light gets cascades
+- `BR_LIGHT3D_MAX` 16 lights per view: with more, directional lights are kept, then the point /
+  spot lights with the largest `intensity / (1 + squared camera distance)`; the rest are
+  ignored. One directional light gets cascades
   (`BR_SHADOW3D_MAX_CASCADES` 4), `BR_SHADOW3D_MAX_SPOT` 4 spot shadows; no point shadows.
   Shadow atlas: 4 x 2 tiles of `br_view3d_set_shadow_resolution` (default 1024).
 - 8 morph weights per mesh, `BR_POST3D_MAX_PASSES` 4, custom material uniforms 256 bytes.

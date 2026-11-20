@@ -94,7 +94,7 @@ static bool br_view3d_ensure_targets(br_engine *e, br_view3d_state *v)
 {
     br_gpu *g = br_engine_gpu(e);
     br_three_d_state *s = e->three_d;
-    if (s->dummy_storage == NULL) {
+    if (g != NULL && s->dummy_storage == NULL) {
         float zero[16];
         SDL_zeroa(zero);
         s->dummy_storage = br_gpu_buffer_create(g, SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ, sizeof(zero), zero);
@@ -113,6 +113,9 @@ static bool br_view3d_ensure_targets(br_engine *e, br_view3d_state *v)
         v->output = br_render_texture_create(e, v->width, v->height, resolution);
     } else {
         br_render_texture_resize(e, v->output, v->width, v->height);
+    }
+    if (g == NULL) {
+        return v->output.generation != 0; /* headless: collect only, the output has no pixels */
     }
     br_render_target *out = br_texture_render_target(e, v->output);
     if (out == NULL) {
@@ -183,7 +186,7 @@ static void br_view3d_ensure_shadow_atlas(br_engine *e, br_view3d_state *v)
 static void br_view3d_render(br_engine *e, br_node n, const void *data, br_render_ctx *rc)
 {
     br_view3d_state *v = ((const br_view3d_node *)data)->state;
-    if (v == NULL || br_engine_gpu(e) == NULL) {
+    if (v == NULL) {
         return;
     }
     uint64_t frame = br_ticker_frame(e);
@@ -206,7 +209,7 @@ static void br_view3d_render(br_engine *e, br_node n, const void *data, br_rende
             v->root = v->own_root; /* a shared root was destroyed */
         }
         br_render3d_collect(e, v);
-        if (v->shadow_tiles != 0) {
+        if (v->shadow_tiles != 0 && br_engine_gpu(e) != NULL) {
             br_view3d_ensure_shadow_atlas(e, v);
         }
         v->collected = true;

@@ -1,8 +1,10 @@
 /* br_light3d.h - 3D lights (directional, point, spot), hemisphere ambient, shadows.
  *
  * A light is a 3D node of type "light3d": its world position and its -Z axis (aim it with
- * br_node3d_look_at) place it. Per view and frame the first BR_LIGHT3D_MAX visible lights are
- * uploaded as plain arrays in the fragment uniform block; extra lights are ignored.
+ * br_node3d_look_at) place it. Per view and frame up to BR_LIGHT3D_MAX visible lights are
+ * uploaded as plain arrays in the fragment uniform block; with more, directional lights are kept
+ * and then the point / spot lights with the largest intensity / (1 + squared camera distance);
+ * the rest are ignored.
  *
  * Shadows: the first directional light with cast_shadows gets 1-4 cascades (splits from
  * br_shadow3d_cascade_splits); up to BR_SHADOW3D_MAX_SPOT spot lights with cast_shadows get a

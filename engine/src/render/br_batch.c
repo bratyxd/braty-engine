@@ -2,6 +2,7 @@
  * turns them into SDL_GPU passes and draws. */
 #include "render/br_render_internal.h"
 #include "braty/br_profiler.h"
+#include "gpu/br_gpu_internal.h"
 
 #include "batch.frag.h"
 #include "batch.vert.h"
@@ -104,6 +105,46 @@ void br_render_pipeline_setup(const br_render_callback_info *info, br_pipeline_d
     state.blend = info->blend;
     state.stencil = info->stencil_test ? BR_STENCIL_TEST : BR_STENCIL_OFF;
     br_pipeline_fit(desc, &state, info->target);
+}
+
+/* ---- transient streams */
+
+/* The headless stream: same 16-byte alignment as br_gpu's, so offsets (and batch merging) match. */
+static void *br_render_headless_alloc(br_array *stream, uint32_t size, uint32_t *offset)
+{
+    uint32_t start = (stream->count + 15u) & ~15u;
+    if (!br_array_resize(stream, start + size)) {
+        return NULL;
+    }
+    *offset = start;
+    return (uint8_t *)stream->data + start;
+}
+
+void *br_render_transient_vertices(br_engine *e, uint32_t size, uint32_t *offset)
+{
+    br_gpu *g = br_engine_gpu(e);
+    if (g != NULL) {
+        return br_gpu_transient_alloc_vertices(g, size, offset);
+    }
+    return br_render_headless_alloc(&e->render->headless_vertices, size, offset);
+}
+
+void *br_render_transient_indices(br_engine *e, uint32_t size, uint32_t *offset)
+{
+    br_gpu *g = br_engine_gpu(e);
+    if (g != NULL) {
+        return br_gpu_transient_alloc_indices(g, size, offset);
+    }
+    return br_render_headless_alloc(&e->render->headless_indices, size, offset);
+}
+
+const uint8_t *br_render_transient_data(br_engine *e, bool indices)
+{
+    br_gpu *g = br_engine_gpu(e);
+    if (g != NULL) {
+        return indices ? g->indices.cpu.data : g->vertices.cpu.data;
+    }
+    return indices ? e->render->headless_indices.data : e->render->headless_vertices.data;
 }
 
 /* ---- recording */
@@ -209,15 +250,11 @@ static br_batch_vertex *br_batch_alloc(br_render_ctx *rc, br_texture texture, ui
                                        uint32_t index_count, uint32_t *slot, uint32_t *base, uint16_t **indices)
 {
     br_render_state *r = rc->e->render;
-    br_gpu *g = br_engine_gpu(rc->e);
-    if (g == NULL) {
-        return NULL;
-    }
     /* an even count makes every allocation a multiple of 48 bytes, so the transient buffer's
      * 16-byte alignment adds no gap and the next push stays contiguous with this batch */
     uint32_t padded = vertex_count + (vertex_count & 1u);
     uint32_t offset;
-    br_batch_vertex *v = br_gpu_transient_alloc_vertices(g, padded * (uint32_t)sizeof(br_batch_vertex), &offset);
+    br_batch_vertex *v = br_render_transient_vertices(rc->e, padded * (uint32_t)sizeof(br_batch_vertex), &offset);
     if (v == NULL) {
         return NULL;
     }
@@ -307,10 +344,9 @@ void br_render_push_triangles(br_render_ctx *rc, br_texture texture, const br_ve
 }
 
 /* Copies bytes into this frame's transient vertex/index memory. */
-static bool br_batch_copy_transient(br_gpu *g, bool index_data, const void *data, uint32_t size, uint32_t *offset)
+static bool br_batch_copy_transient(br_engine *e, bool index_data, const void *data, uint32_t size, uint32_t *offset)
 {
-    void *dst = index_data ? br_gpu_transient_alloc_indices(g, size, offset)
-                           : br_gpu_transient_alloc_vertices(g, size, offset);
+    void *dst = index_data ? br_render_transient_indices(e, size, offset) : br_render_transient_vertices(e, size, offset);
     if (dst == NULL) {
         return false;
     }
@@ -331,10 +367,6 @@ void br_render_push_custom(br_render_ctx *rc, const br_custom_draw *draw)
 {
     br_engine *e = rc->e;
     br_render_state *r = e->render;
-    br_gpu *g = br_engine_gpu(e);
-    if (g == NULL) {
-        return;
-    }
     if (draw->vertex_shader == NULL || draw->fragment_shader == NULL || draw->layout.buffer_count == 0 ||
         draw->layout.strides[0] == 0 || draw->vertices == NULL || draw->vertex_bytes == 0 ||
         draw->texture_count > BR_RENDER_MAX_TEXTURES) {
@@ -348,20 +380,20 @@ void br_render_push_custom(br_render_ctx *rc, const br_custom_draw *draw)
     cc.layout = draw->layout;
     cc.primitive = draw->primitive;
     cc.vertex_count = draw->vertex_bytes / draw->layout.strides[0];
-    if (!br_batch_copy_transient(g, false, draw->vertices, draw->vertex_bytes, &cc.vertex_offset)) {
+    if (!br_batch_copy_transient(e, false, draw->vertices, draw->vertex_bytes, &cc.vertex_offset)) {
         return;
     }
     cc.instance_count = draw->instance_count > 0 ? draw->instance_count : 1;
     if (draw->instances != NULL && draw->instance_bytes > 0) {
         cc.instanced = true;
-        if (!br_batch_copy_transient(g, false, draw->instances, draw->instance_bytes, &cc.instance_offset)) {
+        if (!br_batch_copy_transient(e, false, draw->instances, draw->instance_bytes, &cc.instance_offset)) {
             return;
         }
     }
     if (draw->indices != NULL && draw->index_count > 0) {
         cc.indexed = true;
         cc.index_count = draw->index_count;
-        if (!br_batch_copy_transient(g, true, draw->indices, draw->index_count * 4, &cc.index_offset)) {
+        if (!br_batch_copy_transient(e, true, draw->indices, draw->index_count * 4, &cc.index_offset)) {
             return;
         }
     }
@@ -403,6 +435,8 @@ void br_batch_reset(br_engine *e)
     br_array_clear(&r->customs);
     br_array_clear(&r->indices);
     br_array_clear(&r->uniforms);
+    br_array_clear(&r->headless_vertices);
+    br_array_clear(&r->headless_indices);
     SDL_zero(r->building);
     r->collected = false;
 }
@@ -410,9 +444,8 @@ void br_batch_reset(br_engine *e)
 void br_batch_finish(br_engine *e)
 {
     br_render_state *r = e->render;
-    br_gpu *g = br_engine_gpu(e);
     if (r->indices.count > 0) {
-        br_batch_copy_transient(g, true, r->indices.data, r->indices.count * (uint32_t)sizeof(uint16_t),
+        br_batch_copy_transient(e, true, r->indices.data, r->indices.count * (uint32_t)sizeof(uint16_t),
                                 &r->index_base);
     }
     r->stats = r->building;
