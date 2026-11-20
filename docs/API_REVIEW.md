@@ -1,4 +1,4 @@
-# API review from the first real game (Star Courier, Task 12)
+# API review: Star Courier (Phase 1, Task 12) and Crate Rush (Phase 2, Task 19)
 
 Star Courier (`sample_projects/star_courier/`) is the first program that uses the whole engine
 the intended way: game.json, a manifest with a bundle, three scene files, nine prefabs, a
@@ -225,3 +225,142 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
 - `br_text_set_text` skips unchanged text, so HUD systems can set every frame.
 - Determinism: fixed-step `--frames` + a seeded game RNG gave identical D3D12 and Vulkan
   screenshots of the same frame.
+
+---
+
+# Phase 2 review: Crate Rush (Task 19)
+
+Crate Rush (`sample_projects/crate_rush/`) is the first 3D game: three `.glb` levels loaded as
+scenes with extras components, a skinned character driven by an animation graph, fixed-step
+movement against the levels' `-colonly` boxes, a `br_camera` with follow and shake, canvas3d name
+plates and popups, a HUD and five UI scenes through a persistent 2D UI camera, settings with live
+vsync / FPS cap / volume / profiler HUD and jump rebinding, a loading scene, two play-test scripts
+and two golden images. No engine code was changed for it: every item below is worked around in
+the game (the workaround is named) and left here with a proposed fix.
+
+## 7. glTF scenes and cameras
+
+23. **gap - a `.glb` scene's camera cannot follow anything** (`br_gltf.h`: imported cameras are
+    `camera3d` nodes; `br_camera_create_3d` builds its own View3D). The game wants the level's
+    framing plus `camera.follow` / `camera.shake`. It creates a `br_camera` over
+    `br_scene_root_3d`, copies the file camera's FOV / near / far and pose, sets the follow offset
+    to `eye - look`, and **hides the `.glb`'s own view** (`br_node_set_visible`), or the level is
+    rendered twice (`src/flow.c`, `cr_level_setup`). **Fix:** `br_camera_adopt_view3d(e, view,
+    desc)` turning an existing View3D (with its environment, post and MSAA) into a `br_camera`
+    whose rig starts at the view's current camera; and `br_gltf_options.camera_as_br_camera` so a
+    scene load does it, labelling the camera node after the glTF camera.
+24. **gap - View3D settings are write-only** (`br_view3d.h`: `br_view3d_set_environment`,
+    `_set_background`, `_set_msaa` have no getters). Because of 23 the camera's view needs the
+    level's sky / ground / ambient / background, which only the scene extras have, so the game
+    parses `model->scene_extras` again (`cr_extras_color`). **Fix:** `br_view3d_environment(e,
+    view, &sky, &ground, &intensity)`, `br_view3d_background`, `br_view3d_msaa`, and a
+    `br_view3d_copy_settings(e, from, to)`.
+25. **gap - scene extras cannot carry components** (`engine/src/data/br_gltf_extras.c`,
+    `br_data_gltf_apply_extras` reads node extras only). Level settings (title, time limit,
+    footstep sounds, kill height) are a `"level"` object in the scene extras; the game reaches
+    them with `br_model3d_model(...)->scene_extras`, `cJSON_Parse` and
+    `br_scene_file_apply_component` on the view node. **Fix:** apply registered component keys
+    of the scene extras (both the nested and the flat form) to the instance root as 3D
+    components, exactly like node extras.
+26. **gap - glTF clips cannot get events from data** (`br_animation.h`: markers come from
+    `*.anim.json` clips only; `br_animator_add_model_clips` shares the model's clips read-only).
+    Footsteps need "step" markers on `walk` and `sprint`, so the game copies the clips with
+    `br_anim_clip_from_gltf`, adds markers from tuning.json and owns the copies - and must remove
+    the animator before freeing them at shutdown (`src/main.c`, `cr_make_clips`,
+    `cr_shutdown`). **Fix:** an `"events"` table in `*.animgraph.json` (`{ "clip": "sprint",
+    "events": [[0.11, "step"], [0.36, "step"]] }`) applied when the graph binds, or
+    `br_animator_add_marker(e, a, clip, time, name)` that stores per-animator markers.
+27. **gap - `br_query` is 2D only** (`br_query.h`). The settings rows use it (button + setting),
+    but every gameplay system walks a 3D component array and calls `br_component3d_get` for the
+    others (`src/world.c`, `src/player.c`). **Fix:** `br_query3d_begin(e, ids, count)` with the
+    same deferral rules over the 3D rows.
+28. **friction - resizing a canvas3d to its content is manual** (`br_nine_slice3d_create` fixes
+    the size). A sign whose text changes must resize the nine-slice, the canvas desc
+    (`width`, `height`, which the pivot uses) and re-centre the text (`src/world.c`,
+    `cr_sign_layout`). **Fix:** `br_canvas3d_fit_content(e, n, padding)` measuring the root's
+    bounds; `br_text3d_create` could do it on every text change.
+29. **friction - SDF fonts are still code-only** (item 18 is open). World text uses Kenney
+    Future as SDF; the game reads the TTF with `br_file_read_all` and calls `br_font_create`
+    with `sdf = true`, and destroys it itself. **Fix:** as in 18, plus `br_asset_options` font
+    fields (`sdf`, `sdf_size`) so `br_assets_load_with` and manifests can ask for it.
+
+## 8. Scenes, assets, audio
+
+30. **friction - a scene that is one asset has binary progress** (`br_scene_progress` counts
+    assets). A level is a single `.glb`, so the loading bar jumps from empty to full; the game
+    eases the bar toward the target (`src/ui.c`, `cr_loading_system`). **Fix:** weight group
+    progress by file size and report decode progress of large assets (the glTF worker knows
+    which buffers and images are done).
+31. **friction - `br_scene_switching` stays true through the fade-in.** Menus that ignore input
+    while a switch runs (to avoid clicking a screen that is going away) also drop the first
+    presses on the new screen. **Fix:** `br_scene_switch_phase(e)` (out / loading / in), or make
+    `br_scene_switching` false once the target is active and only the fade-in remains.
+32. **friction - playing a sound by path takes a reference each time** (`br_sound_load` is a
+    cached `br_assets_load`). A game that names sounds in data must use `br_assets_get` (no
+    reference) and keep the sounds alive with a group (`src/flow.c`, `cr_play`). **Fix:**
+    `br_audio_play_path(e, path, desc)` that plays a loaded sound without touching references
+    (and logs once if it is not loaded).
+33. **friction - per-level assets are added after the scene loaded.** The footsteps of a level's
+    theme are named in its scene extras, so they cannot be in the scene's group before the `.glb`
+    is parsed; the game adds them to `br_scene_assets(level)` on activation and loads them
+    synchronously. It works (they are released with the level; the soak checks it) but they miss
+    the loading screen. **Fix:** let scene extras list `"assets"` like a scene file's root, read
+    when the model is decoded, before the scene is built.
+34. **friction - deterministic runs with an audio device play voices on the wall clock**
+    (`ponytail:` in audio). The soak checks that sound instances return to zero on the menu;
+    with a window frames run uncapped, so the check needs a long `wait_until` timeout. **Fix:**
+    under `--deterministic`, advance voices by game time even with a device open (and feed the
+    device the mixed result), so counts are frame-exact.
+
+## 9. Input and play-testing
+
+35. **friction - an action that becomes live while held stays idle** (`br_input.h`, contexts).
+    By design (closing a menu with Space does not jump), but a script that pushes the stick in the
+    frame the game switches to the "gameplay" context sees no movement until release;
+    `round.json` waits 5 frames after the level starts. **Fix:** keep the rule for buttons, but
+    let axis bindings (sticks) be live at once; document the frame in `docs/PLAYTESTING.md`.
+36. **bug - play-test paths cannot name components with a dot**
+    (`engine/src/playtest/br_playtest_query.c`): `level_camera:camera.follow.offset3d` fails with
+    "too many parts", so engine components (`camera.follow`, `camera.anchor`, `gltf.collider`)
+    are unreachable. The game added a `camera_distance` tuning value to adjust the camera from a
+    script instead. **Fix:** after the colon, match the longest registered component name, then
+    the field, then an optional element.
+37. **friction - 2D labels are global in play-test paths.** `jump_row/value:text` is rejected
+    ("no view3d labelled jump_row"); every settings row has a child labelled `value`, so a script
+    can only read the first. **Fix:** accept `parent/child` paths for 2D nodes the way 3D paths
+    already work.
+38. **gap - an agent cannot resize the window.** Checking 21:9 and 9:16 meant copying the build
+    output and editing its game.json. **Fix:** a `--window WxH` flag in `br_app` and a play-test
+    command `{"cmd": "window", "width": 2520, "height": 1080}` (`SDL_SetWindowSize`, then wait a
+    frame), so aspect ratios and resizes can be golden-tested.
+39. **friction - golden bases count `wait` frames only** (`tools/golden.py`, `script_for`). A
+    script with `wait_until` cannot be a golden base, so Crate Rush keeps a second, wait-only
+    input script (`playtest/golden_play.json`). **Fix:** let a base script contain a
+    `{"cmd": "screenshot", "golden": true}` marker and take the golden there.
+40. **friction - `tools/playtest.py` short commands accept anything after the key name.**
+    `"key Up frames=40"` became a key command with action `"frames=40"` (an error reply, not a
+    40-frame hold). **Fix:** parse `key NAME [tap|down|up] [FRAMES]` and reject unknown words
+    before starting the game.
+41. **friction - `br_animation_stats` counts an animator only once it has been sampled.** On the
+    first frame of a level the count is 0 although `br_animator_add` ran; the soak checks it a few
+    frames later. **Fix:** report live animators (pool size) and sampled animators separately.
+
+## What worked well in Phase 2 (keep it)
+
+- A level as a `.glb` with extras is a complete level format: spawn, crates, hazards with motion
+  parameters, signs with text, `-colonly` collider empties and settings, all filled through
+  `br_field_desc` with no level-loading code. The build script writes what Blender would.
+- The `gltf.collider` convention plus a dense AABB array in a linear arena was all the physics
+  the game needed (11-20 boxes per level; the candidate list comes from the frame arena).
+- `*.animgraph.json` with a blend tree (walk / sprint by speed) and a jump trigger needed no code
+  beyond setting four parameters; cross-fades and "jump from any state" just work.
+- Tweens with easing names from tuning.json (pickup pops, popups, score counters through the
+  component field `counter.value`, focus scaling) and the `tween` component in scene files for
+  every screen's entrance.
+- Glyphs: one atlas named per the `br_input_glyph` scheme, and `{jump}` in sign text and HUD
+  strings switch between Space, A and Cross as the device changes.
+- Scenes + groups: the soak shows node, 3D node, asset, animator, tween and sound counts back at
+  their baseline after nine level runs; `br_assets_report` on every menu visit lists only the
+  shared group and the menu's own assets.
+- Play-testing with `wait_until` on `*/player:position.x`: the round script walks to waypoints
+  instead of counting frames, so it survives tuning changes.
