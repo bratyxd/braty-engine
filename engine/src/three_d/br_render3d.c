@@ -221,20 +221,35 @@ static void br_render3d_walk(br_engine *e, br_render3d_ctx *ctx)
     }
 }
 
-/* Insertion sort of item indices by depth (ascending or descending). Lists are short and
- * nearly sorted from frame to frame. */
+/* SDL_qsort_r comparators: by depth, then by collect order (a stable result, like before). */
+static int br_render3d_cmp_near_first(void *user, const void *a, const void *b)
+{
+    const br_item3d *items = user;
+    uint32_t ia = *(const uint32_t *)a;
+    uint32_t ib = *(const uint32_t *)b;
+    if (items[ia].depth != items[ib].depth) {
+        return items[ia].depth < items[ib].depth ? -1 : 1;
+    }
+    return ia < ib ? -1 : (ia > ib ? 1 : 0);
+}
+
+static int br_render3d_cmp_far_first(void *user, const void *a, const void *b)
+{
+    const br_item3d *items = user;
+    uint32_t ia = *(const uint32_t *)a;
+    uint32_t ib = *(const uint32_t *)b;
+    if (items[ia].depth != items[ib].depth) {
+        return items[ia].depth > items[ib].depth ? -1 : 1;
+    }
+    return ia < ib ? -1 : (ia > ib ? 1 : 0);
+}
+
+/* Sorts item indices by depth (ascending = near first). O(n log n) whatever the frame order. */
 static void br_render3d_sort(br_array *order, const br_item3d *items, bool ascending)
 {
-    uint32_t *idx = order->data;
-    for (uint32_t i = 1; i < order->count; i++) {
-        uint32_t key = idx[i];
-        float d = items[key].depth;
-        uint32_t j = i;
-        while (j > 0 && (ascending ? items[idx[j - 1]].depth > d : items[idx[j - 1]].depth < d)) {
-            idx[j] = idx[j - 1];
-            j--;
-        }
-        idx[j] = key;
+    if (order->count > 1) {
+        SDL_qsort_r(order->data, order->count, sizeof(uint32_t),
+                    ascending ? br_render3d_cmp_near_first : br_render3d_cmp_far_first, (void *)items);
     }
 }
 
