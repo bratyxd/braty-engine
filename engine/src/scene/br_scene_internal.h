@@ -51,6 +51,7 @@ typedef struct br_node_record {
     /* cold */
     char    *label;              /* NULL = no label */
     bool     sort_queued;        /* in the sort queue */
+    bool     compact_queued;     /* children / layer members lose destroyed entries in this flush */
     bool     sortable_children;
     bool     has_cull_area;
     bool     mask_inverse;
@@ -105,6 +106,7 @@ typedef struct br_scene_state {
     br_array types;              /* br_node_type_entry, type id = index + 1 */
     br_array components;         /* br_component_entry, component id = index + 1 */
     br_array pending_destroy;    /* uint32_t node indices */
+    bool     flushing;           /* br_scene_flush_destroyed is running (destroys inside it join it) */
     br_array destroy_listeners;  /* br_destroy_listener */
     br_array sort_queue;         /* uint32_t node indices whose children need sorting */
     br_array sort_scratch;       /* br_sort_item */
@@ -114,6 +116,11 @@ typedef struct br_scene_state {
     uint32_t sprite_type;        /* type id of "sprite" */
     bool     has_cull_view;      /* cameras are active: cull against cull_view, not the window */
     br_rect  cull_view;          /* stage rect the cameras show (union) */
+    /* explicit stacks of the tree walks (no recursion per level: hierarchies of any depth) */
+    br_array walk_stack;         /* uint32_t: label search */
+    br_array transform_stack;    /* br_transform_item (br_scene_systems.c) */
+    br_array transform_parents;  /* br_parent_state: parent state shared by the queued siblings */
+    br_array bounds_stack;       /* br_bounds_item (br_scene_systems.c) */
 } br_scene_state;
 
 /* ---- br_node.c */
@@ -154,6 +161,10 @@ br_mat3 br_scene_group_space(br_scene_state *s, uint32_t index);
 /* Recomputes cached world transform/alpha/tint of a subtree from its ancestors (used for
  * nodes drawn outside the stage walk: render-to-texture roots, masks). */
 void br_scene_refresh_subtree(br_scene_state *s, uint32_t index);
+/* Like br_scene_refresh_subtree, but colours as if the node and its ancestors had alpha 1 and a
+ * white tint (cache_as_texture renders its content that way). Call br_scene_refresh_subtree
+ * afterwards to put the real colours back. */
+void br_scene_refresh_subtree_uncolored(br_scene_state *s, uint32_t index);
 /* Cull against this stage rect instead of the window (NULL = the window again). Set by the
  * camera module every frame while cameras exist. */
 void br_scene_set_cull_view(br_scene_state *s, const br_rect *view);
@@ -169,6 +180,8 @@ void br_scene_sort_handles_by_z(br_scene_state *s, br_node *handles, uint32_t co
 
 /* ---- br_scene_systems.c */
 
+/* Sets up the walk stacks (transform_stack, bounds_stack). */
+void br_scene_walks_init(br_scene_state *s);
 /* Adds the transform, sort and cull systems (PRE_RENDER) and the destroy flush (INPUT). */
 void br_scene_add_systems(br_engine *e);
 /* Runs the deferred destroys now. */
