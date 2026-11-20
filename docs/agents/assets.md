@@ -114,6 +114,8 @@ A loader that loads other assets uses `br_assets_load`/`br_assets_unload` (sprit
 ## Gotchas
 
 - Paths are relative to the asset root, forward slashes. An alias target is used as given (no base path).
+  Every read goes through `br_file_read_all`, so assets come from loose files or mounted `.brpack`
+  packs alike, async loads included (the worker reads packs; see `docs/agents/core.md`).
 - Failed loads are not cached; `br_texture_load` of a missing file retries (and logs) every call.
 - Async callbacks get the resolved path; `br_assets_unload(e, that_path)` works.
 - Unloading the last reference of an asset that is still loading cancels it (callbacks get NULL).

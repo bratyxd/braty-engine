@@ -6,6 +6,7 @@
  */
 #include "app/br_engine_internal.h"
 #include "braty/braty.h"
+#include "core/br_storage_internal.h"
 #include "render/br_render_internal.h"
 #include "scene/br_scene_internal.h"
 #include "three_d/br_three_d_internal.h"
@@ -13,6 +14,7 @@
 void br_builtin_register(br_engine *e)
 {
     br_arena_register(e);          /* frame arena first: freed last at shutdown */
+    br_storage_register(e);        /* files and packs: every later module may read files */
     br_scene_register(e);          /* node table, components, transform/sort/cull systems */
     br_render_register(e);         /* textures, sprite type, batcher, collect/submit systems */
     br_assets_register(e);         /* asset cache (after render: unloads textures before render frees them) */

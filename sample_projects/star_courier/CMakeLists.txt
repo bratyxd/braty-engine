@@ -25,6 +25,10 @@ add_custom_command(TARGET star_courier POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/data $<TARGET_FILE_DIR:star_courier>
     COMMENT "star_courier: copying data/ next to the executable")
 
+# Shippable folder <folder>/star_courier/ (exe + game.json + assets.brpack + SDL runtime if shared):
+#   cmake --install <build dir> --prefix <folder>
+braty_install_game(star_courier ${CMAKE_CURRENT_SOURCE_DIR}/data)
+
 # The committed play-test (one round: score, lives, state checked with "expect"). Headless, so it
 # needs no GPU: ctest -L playtest. playtest/soak.json is the 60-second soak (run it by hand).
 add_test(NAME star_courier_round

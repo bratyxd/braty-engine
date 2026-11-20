@@ -596,8 +596,9 @@ static void br_pt_finish_script(br_engine *e, bool failed)
 
 static bool br_pt_save_text(br_engine *e, const char *path, const char *text)
 {
-    if (text == NULL || !SDL_SaveFile(path, text, SDL_strlen(text))) {
-        return br_playtest_fail(e, "cannot write '%s': %s", path, SDL_GetError());
+    char full[1024];
+    if (text == NULL || !br_file_resolve_cwd(path, full, sizeof(full)) || !br_file_write_all(e, full, text, SDL_strlen(text))) {
+        return br_playtest_fail(e, "cannot write '%s'", path);
     }
     return true;
 }
@@ -956,13 +957,14 @@ bool br_playtest_load_script(br_engine *e, const char *path)
     br_playtest_state *s = e->playtest;
     br_playtest_hook_log(e);
     size_t size = 0;
-    char *text = SDL_LoadFile(path, &size);
-    if (text == NULL) {
-        br_playtest_fail(e, "%s: cannot read the script: %s", path, SDL_GetError());
+    void *bytes = NULL;
+    char full[1024];
+    if (!br_file_resolve_cwd(path, full, sizeof(full)) || !br_file_read_all(e, full, &bytes, &size)) {
+        br_playtest_fail(e, "%s: cannot read the script", path);
         return br_pt_load_failed(e, NULL);
     }
-    cJSON *script = br_data_parse(e, path, text, size); /* logs "path: JSON syntax error at line L, column C" */
-    SDL_free(text);
+    cJSON *script = br_data_parse(e, path, bytes, size); /* logs "path: JSON syntax error at line L, column C" */
+    br_free(bytes);
     if (script == NULL) {
         br_str_copy(s->error, sizeof(s->error), e->data != NULL ? e->data->last_error : "JSON syntax error");
         return br_pt_load_failed(e, NULL);

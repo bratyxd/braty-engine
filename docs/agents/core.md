@@ -1,6 +1,8 @@
-# core - memory, logging, containers, strings, files, save data
+# core - memory, logging, containers, strings, files, packs, save data
 
-Header: `engine/include/braty/br_core.h`. Source: `engine/src/core/`. Test: `tests/test_core.c`.
+Header: `engine/include/braty/br_core.h`. Source: `engine/src/core/` (the storage layer:
+`br_file.c`, `br_pack.c`). Tests: `tests/test_core.c`, `tests/test_pack.c` (packs, hostile packs,
+async reads from a pack, the log file).
 
 Plain C over SDL. No window or GPU needed. Arenas (linear, stack, pool, scratch, per-frame):
 `docs/agents/arena.md`. Containers own their memory and are freed by their
@@ -17,7 +19,12 @@ Plain C over SDL. No window or GPU needed. Arenas (linear, stack, pool, scratch,
 | `br_array_init/push/at/remove_swap/free` | Growable array of fixed-size elements. |
 | `br_pool_alloc/get/release` | Slots addressed by (index, generation); stale handles return NULL. |
 | `br_map_init/set/get/remove/next` | String key -> fixed-size value. |
-| `br_file_read_all(e, path, &bytes, &size)` | Whole file, relative to the asset root, NUL-terminated. |
+| `br_file_read_all(e, path, &bytes, &size)` | Whole file, relative to the asset root (loose or from a mounted pack), NUL-terminated. |
+| `br_file_mount_pack(e, path)` | Mount a `.brpack` (`tools/pack_assets.py`; game.json `"packs"`, `--pack`). Validated whole; `br_file_unmount_packs`, `br_file_pack_count`. |
+| `br_file_set_loose_first(e, on)` | Loose files over packs (debug default) or packs first (release default). |
+| `br_file_resolve` / `_resolve_exe` / `_resolve_cwd` | A path against the asset root / the executable folder / the working directory. |
+| `br_file_normalize(path, out, n)` | Asset path rules: `/` separators, `a/../b` -> `b`, nothing above the root. |
+| `br_save_set_log_file(e, "log.txt")` | Mirror the log into user storage (written at shutdown and on a failed start; on in release builds for interactive runs). |
 | `br_save_read/write(e, path, ...)` | Save data in per-user storage (SDL_Storage). Writes are atomic (temp file + rename). |
 | `br_engine_set_save_name(e, org, app)` | Save folder identity (default `"braty"` + window title, sanitised); also `br_app_desc.save_org/save_app`, game.json `"save"`. |
 | `br_u32_mul_ok(a, b, &out)`, `br_size_mul_ok` | `count * stride` from data files without wrapping (containers reject wrapping counts themselves). |
@@ -55,8 +62,24 @@ if (br_file_read_all(e, "data/level1.json", &bytes, &size)) {
   Keep indices or handles, not pointers, across frames.
 - `br_pool` generation 0 is never handed out, so a zeroed handle is always invalid.
 - `br_map` copies keys; values are raw bytes of `value_size`.
-- Relative paths resolve against the asset root (`br_engine_asset_root`); absolute paths pass
-  through. Never use `fopen`: files go through SDL so consoles work.
+- Path bases (the table at the `files` section of `br_core.h`): the asset root for every
+  `br_file_*` / asset / scene path (loose files, then mounted packs), the executable folder for
+  game.json and what it names, the working directory for command-line paths, user storage for
+  saves and the log file. Absolute paths pass through and never look in packs. No engine code
+  opens a file any other way (`grep SDL_IOFromFile engine/src` finds only `br_file.c` and
+  `br_pack.c`). Never use `fopen`: files go through SDL so consoles work.
+- Asset paths are normalised (`\` -> `/`, `.` and empty parts dropped, `a/../b` -> `b`); one
+  that climbs above the asset root fails, logged. Pack lookups are case-sensitive; loose files
+  follow the OS, so a wrong case can work loose on Windows and fail from a pack.
+- Packs: the first mounted pack holding a path wins; loose files win in debug builds, packs in
+  release builds (`NDEBUG`). Reads are safe from any thread (the asset worker reads packs: the
+  table is looked up under a mutex and each read opens its own stream); mount and unmount on
+  the main thread. Mounting checks the whole table (truncation, magic, version, sizes, offsets
+  without overflow, paths, order / duplicates) and each read checks the entry's FNV-1a 64 hash;
+  failures log the pack and entry and fall back to nothing worse than "file not found".
+- Hot reload watches loose files only (`br_file_get_modify_time`); packed scenes never reload.
+- `br_file_write_all` writes loose files under the asset root (development tools); a shipped
+  game writes to user storage (`br_save_*`).
 - `br_save_*` blocks until the storage is ready (instant on desktop; see the `ponytail:` note).
 - `br_save_write` writes `<path>.tmp` and renames it over the save, so a crash mid-write keeps the
   old save; a stray `.tmp` after a crash is overwritten by the next write.

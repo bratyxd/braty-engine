@@ -9,16 +9,9 @@
 
 static char *br_resolve_asset_root(const char *asset_root)
 {
-    const char *base = SDL_GetBasePath(); /* owned by SDL, ends with a separator */
     char path[1024];
-    bool ok;
-    if (asset_root != NULL && br_path_is_absolute(asset_root)) {
-        ok = br_str_copy(path, sizeof(path), asset_root);
-    } else if (asset_root != NULL && asset_root[0] != 0) {
-        ok = br_path_join(path, sizeof(path), base != NULL ? base : "", asset_root);
-    } else {
-        ok = br_str_copy(path, sizeof(path), base != NULL ? base : ".");
-    }
+    /* relative to the executable's folder (the storage layer's path table, br_core.h) */
+    bool ok = br_file_resolve_exe(asset_root != NULL && asset_root[0] != 0 ? asset_root : ".", path, sizeof(path));
     if (!ok) {
         br_log_error("asset root path too long");
         return NULL;

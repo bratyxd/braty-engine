@@ -66,6 +66,23 @@ if(BRATY_PLAYTEST_STDIN)
 endif()
 add_library(braty::braty ALIAS braty)   # games: add_subdirectory(<braty> ...) then link braty::braty
 
+# A shippable folder for a game: braty_install_game(<target> <data dir>) in the game's
+# CMakeLists, then `cmake --install <build dir> --prefix <folder>` gives <folder>/<target>/ with
+# the executable, the SDL3 runtime (when SDL is a shared library), assets.brpack (<data dir>/assets
+# packed by tools/pack_assets.py) and game.json (with "packs": ["assets.brpack"] added if it lists
+# none). One folder per game, so the root project installs both samples side by side.
+set(BRATY_TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools CACHE INTERNAL "tools/ of the Braty engine")
+function(braty_install_game target data_dir)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    install(TARGETS ${target} RUNTIME DESTINATION ${target})
+    install(FILES $<TARGET_RUNTIME_DLLS:${target}> DESTINATION ${target})
+    install(CODE "set(BR_PYTHON \"${Python3_EXECUTABLE}\")
+set(BR_TOOLS \"${BRATY_TOOLS_DIR}\")
+set(BR_DATA \"${data_dir}\")
+set(BR_DEST \"${target}\")")
+    install(SCRIPT ${BRATY_TOOLS_DIR}/install_game.cmake)
+endfunction()
+
 # --- tests: every tests/test_*.c is one CTest executable
 if(BRATY_BUILD_TESTS)
     enable_testing()
@@ -96,6 +113,26 @@ if(BRATY_BUILD_TESTS)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/golden.py run
                     --build-dir ${CMAKE_BINARY_DIR} --out ${CMAKE_BINARY_DIR}/golden ${BR_GOLDEN_DRIVER})
         set_tests_properties(golden PROPERTIES LABELS golden SKIP_RETURN_CODE 77 TIMEOUT 900)
+    endif()
+    # .brpack round trip: tools/pack_assets.py packs a folder, test_pack reads every file through
+    # the pack alone and compares it with the loose file, and Crate Rush plays its round from a
+    # pack with an empty asset root (nothing loose to fall back to).
+    if(Python3_FOUND)
+        set(BR_PACK_DIR ${CMAKE_BINARY_DIR}/pack_test)
+        file(MAKE_DIRECTORY ${BR_PACK_DIR}/empty)
+        set(BR_PACK_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/sample_projects/crate_rush/data/assets)
+        add_test(NAME pack_build
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/pack_assets.py
+                    ${BR_PACK_SOURCE} ${BR_PACK_DIR}/crate_rush.brpack)
+        set_tests_properties(pack_build PROPERTIES FIXTURES_SETUP pack_crate_rush)
+        add_test(NAME pack_matches_loose COMMAND test_pack ${BR_PACK_DIR}/crate_rush.brpack ${BR_PACK_SOURCE})
+        set_tests_properties(pack_matches_loose PROPERTIES FIXTURES_REQUIRED pack_crate_rush)
+        if(BRATY_BUILD_SAMPLES)
+            add_test(NAME crate_rush_from_pack
+                COMMAND crate_rush --headless --assets ${BR_PACK_DIR}/empty --pack ${BR_PACK_DIR}/crate_rush.brpack
+                        --playtest ${CMAKE_CURRENT_SOURCE_DIR}/sample_projects/crate_rush/playtest/round.json)
+            set_tests_properties(crate_rush_from_pack PROPERTIES FIXTURES_REQUIRED pack_crate_rush LABELS playtest)
+        endif()
     endif()
 endif()
 

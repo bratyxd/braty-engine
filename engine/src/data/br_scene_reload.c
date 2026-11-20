@@ -1,15 +1,12 @@
 /* br_scene_reload: hot reload. Scene files loaded from disk are watched; a system polls their
- * modification time (SDL_GetPathInfo) every N frames and reloads changed ones in place. */
+ * modification time (br_file_get_modify_time) every N frames and reloads changed ones in place. */
 #include "data/br_data_internal.h"
 
 int64_t br_data_modify_time(br_engine *e, const char *path)
 {
-    char full[1024];
-    SDL_PathInfo info;
-    if (!br_file_resolve(e, path, full, sizeof(full)) || !SDL_GetPathInfo(full, &info)) {
-        return 0;
-    }
-    return (int64_t)info.modify_time;
+    int64_t time = 0;
+    br_file_get_modify_time(e, path, &time); /* 0 when there is no loose file (packed scenes never reload) */
+    return time;
 }
 
 void br_data_watch_add(br_engine *e, const char *path, br_node root)

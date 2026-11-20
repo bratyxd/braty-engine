@@ -223,16 +223,61 @@ const char *br_path_extension(const char *path);
 /* True for "/x", "\\x" and "C:..." style paths. */
 bool br_path_is_absolute(const char *path);
 
-/* ---- files (SDL_IOStream underneath). Relative paths are relative to the asset root. */
+/* ---- files: the storage layer (every file the engine opens goes through it)
+ *
+ * Path bases, each defined once (absolute paths are used unchanged everywhere):
+ *
+ *   base               | holds                                    | relative paths from
+ *   asset root         | game data: loose files + mounted packs   | br_file_*, assets, scenes, prefabs
+ *   (title storage)    | (read-only in a shipped game)            | (br_file_resolve)
+ *   executable folder  | game.json, its "asset_root" and "packs"  | br_file_resolve_exe
+ *   working directory  | --assets --pack --screenshot --playtest  | br_file_resolve_cwd
+ *                      | --record --profile                       |
+ *   user storage       | saves, the log file                      | br_save_* (SDL_OpenUserStorage)
+ *
+ * Asset-root paths are normalised before use: '\' becomes '/', "." and empty parts go, "a/../b"
+ * is "b", and a path that climbs above the root ("../x") or holds control characters fails.
+ * Case is kept: pack lookups are case-sensitive (byte order), loose files follow the OS (Windows
+ * and macOS ignore case), so write paths with the case they have on disk.
+ *
+ * Packs (.brpack, tools/pack_assets.py, docs/DATA_FORMATS.md): a mounted pack serves its entries
+ * as files under the asset root. With several packs the first mounted one holding a path wins.
+ * Loose files win over packs in debug builds and packs win in release builds (NDEBUG), so an
+ * edited file in the data folder shows up during development and a shipped game reads what it
+ * shipped with; br_file_set_loose_first changes it. Mounting validates the whole table of
+ * contents (sizes, offsets, paths, order) and each read checks the entry's hash, logging the
+ * pack and entry on failure. Reads are safe from any thread (the asset worker reads packs); mount
+ * and unmount on the main thread. */
 
 /* Reads a whole file. *bytes is NUL-terminated (not counted in *size); free with br_free. */
 bool br_file_read_all(br_engine *e, const char *path, void **bytes, size_t *size);
-/* Writes a whole file, replacing it. */
+/* Writes a whole loose file under the asset root (packs are read-only), replacing it. */
 bool br_file_write_all(br_engine *e, const char *path, const void *bytes, size_t size);
-/* True if the file exists. */
+/* True if the file exists, loose or in a mounted pack. */
 bool br_file_exists(br_engine *e, const char *path);
-/* Resolves `path` against the asset root into `out`. Absolute paths are copied unchanged. */
+/* Resolves `path` against the asset root into `out` (the loose file's path; normalised).
+ * Absolute paths are copied unchanged. False (logged) for a path escaping the root. */
 bool br_file_resolve(br_engine *e, const char *path, char *out, size_t out_size);
+/* Resolves `path` against the executable's folder (game.json and what it names). */
+bool br_file_resolve_exe(const char *path, char *out, size_t out_size);
+/* Resolves `path` against the working directory (command-line paths). */
+bool br_file_resolve_cwd(const char *path, char *out, size_t out_size);
+/* Normalises a relative asset path (rules above) into `out`. False if empty, absolute, too
+ * long, climbing above the root or holding control characters. */
+bool br_file_normalize(const char *path, char *out, size_t out_size);
+/* Copies a loose file's modification time (SDL_Time) into *out. False if no loose file. */
+bool br_file_get_modify_time(br_engine *e, const char *path, int64_t *out);
+/* Mounts a .brpack (path: absolute or relative to the asset root). False (logged with the pack
+ * and entry) if it is missing, truncated or hostile; nothing is mounted then. */
+bool br_file_mount_pack(br_engine *e, const char *path);
+/* Unmounts every pack. */
+void br_file_unmount_packs(br_engine *e);
+/* Number of mounted packs. */
+uint32_t br_file_pack_count(br_engine *e);
+/* Loose files before packs (true: the debug-build default) or packs first (release default). */
+void br_file_set_loose_first(br_engine *e, bool on);
+/* True if loose files win over packs. */
+bool br_file_loose_first(br_engine *e);
 
 /* ---- save data (SDL_Storage user storage: one folder per org + app)
  *
@@ -249,5 +294,9 @@ bool br_save_read(br_engine *e, const char *path, void **bytes, size_t *size);
 bool br_save_write(br_engine *e, const char *path, const void *bytes, size_t size);
 /* Deletes a save file. */
 bool br_save_remove(br_engine *e, const char *path);
+/* Mirrors every log line from now on into the save file `path` (user storage), written at
+ * shutdown and when the game cannot start; NULL turns it off. Release builds turn on "log.txt"
+ * for interactive runs (not --headless, --frames or play-tests). Keeps the first 1 MB. */
+void br_save_set_log_file(br_engine *e, const char *path);
 
 #endif
