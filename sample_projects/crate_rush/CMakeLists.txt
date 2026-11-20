@@ -8,7 +8,8 @@
 cmake_minimum_required(VERSION 3.24)
 project(crate_rush LANGUAGES C)
 
-if(NOT TARGET braty)
+find_package(braty CONFIG QUIET) # the prebuilt SDK, when -DCMAKE_PREFIX_PATH points at one
+if(NOT TARGET braty AND NOT braty_FOUND)
     # standalone: build the engine (library only) from the repository root
     set(BRATY_BUILD_TESTS OFF)
     set(BRATY_BUILD_EXAMPLES OFF)
@@ -20,7 +21,7 @@ file(GLOB CRATE_RUSH_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*
 add_executable(crate_rush ${CRATE_RUSH_SOURCES})
 set_target_properties(crate_rush PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
 target_compile_options(crate_rush PRIVATE $<IF:$<C_COMPILER_ID:MSVC>,/W4,-Wall;-Wextra;-Wpedantic>)
-target_link_libraries(crate_rush PRIVATE braty)
+target_link_libraries(crate_rush PRIVATE braty::braty)
 add_custom_command(TARGET crate_rush POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/data $<TARGET_FILE_DIR:crate_rush>
     COMMENT "crate_rush: copying data/ next to the executable")

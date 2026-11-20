@@ -1,0 +1,101 @@
+# The prebuilt SDK: one archive per toolchain with the engine and SDL3 as static libraries,
+# headers, a CMake package (find_package(braty)), tools/ and docs/ (docs/BUILDING.md "The SDK").
+#
+#   git tag v0.1.0 && git push origin v0.1.0     -> builds the four archives and publishes a
+#                                                   GitHub release with them
+#   gh workflow run release.yml                  -> builds and tests them, uploads artifacts only
+#
+# Every archive is tested before it is uploaded: Crate Rush is built against the SDK alone (the
+# engine is not compiled again) and plays its recorded round headless.
+#
+# One flavour: optimised, with the profiler and --playtest-stdin compiled in, so a game can be
+# developed and play-tested against it. ponytail: no separate "shipping" flavour and no MSVC
+# debug-runtime build; a game that needs either builds the engine from source (add_subdirectory).
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sdk:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-msvc,  os: windows-latest, shell: bash,        exe: .exe }
+          - { name: windows-mingw, os: windows-latest, shell: 'msys2 {0}', exe: .exe }
+          # the oldest Ubuntu runner: the libraries then work with its glibc and anything newer
+          - { name: linux-x64,     os: ubuntu-22.04,   shell: bash,        exe: '' }
+          - { name: macos-arm64,   os: macos-latest,   shell: bash,        exe: '' }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    env:
+      SDK: braty-sdk-${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}-${{ matrix.name }}
+      SDL_VIDEODRIVER: dummy
+      SDL_AUDIODRIVER: dummy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: matrix.name == 'windows-msvc'
+      - uses: msys2/setup-msys2@v2
+        if: matrix.name == 'windows-mingw'
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build pkg-config \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
+            libxkbcommon-dev libwayland-dev wayland-protocols libegl1-mesa-dev libdrm-dev libgbm-dev \
+            libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev libdbus-1-dev
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+      - name: Build the SDK
+        run: |
+          cmake -S . -B build/sdk -G Ninja -DCMAKE_BUILD_TYPE=Release -DBRATY_INSTALL=ON \
+            -DBRATY_BUILD_TESTS=OFF -DBRATY_BUILD_EXAMPLES=OFF -DBRATY_BUILD_SAMPLES=OFF
+          cmake --build build/sdk
+          cmake --install build/sdk --prefix "dist/$SDK"
+      - name: Build Crate Rush against the SDK and play its round
+        run: |
+          cmake -S sample_projects/crate_rush -B build/consume -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            "-DCMAKE_PREFIX_PATH=$PWD/dist/$SDK"
+          grep -q "braty_DIR:PATH=.*dist" build/consume/CMakeCache.txt   # the SDK was used, not the sources
+          cmake --build build/consume
+          build/consume/crate_rush${{ matrix.exe }} --headless --playtest sample_projects/crate_rush/playtest/round.json
+      - name: Archive
+        run: cd dist && cmake -E tar cf "$SDK.zip" --format=zip "$SDK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: braty-sdk-${{ matrix.name }}
+          path: dist/*.zip
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: sdk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/*.zip --repo "${{ github.repository }}" --title "Braty Engine ${{ github.ref_name }}" --generate-notes

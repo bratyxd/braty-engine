@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(braty LANGUAGES C)
+project(braty VERSION 0.1.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -9,6 +9,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(BRATY_BUILD_TESTS "Build tests/test_*.c" ON)
 option(BRATY_BUILD_EXAMPLES "Build examples/*.c" ON)
 option(BRATY_BUILD_SAMPLES "Build sample_projects/* (each has its own CMakeLists.txt)" ON)
+# The SDK: `cmake --install` gives headers, static libraries (engine + SDL3), a CMake package
+# (find_package(braty)), tools/ and docs/. Built by .github/workflows/release.yml (docs/BUILDING.md).
+option(BRATY_INSTALL "Install rules for the prebuilt SDK" OFF)
 # --playtest-stdin reads the process's stdin with C stdio (engine/src/playtest/br_playtest_stdin.c,
 # the one exception to "SDL only"); desktop only.
 if(ANDROID OR IOS OR EMSCRIPTEN)
@@ -27,6 +30,9 @@ else()
     set(SDL_SHARED OFF CACHE BOOL "" FORCE)
     set(SDL_STATIC ON CACHE BOOL "" FORCE)
     set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+    if(BRATY_INSTALL)
+        set(SDL_INSTALL ON CACHE BOOL "" FORCE) # SDL3 goes into the SDK next to the engine
+    endif()
     FetchContent_Declare(SDL3
         GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
         GIT_TAG release-3.4.20
@@ -37,7 +43,8 @@ endif()
 # --- third-party single-file libraries (no warnings flags: not our code)
 file(GLOB BR_THIRD_PARTY_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/*/*.c)
 add_library(braty_third_party STATIC ${BR_THIRD_PARTY_SOURCES})
-target_include_directories(braty_third_party PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+target_include_directories(braty_third_party PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party> $<INSTALL_INTERFACE:include/braty_third_party>)
 target_compile_definitions(braty_third_party PUBLIC STBI_NO_STDIO STBI_WRITE_NO_STDIO STB_VORBIS_NO_STDIO)
 if(NOT MSVC)
     target_link_libraries(braty_third_party PUBLIC m)
@@ -48,7 +55,9 @@ set(BR_WARNINGS "$<IF:$<C_COMPILER_ID:MSVC>,/W4,-Wall;-Wextra;-Wpedantic>")
 file(GLOB_RECURSE BR_ENGINE_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/engine/src/*.c)
 add_library(braty STATIC ${BR_ENGINE_SOURCES})
 target_include_directories(braty
-    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/engine/include ${CMAKE_CURRENT_SOURCE_DIR}/engine/shaders/compiled
+    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/engine/include>
+           $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/engine/shaders/compiled>
+           $<INSTALL_INTERFACE:include> $<INSTALL_INTERFACE:include/braty_shaders>
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/engine/src)
 target_compile_options(braty PRIVATE ${BR_WARNINGS})
 # No fused multiply-add: play-tests and goldens need the same float results on x64 and arm64.
@@ -68,22 +77,27 @@ if(BRATY_PLAYTEST_STDIN)
 endif()
 add_library(braty::braty ALIAS braty)   # games: add_subdirectory(<braty> ...) then link braty::braty
 
-# A shippable folder for a game: braty_install_game(<target> <data dir>) in the game's
-# CMakeLists, then `cmake --install <build dir> --prefix <folder>` gives <folder>/<target>/ with
-# the executable, the SDL3 runtime (when SDL is a shared library), assets.brpack (<data dir>/assets
-# packed by tools/pack_assets.py) and game.json (with "packs": ["assets.brpack"] added if it lists
-# none). One folder per game, so the root project installs both samples side by side.
+# braty_install_game(<target> <data dir>): a shippable folder for a game (cmake/BratyGame.cmake).
 set(BRATY_TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools CACHE INTERNAL "tools/ of the Braty engine")
-function(braty_install_game target data_dir)
-    find_package(Python3 COMPONENTS Interpreter QUIET)
-    install(TARGETS ${target} RUNTIME DESTINATION ${target})
-    install(FILES $<TARGET_RUNTIME_DLLS:${target}> DESTINATION ${target})
-    install(CODE "set(BR_PYTHON \"${Python3_EXECUTABLE}\")
-set(BR_TOOLS \"${BRATY_TOOLS_DIR}\")
-set(BR_DATA \"${data_dir}\")
-set(BR_DEST \"${target}\")")
-    install(SCRIPT ${BRATY_TOOLS_DIR}/install_game.cmake)
-endfunction()
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/BratyGame.cmake)
+
+# --- the SDK (BRATY_INSTALL): everything a game needs to build without the engine's sources
+if(BRATY_INSTALL)
+    include(CMakePackageConfigHelpers)
+    install(TARGETS braty braty_third_party EXPORT bratyTargets ARCHIVE DESTINATION lib)
+    install(DIRECTORY engine/include/braty DESTINATION include)
+    install(DIRECTORY engine/shaders/compiled/ DESTINATION include/braty_shaders FILES_MATCHING PATTERN "*.h")
+    install(DIRECTORY third_party/ DESTINATION include/braty_third_party FILES_MATCHING PATTERN "*.h")
+    install(EXPORT bratyTargets NAMESPACE braty:: DESTINATION lib/cmake/braty)
+    write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/bratyConfigVersion.cmake
+        VERSION ${PROJECT_VERSION} COMPATIBILITY SameMinorVersion)
+    install(FILES cmake/bratyConfig.cmake cmake/BratyGame.cmake ${CMAKE_CURRENT_BINARY_DIR}/bratyConfigVersion.cmake
+        DESTINATION lib/cmake/braty)
+    install(DIRECTORY tools/ DESTINATION tools PATTERN "__pycache__" EXCLUDE)
+    install(DIRECTORY docs/ DESTINATION docs)
+    install(DIRECTORY third_party/ DESTINATION licenses/third_party FILES_MATCHING PATTERN "LICENSE*" PATTERN "README*")
+    install(FILES README.md AGENTS.md LICENSE DESTINATION .)
+endif()
 
 # --- tests: every tests/test_*.c is one CTest executable
 if(BRATY_BUILD_TESTS)
