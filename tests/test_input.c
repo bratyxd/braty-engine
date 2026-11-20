@@ -136,11 +136,20 @@ static void test_injected_gamepad(br_engine *e)
     br_input_inject_gamepad_axis(e, 2, SDL_GAMEPAD_AXIS_LEFTY, 0.12f);
     BR_CHECK(br_input_gamepad_axis(e, 2, SDL_GAMEPAD_AXIS_LEFTX) > 0.0f);
     BR_CHECK(br_vec2_length(br_input_gamepad_stick(e, 2, BR_GAMEPAD_STICK_RIGHT)) == 0.0f);
+    /* triggers have their own dead zone: default inner 0.05, outer 0.95 */
     br_input_inject_gamepad_axis(e, 2, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 0.5f);
-    BR_CHECK(near(br_input_gamepad_axis(e, 2, SDL_GAMEPAD_AXIS_LEFT_TRIGGER), 0.4375f));
-    br_input_gamepad_set_deadzone(e, 0.0f, 1.0f);
     BR_CHECK(near(br_input_gamepad_axis(e, 2, SDL_GAMEPAD_AXIS_LEFT_TRIGGER), 0.5f));
+    br_input_inject_gamepad_axis(e, 2, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 0.1f);
+    BR_CHECK(near(br_input_gamepad_axis(e, 2, SDL_GAMEPAD_AXIS_LEFT_TRIGGER), 0.05f / 0.9f));
+    br_input_gamepad_set_trigger_deadzone(e, 0.0f, 1.0f);
+    BR_CHECK(near(br_input_gamepad_axis(e, 2, SDL_GAMEPAD_AXIS_LEFT_TRIGGER), 0.1f));
+    br_input_inject_gamepad_axis(e, 2, SDL_GAMEPAD_AXIS_LEFTY, 0.0f);
+    br_input_inject_gamepad_axis(e, 2, SDL_GAMEPAD_AXIS_LEFTX, 0.1f);
+    BR_CHECK(br_input_gamepad_axis(e, 2, SDL_GAMEPAD_AXIS_LEFTX) == 0.0f);   /* sticks unchanged */
+    br_input_gamepad_set_deadzone(e, 0.0f, 1.0f);
+    BR_CHECK(near(br_input_gamepad_axis(e, 2, SDL_GAMEPAD_AXIS_LEFTX), 0.1f));
     br_input_gamepad_set_deadzone(e, 0.15f, 0.95f);
+    br_input_gamepad_set_trigger_deadzone(e, 0.05f, 0.95f);
     br_input_inject_gamepad_axis(e, 2, SDL_GAMEPAD_AXIS_LEFTX, 0.0f);
     br_input_inject_gamepad_axis(e, 2, SDL_GAMEPAD_AXIS_LEFTY, 0.0f);
     br_input_inject_gamepad_axis(e, 2, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 0.0f);
@@ -156,6 +165,62 @@ static void test_injected_gamepad(br_engine *e)
     step(e);
 }
 
+/* Hot-plug edge cases of injected pads (R5 review): ids, phantom pads, held buttons, families. */
+static void test_gamepad_hotplug(br_engine *e)
+{
+    br_input_actions_clear(e);
+    br_input_action_bind_gamepad_button(e, "jump", SDL_GAMEPAD_BUTTON_SOUTH);
+
+    /* ids come from a counter: after assign 2 -> 0 a new pad in slot 2 does not share slot 0's id */
+    br_input_inject_gamepad_button(e, 2, SDL_GAMEPAD_BUTTON_SOUTH, true);
+    step(e);
+    BR_CHECK(br_input_gamepad_joined(e, 2) && !br_input_gamepad_joined(e, 0));
+    BR_CHECK(br_input_gamepad_assign(e, 2, 0));
+    br_input_inject_gamepad_button(e, 2, SDL_GAMEPAD_BUTTON_EAST, true);
+    step(e);
+    BR_CHECK(br_input_gamepad_down(e, 2, SDL_GAMEPAD_BUTTON_EAST) && !br_input_gamepad_down(e, 0, SDL_GAMEPAD_BUTTON_EAST));
+    br_gamepad_info a;
+    br_gamepad_info b;
+    BR_CHECK(br_input_gamepad_info(e, 0, &a) && br_input_gamepad_info(e, 2, &b) && a.id != b.id);
+    br_input_inject_gamepad_disconnect(e, 2);
+    BR_CHECK(br_input_gamepad_connected(e, 0) && !br_input_gamepad_connected(e, 2));
+
+    /* a pad unplugged while a button is held reports the release; nothing points at the slot */
+    BR_CHECK(br_input_action_down(e, "jump") && br_input_action_last_gamepad(e, "jump") == 0);
+    br_input_inject_gamepad_disconnect(e, 0);
+    step(e);
+    BR_CHECK(br_input_gamepad_released(e, 0, SDL_GAMEPAD_BUTTON_SOUTH));
+    BR_CHECK(br_input_action_released(e, "jump") && br_input_gamepad_left(e, 0));
+    BR_CHECK(br_input_last_gamepad(e) == -1 && br_input_action_last_gamepad(e, "jump") == -1);
+    step(e);
+    BR_CHECK(!br_input_gamepad_released(e, 0, SDL_GAMEPAD_BUTTON_SOUTH) && !br_input_gamepad_left(e, 0));
+
+    /* a release (or a zero axis) on an empty slot does not bring a pad back */
+    br_input_inject_gamepad_button(e, 1, SDL_GAMEPAD_BUTTON_SOUTH, true);
+    step(e);
+    br_input_inject_gamepad_disconnect(e, 1);
+    br_input_inject_gamepad_button(e, 1, SDL_GAMEPAD_BUTTON_SOUTH, false);
+    br_input_inject_gamepad_axis(e, 1, SDL_GAMEPAD_AXIS_LEFTX, 0.0f);
+    step(e);
+    BR_CHECK(!br_input_gamepad_connected(e, 1) && br_input_gamepad_count(e) == 0);
+
+    /* injected pads can carry a family; prompts keep it after the pad disconnects */
+    BR_CHECK(br_input_inject_gamepad_connect(e, 5, BR_GAMEPAD_TYPE_PS5));
+    BR_CHECK(!br_input_inject_gamepad_connect(e, 5, BR_GAMEPAD_TYPE_XBOXONE));   /* taken */
+    BR_CHECK(!br_input_inject_gamepad_connect(e, 6, BR_GAMEPAD_TYPE_COUNT));
+    step(e);
+    BR_CHECK(br_input_gamepad_joined(e, 5) && br_input_gamepad_type(e, 5) == BR_GAMEPAD_TYPE_PS5);
+    BR_CHECK(br_input_gamepad_info(e, 5, &a) && a.injected && a.family == BR_GAMEPAD_FAMILY_PLAYSTATION);
+    br_input_inject_gamepad_button(e, 5, SDL_GAMEPAD_BUTTON_SOUTH, true);
+    step(e);
+    br_glyph g;
+    BR_CHECK(br_input_glyph(e, "jump", &g) && SDL_strcmp(g.frame, "ps_cross") == 0);
+    br_input_inject_gamepad_disconnect(e, 5);
+    step(e);
+    BR_CHECK(br_input_glyph(e, "jump", &g) && SDL_strcmp(g.frame, "ps_cross") == 0 && SDL_strcmp(g.label, "Cross") == 0);
+    BR_CHECK(br_input_gamepad_count(e) == 0);
+}
+
 static void test_actions(br_engine *e)
 {
     br_input_actions_clear(e);
@@ -164,10 +229,10 @@ static void test_actions(br_engine *e)
     br_input_action_bind_gamepad_axis(e, "brake", SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 1);
     br_input_action_set_threshold(e, "brake", 0.8f);
 
-    /* threshold: 0.75 after the dead zone is not enough, 1.0 is */
-    br_input_inject_gamepad_axis(e, 1, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 0.75f);
+    /* threshold: 0.7 after the dead zone is not enough, 1.0 is */
+    br_input_inject_gamepad_axis(e, 1, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 0.68f);
     step(e);
-    BR_CHECK(near(br_input_action_value(e, "brake"), 0.75f) && !br_input_action_down(e, "brake"));
+    BR_CHECK(near(br_input_action_value(e, "brake"), 0.7f) && !br_input_action_down(e, "brake"));
     br_input_inject_gamepad_axis(e, 1, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 1.0f);
     step(e);
     BR_CHECK(br_input_action_pressed(e, "brake"));
@@ -539,6 +604,7 @@ int main(void)
     test_latch_priority(e);
     test_keyboard_mouse_text(e);
     test_injected_gamepad(e);
+    test_gamepad_hotplug(e);
     test_actions(e);
     test_contexts_and_rebinding(e);
     test_json_and_save(e);

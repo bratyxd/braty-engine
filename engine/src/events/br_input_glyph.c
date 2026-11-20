@@ -193,8 +193,8 @@ bool br_input_glyph(br_engine *e, const char *action, br_glyph *out)
     br_input_state *s = e->input;
     br_input_device device = s->last_device == BR_INPUT_DEVICE_GAMEPAD ? BR_INPUT_DEVICE_GAMEPAD
                                                                        : BR_INPUT_DEVICE_KEYBOARD_MOUSE;
-    br_gamepad_type type = s->last_gamepad >= 0 ? br_input_gamepad_type(e, s->last_gamepad) : BR_GAMEPAD_TYPE_GENERIC;
-    return br_input_glyph_for(e, action, device, type, out);
+    /* the type was taken when the pad was last used, so it survives the pad's disconnect */
+    return br_input_glyph_for(e, action, device, s->last_gamepad_type, out);
 }
 
 bool br_input_format_prompt(br_engine *e, const char *text, char *out, size_t out_size)

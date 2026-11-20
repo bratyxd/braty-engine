@@ -127,6 +127,15 @@ static void br_input_clear_slot(br_gamepad_slot *p)
     p->had_pad = had;
 }
 
+/* Remembers which pad was used last, and its type (glyph prompts keep that family after it goes). */
+static void br_input_pad_used(br_engine *e, br_gamepad_slot *pad)
+{
+    br_input_state *s = e->input;
+    s->last_device = BR_INPUT_DEVICE_GAMEPAD;
+    s->last_gamepad = (int)(pad - s->gamepads);
+    s->last_gamepad_type = br_input_gamepad_type(e, s->last_gamepad);
+}
+
 static void br_input_gamepad_added(br_input_state *s, SDL_JoystickID id)
 {
     if (br_input_find_pad(s, id) != NULL) {
@@ -144,23 +153,46 @@ static void br_input_gamepad_added(br_input_state *s, SDL_JoystickID id)
     p->pad = SDL_OpenGamepad(id);
     p->last_guid = guid;
     p->had_pad = true;
+    p->conn_edges = BR_EDGE_CONNECTED;
     if (p->pad != NULL) {
         SDL_SetGamepadPlayerIndex(p->pad, slot);
     }
     br_log_info("input: gamepad %d connected (%s)", slot, p->pad != NULL ? SDL_GetGamepadName(p->pad) : "unknown");
 }
 
+/* A pad that goes away while buttons are held reports them released (this frame's edges are
+ * kept), its axes read 0, and nothing keeps pointing at the empty slot. */
 static void br_input_gamepad_removed(br_input_state *s, SDL_JoystickID id)
 {
     br_gamepad_slot *pad = br_input_find_pad(s, id);
     if (pad == NULL) {
         return;
     }
+    int slot = (int)(pad - s->gamepads);
     if (pad->pad != NULL) {
         SDL_CloseGamepad(pad->pad);
     }
+    uint8_t edges[SDL_GAMEPAD_BUTTON_COUNT];
+    uint8_t frame_edges[SDL_GAMEPAD_BUTTON_COUNT];
+    for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; b++) {
+        edges[b] = (uint8_t)(pad->edges[b] | (pad->down[b] ? BR_EDGE_RELEASED : 0u));
+    }
+    SDL_memcpy(frame_edges, pad->frame_edges, sizeof(frame_edges));
+    uint8_t conn = pad->conn_edges;
     br_input_clear_slot(pad);
-    br_log_info("input: gamepad %d disconnected", (int)(pad - s->gamepads));
+    SDL_memcpy(pad->edges, edges, sizeof(edges));
+    SDL_memcpy(pad->frame_edges, frame_edges, sizeof(frame_edges));
+    pad->conn_edges = (uint8_t)(conn | BR_EDGE_DISCONNECTED);
+    if (s->last_gamepad == slot) {
+        s->last_gamepad = -1;
+    }
+    for (uint32_t i = 0; i < s->actions.count; i++) {
+        br_action *a = (br_action *)s->actions.data + i;
+        if (a->last_gamepad == slot) {
+            a->last_gamepad = -1;
+        }
+    }
+    br_log_info("input: gamepad %d disconnected", slot);
 }
 
 void br_input_gamepad_event(br_engine *e, const SDL_Event *ev)
@@ -179,8 +211,7 @@ void br_input_gamepad_event(br_engine *e, const SDL_Event *ev)
         if (pad != NULL && ev->gbutton.button < SDL_GAMEPAD_BUTTON_COUNT) {
             br_input_set_button(&pad->down[ev->gbutton.button], &pad->edges[ev->gbutton.button], ev->gbutton.down);
             if (ev->gbutton.down) {
-                s->last_device = BR_INPUT_DEVICE_GAMEPAD;
-                s->last_gamepad = (int)(pad - s->gamepads);
+                br_input_pad_used(e, pad);
             }
         }
         break;
@@ -191,8 +222,7 @@ void br_input_gamepad_event(br_engine *e, const SDL_Event *ev)
             float v = br_clampf((float)ev->gaxis.value / 32767.0f, -1.0f, 1.0f);
             pad->axes[ev->gaxis.axis] = v;
             if (v > 0.5f || v < -0.5f) {
-                s->last_device = BR_INPUT_DEVICE_GAMEPAD;
-                s->last_gamepad = (int)(pad - s->gamepads);
+                br_input_pad_used(e, pad);
             }
         }
         break;
@@ -207,6 +237,8 @@ void br_input_gamepad_latch(br_input_state *s)
     for (int i = 0; i < BR_INPUT_MAX_GAMEPADS; i++) {
         SDL_memcpy(s->gamepads[i].frame_edges, s->gamepads[i].edges, sizeof(s->gamepads[i].edges));
         SDL_memset(s->gamepads[i].edges, 0, sizeof(s->gamepads[i].edges));
+        s->gamepads[i].conn_frame_edges = s->gamepads[i].conn_edges;
+        s->gamepads[i].conn_edges = 0;
     }
 }
 
@@ -228,16 +260,16 @@ void br_input_gamepad_shutdown(br_input_state *s)
 
 /* ---- dead zones */
 
-static float br_input_deadzone(const br_input_state *s, float v)
+static float br_input_deadzone(float inner, float outer, float v)
 {
-    float range = s->deadzone_outer - s->deadzone_inner;
-    if (v <= s->deadzone_inner) {
+    float range = outer - inner;
+    if (v <= inner) {
         return 0.0f;
     }
-    if (v >= s->deadzone_outer || range <= 0.0f) {
+    if (v >= outer || range <= 0.0f) {
         return 1.0f;
     }
-    return (v - s->deadzone_inner) / range;
+    return (v - inner) / range;
 }
 
 static br_vec2 br_input_stick_of(const br_input_state *s, const br_gamepad_slot *pad, int axis_x)
@@ -248,13 +280,13 @@ static br_vec2 br_input_stick_of(const br_input_state *s, const br_gamepad_slot 
         return br_vec2_make(0.0f, 0.0f);
     }
     /* radial: the stick's length goes through the dead zone, its direction is kept */
-    return br_vec2_scale(raw, br_input_deadzone(s, len) / len);
+    return br_vec2_scale(raw, br_input_deadzone(s->deadzone_inner, s->deadzone_outer, len) / len);
 }
 
 float br_input_pad_axis(br_input_state *s, const br_gamepad_slot *pad, int axis)
 {
     if (axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) {
-        return br_input_deadzone(s, pad->axes[axis]);
+        return br_input_deadzone(s->trigger_deadzone_inner, s->trigger_deadzone_outer, pad->axes[axis]);
     }
     int base = axis == SDL_GAMEPAD_AXIS_LEFTX || axis == SDL_GAMEPAD_AXIS_LEFTY ? SDL_GAMEPAD_AXIS_LEFTX
                                                                                  : SDL_GAMEPAD_AXIS_RIGHTX;
@@ -266,6 +298,12 @@ void br_input_gamepad_set_deadzone(br_engine *e, float inner, float outer)
 {
     e->input->deadzone_inner = br_clampf(inner, 0.0f, 1.0f);
     e->input->deadzone_outer = br_clampf(outer, e->input->deadzone_inner, 1.0f);
+}
+
+void br_input_gamepad_set_trigger_deadzone(br_engine *e, float inner, float outer)
+{
+    e->input->trigger_deadzone_inner = br_clampf(inner, 0.0f, 1.0f);
+    e->input->trigger_deadzone_outer = br_clampf(outer, e->input->trigger_deadzone_inner, 1.0f);
 }
 
 /* ---- queries */
@@ -290,9 +328,10 @@ bool br_input_gamepad_down(br_engine *e, int slot, SDL_GamepadButton button)
     return pad != NULL && button >= 0 && button < SDL_GAMEPAD_BUTTON_COUNT && pad->down[button];
 }
 
+/* Edges are read from empty slots too: a pad unplugged while held still reports the release. */
 static bool br_input_pad_edge(br_engine *e, int slot, SDL_GamepadButton button, uint8_t bit)
 {
-    br_gamepad_slot *pad = br_input_pad_at(e, slot);
+    br_gamepad_slot *pad = slot >= 0 && slot < BR_INPUT_MAX_GAMEPADS ? &e->input->gamepads[slot] : NULL;
     return pad != NULL && button >= 0 && button < SDL_GAMEPAD_BUTTON_COUNT && (pad->frame_edges[button] & bit) != 0;
 }
 
@@ -304,6 +343,18 @@ bool br_input_gamepad_pressed(br_engine *e, int slot, SDL_GamepadButton button)
 bool br_input_gamepad_released(br_engine *e, int slot, SDL_GamepadButton button)
 {
     return br_input_pad_edge(e, slot, button, BR_EDGE_RELEASED);
+}
+
+bool br_input_gamepad_joined(br_engine *e, int slot)
+{
+    return slot >= 0 && slot < BR_INPUT_MAX_GAMEPADS &&
+           (e->input->gamepads[slot].conn_frame_edges & BR_EDGE_CONNECTED) != 0;
+}
+
+bool br_input_gamepad_left(br_engine *e, int slot)
+{
+    return slot >= 0 && slot < BR_INPUT_MAX_GAMEPADS &&
+           (e->input->gamepads[slot].conn_frame_edges & BR_EDGE_DISCONNECTED) != 0;
 }
 
 float br_input_gamepad_axis(br_engine *e, int slot, SDL_GamepadAxis axis)
@@ -337,8 +388,11 @@ br_vec2 br_input_gamepad_stick(br_engine *e, int slot, br_gamepad_stick stick)
 br_gamepad_type br_input_gamepad_type(br_engine *e, int slot)
 {
     br_gamepad_slot *pad = br_input_pad_at(e, slot);
-    if (pad == NULL || pad->pad == NULL) {
+    if (pad == NULL) {
         return BR_GAMEPAD_TYPE_GENERIC;
+    }
+    if (pad->pad == NULL) {
+        return pad->injected_type;
     }
     return br_input_gamepad_type_from_sdl(SDL_GetGamepadType(pad->pad));
 }
@@ -498,8 +552,10 @@ static void br_input_send_device(br_engine *e, SDL_EventType type, SDL_JoystickI
     br_input_send(e, &ev);
 }
 
-/* The id of the pad in `slot`, creating an injected pad there if empty (0 on a bad slot). */
-static SDL_JoystickID br_input_injected_id(br_engine *e, int slot)
+/* The id of the pad in `slot`. An empty slot gets an injected pad only when `create` (a press, a
+ * non-zero axis, a connect): a release arriving after a disconnect must not bring a pad back.
+ * 0 on a bad or empty slot. */
+static SDL_JoystickID br_input_injected_id(br_engine *e, int slot, bool create, br_gamepad_type type)
 {
     br_input_state *s = e->input;
     if (slot < 0 || slot >= BR_INPUT_MAX_GAMEPADS) {
@@ -507,19 +563,35 @@ static SDL_JoystickID br_input_injected_id(br_engine *e, int slot)
         return 0;
     }
     br_gamepad_slot *p = &s->gamepads[slot];
-    if (p->id == 0) {
+    if (p->id == 0 && create) {
         br_input_clear_slot(p);
-        p->id = (SDL_JoystickID)(BR_INPUT_INJECTED_ID_BASE + (uint32_t)slot);
+        p->id = (SDL_JoystickID)(BR_INPUT_INJECTED_ID_BASE + s->next_injected_id);
+        s->next_injected_id = (s->next_injected_id + 1u) & 0x0FFFFFFFu;
         p->injected = true;
+        p->injected_type = type;
         p->had_pad = true;
+        p->conn_edges = BR_EDGE_CONNECTED;
         br_log_info("input: injected gamepad in slot %d", slot);
     }
     return p->id;
 }
 
+bool br_input_inject_gamepad_connect(br_engine *e, int slot, br_gamepad_type type)
+{
+    if ((int)type < 0 || type >= BR_GAMEPAD_TYPE_COUNT) {
+        br_log_error("input: inject gamepad connect: bad type %d", (int)type);
+        return false;
+    }
+    if (br_input_pad_at(e, slot) != NULL) {
+        br_log_error("input: inject gamepad connect: slot %d is taken", slot);
+        return false;
+    }
+    return br_input_injected_id(e, slot, true, type) != 0;
+}
+
 void br_input_inject_gamepad_button(br_engine *e, int slot, SDL_GamepadButton button, bool down)
 {
-    SDL_JoystickID id = br_input_injected_id(e, slot);
+    SDL_JoystickID id = br_input_injected_id(e, slot, down, BR_GAMEPAD_TYPE_GENERIC);
     if (id == 0) {
         return;
     }
@@ -534,7 +606,7 @@ void br_input_inject_gamepad_button(br_engine *e, int slot, SDL_GamepadButton bu
 
 void br_input_inject_gamepad_axis(br_engine *e, int slot, SDL_GamepadAxis axis, float value)
 {
-    SDL_JoystickID id = br_input_injected_id(e, slot);
+    SDL_JoystickID id = br_input_injected_id(e, slot, value != 0.0f, BR_GAMEPAD_TYPE_GENERIC);
     if (id == 0) {
         return;
     }
