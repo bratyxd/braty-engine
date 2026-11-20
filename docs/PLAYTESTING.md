@@ -148,7 +148,7 @@ bring the pad back. A pad of a recorded session comes back as
 |---|---|
 | `ship:position` | Node labelled `ship` (searched in the whole stage), built-in property. Built-ins: `position`, `x`, `y`, `scale`, `rotation` (radians), `alpha`, `visible`, `tint`, `z_index`, `label`, `type`, `children` (count), `world_position`, `bounds` ([x, y, w, h], stage coordinates: window coordinates unless a 2D camera moves the stage), `exists`. |
 | `final_score:text` | Any other key of the node's scene-file form (`text`, `texture`, `style`, ...). |
-| `ship:pilot.carrying` | Component `pilot` of node `ship`, field `carrying` (fields listed in the game's `br_field_desc`). |
+| `ship:pilot.carrying` | Component `pilot` of node `ship`, field `carrying` (fields listed in the game's `br_field_desc`). Enums read and write by name, text fields take strings of any length, arrays are lists (`ship:pilot.cargo.2` is one element). |
 | `level_camera:camera.follow.offset3d.x` | A component whose name has a dot: after the colon the longest run of parts that names a registered component is the component (`camera.follow`), the next part its field, then an optional element. Names without a dot read as before. |
 | `ship:position.x` | One element: `.x .y .z .w` (or `.0 .1 ...`). Works for `get` and `set`. |
 | `game:score` | A struct the game exposed with `br_playtest_expose(e, "game", fields, count, &state)`. |

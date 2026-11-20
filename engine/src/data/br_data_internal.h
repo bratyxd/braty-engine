@@ -41,6 +41,7 @@ typedef struct br_data_mesh3d {
 
 typedef enum br_data_ref_kind {
     BR_DATA_REF_FIELD,   /* component field of type BR_FIELD_NODE */
+    BR_DATA_REF_FIELD3D, /* component field of type BR_FIELD_NODE3D (a 3D label in a view3d) */
     BR_DATA_REF_MASK,    /* "mask": the mask node */
     BR_DATA_REF_LAYER    /* "layer": the render layer to attach to */
 } br_data_ref_kind;
@@ -188,6 +189,21 @@ br_node br_data_build_node(br_engine *e, const cJSON *json, br_node parent);
 void br_data_apply_node(br_engine *e, br_node n, const cJSON *json, bool build_children);
 /* Resolves queued references against root (then the stage) and clears the queue. */
 void br_data_resolve_refs(br_engine *e, br_node root);
+
+/* Fills a BR_FIELD_NODE / BR_FIELD_NODE3D field (field->offset inside base) from a label. Each
+ * caller resolves differently: scene files defer to the end of the load, glTF extras search the
+ * instance, play-tests search the stage. False (error at the current path) if not found. */
+typedef bool (*br_data_node_field_fn)(br_engine *e, const br_field_desc *field, uint8_t *base, const char *label,
+                                      void *user);
+/* One JSON value into one field of the struct at base (every field type; array elements one by
+ * one, node labels through node_fn). Errors at the current JSON path. */
+bool br_data_read_field(br_engine *e, const br_field_desc *field, uint8_t *base, const cJSON *value,
+                        br_data_node_field_fn node_fn, void *user);
+/* The br_data_node_field_fn of 2D components: during a load a deferred reference (user = a
+ * br_data_ref with node and component_id), otherwise the label searched on the stage now. */
+bool br_data_label_node_field(br_engine *e, const br_field_desc *field, uint8_t *base, const char *label, void *user);
+/* The 3D node labelled `label` in any view3d under root, then under the stage; zero if none. */
+br_node3d br_data_find_node3d(br_engine *e, br_node root, const char *label);
 
 /* Loads a scene file whose asset references go into `owner` (a br_scene's group) instead of a
  * group of the root node. Hot reload watches it as usual. */

@@ -86,10 +86,20 @@ typedef struct br_node_type_entry {
     br_array owners;             /* uint32_t node index per data row */
 } br_node_type_entry;
 
+/* What the three br_field_desc members cannot say (br_component_set_enum / _set_array). */
+typedef struct br_field_extra {
+    char        **enum_names;    /* BR_FIELD_ENUM, or an array of enums: value i = enum_names[i] */
+    uint32_t      enum_count;
+    br_field_type element_type;  /* BR_FIELD_ARRAY */
+    uint32_t      capacity;      /* BR_FIELD_ARRAY: 0 until described */
+    size_t        count_offset;  /* BR_FIELD_ARRAY: the uint32_t element count */
+} br_field_extra;
+
 typedef struct br_component_entry {
     br_component_desc desc;      /* desc.name / desc.fields point at the copies below */
     char          *name;
     br_field_desc *fields;
+    br_field_extra *extras;      /* one per field, zeroed */
     br_array data;               /* desc.size bytes per instance */
     br_array owners;             /* br_node per instance */
     br_array sparse;             /* uint32_t per node index: dense index + 1, 0 = none */
@@ -195,6 +205,11 @@ void br_scene_bounds(br_scene_state *s, br_engine *e, uint32_t index, br_mat3 m,
 void br_component_remove_all(br_scene_state *s, uint32_t index);
 /* Frees all component storage (shutdown). */
 void br_component_free_all(br_scene_state *s);
+/* Frees the BR_FIELD_TEXT values of one component row (2D or 3D) and NULLs them. */
+void br_component_release_row(const br_component_desc *desc, void *row);
+/* The extra description of a field of a registered component (field points into its desc's
+ * field list); NULL for any other field (a play-test exposed struct, a copy). */
+const br_field_extra *br_component_field_extra(br_engine *e, const br_field_desc *field);
 
 /* ---- br_sprite.c */
 

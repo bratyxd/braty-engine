@@ -223,7 +223,9 @@ animator. Task 18 keys: `"source": "kit.glb#Node"`, `"camera"` (true / node name
   environment by hand (Crate Rush `src/flow.c`, `cr_level_setup`; API_REVIEW items 23-24).
 - Batching merges repeated meshes inside one instance; kit parts placed as separate instances
   are separate draws (`ponytail:` limit; a cross-instance merge pass would remove it).
-- A 3D component's `BR_FIELD_NODE` field holds a `br_node3d`; extras are parsed per instance.
+- A 3D component's `BR_FIELD_NODE` (or `BR_FIELD_NODE3D`) field holds a `br_node3d`; extras are
+  parsed per instance. Every field type reads from extras (text, enum names, vec4 / quat,
+  arrays as JSON lists); Blender custom properties that are arrays export as JSON lists.
 - Texture colour spaces per slot: an image feeding base colour / emissive becomes an
   `R8G8B8A8_UNORM_SRGB` texture premultiplied in linear space (the sampler decodes before
   filtering and mip generation; the shader unpremultiplies); one feeding normal /

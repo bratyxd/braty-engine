@@ -402,12 +402,26 @@ from code.
 | `BR_FIELD_STRING` | string, at most 63 bytes |
 | `BR_FIELD_ASSET` | asset path (a sound, a texture, a scene...), at most 63 bytes; not loaded automatically |
 | `BR_FIELD_NODE` | label of another node, or `null` |
+| `BR_FIELD_TEXT` | string of any length, or `null` (heap; freed with the component) |
+| `BR_FIELD_ENUM` | one of the names given to `br_component_set_enum`, or its index |
+| `BR_FIELD_VEC4` | `[x, y, z, w]` |
+| `BR_FIELD_QUAT` | `[x, y, z, w]` (a quaternion, not normalised for you) |
+| `BR_FIELD_NODE3D` | label of a 3D node in a view3d (2D components), or `null` |
+| `BR_FIELD_ARRAY` | `[ element, ... ]`, at most the capacity given to `br_component_set_array`; elements as above |
 
 <!-- check: fields -->
 ```json
 "components": {
   "enemy": { "alive": true, "hp": 3, "speed": 120.5, "home": [400, 300], "axis": [0, 1, 0],
              "flash": "#ff0000", "name": "grunt", "hit_sound": "sounds/hit.wav", "target": "hero" }
+}
+```
+<!-- check: fields -->
+```json
+"components": {
+  "patrol": { "line": "A sentence longer than sixty-three bytes is fine in a text field, in any language.",
+              "mode": "chase", "glow": [1, 0.5, 0, 1], "facing": [0, 0.7071, 0, 0.7071],
+              "points": [[0, 0], [120, 0], [120, 80]], "moods": ["idle", "chase"] }
 }
 ```
 Components must be registered before the file is loaded. Fields left out keep their value
@@ -592,7 +606,8 @@ the animator's node: `"body/arm_r:rotation"`, `":alpha"` (the node itself), `"#3
 (glTF node 3 of a `model3d`), `"hp.value"` (component field). Properties: `position` `x` `y`
 `scale` `rotation` `skew` `pivot` `alpha` `tint` `visible` `z_index` `sprite.texture`
 `sprite.frame` (2D); `position` `rotation` `scale` `visible` `material.*` `morph_weights` (3D);
-any float / int / bool / vec2 / vec3 / colour component field; more from
+any float / int / bool / enum / vec2 / vec3 / vec4 / quat / colour component field, or one element of
+an array field (`"patrol.weights.2"`); more from
 `br_anim_property_register` (`docs/agents/animation.md`).
 
 <!-- check: anim animation/hero.anim.json -->

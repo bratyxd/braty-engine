@@ -186,6 +186,19 @@ static bool br_pt_write_field(br_engine *e, const br_field_desc *field, void *ba
         }
         break;
     }
+    default: {
+        /* text, enum, vec4, quat, node3d, arrays: the scene-file reader (errors name "playtest") */
+        br_data_scope saved;
+        br_data_begin_file(e, "playtest", &saved);
+        size_t mark = br_data_path_push_key(e, path);
+        bool ok = br_data_read_field(e, field, (uint8_t *)base, value, br_data_label_node_field, NULL);
+        br_data_path_pop(e, mark);
+        br_data_end_file(e, &saved);
+        if (ok) {
+            return true;
+        }
+        return br_playtest_fail(e, "path '%s': value does not fit field '%s' (see the log)", path, field->name);
+    }
     }
     return br_playtest_fail(e, "path '%s': value does not fit field '%s' (bool, number, [x,y], [x,y,z], "
                                "\"#rrggbb\", string or node label)",

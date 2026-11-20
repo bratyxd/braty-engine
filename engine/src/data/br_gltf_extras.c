@@ -37,112 +37,36 @@ static bool br_gltf_bool(const cJSON *v, bool *out)
     return false;
 }
 
-static bool br_gltf_vec3(br_engine *e, const cJSON *v, br_vec3 *out)
+/* Node fields of 3D components: a node name under the instance (search_root itself included). */
+static bool br_gltf_node_field(br_engine *e, const br_field_desc *field, uint8_t *base, const char *label, void *user)
 {
-    float f[3] = { 0.0f, 0.0f, 0.0f };
-    bool ok = cJSON_IsArray(v) && cJSON_GetArraySize(v) == 3;
-    for (int i = 0; ok && i < 3; i++) {
-        const cJSON *item = cJSON_GetArrayItem(v, i);
-        ok = cJSON_IsNumber(item);
-        f[i] = ok ? (float)item->valuedouble : 0.0f;
-    }
-    if (!ok) {
-        br_data_errorf(e, "expected [x, y, z]");
+    br_node3d search_root = *(const br_node3d *)user;
+    br_node3d target = br_str_equal(br_node3d_label(e, search_root), label)
+                           ? search_root
+                           : br_node3d_find_by_label(e, search_root, label, true);
+    if (!br_node3d_valid(e, target)) {
+        br_data_errorf(e, "no node named '%s'", label);
         return false;
     }
-    *out = br_vec3_make(f[0], f[1], f[2]);
+    SDL_memcpy(base + field->offset, &target, sizeof(target));
     return true;
 }
 
-/* One value into one field of a component row (errors at the current JSON path). */
+/* One value into one field of a component row (errors at the current JSON path). A 3D component's
+ * BR_FIELD_NODE field holds a br_node3d, like BR_FIELD_NODE3D. */
 static bool br_gltf_read_field(br_engine *e, uint8_t *base, const br_field_desc *field, const cJSON *value,
                                br_node3d search_root)
 {
-    void *p = base + field->offset;
-    switch (field->type) {
-    case BR_FIELD_BOOL: {
+    if (field->type == BR_FIELD_BOOL) {
         bool b = false;
         if (!br_gltf_bool(value, &b)) {
             br_data_errorf(e, "expected true or false");
             return false;
         }
-        SDL_memcpy(p, &b, sizeof(b));
+        SDL_memcpy(base + field->offset, &b, sizeof(b));
         return true;
     }
-    case BR_FIELD_INT: {
-        int whole = 0;
-        if (!br_data_value_int(e, value, INT32_MIN, INT32_MAX, &whole)) {
-            return false;
-        }
-        int32_t i = (int32_t)whole;
-        SDL_memcpy(p, &i, sizeof(i));
-        return true;
-    }
-    case BR_FIELD_FLOAT: {
-        float f;
-        if (!br_data_value_float(e, value, &f)) {
-            return false;
-        }
-        SDL_memcpy(p, &f, sizeof(f));
-        return true;
-    }
-    case BR_FIELD_VEC2: {
-        br_vec2 v;
-        if (!br_data_value_vec2(e, value, &v)) {
-            return false;
-        }
-        SDL_memcpy(p, &v, sizeof(v));
-        return true;
-    }
-    case BR_FIELD_VEC3: {
-        br_vec3 v;
-        if (!br_gltf_vec3(e, value, &v)) {
-            return false;
-        }
-        SDL_memcpy(p, &v, sizeof(v));
-        return true;
-    }
-    case BR_FIELD_COLOR: {
-        br_color c;
-        if (!br_data_value_color(e, value, &c)) {
-            return false;
-        }
-        SDL_memcpy(p, &c, sizeof(c));
-        return true;
-    }
-    case BR_FIELD_STRING:
-    case BR_FIELD_ASSET:
-        if (!cJSON_IsString(value)) {
-            br_data_errorf(e, field->type == BR_FIELD_ASSET ? "expected an asset path" : "expected a string");
-            return false;
-        }
-        if (!br_str_copy(p, BR_FIELD_STRING_SIZE, value->valuestring)) {
-            br_data_errorf(e, "string longer than %d bytes", BR_FIELD_STRING_SIZE - 1);
-            return false;
-        }
-        return true;
-    case BR_FIELD_NODE: {
-        /* a 3D component's node field holds a br_node3d (same layout as br_node) */
-        br_node3d target = { 0, 0 };
-        if (!cJSON_IsNull(value)) {
-            if (!cJSON_IsString(value)) {
-                br_data_errorf(e, "expected a node name (string) or null");
-                return false;
-            }
-            target = br_str_equal(br_node3d_label(e, search_root), value->valuestring)
-                         ? search_root
-                         : br_node3d_find_by_label(e, search_root, value->valuestring, true);
-            if (!br_node3d_valid(e, target)) {
-                br_data_errorf(e, "no node named '%s'", value->valuestring);
-                return false;
-            }
-        }
-        SDL_memcpy(p, &target, sizeof(target));
-        return true;
-    }
-    }
-    br_data_errorf(e, "unknown field type %d", (int)field->type);
-    return false;
+    return br_data_read_field(e, field, base, value, br_gltf_node_field, &search_root);
 }
 
 static const br_field_desc *br_gltf_find_field(const br_component_desc *desc, const char *name)

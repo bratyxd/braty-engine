@@ -253,6 +253,16 @@ typedef struct enemy {
     char     hit_sound[BR_FIELD_STRING_SIZE];
     br_node  target;
 } enemy;
+typedef struct patrol {
+    char    *line;
+    int32_t  mode;
+    br_vec4  glow;
+    br_quat  facing;
+    uint32_t point_count;
+    br_vec2  points[8];
+    uint32_t mood_count;
+    int32_t  moods[4];
+} patrol;
 
 static void register_components(br_engine *e)
 {
@@ -284,6 +294,22 @@ static void register_components(br_engine *e)
     br_component_register(e, &d2);
     br_component_register(e, &d3);
     br_component_register(e, &d4);
+
+    static const br_field_desc patrol_fields[] = {
+        { "line", BR_FIELD_TEXT, offsetof(patrol, line) },
+        { "mode", BR_FIELD_ENUM, offsetof(patrol, mode) },
+        { "glow", BR_FIELD_VEC4, offsetof(patrol, glow) },
+        { "facing", BR_FIELD_QUAT, offsetof(patrol, facing) },
+        { "points", BR_FIELD_ARRAY, offsetof(patrol, points) },
+        { "moods", BR_FIELD_ARRAY, offsetof(patrol, moods) },
+    };
+    static const char *const modes[] = { "idle", "patrol", "chase" };
+    br_component_desc d5 = { "patrol", sizeof(patrol), patrol_fields, BR_ARRAY_COUNT(patrol_fields) };
+    uint32_t id = br_component_register(e, &d5);
+    br_component_set_enum(e, id, "mode", modes, 3);
+    br_component_set_array(e, id, "points", BR_FIELD_VEC2, 8, offsetof(patrol, point_count));
+    br_component_set_array(e, id, "moods", BR_FIELD_ENUM, 4, offsetof(patrol, mood_count));
+    br_component_set_enum(e, id, "moods", modes, 3);
 }
 
 int main(void)

@@ -2,6 +2,8 @@
  * nodes), the "gltf.collider" component, and asset groups owned by 3D instances. */
 #include "three_d/br_gltf_internal.h"
 
+#include "scene/br_scene_internal.h" /* br_component_release_row */
+
 /* The 3D rows of a component id, created on first use (NULL for an unknown id). */
 static br_component3d_set *br_component3d_set_get(br_engine *e, uint32_t component_id, bool create)
 {
@@ -73,7 +75,7 @@ void *br_component3d_get(br_engine *e, br_node3d n, uint32_t component_id)
 }
 
 /* Swap-remove of the row of node index `index` (any generation). */
-static void br_component3d_remove_index(br_component3d_set *set, uint32_t index)
+static void br_component3d_remove_index(br_engine *e, uint32_t component_id, br_component3d_set *set, uint32_t index)
 {
     uint32_t *slot = br_array_at(&set->sparse, index);
     if (slot == NULL || *slot == 0) {
@@ -81,6 +83,7 @@ static void br_component3d_remove_index(br_component3d_set *set, uint32_t index)
     }
     uint32_t row = *slot - 1;
     uint32_t last = set->data.count - 1;
+    br_component_release_row(br_component_desc_get(e, component_id), br_array_at(&set->data, row));
     if (row != last) {
         SDL_memcpy(br_array_at(&set->data, row), br_array_at(&set->data, last), set->data.elem_size);
         br_node3d moved = *(br_node3d *)br_array_at(&set->owners, last);
@@ -96,7 +99,7 @@ void br_component3d_remove(br_engine *e, br_node3d n, uint32_t component_id)
 {
     br_component3d_set *set = br_component3d_set_get(e, component_id, false);
     if (set != NULL && br_component3d_slot(set, n) != 0) {
-        br_component3d_remove_index(set, n.index);
+        br_component3d_remove_index(e, component_id, set, n.index);
     }
 }
 
@@ -147,7 +150,7 @@ static void br_gltf_node3d_freed(br_engine *e, br_node3d n, void *user)
         return; /* shutdown: the assets module frees every group */
     }
     for (uint32_t i = 0; i < s->components3d.count; i++) {
-        br_component3d_remove_index(br_array_at(&s->components3d, i), n.index);
+        br_component3d_remove_index(e, i + 1, br_array_at(&s->components3d, i), n.index);
     }
     br_gltf_owned *owned = br_array_at(&s->owned, n.index);
     if (owned != NULL && owned->generation == n.generation && owned->group != NULL) {
@@ -177,6 +180,9 @@ void br_gltf_components_free(br_engine *e)
     br_gltf_state *s = e->gltf;
     for (uint32_t i = 0; i < s->components3d.count; i++) {
         br_component3d_set *set = br_array_at(&s->components3d, i);
+        for (uint32_t r = 0; r < set->data.count; r++) {
+            br_component_release_row(br_component_desc_get(e, i + 1), br_array_at(&set->data, r));
+        }
         br_array_free(&set->data);
         br_array_free(&set->owners);
         br_array_free(&set->sparse);
