@@ -125,6 +125,10 @@ void br_app_pace_frame(br_engine *e);
 /* br_engine_screenshot, averaging n x n pixel blocks first (golden images stay small). */
 bool br_engine_screenshot_downsampled(br_engine *e, const char *path, uint32_t downsample);
 
+/* Destroys every 3D and 2D node (their on_destroy and destroy listeners run). Called by
+ * br_app_quit before desc.shutdown and by br_engine_destroy before any shutdown callback. */
+void br_engine_destroy_nodes(br_engine *e);
+
 /* Registers every built-in module. Defined in br_builtin.c (owned by Task 2). */
 void br_builtin_register(br_engine *e);
 

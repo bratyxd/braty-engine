@@ -39,7 +39,7 @@ next frame.
 | `br_system_add(e, name, phase, priority, fn, user)` | Register behaviour; false (logged) for a duplicate name, NULL fn or bad phase. |
 | `br_system_set_enabled(e, name, on)` | Pause a system. |
 | `br_system_remove(e, name)` | Remove a system (safe inside a frame: it stops at once, leaves the list after the frame). |
-| `br_engine_on_shutdown(e, fn, user)` | Free your state (runs before the GPU is destroyed). |
+| `br_engine_on_shutdown(e, fn, user)` | Free your state (runs after every node was destroyed, before the GPU is destroyed). |
 | `br_engine_add_event_handler(e, fn, user)` | Raw SDL events (input modules). |
 | `br_ticker_delta/elapsed/fps`, `br_ticker_set_speed/max_fps/min_fps` | Time. |
 | `br_engine_window_size`, `br_engine_pixel_size`, `br_engine_pixel_density` | Layout vs pixels. |
@@ -92,7 +92,10 @@ average error at 60 / 144.
 ## Gotchas
 
 - Include `braty_main.h` in exactly one `.c` file; it defines the SDL main callbacks.
-- No globals: hang state off the `user` pointer, free it in a `br_engine_on_shutdown` callback.
+- No globals: hang state off the `user` pointer, free it in a `br_engine_on_shutdown` callback
+  (or `desc.shutdown`). Exit order: every 3D and 2D node is destroyed first (their destroy
+  listeners still see your state), then `desc.shutdown`, then shutdown callbacks in reverse order
+  of adding, then the GPU and window.
 - Module state lives in `struct br_engine` (`engine/src/app/br_engine_internal.h`): one pointer
   per module (`e->scene`, `e->render`, ...). A module defines its own `struct br_<module>_state`
   in its `_internal.h`, allocates it in `br_<module>_register(e)` (called from `br_builtin.c`)

@@ -4,7 +4,7 @@
  *   1. creates the br_engine and the window + GPU, registers built-in modules,
  *   2. calls desc.init(e), where the game registers components and systems,
  *   3. every frame: computes dt (ticker), runs all systems in phase order, presents,
- *   4. calls desc.shutdown(e) and destroys everything.
+ *   4. destroys every node, calls desc.shutdown(e), then destroys everything else.
  *
  * Systems run in phase order, then by ascending priority, then in the order they were added:
  *   BR_PHASE_INPUT, FIXED_UPDATE, UPDATE, LATE_UPDATE, PRE_RENDER
@@ -114,7 +114,8 @@ bool br_system_get_info(br_engine *e, uint32_t index, br_system_info *out);
 /* Creates a headless engine (no window, no GPU): enough for tests and tools.
  * title names the save-data folder; asset_root as in br_app_desc (NULL = executable dir). */
 br_engine *br_engine_create(const char *title, const char *asset_root);
-/* Runs shutdown callbacks (reverse order), destroys GPU and window, frees the engine. */
+/* Destroys every 3D and 2D node (destroy listeners run), then runs shutdown callbacks (reverse
+ * order), destroys GPU and window, frees the engine. */
 void br_engine_destroy(br_engine *e);
 /* Opens a resizable window and the GPU device. gpu_driver may be NULL. */
 bool br_engine_open_window(br_engine *e, int width, int height, const char *gpu_driver);
@@ -166,7 +167,8 @@ void br_engine_add_event_handler(br_engine *e, br_event_fn fn, void *user);
 
 /* Callback run by br_engine_destroy (modules free their state here). */
 typedef void (*br_shutdown_fn)(br_engine *e, void *user);
-/* Adds a shutdown callback. They run in reverse order of adding, before the GPU is destroyed. */
+/* Adds a shutdown callback. They run in reverse order of adding, after every node was destroyed
+ * and before the GPU is destroyed. */
 void br_engine_on_shutdown(br_engine *e, br_shutdown_fn fn, void *user);
 
 /* ---- ticker (PixiJS Ticker) */

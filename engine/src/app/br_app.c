@@ -339,6 +339,7 @@ void br_app_quit(void *appstate, SDL_AppResult result)
         return;
     }
     if (e->game_shutdown != NULL) {
+        br_engine_destroy_nodes(e); /* desc.shutdown may free state that node listeners use */
         e->game_shutdown(e);
     }
     br_engine_destroy(e);

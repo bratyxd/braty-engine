@@ -2,6 +2,8 @@
 #include "app/br_engine_internal.h"
 #include "gpu/br_gpu_internal.h"
 #include "braty/br_profiler.h"
+#include "scene/br_scene_internal.h"
+#include "three_d/br_three_d_internal.h"
 
 /* ---- lifetime */
 
@@ -67,11 +69,20 @@ static void br_free_system_names(br_array *systems)
     br_array_free(systems);
 }
 
+void br_engine_destroy_nodes(br_engine *e)
+{
+    /* 3D first: a canvas3d's on_destroy destroys its 2D root */
+    br_three_d_shutdown_nodes(e, NULL);
+    br_scene_shutdown_nodes(e, NULL);
+}
+
 void br_engine_destroy(br_engine *e)
 {
     if (e == NULL) {
         return;
     }
+    /* before any shutdown callback: node destroy listeners still see live module and game state */
+    br_engine_destroy_nodes(e);
     for (uint32_t i = e->shutdown_handlers.count; i > 0; i--) {
         br_shutdown_entry *h = br_array_at(&e->shutdown_handlers, i - 1);
         h->fn(e, h->user);

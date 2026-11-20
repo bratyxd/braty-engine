@@ -260,8 +260,84 @@ static void test_deterministic(void)
     br_app_quit(state, SDL_APP_SUCCESS);
 }
 
+/* R1: nodes are torn down before any game shutdown callback (and before desc.shutdown), so a
+ * node-destroy listener never sees game state that was already freed. */
+typedef struct teardown_probe {
+    bool dead;             /* "freed" by the game's shutdown */
+    int  calls_2d;
+    int  calls_3d;
+    int  calls_after_death;
+} teardown_probe;
+
+static teardown_probe s_teardown;
+
+static void teardown_listener_2d(br_engine *e, br_node n, void *user)
+{
+    (void)e;
+    (void)n;
+    teardown_probe *p = user;
+    p->calls_2d++;
+    p->calls_after_death += p->dead ? 1 : 0;
+}
+
+static void teardown_listener_3d(br_engine *e, br_node3d n, void *user)
+{
+    (void)e;
+    (void)n;
+    teardown_probe *p = user;
+    p->calls_3d++;
+    p->calls_after_death += p->dead ? 1 : 0;
+}
+
+static void teardown_kill(br_engine *e, void *user)
+{
+    (void)e;
+    ((teardown_probe *)user)->dead = true;
+}
+
+static bool teardown_init(br_engine *e)
+{
+    br_scene_on_node_destroy(e, teardown_listener_2d, &s_teardown);
+    br_node3d_on_destroy(e, teardown_listener_3d, &s_teardown);
+    br_node_add_child(e, br_scene_root(e), br_node_create_container(e));
+    br_node3d_create_group(e);
+    return true;
+}
+
+static void teardown_desc_shutdown(br_engine *e)
+{
+    teardown_kill(e, &s_teardown);
+}
+
+static void test_teardown_order(void)
+{
+    /* the documented pattern: state freed in a br_engine_on_shutdown callback */
+    SDL_zero(s_teardown);
+    br_engine *e = br_engine_create("test_app_teardown", NULL);
+    teardown_init(e);
+    br_engine_on_shutdown(e, teardown_kill, &s_teardown);
+    br_engine_destroy(e);
+    BR_CHECK(s_teardown.calls_2d >= 2 && s_teardown.calls_3d >= 1);
+    BR_CHECK(s_teardown.calls_after_death == 0);
+
+    /* desc.shutdown runs after the nodes are gone too */
+    SDL_zero(s_teardown);
+    char *argv[] = { "test_app", "--headless" };
+    br_app_desc desc;
+    SDL_zero(desc);
+    desc.init = teardown_init;
+    desc.shutdown = teardown_desc_shutdown;
+    void *state = NULL;
+    BR_CHECK(br_app_init(&state, &desc, 2, argv) == SDL_APP_CONTINUE);
+    br_app_iterate(state);
+    br_app_quit(state, SDL_APP_SUCCESS);
+    BR_CHECK(s_teardown.calls_2d >= 2 && s_teardown.calls_3d >= 1);
+    BR_CHECK(s_teardown.calls_after_death == 0);
+}
+
 int main(void)
 {
+    test_teardown_order();
     test_deterministic();
     test_system_groups();
     test_system_remove();
