@@ -2,6 +2,9 @@
 #include "braty/braty.h"
 #include "br_test.h"
 
+#include <SDL3/SDL.h>
+#include <math.h>
+
 static br_graphics_geometry_info geometry(br_graphics_context *ctx)
 {
     br_graphics_geometry_info info;
@@ -326,9 +329,134 @@ static void test_nodes(br_engine *e)
     br_node_destroy(e, own);
 }
 
+/* Bad numbers (from data files) must not hang, blow up memory or poison the bounds. */
+static void test_bad_input(br_engine *e)
+{
+    br_color white = br_color_from_hex(0xffffff, 1.0f);
+    br_graphics_context *ctx = br_graphics_context_create(e);
+    uint64_t t0 = SDL_GetTicks();
+
+    /* a dashed line far longer than the dash: the piece count is capped */
+    br_stroke_style st = br_graphics_stroke_style(2.0f, white);
+    st.dash_count = 2;
+    st.dash[0] = 1.0f;
+    st.dash[1] = 1.0f;
+    br_graphics_move_to(ctx, -1e7f, 0);
+    br_graphics_line_to(ctx, 1e7f, 0); /* 2e7 long: a float accumulator never got past 2^24 */
+    br_graphics_stroke(ctx, &st);
+    br_graphics_geometry_info g = geometry(ctx);
+    BR_CHECK(g.triangle_count <= 2 * 4 * 100000); /* <= BR_GRAPHICS_MAX_DASH_PIECES quads (+ caps) */
+
+    /* NaN / inf points are dropped: the bounds stay finite and cover the good points */
+    br_graphics_clear(ctx);
+    br_graphics_move_to(ctx, 0, 0);
+    br_graphics_line_to(ctx, NAN, NAN);
+    br_graphics_line_to(ctx, INFINITY, 0);
+    br_graphics_line_to(ctx, 16, 5);
+    br_graphics_line_to(ctx, 0, 5);
+    br_graphics_fill_color(ctx, white);
+    g = geometry(ctx);
+    BR_CHECK(near(g.bounds.x, 0.0f, 1e-4f) && near(g.bounds.width, 16.0f, 1e-4f) && near(g.bounds.height, 5.0f, 1e-4f));
+
+    /* NaN radius / angles / control points: a few vertices at most, no hang */
+    br_graphics_clear(ctx);
+    br_graphics_arc(ctx, 0, 0, NAN, 0, NAN, false);
+    br_graphics_bezier_curve_to(ctx, NAN, 0, 0, NAN, 10, 10);
+    br_graphics_quadratic_curve_to(ctx, INFINITY, 0, 10, 10);
+    br_graphics_circle(ctx, 0, 0, NAN);
+    br_graphics_ellipse(ctx, 0, 0, INFINITY, 1);
+    br_stroke_style thin = br_graphics_stroke_style(1.0f, white);
+    br_graphics_stroke(ctx, &thin);
+    g = geometry(ctx);
+    BR_CHECK(g.vertex_count < 2000);
+
+    /* huge side / point counts are capped */
+    br_graphics_clear(ctx);
+    br_graphics_regular_poly(ctx, 0, 0, 10, 1000000000u, 0);
+    br_graphics_round_poly(ctx, 0, 0, 10, 1000000000u, 2, 0);
+    br_graphics_star(ctx, 0, 0, 3000000000u, 10, 5, 0);
+    br_graphics_fill_color(ctx, white);
+    g = geometry(ctx);
+    BR_CHECK(g.vertex_count <= 3 * 4096 * 8);
+
+    /* a concave fill with too many points is skipped (ear clipping is O(n^2)) */
+    br_graphics_clear(ctx);
+    br_graphics_star(ctx, 0, 0, 4096, 100, 50, 0); /* 8192 points: the limit, still filled */
+    br_graphics_fill_color(ctx, white);
+    BR_CHECK(geometry(ctx).triangle_count > 0);
+    br_vec2 *zigzag = br_alloc(sizeof(br_vec2) * 20000);
+    for (uint32_t i = 0; i < 10000; i++) {
+        zigzag[i] = br_vec2_make((float)i, (i % 2) ? 10.0f : 0.0f);
+        zigzag[19999 - i] = br_vec2_make((float)i, (i % 2) ? 30.0f : 20.0f);
+    }
+    br_graphics_clear(ctx);
+    br_graphics_poly(ctx, zigzag, 20000, true);
+    br_graphics_fill_color(ctx, white);
+    BR_CHECK(geometry(ctx).triangle_count == 0);
+    br_free(zigzag);
+
+    BR_CHECK(SDL_GetTicks() - t0 < 5000);
+    br_graphics_context_destroy(ctx);
+}
+
+/* line_to / arc after close_path continue from the closed sub-path's start (canvas, SVG). */
+static void test_close_path(br_engine *e)
+{
+    br_color white = br_color_from_hex(0xffffff, 1.0f);
+    br_stroke_style st = br_graphics_stroke_style(2.0f, white);
+    br_graphics_context *a = br_graphics_context_create(e);
+    br_graphics_move_to(a, 0, 0);
+    br_graphics_line_to(a, 100, 0);
+    br_graphics_line_to(a, 100, 100);
+    br_graphics_close_path(a);
+    br_graphics_line_to(a, 0, 100);
+    br_graphics_stroke(a, &st);
+    br_graphics_context *b = br_graphics_context_create(e);
+    br_graphics_move_to(b, 0, 0);
+    br_graphics_line_to(b, 100, 0);
+    br_graphics_line_to(b, 100, 100);
+    br_graphics_close_path(b);
+    br_graphics_move_to(b, 0, 0);
+    br_graphics_line_to(b, 0, 100);
+    br_graphics_stroke(b, &st);
+    BR_CHECK(near(geometry(a).area, geometry(b).area, 0.5f));
+
+    /* the same in SVG: "Z V50" draws from the start (0,0) down to (0,50) */
+    br_graphics_clear(a);
+    BR_CHECK(br_graphics_svg_path(a, "M0 0 H100 V100 Z V50"));
+    br_graphics_stroke(a, &st);
+    br_graphics_clear(b);
+    BR_CHECK(br_graphics_svg_path(b, "M0 0 H100 V100 Z M0 0 V50"));
+    br_graphics_stroke(b, &st);
+    BR_CHECK(near(geometry(a).area, geometry(b).area, 0.5f));
+    br_graphics_context_destroy(a);
+    br_graphics_context_destroy(b);
+}
+
+/* SVG numbers: the SVG grammar only (no nan / inf / hex), whatever the C locale. */
+static void test_svg_numbers(br_engine *e)
+{
+    br_graphics_context *ctx = br_graphics_context_create(e);
+    BR_CHECK(!br_graphics_svg_path(ctx, "M0 0 L nan 0"));
+    BR_CHECK(!br_graphics_svg_path(ctx, "M0 0 L inf 0"));
+    BR_CHECK(!br_graphics_svg_path(ctx, "M0 0 L infinity 0"));
+    BR_CHECK(!br_graphics_svg_path(ctx, "M0 0 L 0x10 0"));
+    BR_CHECK(!br_graphics_svg_path(ctx, "M0 0 L 1e999 0"));
+    br_graphics_clear(ctx);
+    BR_CHECK(br_graphics_svg_path(ctx, "M-1.5e1,.5L+2.25-3E0l.5.5 1e-1 2Z"));
+    br_graphics_fill_color(ctx, br_color_from_hex(0xffffff, 1.0f));
+    br_graphics_geometry_info g = geometry(ctx);
+    BR_CHECK(near(g.bounds.x, -15.0f, 1e-4f) && near(g.bounds.y, -3.0f, 1e-4f));
+    BR_CHECK(near(g.bounds.width, 17.85f, 1e-3f) && near(g.bounds.height, 3.5f, 1e-3f));
+    br_graphics_context_destroy(ctx);
+}
+
 int main(void)
 {
     br_engine *e = br_engine_create("test_graphics", NULL);
+    test_bad_input(e);
+    test_close_path(e);
+    test_svg_numbers(e);
     test_shapes(e);
     test_holes(e);
     test_strokes(e);

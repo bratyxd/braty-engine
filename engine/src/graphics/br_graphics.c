@@ -276,6 +276,7 @@ static void begin_path_if_used(br_graphics_context *ctx)
     br_array_clear(&ctx->path.subpaths);
     ctx->path_used = false;
     ctx->subpath_open = false;
+    ctx->after_close = false;
     ctx->path_id++;
 }
 
@@ -287,12 +288,39 @@ static float transform_scale(const br_graphics_context *ctx)
     return s > 0.0f ? s : 1.0f;
 }
 
-/* Appends an (untransformed) point to the open sub-path. */
+bool br_gfx_finite(float v)
+{
+    return !SDL_isnanf(v) && !SDL_isinff(v);
+}
+
+static bool point_ok(br_vec2 p)
+{
+    return br_gfx_finite(p.x) && br_gfx_finite(p.y) && SDL_fabsf(p.x) <= BR_GFX_MAX_COORD &&
+           SDL_fabsf(p.y) <= BR_GFX_MAX_COORD;
+}
+
+/* Appends an (untransformed) point to the open sub-path. Every point of every path call comes
+ * through here, so this is where bad numbers are stopped. */
 static void add_point(br_graphics_context *ctx, br_vec2 p)
 {
     br_vec2 t = br_mat3_apply(ctx->transform, p);
-    br_array_push(&ctx->path.points, &t);
+    if (!point_ok(p) || !point_ok(t)) {
+        if (!ctx->bad_point_logged) {
+            br_log_error("graphics: dropped a point that is not finite or beyond +-%g", (double)BR_GFX_MAX_COORD);
+            ctx->bad_point_logged = true;
+        }
+        return;
+    }
     br_gfx_subpath *s = br_array_at(&ctx->path.subpaths, ctx->path.subpaths.count - 1);
+    if (s->count >= BR_GFX_MAX_SUBPATH_POINTS) {
+        if (!ctx->full_logged) {
+            br_log_error("graphics: a sub-path has more than %u points; the rest are dropped",
+                         BR_GFX_MAX_SUBPATH_POINTS);
+            ctx->full_logged = true;
+        }
+        return;
+    }
+    br_array_push(&ctx->path.points, &t);
     s->count++;
     ctx->cursor = p;
 }
@@ -302,18 +330,46 @@ static void start_subpath(br_graphics_context *ctx, br_vec2 p, bool convex)
     br_gfx_subpath s = { ctx->path.points.count, 0, false, convex };
     br_array_push(&ctx->path.subpaths, &s);
     ctx->subpath_open = true;
+    ctx->after_close = false;
     ctx->subpath_start = p;
     add_point(ctx, p);
 }
 
-/* Continues the open sub-path, or starts one, with p. */
+/* Continues the open sub-path, or starts one, with p. After close_path the new sub-path
+ * starts at the current point (the closed one's start), as in canvas and SVG. */
 static void continue_to(br_graphics_context *ctx, br_vec2 p)
 {
     if (ctx->subpath_open) {
         add_point(ctx, p);
+    } else if (ctx->after_close) {
+        start_subpath(ctx, ctx->cursor, false);
+        add_point(ctx, p);
     } else {
         start_subpath(ctx, p, false);
     }
+}
+
+/* Segments for a Bezier whose control polygon is `len` long (NaN-safe). */
+static uint32_t curve_steps(float len)
+{
+    float n = SDL_ceilf(SDL_sqrtf(len) * 1.5f);
+    if (!(n >= 2.0f)) {
+        n = 2.0f;
+    }
+    if (n > 128.0f) {
+        n = 128.0f;
+    }
+    return (uint32_t)n;
+}
+
+/* Caps a side / point count from data. */
+static uint32_t cap_sides(uint32_t n, const char *what)
+{
+    if (n > BR_GFX_MAX_SIDES) {
+        br_log_error("graphics: %s %u capped at %u", what, n, BR_GFX_MAX_SIDES);
+        return BR_GFX_MAX_SIDES;
+    }
+    return n;
 }
 
 /* Closes the shape being built by a shape call. */
@@ -422,7 +478,7 @@ void br_graphics_bezier_curve_to(br_graphics_context *ctx, float cp1x, float cp1
     br_vec2 p3 = br_vec2_make(x, y);
     /* adaptive: more segments for a longer control polygon */
     float len = (br_vec2_distance(p0, p1) + br_vec2_distance(p1, p2) + br_vec2_distance(p2, p3)) * transform_scale(ctx);
-    uint32_t steps = (uint32_t)br_clampf(SDL_ceilf(SDL_sqrtf(len) * 1.5f), 2.0f, 128.0f);
+    uint32_t steps = curve_steps(len);
     for (uint32_t i = 1; i <= steps; i++) {
         float t = (float)i / (float)steps;
         float u = 1.0f - t;
@@ -446,7 +502,7 @@ void br_graphics_quadratic_curve_to(br_graphics_context *ctx, float cpx, float c
     br_vec2 p1 = br_vec2_make(cpx, cpy);
     br_vec2 p2 = br_vec2_make(x, y);
     float len = (br_vec2_distance(p0, p1) + br_vec2_distance(p1, p2)) * transform_scale(ctx);
-    uint32_t steps = (uint32_t)br_clampf(SDL_ceilf(SDL_sqrtf(len) * 1.5f), 2.0f, 128.0f);
+    uint32_t steps = curve_steps(len);
     for (uint32_t i = 1; i <= steps; i++) {
         float t = (float)i / (float)steps;
         float u = 1.0f - t;
@@ -566,6 +622,7 @@ void br_graphics_close_path(br_graphics_context *ctx)
     br_gfx_subpath *s = br_array_at(&ctx->path.subpaths, ctx->path.subpaths.count - 1);
     s->closed = true;
     ctx->subpath_open = false;
+    ctx->after_close = true;
     ctx->cursor = ctx->subpath_start;
     changed(ctx);
 }
@@ -611,7 +668,7 @@ void br_graphics_round_rect(br_graphics_context *ctx, float x, float y, float w,
 
 void br_graphics_ellipse(br_graphics_context *ctx, float x, float y, float radius_x, float radius_y)
 {
-    if (ctx == NULL || radius_x <= 0.0f || radius_y <= 0.0f) {
+    if (ctx == NULL || !(radius_x > 0.0f) || !(radius_y > 0.0f)) {
         return;
     }
     uint32_t n = br_gfx_arc_segments(SDL_max(radius_x, radius_y) * transform_scale(ctx), BR_TAU);
@@ -660,6 +717,7 @@ void br_graphics_regular_poly(br_graphics_context *ctx, float x, float y, float 
     if (ctx == NULL || sides < 3) {
         return;
     }
+    sides = cap_sides(sides, "regular_poly sides");
     begin_shape(ctx, regular_vertex(x, y, radius, sides, rotation, 0), true);
     for (uint32_t i = 1; i < sides; i++) {
         add_point(ctx, regular_vertex(x, y, radius, sides, rotation, i));
@@ -673,6 +731,7 @@ void br_graphics_round_poly(br_graphics_context *ctx, float x, float y, float ra
     if (ctx == NULL || sides < 3) {
         return;
     }
+    sides = cap_sides(sides, "round_poly sides");
     br_vec2 first = regular_vertex(x, y, radius, sides, rotation, 0);
     br_vec2 last = regular_vertex(x, y, radius, sides, rotation, sides - 1);
     begin_shape(ctx, br_vec2_lerp(last, first, 0.5f), true);
@@ -691,6 +750,7 @@ void br_graphics_star(br_graphics_context *ctx, float x, float y, uint32_t point
     if (ctx == NULL || points < 2) {
         return;
     }
+    points = cap_sides(points, "star points");
     float inner = inner_radius > 0.0f ? inner_radius : radius * 0.5f;
     uint32_t n = points * 2;
     for (uint32_t i = 0; i < n; i++) {
@@ -748,6 +808,31 @@ void br_graphics_fillet_rect(br_graphics_context *ctx, float x, float y, float w
 
 /* ---- painting */
 
+/* Replaces stroke numbers that would poison the geometry (NaN width, alignment, dashes). */
+static void sanitize_stroke(br_stroke_style *s)
+{
+    if (!br_gfx_finite(s->width) || s->width < 0.0f) {
+        s->width = 0.0f;
+    }
+    if (!br_gfx_finite(s->alignment)) {
+        s->alignment = 0.5f;
+    }
+    if (!br_gfx_finite(s->miter_limit)) {
+        s->miter_limit = 10.0f;
+    }
+    if (!br_gfx_finite(s->dash_offset)) {
+        s->dash_offset = 0.0f;
+    }
+    if (s->dash_count > BR_GRAPHICS_MAX_DASHES) {
+        s->dash_count = BR_GRAPHICS_MAX_DASHES;
+    }
+    for (uint32_t i = 0; i < s->dash_count; i++) {
+        if (!br_gfx_finite(s->dash[i])) {
+            s->dash_count = 0; /* solid */
+        }
+    }
+}
+
 static void push_instruction(br_graphics_context *ctx, br_gfx_kind kind, const br_stroke_style *style)
 {
     if (ctx->path.subpaths.count == 0) {
@@ -758,6 +843,7 @@ static void push_instruction(br_graphics_context *ctx, br_gfx_kind kind, const b
     in.kind = kind;
     in.path_id = ctx->path_id;
     in.style = *style;
+    sanitize_stroke(&in.style);
     in.texture = fill_texture(ctx, &style->fill);
     br_gfx_path_copy(&in.path, &ctx->path);
     br_gfx_path_init(&in.hole);
@@ -895,16 +981,61 @@ static const char *svg_skip(const char *s)
     return s;
 }
 
-static bool svg_number(const char **s, float *out)
+static bool is_digit(char c)
 {
-    const char *start = svg_skip(*s);
-    char *end = NULL;
-    double v = SDL_strtod(start, &end);
-    if (end == NULL || end == start) {
+    return c >= '0' && c <= '9';
+}
+
+bool br_gfx_parse_number(const char **s, float *out)
+{
+    const char *p = svg_skip(*s);
+    double sign = 1.0;
+    if (*p == '+' || *p == '-') {
+        sign = *p == '-' ? -1.0 : 1.0;
+        p++;
+    }
+    double mantissa = 0.0;
+    int digits = 0;
+    int scale = 0; /* decimal exponent of the digits read */
+    for (; is_digit(*p); p++, digits++) {
+        mantissa = mantissa * 10.0 + (double)(*p - '0');
+    }
+    if (*p == '.') {
+        p++;
+        for (; is_digit(*p); p++, digits++) {
+            mantissa = mantissa * 10.0 + (double)(*p - '0');
+            scale--;
+        }
+    }
+    if (digits == 0) {
+        return false;
+    }
+    /* an exponent only if digits follow ("2e" or "2em" stop before the 'e') */
+    const char *q = p;
+    if (*q == 'e' || *q == 'E') {
+        q++;
+        int esign = 1;
+        if (*q == '+' || *q == '-') {
+            esign = *q == '-' ? -1 : 1;
+            q++;
+        }
+        if (is_digit(*q)) {
+            int exponent = 0;
+            for (; is_digit(*q); q++) {
+                if (exponent < 100000) {
+                    exponent = exponent * 10 + (*q - '0');
+                }
+            }
+            scale += esign * exponent;
+            p = q;
+        }
+    }
+    double v = sign * mantissa * SDL_pow(10.0, (double)scale);
+    if (!br_gfx_finite((float)v)) {
         return false;
     }
     *out = (float)v;
-    *s = end;
+    *s = p;
     return true;
 }
 
@@ -965,7 +1096,7 @@ bool br_graphics_svg_path(br_graphics_context *ctx, const char *d)
         }
         float v[7];
         for (int i = 0; i < need; i++) {
-            bool ok = (up == 'A' && (i == 3 || i == 4)) ? svg_flag(&s, &v[i]) : svg_number(&s, &v[i]);
+            bool ok = (up == 'A' && (i == 3 || i == 4)) ? svg_flag(&s, &v[i]) : br_gfx_parse_number(&s, &v[i]);
             if (!ok) {
                 br_log_error("graphics: svg path: '%c' needs %d numbers (offset %d)", cmd, need, (int)(s - d));
                 return false;
@@ -1063,15 +1194,16 @@ static uint32_t multiply_color(uint32_t a, uint32_t b)
     return out;
 }
 
-static void draw_pixel_lines(br_engine *e, br_graphics_context *ctx, br_mat3 m, uint32_t tint, br_render_ctx *rc)
+static void draw_pixel_lines(br_engine *e, br_graphics_context *ctx, const br_gfx_group *grp, br_mat3 m, uint32_t tint,
+                             br_render_ctx *rc)
 {
     br_array *scratch = &e->graphics->scratch;
-    if (!br_array_resize(scratch, ctx->lines.count)) {
+    if (!br_array_resize(scratch, grp->line_count)) {
         return;
     }
     br_vertex2d *out = scratch->data;
-    const br_vertex2d *src = ctx->lines.data;
-    for (uint32_t i = 0; i < ctx->lines.count; i++) {
+    const br_vertex2d *src = (const br_vertex2d *)ctx->lines.data + grp->first_line;
+    for (uint32_t i = 0; i < grp->line_count; i++) {
         br_vec2 p = br_mat3_apply(m, br_vec2_make(src[i].x, src[i].y));
         out[i] = src[i];
         out[i].x = p.x;
@@ -1090,7 +1222,7 @@ static void draw_pixel_lines(br_engine *e, br_graphics_context *ctx, br_mat3 m, 
     draw.layout.attributes[1] = (SDL_GPUVertexAttribute){ 1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, 8 };
     draw.layout.attributes[2] = (SDL_GPUVertexAttribute){ 2, 0, SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM, 16 };
     draw.vertices = out;
-    draw.vertex_bytes = ctx->lines.count * (uint32_t)sizeof(br_vertex2d);
+    draw.vertex_bytes = grp->line_count * (uint32_t)sizeof(br_vertex2d);
     draw.textures[0] = br_texture_white(e);
     draw.texture_count = 1;
     br_render_push_custom(rc, &draw);
@@ -1111,6 +1243,10 @@ static void graphics_render(br_engine *e, br_node n, const void *data, br_render
     const uint16_t *indices = ctx->indices.data;
     for (uint32_t gi = 0; gi < ctx->groups.count; gi++) {
         const br_gfx_group *grp = br_array_at(&ctx->groups, gi);
+        if (grp->line_count > 0) {
+            draw_pixel_lines(e, ctx, grp, m, tint, rc); /* in instruction order, between triangles */
+            continue;
+        }
         if (!br_array_resize(scratch, grp->vertex_count)) {
             return;
         }
@@ -1125,9 +1261,6 @@ static void graphics_render(br_engine *e, br_node n, const void *data, br_render
         }
         br_render_push_triangles(rc, grp->texture, out, grp->vertex_count, &indices[grp->first_index],
                                  grp->index_count);
-    }
-    if (ctx->lines.count > 0) {
-        draw_pixel_lines(e, ctx, m, tint, rc);
     }
 }
 

@@ -21,6 +21,11 @@
  *
  * Coordinates are the context's local space (x right, y down, radians, positive = clockwise).
  * The transform stack applies to points as they are added.
+ *
+ * Limits (bad data must not hang the game; each is logged): points that are not finite or lie
+ * beyond +-1e7 (after the transform) are dropped; a sub-path keeps at most 65536 points; a
+ * concave fill (ear clipping, about O(n^2)) with more than 8192 points is not filled; a dashed
+ * stroke makes at most 100000 dash pieces.
  */
 #ifndef BR_GRAPHICS_H
 #define BR_GRAPHICS_H
@@ -121,7 +126,8 @@ void br_graphics_clear(br_graphics_context *ctx);
 
 /* Starts a new sub-path at (x, y). */
 void br_graphics_move_to(br_graphics_context *ctx, float x, float y);
-/* Straight line to (x, y) (a move_to if there is no current point). */
+/* Straight line to (x, y). After close_path it starts at the closed sub-path's start (canvas,
+ * SVG "Z L"); with no open sub-path otherwise it acts as a move_to. */
 void br_graphics_line_to(br_graphics_context *ctx, float x, float y);
 /* Cubic Bezier from the current point. */
 void br_graphics_bezier_curve_to(br_graphics_context *ctx, float cp1x, float cp1y, float cp2x, float cp2y,
@@ -154,13 +160,13 @@ void br_graphics_circle(br_graphics_context *ctx, float x, float y, float radius
 void br_graphics_ellipse(br_graphics_context *ctx, float x, float y, float radius_x, float radius_y);
 /* Polygon through points; close = false leaves it open (for strokes). */
 void br_graphics_poly(br_graphics_context *ctx, const br_vec2 *points, uint32_t count, bool close);
-/* Regular polygon, first vertex straight up (then turned by rotation). */
+/* Regular polygon, first vertex straight up (then turned by rotation). sides is capped at 4096. */
 void br_graphics_regular_poly(br_graphics_context *ctx, float x, float y, float radius, uint32_t sides,
                               float rotation);
 /* Regular polygon with rounded corners. */
 void br_graphics_round_poly(br_graphics_context *ctx, float x, float y, float radius, uint32_t sides,
                             float corner_radius, float rotation);
-/* Star with `points` tips; inner_radius <= 0 means radius / 2. */
+/* Star with `points` tips (capped at 4096); inner_radius <= 0 means radius / 2. */
 void br_graphics_star(br_graphics_context *ctx, float x, float y, uint32_t points, float radius, float inner_radius,
                       float rotation);
 /* Rectangle with corners cut off at 45 degrees. */

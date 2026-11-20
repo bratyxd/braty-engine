@@ -89,8 +89,25 @@ br_graphics_stroke(g, &dc);
 
 ## Scene JSON
 
-None yet: the node type has no `from_json` (scene files are Task 10; it can be added with
-`br_node_type_set_from_json` - e.g. an `"svg"` string plus fill/stroke).
+`{ "type": "graphics", "commands": [["rect", 0, 0, 40, 80], ["fill", "saddlebrown"]] }` (one
+array per `br_graphics_*` call) or `{ "type": "graphics", "svg": "M0 0 L 40 0 Z", "fill": "gold" }`.
+All keys: `docs/DATA_FORMATS.md` ("graphics") and `engine/src/data/br_node_json_graphics.c`.
+
+## Limits (bad data must not hang the game)
+
+Checked inside the module, whatever the caller passes; each is logged:
+
+- A point that is not finite or lies beyond +-1e7 (after the transform stack) is dropped.
+- A sub-path keeps at most 65536 points; `regular_poly` / `round_poly` sides and `star` points
+  are capped at 4096.
+- A concave fill (ear clipping: about O(n^2), 2000 points ~ 18 ms, 8000 ~ 270 ms) with more than
+  8192 points (holes included) is not filled. Convex shapes (rect, circle, regular polygons...)
+  are fan-triangulated and have no such limit. A context rebuilt every frame pays the ear
+  clipping every frame: keep animated concave paths small.
+- A dashed stroke makes at most 100000 dash pieces; NaN stroke widths, alignments and dash
+  values fall back to defaults (no stroke / centred / solid).
+- SVG numbers follow the SVG grammar only (`nan`, `inf`, `0x10` are syntax errors), independent
+  of the C locale.
 
 ## Gotchas
 
@@ -102,7 +119,9 @@ None yet: the node type has no `from_json` (scene files are Task 10; it can be a
 - `hit_test` (and `br_graphics_context_contains`) test the cached triangles, so holes and strokes
   count exactly as drawn; pixel lines are not hittable.
 - Pixel lines are a custom draw (line list): they break the batch and ignore pattern/gradient
-  fills (colour only).
+  fills (colour only). They keep their place in the instruction order (a later fill covers them).
+- `line_to` / `arc` after `close_path` continue from the closed sub-path's start (canvas, SVG
+  `Z L`); after a shape call or a fill/stroke, `line_to` starts a new sub-path (a move_to).
 - Geometry over 65535 vertices is split into several batches automatically.
 - Gradient textures are owned by the context: `br_graphics_clear` and destroying the last reference
   free them. Identical gradients in one context share a texture.
