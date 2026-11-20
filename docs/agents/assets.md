@@ -8,12 +8,27 @@ Test: `tests/test_assets.c` (headless). Example: `examples/assets_demo.c`, data 
 
 - A **loader** handles file extensions (`br_asset_loader_desc`). Several loaders may share an
   extension: the newest whose `test(bytes)` accepts the file wins (`.json` -> "spritesheet" if it
-  has `"frames"` + `"meta"`, else "json"). `br_asset_options.type` forces a loader by type name.
+  has a top-level `"frames"` object or array and a `"meta"` object with an `"image"` string, else
+  "json"). If the chosen loader fails, the next candidate whose test accepts the file gets it (a
+  .json shaped like a sheet whose image is missing still loads as "json"). `br_asset_options.type`
+  forces a loader by type name. Tests run on worker threads: keep them pure (the spritesheet test
+  is a small scanner, not cJSON, whose error position is a global).
 - The **cache** is keyed by the resolved path and **reference counted**: every load (sync, async,
   bundle) takes a reference, `br_assets_unload` drops one, the loader's `unload` runs at zero.
   `br_assets_get` takes none. `br_assets_unload_all` frees everything regardless.
 - The **resolver** turns a name into that path: alias -> already-cached path -> `{a,b}` pattern /
   candidate list choice (closest `@Nx` to the preferred resolution, then preferred format) -> base path.
+  A name may expand to at most 16 names (`"x{a,b}{a,b}{a,b}{a,b}"`); more is an error, found
+  before expanding (`'...' expands to more than 16 names`).
+- A loader that loads its own path while it runs (a multi-pack whose `related_multi_packs` lists
+  itself, or a cycle through sub-assets) gets an error for the inner load: the cache entry
+  exists, marked, while the loader runs.
+- A failed async load drops its cache entry with every reference in it (waiters get NULL).
+  Groups remember the serial number of the entry their reference went into, so another owner
+  loading the same path afterwards is not mistaken for the group's reference.
+- DDS / KTX: the mip count is clamped to the full chain of the size (a 4x4 texture has 3
+  levels), and the bytes the header asks for are checked against the file size before anything
+  is allocated.
 - **Groups** (`br_asset_group.h`, `br_asset_group.c`): a named set holding one reference per
   asset, loaded sync or async (polled each frame, never called back after unload/destroy), with
   lazy entries and manifest bundles. Every `br_scene` owns one; guide: `docs/agents/scenes.md`.

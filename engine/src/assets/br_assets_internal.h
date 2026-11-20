@@ -30,6 +30,8 @@ typedef struct br_asset_entry {
     float    resolution;            /* from the options or the file name */
     bool     loading;               /* a job for this path is queued, running or waiting to finish */
     bool     background;            /* prefetch: keep it when it finishes with zero references */
+    bool     sync_loading;          /* a loader for this path runs now: loading it again is a cycle */
+    uint32_t serial;                /* unique per entry created: tells a new entry from an old one */
 } br_asset_entry;
 
 /* Work for a worker thread: read the file, pick a loader by test, decode. */
@@ -45,9 +47,14 @@ typedef struct br_asset_job {
 typedef struct br_asset_result {
     char                  *path;
     const br_loader_entry *loader;    /* NULL = failed (already logged) */
-    void                  *bytes;     /* loaders without decode: the file, for load() */
+    void                  *bytes;     /* the file, for load() or for the next candidates (else NULL) */
     size_t                 size;
     void                  *decoded;   /* loaders with decode */
+    /* the job's candidates, and the first one not tried yet: a claimed load that fails falls back */
+    const br_loader_entry *candidates[BR_ASSET_MAX_CANDIDATES];
+    uint32_t               candidate_count;
+    uint32_t               next;
+    bool                   forced;
 } br_asset_result;
 
 /* Someone waiting for an async load (user callback or bundle progress). */
@@ -83,6 +90,7 @@ typedef struct br_group_entry {
     char          *type;    /* forced loader type (manifest "type") or NULL */
     bool           lazy;
     br_group_state state;
+    uint32_t       serial;  /* the cache entry our reference is in (LOADING / LOADED) */
 } br_group_entry;
 
 struct br_asset_group {
@@ -120,12 +128,14 @@ typedef struct br_assets_state {
     char      *pref_formats; /* NULL = none */
     uint64_t   frame_budget_ns;
     uint32_t   sheet_nesting; /* > 0 while a spritesheet loads its linked packs (they list each other) */
+    br_map     frame_sheets;  /* frame name -> char * path of the first loaded spritesheet with it (owned) */
     br_array   groups;        /* br_asset_group *, every live group */
     bool       polling;       /* groups are being polled: destroy defers the free */
     /* capture (br_assets_capture_begin): references taken outside loaders are recorded */
     br_array   captured;      /* char * resolved paths, one per reference */
     uint32_t   capture_depth;
     uint32_t   loader_depth;  /* > 0 while a loader runs (its own loads belong to its asset) */
+    uint32_t   next_serial;   /* br_asset_entry.serial of the last entry created */
 
     /* worker threads: everything below `mutex` is protected by it */
     SDL_Thread    *workers[BR_ASSET_MAX_WORKERS];
@@ -152,6 +162,10 @@ void br_assets_bundles_free(br_assets_state *a);
 void br_asset_groups_poll(br_engine *e);
 /* Destroys every group (shutdown). */
 void br_asset_groups_free(br_engine *e);
+/* Serial number of the cache entry of a resolved path, 0 if not cached. A failed async load
+ * drops its entry with every reference in it; a later load makes a new entry with a new serial,
+ * so a group can tell its own reference from another owner's taken after the failure. */
+uint32_t br_assets_serial(br_assets_state *a, const char *path);
 /* Owner names of a cached path (groups and loaded bundles), as br_assets_owners. */
 uint32_t br_asset_groups_owners(br_engine *e, const char *path, const char **out, uint32_t max);
 
@@ -178,5 +192,8 @@ void br_assets_register_basic_loaders(br_engine *e);
 void br_assets_register_compressed_loader(br_engine *e);
 /* Registers the spritesheet loader (br_spritesheet.c). */
 void br_spritesheet_register_loader(br_engine *e);
+/* Resolved path of the first loaded spritesheet with a frame called `name`, NULL if none (bare
+ * frame names in scene files). */
+const char *br_spritesheet_frame_owner(br_engine *e, const char *name);
 
 #endif
