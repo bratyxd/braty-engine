@@ -172,7 +172,7 @@ Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
 - **3D nodes** (`br_view3d.h`): `br_node3d` handles into a second table (TRS, world matrix,
   layers), drawn by a View3D (a 2D node) or a 3D `br_camera`. glTF instances, meshes, lights,
   cameras and canvas3d are 3D node types.
-- **Components** (`br_node.h`, `br_gltf.h`): user structs described field by field
+- **Components** (`br_node.h`): user structs described field by field
   (`br_component_desc`) so scene files, prefabs and glTF extras can fill them. One registry; 2D
   rows (`br_component_count/at/owner_at`, `br_query` for several at once) and 3D rows
   (`br_component3d_count/at/owner_at`).

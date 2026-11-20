@@ -4,8 +4,8 @@ glTF is the engine's main 3D format: a `.glb` exported from Blender is a scene, 
 in a scene file, or a kit of parts, with gameplay data in node extras - no editor, no hand-written
 scene JSON.
 
-Headers: `engine/include/braty/br_gltf.h` (models, instances, options, 3D components),
-`br_anim3d.h` (clips, sampling, animator). Source: `engine/src/three_d/br_gltf*.c` (loader,
+Headers: `engine/include/braty/br_gltf.h` (models, instances, options; 3D components are in `br_node.h`),
+`br_anim3d.h` (clips, sampling, skinning maths). Source: `engine/src/three_d/br_gltf*.c` (loader,
 instances, batching, 3D components), `br_anim3d.c`; data side: `engine/src/data/br_gltf_extras.c`
 (extras -> components, conventions), `br_gltf_scene.c` (a model path as a scene / prefab),
 `br_node_json_view3d.c` (view3d JSON). Tests: `tests/test_gltf.c` (+ `tests/data/tiny.gltf`,

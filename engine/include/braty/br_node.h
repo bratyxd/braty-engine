@@ -21,6 +21,8 @@
 #include "cjson/cJSON.h"
 
 typedef struct br_node { uint32_t index; uint32_t generation; } br_node;
+/* A 3D node (br_view3d.h); declared here for the 3D component functions below. */
+typedef struct br_node3d { uint32_t index; uint32_t generation; } br_node3d;
 
 /* Opaque render context handed to node render callbacks (see br_render.h). */
 typedef struct br_render_ctx br_render_ctx;
@@ -378,5 +380,33 @@ uint32_t br_component_count(br_engine *e, uint32_t component_id);
 void *br_component_at(br_engine *e, uint32_t component_id, uint32_t i);
 /* The node owning the i-th instance (may be invalid if destroyed this frame: check br_node_valid). */
 br_node br_component_owner_at(br_engine *e, uint32_t component_id, uint32_t i);
+
+/* ---- the same components on 3D nodes
+ *
+ * One registry for 2D and 3D nodes (the ids above); each component kind has a second dense array
+ * for 3D nodes, and br_component3d_* mirrors br_component_*. Iterate it in a system:
+ *
+ *   uint32_t n = br_component3d_count(e, spin_id);
+ *   for (uint32_t i = 0; i < n; i++) {
+ *       spin *s = br_component3d_at(e, spin_id, i);
+ *       br_node3d node = br_component3d_owner_at(e, spin_id, i);   (check br_node3d_valid)
+ *   }
+ *
+ * A BR_FIELD_NODE field of a 3D component holds a br_node3d (same layout as br_node), resolved
+ * by glTF node name inside the instance. Rows go away when their node is freed. Pointers die when
+ * that component's 3D array grows or shrinks. */
+
+/* Adds a zeroed component to a 3D node (returns the existing one if present). NULL on failure. */
+void *br_component3d_add(br_engine *e, br_node3d n, uint32_t component_id);
+/* The component of a 3D node, NULL if absent. */
+void *br_component3d_get(br_engine *e, br_node3d n, uint32_t component_id);
+/* Removes it (swap-remove: the last row moves into its slot). */
+void br_component3d_remove(br_engine *e, br_node3d n, uint32_t component_id);
+/* Number of 3D rows of a component. */
+uint32_t br_component3d_count(br_engine *e, uint32_t component_id);
+/* The i-th row's data. */
+void *br_component3d_at(br_engine *e, uint32_t component_id, uint32_t i);
+/* The 3D node owning the i-th row (invalid if destroyed this frame). */
+br_node3d br_component3d_owner_at(br_engine *e, uint32_t component_id, uint32_t i);
 
 #endif

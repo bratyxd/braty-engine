@@ -30,7 +30,7 @@
 
 /* ---- handles and small 3D types */
 
-typedef struct br_node3d     { uint32_t index; uint32_t generation; } br_node3d;
+/* br_node3d (the 3D node handle) is declared in br_node.h next to br_node. */
 typedef struct br_geometry3d { uint32_t index; uint32_t generation; } br_geometry3d;
 typedef struct br_material3d { uint32_t index; uint32_t generation; } br_material3d;
 
