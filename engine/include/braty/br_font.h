@@ -29,6 +29,9 @@
 
 typedef struct br_font br_font;
 
+/* Longest fallback list of one font or one family. */
+#define BR_FONT_MAX_FALLBACKS 8
+
 /* How a TTF font stores its glyphs. Zero = coverage glyphs rasterised per pixel size. */
 typedef struct br_font_options {
     bool  sdf;          /* signed-distance glyphs drawn with the SDF shader (sharp at any scale) */
@@ -65,6 +68,23 @@ void br_font_add_family(br_engine *e, const char *family, br_font *font, bool bo
  * *synth_bold / *synth_italic (may be NULL) say whether the caller must fake bold/italic. */
 br_font *br_font_find(br_engine *e, const char *family, bool bold, bool italic, bool *synth_bold,
                       bool *synth_italic);
+
+/* ---- fallbacks (glyphs a font lacks)
+ *
+ * For every character, text uses the first font that has its glyph: the style's font, then that
+ * font's fallbacks in order, then the fallbacks of the style's family ("" = "default"). Any mix
+ * of coverage, SDF and bitmap fonts works. When no font has it, a TTF font draws its own
+ * missing glyph (.notdef: a box in Noto Sans) and a bitmap font a drawn box. Lists are flat: a
+ * fallback's own fallbacks are not followed, so lists naming each other cannot loop. Line
+ * heights come from the style's font. Text using a changed list lays out again. */
+
+/* Replaces the fallback list of `font` (count 0 clears it). NULL entries, the font itself and
+ * repeats are skipped; past BR_FONT_MAX_FALLBACKS the rest is dropped. False (logged) if anything
+ * was skipped or dropped, the entries kept still apply. */
+bool br_font_set_fallbacks(br_engine *e, br_font *font, br_font *const *fallbacks, uint32_t count);
+/* Replaces the fallback list of a family (created if new; "" = "default"), tried after the
+ * face's own fallbacks. Same rules and result as br_font_set_fallbacks. */
+bool br_font_family_set_fallbacks(br_engine *e, const char *family, br_font *const *fallbacks, uint32_t count);
 
 /* ---- queries (all sizes in pixels; bitmap fonts scale from their native size) */
 

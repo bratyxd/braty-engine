@@ -429,11 +429,12 @@ static void test_font_lifetime(br_engine *e)
     BR_CHECK(br_rich_text_char_style(e, by_family, 0, &cs) && cs.font == a);
 
     /* reinstall under the same name: the family node follows the new font (no '1', no space:
-     * zero width), the node that held the old font directly falls back to the default font */
+     * two missing-glyph boxes of half an em), the node that held the old font directly falls
+     * back to the default font */
     digits.chars = "AB";
     br_font *b = br_bitmap_font_install(e, "score", &src, &digits);
     BR_CHECK(b != NULL);
-    BR_CHECK(br_text_size(e, by_family).x == 0.0f);
+    BR_CHECK(near(br_text_size(e, by_family).x, st.font_size));
     BR_CHECK(br_rich_text_char_style(e, by_family, 0, &cs) && cs.font == b);
     BR_CHECK(br_rich_text_char_style(e, direct, 0, &cs) && cs.font == br_font_default(e));
     BR_CHECK(br_text_size(e, direct).x != wide);
@@ -609,6 +610,132 @@ static void test_quad_cache(br_engine *e)
     br_node_destroy(e, other);
 }
 
+/* Fallback chains: per glyph the first font that has it; a box or .notdef when none does. */
+static void test_fallback(br_engine *e, br_font *bitmap)
+{
+    size_t size = 0;
+    const void *data = br_font_default_data(&size);
+    br_font *ttf = br_font_create(e, data, size, NULL);
+    /* a bitmap font with one glyph no TTF font has (U+E000, private use) */
+    const char *pua_fnt = "common lineHeight=20 base=16\n"
+                          "char id=57344 width=8 height=10 xadvance=30\n";
+    br_font *pua = br_bitmap_font_parse(e, pua_fnt, SDL_strlen(pua_fnt), "", false);
+    BR_CHECK(ttf != NULL && pua != NULL && !br_font_has_glyph(ttf, 0xE000));
+
+    /* bitmap primary: 'x' is missing; alone it takes a space-wide box (advance 10) */
+    br_text_style st = br_text_style_default();
+    st.font = bitmap;
+    st.font_size = 16.0f;
+    br_node n = br_text_create(e, "ax", &st);
+    br_text_set_resolution(e, n, 1.0f);
+    BR_CHECK(near(br_text_size(e, n).x, 20.0f));
+    br_text_prepare(e, n);
+    BR_CHECK(br_text_quad_builds(e, n) == 1);
+
+    /* a TTF fallback: 'x' comes from it (advance, rasterised into its atlas) and the node, laid
+     * out before the change, follows the new chain */
+    BR_CHECK(br_font_set_fallbacks(e, bitmap, &ttf, 1));
+    float x_adv = br_font_advance(ttf, 'x', 16.0f);
+    BR_CHECK(near(br_text_size(e, n).x, 10.0f + x_adv));
+    br_text_prepare(e, n);
+    BR_CHECK(br_text_quad_builds(e, n) == 2); /* the fallback change rebuilt the quads */
+    BR_CHECK(br_font_cached_glyph_count(ttf) == 1);
+
+    /* in no font of the chain: the bitmap font's missing box, nothing rasterised */
+    br_text_set_text(e, n, "a\xE6\x97\xA5"); /* U+65E5 */
+    BR_CHECK(near(br_text_size(e, n).x, 20.0f));
+    br_text_prepare(e, n);
+    BR_CHECK(br_font_cached_glyph_count(ttf) == 1);
+
+    /* family fallbacks come after the font's own: the default family gets the private-use font */
+    br_text_style def = br_text_style_default();
+    def.font_size = 16.0f;
+    br_node d = br_text_create(e, "a\xEE\x80\x80", &def);
+    float before = br_text_size(e, d).x;
+    BR_CHECK(br_font_family_set_fallbacks(e, "", &pua, 1));
+    float a_adv = br_font_advance(br_font_default(e), 'a', 16.0f);
+    float pua_adv = br_font_advance(pua, 0xE000, 16.0f);
+    BR_CHECK(pua_adv > 20.0f);
+    BR_CHECK(near(br_text_size(e, d).x, a_adv + pua_adv) && !near(before, a_adv + pua_adv));
+    br_text_set_text(e, n, "a\xEE\x80\x80"); /* the bitmap span: its own chain, then the family's */
+    BR_CHECK(near(br_text_size(e, n).x, 10.0f + pua_adv));
+
+    /* lists naming each other do not loop (they are not followed transitively) */
+    BR_CHECK(br_font_set_fallbacks(e, ttf, &bitmap, 1));
+    br_text_style ts = br_text_style_default();
+    ts.font = ttf;
+    ts.font_size = 16.0f;
+    br_node m = br_text_create(e, "\xC3\xA9\xE2\x82\xAC\xEE\x80\x80\xE6\x97\xA5", &ts);
+    BR_CHECK(br_text_size(e, m).x > 30.0f);
+    br_text_prepare(e, m);
+    char junk[256]; /* every byte value: invalid UTF-8, controls, nothing any font has */
+    for (int i = 0; i < 255; i++) {
+        junk[i] = (char)(i + 1);
+    }
+    junk[255] = 0;
+    br_text_set_text(e, m, junk);
+    br_text_prepare(e, m);
+    BR_CHECK(br_text_size(e, m).x > 0.0f);
+
+    /* bad lists: the font itself, NULL, repeats, too many; logged, the rest kept */
+    br_font *self[2] = { ttf, bitmap };
+    BR_CHECK(!br_font_set_fallbacks(e, ttf, self, 2));
+    br_font *with_null[2] = { NULL, bitmap };
+    BR_CHECK(!br_font_set_fallbacks(e, ttf, with_null, 2));
+    BR_CHECK(!br_font_set_fallbacks(e, ttf, NULL, 3));
+    br_font *many[BR_FONT_MAX_FALLBACKS + 1];
+    for (int i = 0; i < BR_FONT_MAX_FALLBACKS + 1; i++) {
+        many[i] = br_bitmap_font_parse(e, pua_fnt, SDL_strlen(pua_fnt), "", false);
+    }
+    BR_CHECK(!br_font_set_fallbacks(e, bitmap, many, BR_FONT_MAX_FALLBACKS + 1));
+    br_text_set_text(e, n, "a\xEE\x80\x80");
+    BR_CHECK(near(br_text_size(e, n).x, 10.0f + pua_adv)); /* many[0] has it */
+    for (int i = 0; i < BR_FONT_MAX_FALLBACKS + 1; i++) {
+        br_font_destroy(e, many[i]);
+    }
+
+    /* a fallback freed while text uses it: the text lays out again without it */
+    BR_CHECK(br_font_set_fallbacks(e, bitmap, &ttf, 1));
+    br_text_set_text(e, n, "ax");
+    BR_CHECK(near(br_text_size(e, n).x, 10.0f + x_adv));
+    uint32_t builds = br_text_quad_builds(e, n);
+    br_font_destroy(e, ttf);
+    BR_CHECK(near(br_text_size(e, n).x, 20.0f));
+    br_text_prepare(e, n);
+    BR_CHECK(br_text_quad_builds(e, n) == builds + 1);
+    br_font_destroy(e, pua);
+    BR_CHECK(near(br_text_size(e, d).x, before));
+    BR_CHECK(br_font_family_set_fallbacks(e, "", NULL, 0));
+    br_node_destroy(e, n);
+    br_node_destroy(e, d);
+    br_node_destroy(e, m);
+}
+
+/* game.json "fonts": family faces and fallback chains from data. */
+static void test_fonts_config(br_engine *e, br_font *bitmap)
+{
+    size_t size = 0;
+    const void *data = br_font_default_data(&size);
+    BR_CHECK(br_file_write_all(e, "test_text_data/fallback.ttf", data, size));
+    const char *json = "{ \"fonts\": {"
+                       "  \"default\": { \"fallbacks\": [\"test_text_data/fallback.ttf\"] },"
+                       "  \"Title\": { \"regular\": \"test_text_data/fallback.ttf\" } } }";
+    br_game_config config;
+    BR_CHECK(br_game_config_parse(json, SDL_strlen(json), "game.json", &config));
+    br_game_config_apply(e, &config);
+    br_font *loaded = br_assets_get(e, "test_text_data/fallback.ttf");
+    BR_CHECK(loaded != NULL && br_font_find(e, "Title", false, false, NULL, NULL) == loaded);
+
+    /* the default family's fallback serves a bitmap font's missing 'x' */
+    br_text_style st = br_text_style_default();
+    st.font = bitmap;
+    st.font_size = 16.0f;
+    BR_CHECK(near(br_text_measure(e, "ax", &st).width, 10.0f + br_font_advance(loaded, 'x', 16.0f)));
+    BR_CHECK(br_font_family_set_fallbacks(e, "default", NULL, 0));
+    BR_CHECK(near(br_text_measure(e, "ax", &st).width, 20.0f));
+    br_game_config_free(&config);
+}
+
 typedef struct png_buffer {
     uint8_t data[4096];
     size_t  size;
@@ -704,6 +831,8 @@ int main(void)
         test_wrap(e, f);
         test_rich(e, f);
         test_split(e, f);
+        test_fallback(e, f);
+        test_fonts_config(e, f);
     }
     br_engine_destroy(e); /* frees f and the default font */
     return br_test_finish();

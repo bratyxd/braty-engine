@@ -62,6 +62,7 @@ CASES = [
     ("star_courier_play", STAR_COURIER, 700, [], ROUND),
     ("crate_rush_menu", CRATE_RUSH, 60, [], None),
     ("crate_rush_play", CRATE_RUSH, 166, [], CRATE_PLAY),
+    ("font_fallback_demo", "font_fallback_demo", 10, [], None),
 ]
 
 

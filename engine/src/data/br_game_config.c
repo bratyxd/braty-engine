@@ -128,7 +128,7 @@ static void br_config_warn_keys(const char *source, const char *section, const c
 static void br_config_check_keys(const char *source, const cJSON *doc)
 {
     br_config_warn_keys(source, "", doc,
-                        " window asset_root manifest start_scene scenes clear_color ticker input audio debug profiler save game ");
+                        " window asset_root manifest start_scene scenes clear_color ticker input audio debug profiler save game fonts ");
     const char *sections[] = { "window", "ticker", "debug", "audio", "profiler", "save" };
     const char *keys[] = { " title width height fullscreen vsync resizable logical_size pause_when_inactive ", " max_fps min_fps speed fixed_hz ",
                            " overlay toggle_key keys hot_reload ", " master_volume muted buses sprites ", " hud panel ", " org app " };
@@ -144,6 +144,13 @@ static void br_config_check_keys(const char *source, const cJSON *doc)
         char section[BR_DATA_NAME_SIZE + 8];
         SDL_snprintf(section, sizeof(section), "input.%s", action->string);
         br_config_warn_keys(source, section, action, " keys mouse buttons axes threshold context ");
+    }
+    const cJSON *family = NULL;
+    cJSON_ArrayForEach(family, cJSON_GetObjectItemCaseSensitive(doc, "fonts"))
+    {
+        char section[BR_DATA_NAME_SIZE + 8];
+        SDL_snprintf(section, sizeof(section), "fonts.%s", family->string);
+        br_config_warn_keys(source, section, family, " regular bold italic bold_italic fallbacks ");
     }
 }
 
@@ -353,6 +360,62 @@ static void br_config_apply_audio(br_engine *e, const cJSON *audio)
     }
 }
 
+/* "fonts": { family: { "regular" / "bold" / "italic" / "bold_italic": path,
+ *                      "fallbacks": [paths] } }: faces and fallback chains of font families. */
+static void br_config_apply_fonts(br_engine *e, const cJSON *fonts)
+{
+    static const char *faces[4] = { "regular", "bold", "italic", "bold_italic" };
+    const cJSON *family = NULL;
+    cJSON_ArrayForEach(family, fonts)
+    {
+        if (!cJSON_IsObject(family)) {
+            br_log_error("game.json: fonts.%s: expected an object { \"regular\": path, \"fallbacks\": [paths] }",
+                         family->string);
+            continue;
+        }
+        for (int k = 0; k < 4; k++) {
+            const cJSON *path = cJSON_GetObjectItemCaseSensitive(family, faces[k]);
+            if (path == NULL) {
+                continue;
+            }
+            br_font *font = cJSON_IsString(path) ? br_font_load(e, path->valuestring) : NULL;
+            if (font == NULL) {
+                br_log_error("game.json: fonts.%s.%s: expected a loadable font path", family->string, faces[k]);
+                continue;
+            }
+            br_font_add_family(e, family->string, font, (k & 1) != 0, (k & 2) != 0);
+        }
+        const cJSON *list = cJSON_GetObjectItemCaseSensitive(family, "fallbacks");
+        if (list == NULL) {
+            continue;
+        }
+        if (!cJSON_IsArray(list)) {
+            br_log_error("game.json: fonts.%s.fallbacks: expected an array of font paths", family->string);
+            continue;
+        }
+        br_font *fallbacks[BR_FONT_MAX_FALLBACKS];
+        uint32_t count = 0;
+        int index = 0;
+        const cJSON *path = NULL;
+        cJSON_ArrayForEach(path, list)
+        {
+            if (count == BR_FONT_MAX_FALLBACKS) {
+                br_log_error("game.json: fonts.%s.fallbacks: more than %d fonts; the rest are ignored", family->string,
+                             BR_FONT_MAX_FALLBACKS);
+                break;
+            }
+            br_font *font = cJSON_IsString(path) ? br_font_load(e, path->valuestring) : NULL;
+            if (font == NULL) {
+                br_log_error("game.json: fonts.%s.fallbacks[%d]: expected a loadable font path", family->string, index);
+            } else {
+                fallbacks[count++] = font;
+            }
+            index++;
+        }
+        br_font_family_set_fallbacks(e, family->string, fallbacks, count);
+    }
+}
+
 void br_game_config_apply_settings(br_engine *e, br_game_config *config)
 {
     SDL_Window *window = br_engine_window(e);
@@ -406,6 +469,12 @@ void br_game_config_apply_settings(br_engine *e, br_game_config *config)
     }
     if (config->manifest[0] != '\0') {
         br_assets_load_manifest(e, config->manifest);
+    }
+    const cJSON *fonts = cJSON_GetObjectItemCaseSensitive(config->json, "fonts");
+    if (cJSON_IsObject(fonts)) {
+        br_config_apply_fonts(e, fonts);
+    } else if (fonts != NULL) {
+        br_log_error("game.json: fonts: expected an object { \"family\": { ... } }");
     }
 
     cJSON_Delete(e->data->game_json);

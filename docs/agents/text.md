@@ -23,6 +23,30 @@ Headers: `engine/include/braty/br_text.h` (styles, text node, measure, UTF-8), `
   multi-channel mode divides by alpha before the median (`examples/sdf_fonts_demo.c`, golden
   `sdf_fonts_demo`, draws one glyph of each kind inside a reference ring).
 
+## Fallback chains
+
+For every character, layout takes the first font that has its glyph: the style's font (or the
+face its family resolves to), that font's own fallbacks, then the fallbacks of the style's
+family (`""` = `"default"`). Coverage, SDF and bitmap fonts mix freely; each glyph is drawn by
+its own font's path. When no font has the glyph, a TTF font draws its `.notdef` (a box in Noto
+Sans) and a bitmap font a drawn outline box as wide as its space (half an em without one).
+
+```c
+br_font *cjk = br_font_load(e, "fonts/NotoSansJP-Regular.ttf");
+br_font_family_set_fallbacks(e, "default", &cjk, 1);       /* every text of the game */
+br_font_set_fallbacks(e, pixel_font, &noto, 1);             /* one font: lower case from Noto */
+```
+
+game.json: `"fonts": { "default": { "fallbacks": ["fonts/NotoSansJP-Regular.ttf"] } }` (faces
+too: `docs/DATA_FORMATS.md`). Example and golden: `examples/font_fallback_demo.c`.
+
+Limits: at most `BR_FONT_MAX_FALLBACKS` (8) per font and per family; NULL, the font itself and
+repeats are skipped; both setters return false and log when they skip or drop anything. Lists are
+flat: a fallback's own fallbacks are not followed, so fonts naming each other cannot loop. Line
+heights come from the span's own font (a taller fallback glyph can overhang the line box).
+Kerning applies only between two glyphs of the same font. Changing a list (or a family face) lays
+out every text node again; freeing a fallback font removes it from every list.
+
 ## Per-node quad cache
 
 Glyph lookup and quad generation run only when something that moves a quad changes: the text,
@@ -143,5 +167,5 @@ Checked inside the module whatever the caller passes (`br_text_create`, `br_text
   asset reference per page texture and releases them when it is freed. Numbers in `.fnt` files
   follow the SVG number grammar; ids out of range drop the char, `distanceRange <= 0` becomes 4.
 - Not done: complex shaping (Arabic, Indic, ligatures; stb_truetype has no shaper), bidi,
-  colour emoji, and atlas eviction (a full 4096 atlas stops caching new glyphs: they are
+  colour emoji (an emoji font without outlines draws nothing), and atlas eviction (a full 4096 atlas stops caching new glyphs: they are
   remembered as empty and not drawn; logged once).

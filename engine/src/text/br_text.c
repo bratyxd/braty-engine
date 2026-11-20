@@ -196,11 +196,13 @@ void br_text_forget_font(br_engine *e, const br_font *font)
                 t->style.font = NULL; /* the family (or the default font) takes over */
                 t->dirty = true;
             }
-            for (uint32_t j = 0; j < t->spans.count; j++) {
+            for (uint32_t j = 0; j < t->spans.count && !t->dirty; j++) {
                 const br_text_span *span = br_array_at(&t->spans, j);
-                if (span->font == font) {
-                    t->dirty = true; /* every reader of spans runs br_text_node_update first */
-                    break;
+                for (uint32_t k = 0; k < span->chain_count; k++) {
+                    if (span->chain[k] == font) {
+                        t->dirty = true; /* every reader of spans runs br_text_node_update first */
+                        break;
+                    }
                 }
             }
         }
@@ -209,7 +211,7 @@ void br_text_forget_font(br_engine *e, const br_font *font)
 
 void br_text_node_update(br_engine *e, br_text_node *node)
 {
-    if (!node->dirty) {
+    if (!node->dirty && node->layout_generation == e->text->layout_generation) {
         return;
     }
     br_array chars;
@@ -225,6 +227,7 @@ void br_text_node_update(br_engine *e, br_text_node *node)
     br_text_layout_build(&node->layout, &chars, node->spans.data, &node->style);
     br_array_free(&chars);
     node->dirty = false;
+    node->layout_generation = e->text->layout_generation;
     node->cache_valid = false;
 }
 
@@ -396,6 +399,28 @@ static int br_text_quantize(float pixels)
     return (int)SDL_roundf(pixels * 8.0f);
 }
 
+/* The box drawn for a character no font of a bitmap span has (TTF fonts draw their .notdef):
+ * an outline filling the glyph's advance, from the baseline up to 70% of the ascent. */
+static void br_text_missing_box(br_text_emit *em, const br_text_span *span, br_font *font, const br_layout_glyph *g,
+                                const br_layout_line *line)
+{
+    br_font_metrics m;
+    br_font_get_metrics(font, span->size, &m);
+    float x0 = g->x + g->advance * 0.1f;
+    float x1 = g->x + g->advance * 0.9f;
+    float y1 = line->baseline;
+    float y0 = y1 - m.ascent * 0.7f;
+    float th = SDL_max(1.0f, span->size * 0.06f);
+    if (x1 - x0 < th * 2.0f || y1 - y0 < th * 2.0f) {
+        return;
+    }
+    br_texture white = br_texture_white(em->e);
+    br_text_emit_quad(em, white, x0, y0, x1, y0 + th, 0.5f, 0.5f, 0.5f, 0.5f);
+    br_text_emit_quad(em, white, x0, y1 - th, x1, y1, 0.5f, 0.5f, 0.5f, 0.5f);
+    br_text_emit_quad(em, white, x0, y0 + th, x0 + th, y1 - th, 0.5f, 0.5f, 0.5f, 0.5f);
+    br_text_emit_quad(em, white, x1 - th, y0 + th, x1, y1 - th, 0.5f, 0.5f, 0.5f, 0.5f);
+}
+
 /* Draws (emit) or just rasterises (!emit) every glyph of one layer. */
 static void br_text_draw_layer(br_text_emit *em, br_text_node *t, br_text_layer layer, float resolution, bool emit)
 {
@@ -417,7 +442,7 @@ static void br_text_draw_layer(br_text_emit *em, br_text_node *t, br_text_layer 
             continue;
         }
         const br_text_span *span = &spans[g->span];
-        br_font *font = span->font;
+        br_font *font = g->font; /* the span's font or a fallback (br_text_glyph_font) */
         if (font == NULL) {
             continue;
         }
@@ -432,7 +457,14 @@ static void br_text_draw_layer(br_text_emit *em, br_text_node *t, br_text_layer 
 
         if (font->is_bitmap) {
             const br_bitmap_char *ch = br_font_bitmap_char(font, g->cp);
-            if (ch == NULL || ch->width <= 0.0f || ch->page >= font->page_count) {
+            if (ch == NULL) {
+                if (layer == BR_TEXT_LAYER_FILL && emit) {
+                    br_text_use_batch(em);
+                    br_text_missing_box(em, span, font, g, line);
+                }
+                continue;
+            }
+            if (ch->width <= 0.0f || ch->page >= font->page_count) {
                 continue;
             }
             bool sdf = font->distance_field != 0;

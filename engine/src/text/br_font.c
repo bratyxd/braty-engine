@@ -23,6 +23,18 @@ void br_font_track(br_engine *e, br_font *font)
     }
 }
 
+/* Removes `font` from a fallback list, keeping the order. */
+static void br_font_list_remove(br_font **list, uint32_t *count, const br_font *font)
+{
+    uint32_t n = 0;
+    for (uint32_t i = 0; i < *count; i++) {
+        if (list[i] != font) {
+            list[n++] = list[i];
+        }
+    }
+    *count = n;
+}
+
 static void br_font_untrack(br_engine *e, br_font *font)
 {
     br_text_state *s = e->text;
@@ -42,6 +54,17 @@ static void br_font_untrack(br_engine *e, br_font *font)
             if (fam->faces[k] == font) {
                 fam->faces[k] = NULL;
             }
+        }
+        br_font_list_remove(fam->fallbacks, &fam->fallback_count, font);
+    }
+    uint32_t j = 0;
+    while (j < s->fallbacks.count) {
+        br_font_fallbacks *fb = br_array_at(&s->fallbacks, j);
+        br_font_list_remove(fb->fallbacks, &fb->fallback_count, font);
+        if (fb->font == font || fb->fallback_count == 0) {
+            br_array_remove_ordered(&s->fallbacks, j);
+        } else {
+            j++;
         }
     }
     for (uint32_t i = 0; i < s->installed.count; i++) {
@@ -761,9 +784,12 @@ float br_font_advance(br_font *font, uint32_t codepoint, float size)
     if (font->is_bitmap) {
         const br_bitmap_char *c = br_font_bitmap_char(font, codepoint);
         if (c == NULL) {
-            c = br_font_bitmap_char(font, ' ');
+            c = br_font_bitmap_char(font, ' '); /* a missing glyph's box is as wide as a space */
         }
-        return c != NULL ? c->xadvance * br_font_bitmap_scale(font, size) : 0.0f;
+        if (c == NULL) {
+            return 0.5f * (size > 0.0f ? size : font->native_size); /* or half an em without one */
+        }
+        return c->xadvance * br_font_bitmap_scale(font, size);
     }
     /* advance only: the left side bearing of a glyph id past the font's glyph count would be
      * read past hmtx (br_font_check bounds only the advances) */
@@ -855,6 +881,123 @@ void br_font_add_family(br_engine *e, const char *family, br_font *font, bool bo
     br_font_family *f = br_font_family_get(e, family, true);
     if (f != NULL) {
         f->faces[(bold ? 1 : 0) + (italic ? 2 : 0)] = font;
+        e->text->layout_generation += 1; /* text naming the family resolves it again */
+    }
+}
+
+/* ---- fallbacks */
+
+/* Copies a caller's fallback list into out (skipping NULL, the owner and repeats, at most
+ * BR_FONT_MAX_FALLBACKS). False (logged) if anything was skipped or dropped. */
+static bool br_font_fill_fallbacks(const char *what, const br_font *owner, br_font **out, uint32_t *out_count,
+                                   br_font *const *list, uint32_t count)
+{
+    bool ok = true;
+    uint32_t n = 0;
+    if (list == NULL && count > 0) {
+        br_log_error("%s: no list for %u fallbacks", what, count);
+        count = 0;
+        ok = false;
+    }
+    for (uint32_t i = 0; i < count; i++) {
+        bool repeat = list[i] == NULL || list[i] == owner;
+        for (uint32_t k = 0; k < n && !repeat; k++) {
+            repeat = out[k] == list[i];
+        }
+        if (repeat) {
+            br_log_error("%s: fallback %u is NULL, the font itself or a repeat; skipped", what, i);
+            ok = false;
+            continue;
+        }
+        if (n == BR_FONT_MAX_FALLBACKS) {
+            br_log_error("%s: more than %d fallbacks; the rest are dropped", what, BR_FONT_MAX_FALLBACKS);
+            ok = false;
+            break;
+        }
+        out[n++] = list[i];
+    }
+    *out_count = n;
+    return ok;
+}
+
+bool br_font_set_fallbacks(br_engine *e, br_font *font, br_font *const *fallbacks, uint32_t count)
+{
+    br_text_state *s = e->text;
+    if (s == NULL || font == NULL) {
+        br_log_error("br_font_set_fallbacks: no font");
+        return false;
+    }
+    br_font_fallbacks *entry = NULL;
+    uint32_t index = 0;
+    for (; index < s->fallbacks.count; index++) {
+        br_font_fallbacks *fb = br_array_at(&s->fallbacks, index);
+        if (fb->font == font) {
+            entry = fb;
+            break;
+        }
+    }
+    if (entry == NULL) {
+        entry = br_array_push(&s->fallbacks, NULL);
+        if (entry == NULL) {
+            return false;
+        }
+        entry->font = font;
+    }
+    bool ok = br_font_fill_fallbacks("br_font_set_fallbacks", font, entry->fallbacks, &entry->fallback_count,
+                                     fallbacks, count);
+    if (entry->fallback_count == 0) {
+        br_array_remove_ordered(&s->fallbacks, index);
+    }
+    s->layout_generation += 1;
+    return ok;
+}
+
+bool br_font_family_set_fallbacks(br_engine *e, const char *family, br_font *const *fallbacks, uint32_t count)
+{
+    br_font_family *f = br_font_family_get(e, family, true);
+    if (f == NULL) {
+        return false;
+    }
+    bool ok = br_font_fill_fallbacks("br_font_family_set_fallbacks", NULL, f->fallbacks, &f->fallback_count,
+                                     fallbacks, count);
+    e->text->layout_generation += 1;
+    return ok;
+}
+
+/* Appends `font` to a chain unless it is NULL, already there, or the chain is full. */
+static void br_font_chain_add(br_font **chain, uint32_t *count, br_font *font)
+{
+    if (font == NULL || *count >= BR_TEXT_MAX_CHAIN) {
+        return;
+    }
+    for (uint32_t i = 0; i < *count; i++) {
+        if (chain[i] == font) {
+            return;
+        }
+    }
+    chain[(*count)++] = font;
+}
+
+void br_font_chain(br_engine *e, br_font *font, const char *family, br_font **chain, uint32_t *count)
+{
+    *count = 0;
+    br_font_chain_add(chain, count, font);
+    br_text_state *s = e->text;
+    if (s == NULL) {
+        return;
+    }
+    for (uint32_t i = 0; i < s->fallbacks.count; i++) {
+        br_font_fallbacks *fb = br_array_at(&s->fallbacks, i);
+        if (fb->font == font) {
+            for (uint32_t k = 0; k < fb->fallback_count; k++) {
+                br_font_chain_add(chain, count, fb->fallbacks[k]);
+            }
+            break;
+        }
+    }
+    br_font_family *f = br_font_family_get(e, family, false);
+    for (uint32_t k = 0; f != NULL && k < f->fallback_count; k++) {
+        br_font_chain_add(chain, count, f->fallbacks[k]);
     }
 }
 
@@ -957,6 +1100,7 @@ void br_font_module_init(br_engine *e)
     br_text_state *s = e->text;
     br_array_init(&s->fonts, sizeof(br_font *));
     br_array_init(&s->families, sizeof(br_font_family));
+    br_array_init(&s->fallbacks, sizeof(br_font_fallbacks));
     br_array_init(&s->installed, sizeof(br_installed_font));
     br_array_init(&s->retired, sizeof(br_texture));
     s->default_font = br_font_create_ttf(e, br_font_default_ttf, br_font_default_ttf_size, false, NULL);
@@ -992,6 +1136,7 @@ void br_font_module_shutdown(br_engine *e)
     }
     br_array_free(&s->fonts);
     br_array_free(&s->families);
+    br_array_free(&s->fallbacks);
     br_array_free(&s->installed);
     br_array_free(&s->retired);
 }
