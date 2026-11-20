@@ -38,6 +38,14 @@ Examples: `examples/gltf_demo.c` (`--foxes N`, `--novsync`, `--focus 0..6`; mode
   external file) and decodes them with stb_image, builds vertices/indices/morph deltas and the
   clips; `finish` (main thread) only creates textures (mip chain generated), materials and
   geometries.
+- **Untrusted files:** right after parsing, one pass (`br_gltf_check_uris`,
+  `br_gltf_check_data` in `br_gltf.c`) rejects the load, naming the file and field, when a
+  buffer or image URI leaves the model's folder (absolute, drive, scheme or a `..` segment), a
+  data URI holds fewer bytes than `byteLength`, a bufferView lies outside its buffer, an
+  accessor (or its sparse part) reads past its bufferView or has no data, an accessor count is
+  over 2^24 (2^20 without a bufferView), a scene lists a node twice, inverse binds are not float
+  MAT4, or a node has over 2^20 GPU instances. cgltf then rejects cycles, multi-parent nodes and
+  out-of-range indices; `tests/test_hostile_gltf.c` pins all of it.
 
 ## glTF as scene content
 
