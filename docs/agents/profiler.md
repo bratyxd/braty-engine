@@ -50,6 +50,10 @@ Command line (any app): `--profiler` (panel open), `--profiler-hud`, `--profile 
 - Names are cached by pointer: pass literals, or `br_profiler_intern(e, buf)` for built names.
 - The GPU number is an estimate (fence polling, ~0.5 ms resolution on Windows). With vsync on it
   also contains display waits and is shown as `GPU <= x ms`; measure GPU cost with `--vsync off`.
+  The fence thread runs only while the panel / HUD / `--profile` / a play-test `profile` uses it
+  (`br_profiler_gpu_estimating`); shipped games pay nothing.
+- F2 is the debug module's key: `br_debug_set_profiler_key`, or `br_debug_set_keys_enabled(e,
+  false)` / game.json `"debug": { "keys": false }` to switch F1 and F2 off for shipping.
 - `--deterministic` (play-tests, goldens): the panel and HUD show fixed placeholder times.
 - `-DBRATY_PROFILER_OFF` (CMake `BRATY_PROFILER=OFF`) makes scopes and counters empty inline
   functions; frame times, the GPU estimate and the HUD still work, the update/render split not.

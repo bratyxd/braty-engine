@@ -15,16 +15,18 @@ or `--record FILE` is given (or the C API is called).
 - Commands are JSON objects described by one table (`br_pt_commands`: name, typed arguments
   `"key:string action?:string"`, one-line doc). `br_pt_validate` checks a command against it
   before anything runs (scripts: at load, with the step number; stdin: one `ok:false` reply),
-  and `{"cmd":"help"}` returns it. A new command = a table row + a branch in `br_pt_exec`.
+  including arguments the row does not declare (typos), and `{"cmd":"help"}` returns it. A new command = a table row + a branch in `br_pt_exec`.
 - Commands are JSON objects; `br_pt_exec` runs one. `wait` / `wait_until` set a wait that the
   script resumes from in a later frame; `br_playtest_command` (interactive, C API) instead steps
   the engine in place until the wait is over, then replies.
-- Paths (`br_playtest_query.c`): `label:property`, `label:component.field`, `name:field` for
-  `br_playtest_expose`d structs, optional `.x` element. Reads use the data module's writers
+- Paths (`br_playtest_query.c`): `label:property`, `label:component.field` (the component is
+  the longest run of parts naming a registered component, so `cam:camera.follow.offset` works),
+  `name:field` for `br_playtest_expose`d structs, optional `.x` element. `view/node` targets are
+  split in one bounded helper (`br_pt_split_view`) used by get, set, find and click. Reads use the data module's writers
   (`br_scene_file_to_json`, `br_scene_file_write_field`); node writes go through
   `br_data_apply_node`, so every scene-file key can be set.
-- Recording is an event handler: every real input event becomes a command stamped with the
-  frame that consumes it (`e->stepping ? frame : frame + 1`), written as waits + commands.
+- Recording is an event handler: every real input event (except SDL's mouse copies of touch /
+  pen input; motion keeps `dx`/`dy`) becomes a command stamped with the frame that consumes it (`e->stepping ? frame : frame + 1`), written as waits + commands.
   Gamepads: br_input handles an event before the recorder (registered earlier), so the
   recorder keeps its own slot map (`pad_ids`) to name the slot of a removed pad and to skip
   SDL's late duplicate ADDED of a virtual pad. Pads replay as `connect` (virtual pad of the
@@ -70,7 +72,10 @@ br_engine_destroy(e);
 - `--playtest*` imply `--deterministic` and default to `--vsync off`. A game that reads save data
   should skip it when `br_app_deterministic(e)`.
 - The log capture replaces SDL's log output function (process-wide) while play-testing; two
-  engines in one process must shut down in reverse order (see the `ponytail:`).
+  engines in one process must shut down in reverse order (see the `ponytail:`). Any thread may
+  log, so the ring is behind `log_lock`; never log while holding it.
+- `window` resizes the real window, or headless the camera screen size
+  (`br_camera_set_headless_screen`).
 - `action` injects the action (`br_input_inject_action`), not a key: systems polling keys
   directly do not see it.
 - 3D nodes are addressed as `view/node:property` through the three_d public API

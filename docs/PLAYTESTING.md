@@ -63,9 +63,11 @@ window or GPU (no screenshots); `ctest` runs Star Courier's round that way. Path
 
 Replies always start with `"ok"` and `"frame"`; a failed command adds `"error"` and the game
 keeps running. Every line gets exactly one reply: a line that is not JSON, not an object, an
-unknown command, a missing argument or an argument of the wrong type (`{"cmd": "step",
-"frames": "ten"}` -> `step: "frames" must be a number`) each answer `{"ok": false, ...,
-"error": "..."}`. Closing stdin ends the game (exit code 0, or 1 if any command failed).
+unknown command, a missing argument, an argument of the wrong type (`{"cmd": "step",
+"frames": "ten"}` -> `step: "frames" must be a number`) or an argument the command does not
+take (a typo: `{"cmd": "key", "key": "Right", "frame": 30}` -> `key: unknown argument 'frame'
+(takes: ...)`) each answer `{"ok": false, ..., "error": "..."}`; a script with such a step does
+not start. Closing stdin ends the game (exit code 0, or 1 if any command failed).
 `{"cmd": "help"}` lists every command with its arguments (`"key:string action?:string
 frames?:number"`; `?` = optional) and a one-line description. Engine logs go to stderr, replies
 to stdout.
@@ -92,25 +94,28 @@ One JSON object each, the same in scripts and on stdin.
 |---|---|---|
 | `key` | `{"cmd": "key", "key": "Space"}` | `"action"`: `tap` (default: down now, up after `"frames"`, default 1), `down`, `up`. SDL key names: `Space`, `Return`, `Escape`, `Left`, `A`, `F1`... |
 | `action` | `{"cmd": "action", "name": "start"}` | Drives the input action itself (`br_input_inject_action`), whatever it is bound to (game.json or code). `"action"`: `tap` (default, `"frames"` long), `down` / `press` (held until `up`), `up` / `release`. `"value"` 0..1 (default 1) for analogue actions: `{"cmd": "action", "name": "throttle", "action": "down", "value": 0.4}`. Games that read keys directly (`br_input_key_down`) do not see it: use `key`. |
-| `mouse` | `{"cmd": "mouse", "action": "tap", "x": 640, "y": 360}` | `move`, `down`, `up`, `tap`, `wheel` (`"dx"`, `"dy"`); `"button"`: 1 left, 2 middle, 3 right. Window coordinates. |
+| `mouse` | `{"cmd": "mouse", "action": "tap", "x": 640, "y": 360}` | `move`, `down`, `up`, `tap`, `wheel` (`"dx"`, `"dy"`); `"button"`: 1 left, 2 middle, 3 right. Window coordinates. `move` takes an optional `"dx"`, `"dy"` (the relative movement; default: the difference to the last position), so relative-mode mouse-look replays. |
 | `click` | `{"cmd": "click", "label": "play_button"}` | Moves the mouse to the centre of the node's bounds now, presses the left button (`"button"`) in the next frame and releases it in the frame after: step 3 frames to see the result. |
 | `text` | `{"cmd": "text", "text": "PLAYER 1"}` | One text-input event, as an IME would send. |
 | `touch` | `{"cmd": "touch", "action": "down", "finger": 0, "x": 100, "y": 200}` | `down`, `move`, `up`; window coordinates. |
 | `gamepad` | see below | Virtual pads, buttons, sticks and triggers. |
+| `window` | `{"cmd": "window", "width": 2520, "height": 1080}` | Resizes the window (16..16384 each; the next frame renders at the new size). Headless, it sets the screen size every camera sees (`br_camera_set_headless_screen`), so 21:9 and 9:16 layouts, letterboxing and anchors can be checked in one run: `window`, `step`, then `get` / `expect` / `screenshot`. Short form: `window 2520 1080`. |
 
 `gamepad` commands (`"slot"` is the player slot 0..7, default 0; one example each):
 
 | Action | Example | Notes |
 |---|---|---|
-| `connect` | `{"cmd": "gamepad", "action": "connect", "type": "ps5"}` | Attaches an SDL virtual pad of that family (also headless); the reply has its `"slot"`. Types: `xbox`, `playstation`, `switch`, `generic`, or exactly `xbox360`, `xboxone`, `ps3`, `ps4`, `ps5`, `switchpro`, `joyconleft`, `joyconright`, `joyconpair`, `gamecube`, `steam`. `"slot"` moves it to that slot. Glyphs and prompts follow the family. |
+| `connect` | `{"cmd": "gamepad", "action": "connect", "type": "ps5"}` | Attaches an SDL virtual pad of that family (also headless); the reply has its `"slot"`. Types: `xbox`, `playstation`, `switch`, `generic`, or exactly `xbox360`, `xboxone`, `ps3`, `ps4`, `ps5`, `switchpro`, `joyconleft`, `joyconright`, `joyconpair`, `gamecube`, `steam`. `"slot"` moves it to that slot. Glyphs and prompts follow the family. `"injected": true` makes an injected pad of that family in `"slot"` instead (no SDL device; fails if the slot is taken). |
 | `disconnect` | `{"cmd": "gamepad", "action": "disconnect", "slot": 0}` | Removes the pad (virtual or injected). |
 | `tap` | `{"cmd": "gamepad", "action": "tap", "button": "a", "frames": 2}` | Down now, up after `"frames"` (default 1). SDL button names: `a` (south face button: Cross, Switch B), `b`, `x`, `y`, `back`, `guide`, `start`, `leftstick`, `rightstick`, `leftshoulder`, `rightshoulder`, `dpup`, `dpdown`, `dpleft`, `dpright`, `misc1`, `touchpad`... |
 | `down` | `{"cmd": "gamepad", "action": "down", "button": "rightshoulder"}` | Held until `up`. |
 | `up` | `{"cmd": "gamepad", "action": "up", "button": "rightshoulder"}` | |
 | `axis` | `{"cmd": "gamepad", "action": "axis", "axis": "leftx", "value": 1}` | Holds the axis at `"value"` until the next `axis`: `leftx`, `lefty` (y > 0 = down), `rightx`, `righty` -1..1, `lefttrigger`, `righttrigger` 0..1. Dead zones apply as for a real pad. |
 
-Buttons and axes on an empty slot create an "injected" pad there (no SDL device, generic family),
-so `connect` is only needed for a specific family. A pad of a recorded session comes back as
+A button press or a non-zero axis on an empty slot creates an "injected" pad there (no SDL
+device, generic family), so `connect` is only needed for a specific family. A release or a zero
+axis on an empty slot is dropped: the second half of a `tap` sent after `disconnect` does not
+bring the pad back. A pad of a recorded session comes back as
 `connect` with its type and slot, so a real controller session replays on a virtual pad.
 
 ### Looking at the game
@@ -144,6 +149,7 @@ so `connect` is only needed for a specific family. A pad of a recorded session c
 | `ship:position` | Node labelled `ship` (searched in the whole stage), built-in property. Built-ins: `position`, `x`, `y`, `scale`, `rotation` (radians), `alpha`, `visible`, `tint`, `z_index`, `label`, `type`, `children` (count), `world_position`, `bounds` ([x, y, w, h], stage coordinates: window coordinates unless a 2D camera moves the stage), `exists`. |
 | `final_score:text` | Any other key of the node's scene-file form (`text`, `texture`, `style`, ...). |
 | `ship:pilot.carrying` | Component `pilot` of node `ship`, field `carrying` (fields listed in the game's `br_field_desc`). |
+| `level_camera:camera.follow.offset3d.x` | A component whose name has a dot: after the colon the longest run of parts that names a registered component is the component (`camera.follow`), the next part its field, then an optional element. Names without a dot read as before. |
 | `ship:position.x` | One element: `.x .y .z .w` (or `.0 .1 ...`). Works for `get` and `set`. |
 | `game:score` | A struct the game exposed with `br_playtest_expose(e, "game", fields, count, &state)`. |
 | `profile:frame_ms_p95` | A key of the last `profile` command's summary (any key listed above; `profile:*` = all). Use it in `expect`: `{"cmd": "expect", "path": "profile:frame_ms_p95", "op": "<", "value": 16.7}`, `{"cmd": "expect", "path": "profile:verdict", "op": "contains", "value": "vsync"}`. Before any `profile` it covers every frame kept. |
@@ -230,9 +236,9 @@ Also `br_playtest_set`, `br_playtest_screenshot`, `br_playtest_record_start/stop
   purpose), so the window does not process events and Windows may label it "not responding";
   frames and screenshots are unaffected.
 - Recording captures gamepad connect / disconnect, buttons and axes, not their touchpads,
-  gyros or accelerometers. It records every mouse motion and stick event (large files for
-  long sessions).
-- Paths cannot name a component whose name has a dot (`camera.follow`), and 2D labels are
-  searched stage-wide (no `parent/child` for 2D): `docs/API_REVIEW.md` items 36-37.
-- There is no command to resize the window (API_REVIEW 38); start the game with another
-  game.json size to check other aspect ratios.
+  gyros or accelerometers. It records every mouse motion (with its relative delta) and stick
+  event (large files for long sessions). SDL's mouse copies of touch and pen input are not
+  recorded (the touch is), so a replay does not click twice.
+- 2D labels are searched stage-wide (no `parent/child` for 2D): `docs/API_REVIEW.md` item 37.
+  Labels in `view/node` paths are at most 63 characters each (longer ones fail "label too long").
+- Log lines from any thread (asset workers) are captured; the 128-line ring is locked.

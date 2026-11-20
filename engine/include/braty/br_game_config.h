@@ -46,7 +46,8 @@ typedef struct br_game_config {
     bool     has_clear_color;
     br_color clear_color;                          /* window background (when has_clear_color) */
     bool     debug_overlay;                        /* debug overlay open at start (false) */
-    char     debug_key[32];                        /* SDL key name toggling it, "F1" */
+    char     debug_key[32];                        /* SDL key name toggling it, "F1"; "none" = no key */
+    bool     debug_keys;                           /* F1 / F2 open the overlay / profiler (true) */
     bool     hot_reload;                           /* scene hot reload (debug builds: true) */
     bool     profiler_hud;                         /* profiler.hud: corner readout at start (false) */
     bool     profiler_panel;                       /* profiler.panel: profiler panel open at start (false) */

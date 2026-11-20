@@ -20,7 +20,7 @@ From a shell (each command is one argument; replies are printed one JSON line ea
 Short commands: step [N], key NAME [down|up|tap], action NAME [tap|down|up [VALUE]],
 gamepad connect TYPE [SLOT] | disconnect [SLOT] | tap|down|up BUTTON [SLOT] |
 axis AXIS VALUE [SLOT], click LABEL,
-text "...", screenshot FILE, get PATH, set PATH JSON, find LABEL, dump [FILE],
+text "...", screenshot FILE, get PATH, set PATH JSON, find LABEL, dump [FILE], window W H,
 stats, profile [N], logs [N], help, quit. Anything starting with "{" is sent as raw JSON.
 A failed command raises PlaytestError with the engine's message; the game process is ended when
 the with-block exits, on an exception, and at interpreter exit.
@@ -132,6 +132,10 @@ class Playtest:
     def click(self, label):
         return self.send({"cmd": "click", "label": label})
 
+    def window(self, width, height):
+        """Resizes the window (headless: the screen size cameras see)."""
+        return self.send({"cmd": "window", "width": width, "height": height})
+
     def mouse(self, action, x=None, y=None, button=1):
         cmd = {"cmd": "mouse", "action": action, "button": button}
         if x is not None:
@@ -239,7 +243,14 @@ def parse_short(text):
     """'step 60' -> {"cmd": "step", "frames": 60}; raw JSON passes through."""
     if text.lstrip().startswith("{"):
         return json.loads(text)
-    words = shlex.split(text)
+    try:
+        return parse_words(text, shlex.split(text))
+    except (IndexError, ValueError) as error:  # "key" without a name, "step ten"
+        raise SystemExit("bad short command %r: %s" % (text, error))
+
+
+def parse_words(text, words):
+    """The short form split into words."""
     name, rest = words[0], words[1:]
     if name in ("step", "wait"):
         return {"cmd": name, "frames": int(rest[0]) if rest else 1}
@@ -268,6 +279,8 @@ def parse_short(text):
         return {"cmd": "logs", "count": int(rest[0]) if rest else 20}
     if name == "profile":
         return {"cmd": "profile", "frames": int(rest[0]) if rest else 300}
+    if name == "window":
+        return {"cmd": "window", "width": int(rest[0]), "height": int(rest[1])}
     if name in ("stats", "quit", "help"):
         return {"cmd": name}
     raise SystemExit("unknown short command %r (use raw JSON for the others)" % text)

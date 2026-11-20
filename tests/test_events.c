@@ -2,6 +2,7 @@
 #include "braty/braty.h"
 #include "br_test.h"
 
+#include <SDL3/SDL_timer.h>
 #include <string.h>
 
 /* ---- a test node type: a w x h box at the local origin (bounds + hit test) */
@@ -289,23 +290,29 @@ static void test_hover_and_click(void)
 
     clear_log();
     br_input_inject_pointer_move(e, 75, 75);
+    br_events_flush(e); /* motion is coalesced per frame */
     BR_CHECK(log_is("over:A over:root enter:root enter:A "));
     BR_CHECK(br_node_equal(br_events_hovered(e), a));
     clear_log();
     br_input_inject_pointer_move(e, 25, 25);
+    br_events_flush(e); /* motion is coalesced per frame */
     BR_CHECK(log_is("out:A out:root over:A1 over:A over:root enter:A1 "));
     clear_log();
     br_input_inject_pointer_move(e, 250, 250);
+    br_events_flush(e); /* motion is coalesced per frame */
     BR_CHECK(log_is("out:A1 out:A out:root leave:A1 leave:A over:B over:root enter:B "));
     clear_log();
     br_input_inject_pointer_move(e, 250, 260);
+    br_events_flush(e); /* motion is coalesced per frame */
     BR_CHECK(log_is(""));
     clear_log();
     br_input_inject_pointer_move(e, 900, 900);
+    br_events_flush(e); /* motion is coalesced per frame */
     BR_CHECK(log_is("out:B out:root leave:B leave:root "));
 
     /* click on the same node; up outside goes to the pressed node's ancestors, click to the common one */
     br_input_inject_pointer_move(e, 25, 25);
+    br_events_flush(e); /* motion is coalesced per frame */
     clear_log();
     br_input_inject_pointer_down(e, 25, 25, SDL_BUTTON_LEFT);
     br_input_inject_pointer_up(e, 25, 25, SDL_BUTTON_LEFT);
@@ -325,6 +332,7 @@ static void test_hover_and_click(void)
 
     /* touch: over/enter on down, tap, out/leave on up */
     br_input_inject_pointer_move(e, 900, 900);
+    br_events_flush(e); /* motion is coalesced per frame */
     clear_log();
     br_input_inject_touch(e, SDL_EVENT_FINGER_DOWN, 7, 250, 250);
     br_input_inject_touch(e, SDL_EVENT_FINGER_UP, 7, 250, 250);
@@ -361,12 +369,66 @@ static void test_wheel_and_global_move(void)
     br_node_on(e, a, BR_EVENT_WHEEL, wheel_listener, NULL);
     br_node_on(e, far, BR_EVENT_GLOBAL_MOVE, global_listener, NULL);
     br_input_inject_pointer_move(e, 150, 120);
+    br_events_flush(e); /* motion is coalesced per frame */
     br_input_inject_wheel(e, 0.0f, 2.0f);
     BR_CHECK(g_wheel.y == 2.0f);
     BR_CHECK(g_local.x == 50.0f && g_local.y == 20.0f);
     BR_CHECK(g_global_moves == 1);   /* "far" was not hit but still hears every move */
     br_input_inject_pointer_move(e, 5, 5);
+    br_events_flush(e); /* motion is coalesced per frame */
     BR_CHECK(g_global_moves == 2);
+    br_engine_destroy(e);
+}
+
+/* 16 motion events in one frame (a 1000 Hz mouse) are one hit test and one dispatch; a press
+ * flushes the pending move first, so it sees where the mouse went. */
+static void test_move_coalescing(void)
+{
+    br_engine *e = make_engine();
+    br_node root = br_scene_root(e);
+    br_node a = make_box(e, root, "A", 100, 100, 100, 100, BR_EVENT_MODE_STATIC);
+    br_node far = make_box(e, root, "far", 1000, 1000, 10, 10, BR_EVENT_MODE_STATIC);
+    br_node_on(e, far, BR_EVENT_GLOBAL_MOVE, global_listener, NULL);
+    g_global_moves = 0;
+    for (int i = 0; i < 16; i++) {
+        br_input_inject_pointer_move(e, 10.0f + (float)i, 10.0f);
+    }
+    BR_CHECK(g_global_moves == 0);
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(g_global_moves == 1);
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(g_global_moves == 1); /* still mouse, no DYNAMIC node: nothing replayed */
+    listen_all(e, a);
+    clear_log();
+    br_input_inject_pointer_move(e, 150, 150);
+    br_input_inject_pointer_down(e, 150, 150, SDL_BUTTON_LEFT);
+    BR_CHECK(log_is("over:A enter:A ")); /* hovered before the press is handled */
+    br_engine_destroy(e);
+}
+
+/* Removing the listeners of many nodes (a UI scene unloading) is linear: it used to compact the
+ * whole table on every removal (16000 nodes: 1.3 s). */
+static void test_listener_removal_cost(void)
+{
+    br_engine *e = make_engine();
+    br_node root = br_scene_root(e);
+    enum { COUNT = 16000 };
+    static br_node nodes[COUNT];
+    for (int i = 0; i < COUNT; i++) {
+        nodes[i] = br_node_create_container(e);
+        br_node_add_child(e, root, nodes[i]);
+        br_node_on(e, nodes[i], BR_EVENT_CLICK, log_event, "x");
+    }
+    uint64_t start = SDL_GetTicksNS();
+    for (int i = 0; i < COUNT; i++) {
+        br_node_off_all(e, nodes[i]);
+    }
+    double ms = (double)(SDL_GetTicksNS() - start) / 1e6;
+    BR_CHECK(ms < 100.0); /* linear is ~1 ms; the quadratic version took over a second */
+    BR_CHECK(br_node_listener_count(e, nodes[0]) == 0 && br_node_listener_count(e, nodes[COUNT - 1]) == 0);
+    if (ms >= 100.0) {
+        printf("removing %d listeners took %.1f ms\n", COUNT, ms);
+    }
     br_engine_destroy(e);
 }
 
@@ -590,6 +652,8 @@ int main(void)
     test_propagation();
     test_hover_and_click();
     test_wheel_and_global_move();
+    test_move_coalescing();
+    test_listener_removal_cost();
     test_lifetime();
     test_input_actions();
     return br_test_finish();

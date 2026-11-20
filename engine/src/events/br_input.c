@@ -206,6 +206,8 @@ void br_input_register(br_engine *e)
     s->touch_mouse = true;
     s->deadzone_inner = 0.15f;
     s->deadzone_outer = 0.95f;
+    s->trigger_deadzone_inner = 0.05f;
+    s->trigger_deadzone_outer = 0.95f;
     s->last_gamepad = -1;
     br_engine_add_event_handler(e, br_input_event, NULL);
     br_system_add(e, "input.begin_frame", BR_PHASE_INPUT, BR_INPUT_PRIORITY_LATCH, br_input_begin_frame, NULL);
@@ -476,14 +478,19 @@ void br_input_send(br_engine *e, SDL_Event *ev)
 
 void br_input_inject_pointer_move(br_engine *e, float x, float y)
 {
+    br_input_inject_pointer_motion(e, x, y, x - e->input->mouse.x, y - e->input->mouse.y);
+}
+
+void br_input_inject_pointer_motion(br_engine *e, float x, float y, float dx, float dy)
+{
     SDL_Event ev;
     SDL_zero(ev);
     ev.type = SDL_EVENT_MOUSE_MOTION;
     ev.motion.windowID = br_input_window_id(e);
     ev.motion.x = x;
     ev.motion.y = y;
-    ev.motion.xrel = x - e->input->mouse.x;
-    ev.motion.yrel = y - e->input->mouse.y;
+    ev.motion.xrel = dx;
+    ev.motion.yrel = dy;
     br_input_send(e, &ev);
 }
 

@@ -183,6 +183,10 @@ bool br_profiler_is_open(br_engine *e);
 void br_profiler_set_hud(br_engine *e, bool on);
 /* True while the corner readout is shown. */
 bool br_profiler_hud(br_engine *e);
+/* True while the GPU frame-time estimate runs (a fence per frame plus a polling thread). It runs
+ * only while the panel or the HUD is shown, --profile was given, or a play-test "profile"
+ * command is measuring: a game that never shows the profiler pays nothing for it. */
+bool br_profiler_gpu_estimating(br_engine *e);
 /* Stops recording new frames (the panel's pause); the ring keeps the frames captured so far. */
 void br_profiler_set_paused(br_engine *e, bool paused);
 /* True while paused. */

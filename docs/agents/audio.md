@@ -16,10 +16,14 @@ Test: `tests/test_audio.c` (headless mixer). Example: `examples/audio_demo.c`.
 - The mixer `br_audio_mix` runs on SDL's audio thread. All state it shares with the main thread
   sits behind one mutex. Completion callbacks run on the main thread (`audio.update`, UPDATE).
 - The device opens on the first `br_audio_play` when the engine has a window. Headless engines
-  never open one; tests call `br_audio_mix` directly. Under `--deterministic` (play-tests,
-  goldens) an engine without a device mixes by game time in `audio.update`, so instances end and
-  call back on the same frame every run (a windowed deterministic run plays on the device's
-  wall clock).
+  never open one. Whenever no device is open (headless, or opening it failed: no output device,
+  RDP, a bad `SDL_AUDIO_DRIVER`) the engine mixes by game time in `audio.update`, so instances
+  end and call back (on the same frame every `--deterministic` run). Code that calls
+  `br_audio_mix` itself (tests) turns that off and drives the mixer alone. A windowed run with a
+  device plays on the device's wall clock.
+- Every float argument is sanitized at the API: NaN / INF -> default (volume 1, pan 0, speed 1,
+  start / seek 0), then clamped (volume 0..16, pan -1..1, speed 0.01..16). The loop wrap is one
+  `SDL_fmod`, so no speed can stall the audio thread; NaN samples in PCM data mix as silence.
 
 ## Functions you actually need
 

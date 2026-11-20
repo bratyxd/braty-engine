@@ -26,16 +26,34 @@ static void SDLCALL br_debug_log_output(void *user, int category, SDL_LogPriorit
 
 uint32_t br_debug_log_count(br_engine *e)
 {
-    return e->debug != NULL ? e->debug->log_count : 0;
+    br_debug_state *s = e->debug;
+    if (s == NULL) {
+        return 0;
+    }
+    SDL_LockMutex(s->log_lock);
+    uint32_t count = s->log_count;
+    SDL_UnlockMutex(s->log_lock);
+    return count;
 }
 
-const char *br_debug_log_line(br_engine *e, uint32_t i)
+bool br_debug_log_line(br_engine *e, uint32_t i, char *out, size_t out_size)
 {
     br_debug_state *s = e->debug;
-    if (s == NULL || i >= s->log_count) {
-        return "";
+    if (out == NULL || out_size == 0) {
+        return false;
     }
-    return s->log[(s->log_start + i) % BR_DEBUG_LOG_LINES];
+    out[0] = '\0';
+    if (s == NULL) {
+        return false;
+    }
+    /* copied under the lock: any thread may log, and the next line reuses the oldest slot */
+    SDL_LockMutex(s->log_lock);
+    bool ok = i < s->log_count;
+    if (ok) {
+        br_str_copy(out, out_size, s->log[(s->log_start + i) % BR_DEBUG_LOG_LINES]);
+    }
+    SDL_UnlockMutex(s->log_lock);
+    return ok;
 }
 
 /* ---- public state */
@@ -53,6 +71,16 @@ bool br_debug_is_open(br_engine *e)
 void br_debug_set_toggle_key(br_engine *e, SDL_Scancode key)
 {
     e->debug->toggle_key = key;
+}
+
+void br_debug_set_profiler_key(br_engine *e, SDL_Scancode key)
+{
+    e->debug->profiler_key = key;
+}
+
+void br_debug_set_keys_enabled(br_engine *e, bool enabled)
+{
+    e->debug->keys_enabled = enabled;
 }
 
 void br_debug_select(br_engine *e, br_node n)
@@ -73,10 +101,12 @@ static void br_debug_system(br_engine *e, float dt, void *user)
 {
     (void)dt;
     br_debug_state *s = user;
-    if (br_input_key_pressed(e, s->toggle_key)) {
+    bool keys = s->keys_enabled;
+    if (keys && s->toggle_key != SDL_SCANCODE_UNKNOWN && br_input_key_pressed(e, s->toggle_key)) {
         s->open = !s->open;
     }
-    if (e->profiler != NULL && br_input_key_pressed(e, s->profiler_key)) {
+    if (keys && e->profiler != NULL && s->profiler_key != SDL_SCANCODE_UNKNOWN &&
+        br_input_key_pressed(e, s->profiler_key)) {
         br_profiler_set_open(e, !br_profiler_is_open(e));
     }
     uint64_t now = SDL_GetTicksNS();
@@ -323,9 +353,12 @@ bool br_debug_wants_event(br_engine *e, const SDL_Event *ev)
     case SDL_EVENT_MOUSE_WHEEL:
         return br_debug_over_window(s, ev->wheel.mouse_x, ev->wheel.mouse_y);
     case SDL_EVENT_KEY_DOWN:
-    case SDL_EVENT_KEY_UP:
         /* typing into a number field (shift-click on it) */
         return s->ui->number_edit != 0 && !br_debug_is_toggle(s, ev->key.scancode);
+    case SDL_EVENT_KEY_UP:
+        /* never taken: a key held before the edit began (W to walk) must reach the game's input
+         * state when released, or it stays down; microui reads releases from br_input */
+        return false;
     case SDL_EVENT_TEXT_INPUT:
         return s->ui->number_edit != 0;
     default:
@@ -470,6 +503,7 @@ void br_debug_register(br_engine *e)
     }
     e->debug = s;
     s->ui = ui;
+    s->keys_enabled = true;
     s->toggle_key = SDL_SCANCODE_F1;
     s->profiler_key = SDL_SCANCODE_F2;
     br_array_init(&s->expanded, sizeof(br_node));

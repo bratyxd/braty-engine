@@ -83,7 +83,8 @@ overlay closed, F1, hot reload on in debug builds, no logical size (the example'
 | `input` | Named actions, the `br_input_actions_from_json` format (section 5). |
 | `audio` | Master volume/mute, named buses (a number = volume), sound sprites per file (`[start, duration]` seconds). |
 | `debug.overlay` | Debug overlay open at start (`--debug` on the command line does the same). |
-| `debug.toggle_key` | SDL key name toggling the overlay (`"F1"`, `"F12"`, `"Grave"`). |
+| `debug.toggle_key` | SDL key name toggling the overlay (`"F1"`, `"F12"`, `"Grave"`; `"none"` = no key). |
+| `debug.keys` | `false` for a shipped game: F1 (overlay) and F2 (profiler) do nothing (default `true`). |
 | `debug.hot_reload` | Poll loaded scene files and reload them when they change (default: on in debug builds, off with `NDEBUG`). |
 | `profiler.hud` / `profiler.panel` | Profiler corner readout / panel (F2) shown at start (`br_profiler_set_hud`, `br_profiler_set_open`). `false` leaves the command line (`--profiler-hud`, `--profiler`) in charge. |
 | `save.org` / `save.app` | Save-data folder (`br_engine_set_save_name`): default org `"braty"` and the window title. Sanitised (characters a folder name cannot hold become `_`), so renaming or localising the title does not move saves once `save.app` is set. |

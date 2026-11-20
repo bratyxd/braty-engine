@@ -13,7 +13,8 @@
 typedef struct br_debug_state {
     mu_Context  *ui;
     bool         open;
-    SDL_Scancode toggle_key;
+    bool         keys_enabled;   /* F1 / F2 react (br_debug_set_keys_enabled) */
+    SDL_Scancode toggle_key;     /* SDL_SCANCODE_UNKNOWN = no key */
     br_node      selected;
     br_array     expanded;   /* br_node: scene-tree rows the user opened */
 
@@ -46,7 +47,7 @@ typedef struct br_debug_state {
     void           *prev_filter_user;
 
     /* profiler panel (br_debug_profiler.c) */
-    SDL_Scancode profiler_key;
+    SDL_Scancode profiler_key;       /* SDL_SCANCODE_UNKNOWN = no key */
     int          profiler_tab;       /* 0 scopes, 1 counters, 2 memory */
     uint32_t     profiler_age;       /* inspected frame when paused (age in the ring), else newest */
     bool         profiler_toggled[BR_PROFILER_MAX_PATHS];  /* tree rows flipped from the default */

@@ -71,7 +71,7 @@ char *br_playtest_command(br_engine *e, const char *json_line);
 void br_playtest_step(br_engine *e, uint32_t frames);
 /* Writes the last rendered frame as PNG (same as br_engine_screenshot). */
 bool br_playtest_screenshot(br_engine *e, const char *path);
-/* Scene tree + components + exposed state + stats as JSON text (free with br_free). */
+/* Frame, time, node count, exposed state, scene tree + components, 3D views as JSON text (free with br_free). */
 char *br_playtest_dump_json(br_engine *e);
 /* Reads a value by path; NULL (logged) if the path does not resolve. Free with cJSON_Delete. */
 cJSON *br_playtest_get(br_engine *e, const char *path);

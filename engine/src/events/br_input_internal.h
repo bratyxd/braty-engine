@@ -15,8 +15,13 @@
 #define BR_EDGE_PRESSED  1u
 #define BR_EDGE_RELEASED 2u
 
-/* Injected pads (no SDL device) use ids far above anything SDL hands out. */
+/* Injected pads (no SDL device) use ids far above anything SDL hands out: BASE + a counter, never
+ * derived from the slot (br_input_gamepad_assign moves pads between slots). */
 #define BR_INPUT_INJECTED_ID_BASE 0xB0000000u
+
+/* Connection edges of a slot (br_gamepad_slot.conn_edges). */
+#define BR_EDGE_CONNECTED    1u
+#define BR_EDGE_DISCONNECTED 2u
 
 typedef struct br_action {
     char    *name;
@@ -37,6 +42,7 @@ typedef struct br_gamepad_slot {
     SDL_Gamepad   *pad;          /* NULL for injected pads */
     bool    injected;
     bool    virtual_device;
+    br_gamepad_type injected_type; /* injected pads: the type they pretend to be */
     SDL_GUID last_guid;          /* of the last pad in this slot (reconnects return here) */
     bool    had_pad;
     bool    sensor_on[SDL_SENSOR_COUNT];
@@ -44,6 +50,8 @@ typedef struct br_gamepad_slot {
     uint8_t edges[SDL_GAMEPAD_BUTTON_COUNT];       /* accumulated by events */
     uint8_t frame_edges[SDL_GAMEPAD_BUTTON_COUNT]; /* latched for this frame */
     float   axes[SDL_GAMEPAD_AXIS_COUNT];          /* raw, -1..1 */
+    uint8_t conn_edges;                            /* BR_EDGE_CONNECTED / _DISCONNECTED, by events */
+    uint8_t conn_frame_edges;                      /* latched for this frame */
 } br_gamepad_slot;
 
 typedef struct br_input_state {
@@ -70,11 +78,15 @@ typedef struct br_input_state {
 
     br_gamepad_slot gamepads[BR_INPUT_MAX_GAMEPADS];
     bool            gamepad_subsystem;
-    float           deadzone_inner;
+    float           deadzone_inner;        /* sticks (radial) */
     float           deadzone_outer;
+    float           trigger_deadzone_inner;
+    float           trigger_deadzone_outer;
+    uint32_t        next_injected_id;
 
     br_input_device last_device;
-    int             last_gamepad;
+    int             last_gamepad;          /* -1 = none, or that pad disconnected */
+    br_gamepad_type last_gamepad_type;     /* of the pad used last; kept after it disconnects */
 
     char     text_acc[BR_INPUT_TEXT_SIZE];
     char     text[BR_INPUT_TEXT_SIZE];

@@ -58,7 +58,7 @@ typedef enum br_input_device {
 
 /* The device that produced the last key/button press, wheel, mouse move, stick push or touch. */
 br_input_device br_input_last_device(br_engine *e);
-/* Slot of the gamepad used last (-1 if none yet). */
+/* Slot of the gamepad used last (-1 if none yet, or that pad has disconnected since). */
 int br_input_last_gamepad(br_engine *e);
 
 /* ---- keyboard (SDL_Scancode = physical key position) */
@@ -142,8 +142,13 @@ br_pen br_input_pen(br_engine *e);
  *
  * A new pad takes the slot it had before if that is free (same SDL GUID), else the first free
  * slot; br_input_gamepad_assign moves it explicitly. The slot number is also sent to the pad as
- * its player index (player LEDs). Axis values pass a radial dead zone (sticks) or a linear one
- * (triggers): br_input_gamepad_set_deadzone. */
+ * its player index (player LEDs). Axis values pass a radial dead zone (sticks,
+ * br_input_gamepad_set_deadzone) or a linear one (triggers, br_input_gamepad_set_trigger_deadzone).
+ *
+ * Hot-plug: poll br_input_gamepad_joined / br_input_gamepad_left (true for one frame), or count
+ * pads. A pad that disconnects while buttons are held reports them released in that frame
+ * (br_input_gamepad_released, br_input_action_released) and its axes read 0; button prompts keep
+ * the family of the pad used last (br_input_glyph). */
 
 typedef enum br_gamepad_type {
     BR_GAMEPAD_TYPE_GENERIC,
@@ -199,11 +204,15 @@ typedef struct br_gamepad_info {
 bool br_input_gamepad_connected(br_engine *e, int slot);
 /* Number of connected gamepads. */
 int br_input_gamepad_count(br_engine *e);
+/* True in the frame a pad connected to this slot (real, virtual or injected). */
+bool br_input_gamepad_joined(br_engine *e, int slot);
+/* True in the frame the pad in this slot disconnected. */
+bool br_input_gamepad_left(br_engine *e, int slot);
 /* True while the button is held. */
 bool br_input_gamepad_down(br_engine *e, int slot, SDL_GamepadButton button);
 /* True in the frame the button went down. */
 bool br_input_gamepad_pressed(br_engine *e, int slot, SDL_GamepadButton button);
-/* True in the frame the button went up. */
+/* True in the frame the button went up (also when its pad disconnected while it was held). */
 bool br_input_gamepad_released(br_engine *e, int slot, SDL_GamepadButton button);
 /* Axis value after the dead zone: sticks -1..1, triggers 0..1. */
 float br_input_gamepad_axis(br_engine *e, int slot, SDL_GamepadAxis axis);
@@ -211,9 +220,12 @@ float br_input_gamepad_axis(br_engine *e, int slot, SDL_GamepadAxis axis);
 float br_input_gamepad_axis_raw(br_engine *e, int slot, SDL_GamepadAxis axis);
 /* Stick as a vector after the radial dead zone (length <= 1; y > 0 = down, like SDL). */
 br_vec2 br_input_gamepad_stick(br_engine *e, int slot, br_gamepad_stick stick);
-/* Dead zone for every pad: below `inner` reads 0, above `outer` reads 1, rescaled in between.
- * Defaults 0.15 and 0.95. Sticks use the stick length (radial), triggers their own value. */
+/* Stick dead zone for every pad, on the stick length (radial): below `inner` reads 0, above
+ * `outer` reads 1, rescaled in between. Defaults 0.15 and 0.95. */
 void br_input_gamepad_set_deadzone(br_engine *e, float inner, float outer);
+/* Trigger dead zone for every pad (linear, same rule). Defaults 0.05 and 0.95: throttles and
+ * brakes keep almost all of their travel. */
+void br_input_gamepad_set_trigger_deadzone(br_engine *e, float inner, float outer);
 /* Rumble: motor strengths 0..1 for duration_ms. False if no pad or no rumble support. */
 bool br_input_gamepad_rumble(br_engine *e, int slot, float low, float high, uint32_t duration_ms);
 /* Trigger rumble (Xbox One impulse triggers): 0..1 each. False if unsupported. */
@@ -223,7 +235,8 @@ bool br_input_gamepad_set_led(br_engine *e, int slot, br_color color);
 /* Raw device effect packet (e.g. DualSense adaptive triggers), passed to SDL_SendGamepadEffect.
  * Untested on hardware: the packet format is the device's own. */
 bool br_input_gamepad_send_effect(br_engine *e, int slot, const void *data, int size);
-/* Family-level type of the pad in this slot (GENERIC if empty). */
+/* Type of the pad in this slot, from SDL's type for real / virtual pads, the type given to
+ * br_input_inject_gamepad_connect for injected ones (GENERIC if empty). */
 br_gamepad_type br_input_gamepad_type(br_engine *e, int slot);
 /* Everything known about the pad in this slot. False if the slot is empty. */
 bool br_input_gamepad_info(br_engine *e, int slot, br_gamepad_info *out);
@@ -387,8 +400,11 @@ bool br_input_format_prompt(br_engine *e, const char *text, char *out, size_t ou
 
 /* ---- injection (same path as real SDL events: SDL_Event -> br_app_event) */
 
-/* Mouse moves to (x, y) in window coordinates. */
+/* Mouse moves to (x, y) in window coordinates (the delta is the difference to the last position). */
 void br_input_inject_pointer_move(br_engine *e, float x, float y);
+/* Mouse moves to (x, y) with an explicit delta (relative mode: the position stays pinned while
+ * the mouse moves). */
+void br_input_inject_pointer_motion(br_engine *e, float x, float y, float dx, float dy);
 /* Mouse button goes down at (x, y). */
 void br_input_inject_pointer_down(br_engine *e, float x, float y, int button);
 /* Mouse button goes up at (x, y). */
@@ -401,10 +417,15 @@ void br_input_inject_key(br_engine *e, SDL_Scancode key, bool down);
 void br_input_inject_touch(br_engine *e, SDL_EventType type, uint64_t finger, float x, float y);
 /* Types UTF-8 text (as SDL_EVENT_TEXT_INPUT). */
 void br_input_inject_text(br_engine *e, const char *utf8);
-/* Gamepad button in a slot. An empty slot gets an injected generic pad first (no SDL device). */
+/* Gamepad button in a slot. A press on an empty slot gets an injected generic pad first (no SDL
+ * device); a release on an empty slot is dropped (it must not bring a disconnected pad back). */
 void br_input_inject_gamepad_button(br_engine *e, int slot, SDL_GamepadButton button, bool down);
-/* Gamepad axis in a slot (-1..1 sticks, 0..1 triggers). An empty slot gets an injected pad. */
+/* Gamepad axis in a slot (-1..1 sticks, 0..1 triggers). A non-zero value on an empty slot gets an
+ * injected generic pad; 0 on an empty slot is dropped. */
 void br_input_inject_gamepad_axis(br_engine *e, int slot, SDL_GamepadAxis axis, float value);
+/* Connects an injected pad of this type (its family drives br_input_glyph) to an empty slot.
+ * False (logged) if the slot is taken or bad. */
+bool br_input_inject_gamepad_connect(br_engine *e, int slot, br_gamepad_type type);
 /* Holds an action at `value` for `frames` latches (1 = pressed this frame, released the next),
  * whatever it is bound to. frames = 0 ends an injection early. Respects contexts like real
  * input. False (logged) if the action is unknown. */
