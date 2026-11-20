@@ -39,6 +39,31 @@ static void test_array(void)
     BR_CHECK(a.data == NULL);
 }
 
+/* R1: sizes past 2^31 used to wrap (push_n overflowed the heap, reserve looped forever). */
+static void test_array_overflow(void)
+{
+    br_array a;
+    br_array_init(&a, sizeof(int));
+    int one = 1;
+    br_array_push(&a, &one);
+    BR_CHECK(br_array_push_n(&a, NULL, UINT32_MAX) == NULL);
+    BR_CHECK(a.count == 1 && *(int *)br_array_at(&a, 0) == 1);
+    br_array_free(&a);
+
+    br_array big;
+    br_array_init(&big, 1u << 20);
+    BR_CHECK(!br_array_reserve(&big, 0x80000001u)); /* returns (false) instead of spinning */
+    BR_CHECK(big.capacity == 0);
+    br_array_free(&big);
+
+    uint32_t u = 0;
+    BR_CHECK(br_u32_mul_ok(65535, 65537, &u) && u == 0xFFFFFFFFu);
+    BR_CHECK(!br_u32_mul_ok(65536, 65536, &u));
+    size_t z = 0;
+    BR_CHECK(br_size_mul_ok(0, SIZE_MAX, &z) && z == 0);
+    BR_CHECK(!br_size_mul_ok(SIZE_MAX / 2 + 1, 2, &z));
+}
+
 static void test_pool(void)
 {
     br_pool p;
@@ -271,6 +296,7 @@ int main(int argc, char **argv)
     (void)argc;
     (void)argv;
     test_array();
+    test_array_overflow();
     test_pool();
     test_map();
     test_strings();

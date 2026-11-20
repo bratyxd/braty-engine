@@ -109,10 +109,12 @@ static bool br_transient_reserve(br_gpu *g, br_transient_stream *s, uint32_t nee
     if (needed <= s->capacity) {
         return true;
     }
-    uint32_t capacity = s->capacity > 0 ? s->capacity : 64 * 1024;
-    while (capacity < needed) {
-        capacity *= 2;
+    /* uint64: doubling past 2^31 must not wrap (it would loop forever) */
+    uint64_t grown = s->capacity > 0 ? s->capacity : 64 * 1024;
+    while (grown < needed) {
+        grown *= 2;
     }
+    uint32_t capacity = grown > UINT32_MAX ? UINT32_MAX : (uint32_t)grown;
     if (s->buffer != NULL) {
         SDL_ReleaseGPUBuffer(g->device, s->buffer);
     }
