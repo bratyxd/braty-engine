@@ -261,7 +261,6 @@ static void cr_signs_system(br_engine *e, float dt, void *user)
             continue;
         }
         s->near = near;
-
         br_canvas3d_get(e, s->plate)->tint = br_color_from_hex(near ? 0xffe9a8 : 0xffffff, 1.0f);
         float from[3] = { 1.25f, 1.25f, 1.25f };
         float to[3] = { 1.0f, 1.0f, 1.0f };

@@ -734,7 +734,6 @@ static void sc_hud_system(br_engine *e, float dt, void *user)
         SDL_snprintf(text, sizeof(text), "%d", (int)g->level);
         br_loc_arg level = { "level", text };
         br_text_set_text(e, g->level_text, br_loc_format(e, "hud.level", &level, 1));
-
         for (int i = 0; i < SC_MAX_LIFE_ICONS; i++) {
             br_node_set_visible(e, g->life_icons[i], i < g->lives);
         }
