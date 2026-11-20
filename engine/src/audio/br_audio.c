@@ -3,6 +3,20 @@
  * Threading: the mixer (br_audio_mix) runs on SDL's audio thread. Everything it reads that the
  * main thread can change (voices, buses, master volume) is in br_audio_state and guarded by
  * `lock`. Sound sample data is immutable after creation, so it is read without the lock.
+ *
+ * Streaming voices decode Vorbis WITHOUT the lock (br_audio_fill_streams), so a main-thread call
+ * never waits for a decode. Why that is race-free:
+ *   - a voice's decoder state (vorbis, src_pos, eof) belongs to the mixer while the voice is
+ *     published; the main thread only creates it before publishing (br_audio_play) and frees it
+ *     when no decode runs. Seeks are requests (seek_pending) the mixer applies.
+ *   - `decoding` is set and cleared under the lock around each unlocked decode. A stop / free on a
+ *     decoding voice only marks it (stop_pending: the handle is stale at once, the slot stays
+ *     taken); the mixer frees it when its decode ends. br_sound_free waits for such decodes
+ *     before freeing the compressed bytes they read.
+ *   - `convert` is an SDL_AudioStream, locked internally: the mixer puts decoded data into it and
+ *     reads from it, the main thread only changes its frequency ratio (br_audio_set_speed).
+ *   - the decode scratch (decode_buf) is touched only by the mixer, and one mixer runs at a time
+ *     (the device callback, or with no device br_audio_mix / the game-clock path).
  */
 #include "app/br_engine_internal.h"
 #include "braty/br_assets.h"
@@ -49,11 +63,14 @@ typedef struct br_voice {
     int       bus;
     br_sound_complete_fn on_complete;
     void     *user;
-    /* streaming */
+    /* streaming (see the threading note at the top) */
     stb_vorbis      *vorbis;
     SDL_AudioStream *convert;    /* source format -> mixer format, frequency ratio = speed */
     uint32_t         src_pos;    /* next source sample to decode */
     bool             eof;
+    bool             decoding;     /* the mixer decodes it outside the lock right now */
+    bool             stop_pending; /* stopped while decoding: freed by the mixer after the decode */
+    bool             seek_pending; /* br_audio_seek: the mixer repositions the decoder */
 } br_voice;
 
 typedef struct br_bus {
@@ -145,17 +162,33 @@ static void br_audio_free_voice(br_voice *v)
     v->generation = generation == 0 ? 1 : generation;
 }
 
+/* Stops a voice (lock held): freed now, or by the mixer when its running decode ends. */
+static void br_audio_release_voice(br_voice *v)
+{
+    if (v->decoding) {
+        v->stop_pending = true;
+    } else {
+        br_audio_free_voice(v);
+    }
+}
+
 static void br_sound_free(br_engine *e, br_sound *sound)
 {
     br_audio_state *s = e->audio;
-    if (s != NULL) {
+    /* a decode in flight reads sound->ogg: wait for it (one chunk) before freeing */
+    for (bool busy = s != NULL; busy;) {
+        busy = false;
         SDL_LockMutex(s->lock);
         for (int i = 0; i < BR_AUDIO_MAX_INSTANCES; i++) {
             if (s->voices[i].active && s->voices[i].sound == sound) {
-                br_audio_free_voice(&s->voices[i]);
+                busy = busy || s->voices[i].decoding;
+                br_audio_release_voice(&s->voices[i]);
             }
         }
         SDL_UnlockMutex(s->lock);
+        if (busy) {
+            SDL_Delay(1);
+        }
     }
     SDL_free(sound->samples); /* from SDL_ConvertAudioSamples, not br_alloc */
     br_free(sound->ogg);
@@ -334,37 +367,105 @@ static uint32_t br_audio_src_sample(const br_sound *sound, uint32_t mixer_frame)
     return (uint32_t)((uint64_t)mixer_frame * (uint64_t)sound->src_rate / BR_AUDIO_RATE);
 }
 
-/* Decodes one chunk into the converter. False when nothing more will come. */
-static bool br_audio_stream_feed(br_audio_state *s, br_voice *v)
+/* What one unlocked decode of a streaming voice needs (copied under the lock). */
+typedef struct br_stream_job {
+    const br_sound  *sound;
+    stb_vorbis      *vorbis;
+    SDL_AudioStream *convert;
+    uint32_t         start;      /* range in mixer frames */
+    uint32_t         end;
+    uint32_t         src_pos;
+    uint32_t         seek_src;   /* where a seek goes */
+    bool             loop;
+    bool             eof;
+    bool             seek;
+} br_stream_job;
+
+/* Decodes one chunk into the converter (no lock: see the top). False when nothing more will come. */
+static bool br_audio_stream_feed(br_audio_state *s, br_stream_job *j)
 {
-    const br_sound *sound = v->sound;
-    uint32_t end_src = br_audio_src_sample(sound, v->end);
+    const br_sound *sound = j->sound;
+    uint32_t end_src = br_audio_src_sample(sound, j->end);
     int channels = sound->src_channels;
     int max_frames = (int)(BR_ARRAY_COUNT(s->decode_buf) / (size_t)channels);
-    if (end_src > v->src_pos && (uint32_t)max_frames > end_src - v->src_pos) {
-        max_frames = (int)(end_src - v->src_pos);
+    if (end_src > j->src_pos && (uint32_t)max_frames > end_src - j->src_pos) {
+        max_frames = (int)(end_src - j->src_pos);
     }
     int n = 0;
-    if (v->src_pos < end_src) {
-        n = stb_vorbis_get_samples_float_interleaved(v->vorbis, channels, s->decode_buf, max_frames * channels);
+    if (j->src_pos < end_src) {
+        n = stb_vorbis_get_samples_float_interleaved(j->vorbis, channels, s->decode_buf, max_frames * channels);
     }
     if (n > 0) {
-        SDL_PutAudioStreamData(v->convert, s->decode_buf, n * channels * (int)sizeof(float));
-        v->src_pos += (uint32_t)n;
+        SDL_PutAudioStreamData(j->convert, s->decode_buf, n * channels * (int)sizeof(float));
+        j->src_pos += (uint32_t)n;
     }
-    if (n > 0 && v->src_pos < end_src) {
+    if (n > 0 && j->src_pos < end_src) {
         return true;
     }
-    if (v->loop && (n > 0 || v->src_pos != br_audio_src_sample(sound, v->start))) {
-        v->src_pos = br_audio_src_sample(sound, v->start);
-        stb_vorbis_seek(v->vorbis, v->src_pos);
+    if (j->loop && (n > 0 || j->src_pos != br_audio_src_sample(sound, j->start))) {
+        j->src_pos = br_audio_src_sample(sound, j->start);
+        stb_vorbis_seek(j->vorbis, j->src_pos);
         return true;
     }
-    SDL_FlushAudioStream(v->convert);
-    v->eof = true;
+    SDL_FlushAudioStream(j->convert);
+    j->eof = true;
     return false;
 }
 
+/* Before mixing: tops up every playing streaming voice's converter to `frames` mixer frames,
+ * decoding with the lock released (one voice at a time). */
+static void br_audio_fill_streams(br_audio_state *s, uint32_t frames)
+{
+    int want_bytes = (int)(frames * sizeof(float) * BR_AUDIO_CHANNELS);
+    for (int i = 0; i < BR_AUDIO_MAX_INSTANCES; i++) {
+        br_voice *v = &s->voices[i];
+        br_stream_job j;
+        SDL_zero(j);
+        SDL_LockMutex(s->lock);
+        bool run = v->active && !v->finished && !v->stop_pending && !v->paused && !s->buses[v->bus].paused &&
+                   !s->global_paused && v->sound->streaming &&
+                   (v->seek_pending || (!v->eof && SDL_GetAudioStreamAvailable(v->convert) < want_bytes));
+        if (run) {
+            v->decoding = true;
+            j.sound = v->sound;
+            j.vorbis = v->vorbis;
+            j.convert = v->convert;
+            j.start = v->start;
+            j.end = v->end;
+            j.src_pos = v->src_pos;
+            j.seek_src = br_audio_src_sample(v->sound, v->start + (uint32_t)v->pos);
+            j.loop = v->loop;
+            j.eof = v->eof;
+            j.seek = v->seek_pending;
+            v->seek_pending = false;
+        }
+        SDL_UnlockMutex(s->lock);
+        if (!run) {
+            continue;
+        }
+        if (j.seek) {
+            j.src_pos = j.seek_src;
+            stb_vorbis_seek(j.vorbis, j.src_pos);
+            SDL_ClearAudioStream(j.convert);
+            j.eof = false;
+        }
+        bool more = !j.eof;
+        while (more && SDL_GetAudioStreamAvailable(j.convert) < want_bytes) {
+            more = br_audio_stream_feed(s, &j);
+        }
+        SDL_LockMutex(s->lock);
+        v->decoding = false;
+        if (v->stop_pending) {
+            br_audio_free_voice(v); /* stopped (or its sound freed) during the decode */
+        } else if (!v->seek_pending) {
+            v->src_pos = j.src_pos; /* a seek that came in meanwhile wins: applied next mix */
+            v->eof = j.eof;
+        }
+        SDL_UnlockMutex(s->lock);
+    }
+}
+
+/* Mixes what the converter holds (lock held; no decoding here: br_audio_fill_streams did it). */
 static void br_audio_mix_stream(br_audio_state *s, br_voice *v, float *out, uint32_t frames)
 {
     float gl, gr;
@@ -374,13 +475,8 @@ static void br_audio_mix_stream(br_audio_state *s, br_voice *v, float *out, uint
     while (produced < frames) {
         int available = SDL_GetAudioStreamAvailable(v->convert) / (int)(sizeof(float) * BR_AUDIO_CHANNELS);
         if (available <= 0) {
-            if (v->eof || !br_audio_stream_feed(s, v)) {
-                if (SDL_GetAudioStreamAvailable(v->convert) <= 0) {
-                    v->finished = true;
-                    return;
-                }
-            }
-            continue;
+            v->finished = v->eof; /* else an underrun (a speed change outran the fill): silence */
+            return;
         }
         uint32_t want = frames - produced;
         if (want > (uint32_t)available) {
@@ -413,10 +509,12 @@ static void br_audio_mix_frames(br_engine *e, float *out, uint32_t frames)
     if (s == NULL) {
         return;
     }
+    br_audio_fill_streams(s, frames);
     SDL_LockMutex(s->lock);
     for (int i = 0; i < BR_AUDIO_MAX_INSTANCES && !s->global_paused; i++) {
         br_voice *v = &s->voices[i];
-        if (!v->active || v->finished || v->paused || s->buses[v->bus].paused) {
+        if (!v->active || v->finished || v->stop_pending || v->seek_pending || v->paused ||
+            s->buses[v->bus].paused) {
             continue;
         }
         if (v->sound->streaming) {
@@ -551,7 +649,7 @@ static br_voice *br_audio_voice(br_audio_state *s, br_sound_instance i)
         return NULL;
     }
     br_voice *v = &s->voices[i.index];
-    return v->active && !v->finished && v->generation == i.generation ? v : NULL;
+    return v->active && !v->finished && !v->stop_pending && v->generation == i.generation ? v : NULL;
 }
 
 static bool br_audio_start_stream(br_voice *v)
@@ -644,7 +742,7 @@ void br_audio_stop(br_engine *e, br_sound_instance i)
     SDL_LockMutex(s->lock);
     br_voice *v = br_audio_voice(s, i);
     if (v != NULL) {
-        br_audio_free_voice(v);
+        br_audio_release_voice(v);
     }
     SDL_UnlockMutex(s->lock);
 }
@@ -655,7 +753,7 @@ void br_audio_stop_all(br_engine *e)
     SDL_LockMutex(s->lock);
     for (int i = 0; i < BR_AUDIO_MAX_INSTANCES; i++) {
         if (s->voices[i].active) {
-            br_audio_free_voice(&s->voices[i]);
+            br_audio_release_voice(&s->voices[i]);
         }
     }
     SDL_UnlockMutex(s->lock);
@@ -747,12 +845,7 @@ void br_audio_seek(br_engine *e, br_sound_instance i, float seconds)
         double frame = (double)br_audio_float(seconds, 0.0f, 0.0f, 1e6f) * BR_AUDIO_RATE;
         double length = (double)(v->end - v->start);
         v->pos = frame < length ? frame : length - 1.0;
-        if (v->vorbis != NULL) {
-            v->src_pos = br_audio_src_sample(v->sound, v->start + (uint32_t)v->pos);
-            stb_vorbis_seek(v->vorbis, v->src_pos);
-            SDL_ClearAudioStream(v->convert);
-            v->eof = false;
-        }
+        v->seek_pending = v->vorbis != NULL; /* the mixer moves the decoder (it owns it) */
     }
     SDL_UnlockMutex(s->lock);
 }
@@ -773,7 +866,7 @@ uint32_t br_audio_instance_count(br_engine *e)
     uint32_t count = 0;
     SDL_LockMutex(s->lock);
     for (int i = 0; i < BR_AUDIO_MAX_INSTANCES; i++) {
-        count += s->voices[i].active && !s->voices[i].finished ? 1u : 0u;
+        count += s->voices[i].active && !s->voices[i].finished && !s->voices[i].stop_pending ? 1u : 0u;
     }
     SDL_UnlockMutex(s->lock);
     return count;
@@ -944,7 +1037,7 @@ static void br_audio_update(br_engine *e, float dt, void *user)
             done[count].instance.index = i;
             done[count].instance.generation = v->generation;
             count++;
-            br_audio_free_voice(v);
+            br_audio_release_voice(v); /* finished voices are not decoded; release keeps the rule */
         }
     }
     SDL_UnlockMutex(s->lock);

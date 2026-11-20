@@ -9,6 +9,7 @@
  * (float32 stereo, 48 kHz). Ogg files longer than the stream threshold (BR_AUDIO_STREAM_SECONDS by
  * default) stay compressed and are decoded while playing (streaming). The mixer runs on SDL's audio thread; all shared state sits
  * behind one mutex, so every function here is safe to call from the main thread at any time.
+ * Streaming voices decode with the mutex released, so these calls never wait for a decode.
  *
  * The playback device opens on the first br_audio_play when the engine has a window; headless
  * engines never open one. Without an open device (headless, or opening it failed) instances

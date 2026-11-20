@@ -14,7 +14,10 @@ Test: `tests/test_audio.c` (headless mixer). Example: `examples/audio_demo.c`.
   interpolation, pitch changes), loop, start offset, sprite (named range), bus, completion callback.
 - Buses are flat named groups with volume / mute / pause; plus master volume and mute.
 - The mixer `br_audio_mix` runs on SDL's audio thread. All state it shares with the main thread
-  sits behind one mutex. Completion callbacks run on the main thread (`audio.update`, UPDATE).
+  sits behind one mutex. Streaming voices decode Vorbis with the mutex released (the mixer owns
+  each voice's decoder; a stop during a decode is finished by the mixer, a seek is a request it
+  applies), so no main-thread call waits for a decode (`test_audio` `test_stream_stress`).
+  Completion callbacks run on the main thread (`audio.update`, UPDATE).
 - The device opens on the first `br_audio_play` when the engine has a window. Headless engines
   never open one. Whenever no device is open (headless, or opening it failed: no output device,
   RDP, a bad `SDL_AUDIO_DRIVER`) the engine mixes by game time in `audio.update`, so instances
