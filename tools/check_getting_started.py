@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Builds and runs every step of docs/GETTING_STARTED.md. Standard library only.
 
-    python tools/check_getting_started.py [--preset-build build/windows-gcc] [--only N] [--gpu-driver NAME]
+    python tools/check_getting_started.py [--only N] [--gpu-driver NAME] [--compiler gcc] [--sdl-prefix DIR]
 
 Each "## N. Title" section's "<!-- file: PATH -->" code blocks are written into a scratch
 project (build/getting_started/my_game/), on top of the earlier steps' files, exactly as a reader
@@ -77,6 +77,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", type=int, action="append", help="report only these steps (all are applied)")
     ap.add_argument("--gpu-driver", default=None)
+    ap.add_argument("--compiler", default="gcc", help="CMAKE_C_COMPILER for the scratch project")
+    ap.add_argument("--sdl-prefix", default=os.path.join(ROOT, ".deps", "sdl3"), help="SDL3 install prefix")
     args = ap.parse_args()
     with open(GUIDE, encoding="utf-8") as f:
         steps = parse_steps(f.read())
@@ -100,8 +102,8 @@ def main():
         if args.only and number not in args.only:
             continue
         if not configured:
-            result = run(["cmake", "-S", GAME, "-B", build, "-G", "Ninja", "-DCMAKE_C_COMPILER=gcc",
-                          "-DBRATY_DIR=" + ROOT, "-DCMAKE_PREFIX_PATH=" + os.path.join(ROOT, ".deps", "sdl3")])
+            result = run(["cmake", "-S", GAME, "-B", build, "-G", "Ninja", "-DCMAKE_C_COMPILER=" + args.compiler,
+                          "-DBRATY_DIR=" + ROOT, "-DCMAKE_PREFIX_PATH=" + args.sdl_prefix])
             if result.returncode != 0:
                 print(result.stdout + result.stderr)
                 return 1
