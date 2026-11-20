@@ -209,6 +209,56 @@ static void test_nodes(br_engine *e)
     BR_CHECK(g_destroyed == 2);
 }
 
+typedef struct linked3d {
+    br_node3d other;
+    int       tag;
+} linked3d;
+
+static int g_linked_calls;
+
+static void linked_destroy(br_engine *e, br_node3d n, void *data)
+{
+    (void)n;
+    linked3d *l = data;
+    g_linked_calls++;
+    br_node3d_destroy(e, l->other); /* a companion node, destroyed from on_destroy */
+}
+
+/* R6 S1: an on_destroy that destroys another node outside a frame must not re-enter the flush */
+static void test_nested_destroy(br_engine *e)
+{
+    br_node3d_type_desc d;
+    SDL_zero(d);
+    d.name = "test_linked";
+    d.data_size = sizeof(linked3d);
+    d.on_destroy = linked_destroy;
+    uint32_t type = br_node3d_type_register(e, &d);
+    br_node3d a = br_node3d_create(e, type);
+    br_node3d keep1 = br_node3d_create(e, type);
+    br_node3d keep2 = br_node3d_create(e, type);
+    br_node3d b = br_node3d_create_group(e);
+    ((linked3d *)br_node3d_data(e, a, type))->other = b;
+    ((linked3d *)br_node3d_data(e, keep1, type))->tag = 2;
+    ((linked3d *)br_node3d_data(e, keep2, type))->tag = 3;
+    uint32_t before = br_node3d_count(e);
+    br_node3d_destroy(e, a);
+    BR_CHECK(g_linked_calls == 1);
+    BR_CHECK(br_node3d_count(e) == before - 2);
+    BR_CHECK(!br_node3d_valid(e, b));
+    BR_CHECK(((linked3d *)br_node3d_data(e, keep1, type))->tag == 2);
+    BR_CHECK(((linked3d *)br_node3d_data(e, keep2, type))->tag == 3);
+    br_node3d n1 = br_node3d_create_group(e);
+    br_node3d n2 = br_node3d_create_group(e);
+    br_node3d n3 = br_node3d_create_group(e);
+    BR_CHECK(n1.index != n2.index && n2.index != n3.index && n1.index != n3.index);
+    BR_CHECK(br_node3d_valid(e, n1) && br_node3d_valid(e, n2) && br_node3d_valid(e, n3));
+    br_node3d_destroy(e, n1);
+    br_node3d_destroy(e, n2);
+    br_node3d_destroy(e, n3);
+    br_node3d_destroy(e, keep1);
+    br_node3d_destroy(e, keep2);
+}
+
 static void test_geometry(br_engine *e)
 {
     br_geometry3d cube = br_geometry3d_cube(e, br_vec3_make(2.0f, 4.0f, 6.0f));
@@ -365,6 +415,7 @@ int main(void)
     BR_CHECK(e != NULL);
     if (e != NULL) {
         test_nodes(e);
+        test_nested_destroy(e);
         test_geometry(e);
         test_picking(e);
         br_engine_destroy(e);

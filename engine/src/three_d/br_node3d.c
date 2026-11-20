@@ -315,7 +315,7 @@ void br_node3d_destroy(br_engine *e, br_node3d n)
         uint32_t i = *(uint32_t *)br_array_at(&t->pending, k);
         t->alive[i] = 0;
     }
-    if (!e->stepping && s->dispatch_depth == 0) {
+    if (!e->stepping && s->dispatch_depth == 0 && !s->flushing) {
         br_node3d_flush(e);
     }
 }
@@ -324,12 +324,18 @@ void br_node3d_flush(br_engine *e)
 {
     br_three_d_state *s = e->three_d;
     br_node3d_table *t = &s->nodes;
-    /* on_destroy callbacks may destroy more nodes: those append to pending and are freed too */
+    if (s->flushing) {
+        return;
+    }
+    /* on_destroy callbacks may destroy more nodes: those append to pending (no nested flush,
+     * which would free the slot being freed twice) and this loop frees them too */
+    s->flushing = true;
     for (uint32_t k = 0; k < t->pending.count; k++) {
         uint32_t i = *(uint32_t *)br_array_at(&t->pending, k);
         br_node3d_free_slot(e, i);
     }
     br_array_clear(&t->pending);
+    s->flushing = false;
 }
 
 void br_three_d_shutdown_nodes(br_engine *e, void *user)
