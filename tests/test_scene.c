@@ -54,7 +54,7 @@ static void unload_system(br_engine *e, float dt, void *user)
 
 static void test_load_unload_baseline(br_engine *e)
 {
-    uint32_t nodes = br_scene_node_count(e);
+    uint32_t nodes = br_node_count(e);
     uint32_t assets = br_assets_count(e);
     br_scene a = br_scene_load(e, "scenes/a.scene.json", BR_SCENE_SINGLE);
     BR_CHECK(br_scene_is_loaded(e, a) && br_scene_progress(e, a) == 1.0f);
@@ -63,7 +63,7 @@ static void test_load_unload_baseline(br_engine *e)
     BR_CHECK(br_assets_ref_count(e, "scenes/red.png") == 1);
     BR_CHECK(br_assets_ref_count(e, "scenes/shared.png") == 1); /* "assets" + a sprite: one group reference */
     BR_CHECK(br_assets_ref_count(e, "scenes/green.png") == 1);  /* inside the prefab */
-    BR_CHECK(br_scene_node_count(e) == nodes + 5);              /* scene root, file root, 3 sprites */
+    BR_CHECK(br_node_count(e) == nodes + 5);              /* scene root, file root, 3 sprites */
     const char *owners[4];
     BR_CHECK(br_assets_owners(e, "scenes/red.png", owners, 4) == 1 && strcmp(owners[0], "scene:a") == 0);
     BR_CHECK(strcmp(br_scene_active_name(e), "a") == 0);
@@ -71,14 +71,14 @@ static void test_load_unload_baseline(br_engine *e)
     br_scene_unload(e, a);
     BR_CHECK(!br_scene_valid(e, a) && !br_scene_valid(e, br_scene_active(e)));
     BR_CHECK(strcmp(br_scene_active_name(e), "") == 0);
-    BR_CHECK(br_scene_node_count(e) == nodes);
+    BR_CHECK(br_node_count(e) == nodes);
     BR_CHECK(br_assets_count(e) == assets);
 
     /* unloading inside a frame: nodes die at once, assets after the next flush */
     unload_in_frame u = { br_scene_load(e, "scenes/a.scene.json", BR_SCENE_SINGLE), false };
     br_system_add(e, "test.unload", BR_PHASE_UPDATE, 0, unload_system, &u);
     step(e, 1);
-    BR_CHECK(u.done && br_scene_node_count(e) == nodes);
+    BR_CHECK(u.done && br_node_count(e) == nodes);
     BR_CHECK(br_assets_count(e) == assets + 3); /* shared, red, green: held until the flush */
     step(e, 1);
     BR_CHECK(br_assets_count(e) == assets);
@@ -111,7 +111,7 @@ static void test_shared_asset(br_engine *e)
 
 static void test_unload_during_async(br_engine *e)
 {
-    uint32_t nodes = br_scene_node_count(e);
+    uint32_t nodes = br_node_count(e);
     uint32_t assets = br_assets_count(e);
     uint32_t loaded_before_unload = 0;
     for (int i = 0; i < 200; i++) {
@@ -139,7 +139,7 @@ static void test_unload_during_async(br_engine *e)
     settle(e);
     printf("  async unload: %u of 200 scenes had finished loading before the unload\n", loaded_before_unload);
     BR_CHECK(br_scene_count(e) == 0);
-    BR_CHECK(br_scene_node_count(e) == nodes);
+    BR_CHECK(br_node_count(e) == nodes);
     BR_CHECK(br_assets_count(e) == assets);
     BR_CHECK(br_assets_pending(e) == 0);
 }
@@ -157,7 +157,7 @@ static void test_additive_and_active(br_engine *e)
     br_scene_set_active(e, b);
     BR_CHECK(strcmp(br_scene_active_name(e), "b") == 0);
     /* b's root is drawn after a's: later scenes are on top */
-    br_node stage = br_scene_root(e);
+    br_node stage = br_stage_root(e);
     BR_CHECK(br_node_child_index(e, stage, br_scene_root_2d(e, a)) < br_node_child_index(e, stage, br_scene_root_2d(e, b)));
     br_scene c = br_scene_load(e, "scenes/lazy.scene.json", BR_SCENE_SINGLE);
     BR_CHECK(!br_scene_valid(e, a) && !br_scene_valid(e, b) && br_scene_count(e) == 1);
@@ -170,24 +170,24 @@ static void test_additive_and_active(br_engine *e)
 static void test_persistent_nodes(br_engine *e)
 {
     br_node before = br_node_create_container(e); /* on the stage before any scene: nobody's */
-    br_node_add_child(e, br_scene_root(e), before);
+    br_node_add_child(e, br_stage_root(e), before);
     br_scene a = br_scene_load(e, "scenes/a.scene.json", BR_SCENE_SINGLE);
     br_node hud = br_node_create_container(e);
     br_node_add_child(e, br_scene_root_2d(e, a), hud);
     br_node_set_position(e, hud, 5.0f, 6.0f);
     br_node_set_persistent(e, hud, true);
-    BR_CHECK(br_node_persistent(e, hud) && br_node_equal(br_node_parent(e, hud), br_scene_root(e)));
+    BR_CHECK(br_node_persistent(e, hud) && br_node_equal(br_node_parent(e, hud), br_stage_root(e)));
     br_node spawned = br_node_create_container(e); /* added to the stage while a is active */
-    br_node_add_child(e, br_scene_root(e), spawned);
+    br_node_add_child(e, br_stage_root(e), spawned);
     step(e, 1);
     BR_CHECK(br_node_equal(br_node_parent(e, spawned), br_scene_root_2d(e, a)));
-    BR_CHECK(br_node_equal(br_node_parent(e, before), br_scene_root(e)));
+    BR_CHECK(br_node_equal(br_node_parent(e, before), br_stage_root(e)));
     br_scene b = br_scene_load(e, "scenes/b.scene.json", BR_SCENE_SINGLE);
     BR_CHECK(!br_scene_valid(e, a));
     BR_CHECK(br_node_valid(e, hud) && !br_node_valid(e, spawned) && br_node_valid(e, before));
     BR_CHECK(br_node_position(e, hud).x == 5.0f);
     /* persistent nodes draw above the new scene */
-    br_node stage = br_scene_root(e);
+    br_node stage = br_stage_root(e);
     BR_CHECK(br_node_child_index(e, stage, hud) > br_node_child_index(e, stage, br_scene_root_2d(e, b)));
     br_scene_unload(e, b);
     BR_CHECK(br_node_valid(e, hud));
@@ -387,7 +387,7 @@ static void test_scene_file_roots(br_engine *e)
     BR_CHECK(br_node_valid(e, root) && br_assets_ref_count(e, "scenes/red.png") == 1);
     const char *owners[2];
     BR_CHECK(br_assets_owners(e, "scenes/red.png", owners, 2) == 1 && strcmp(owners[0], "file:scenes/a.scene.json") == 0);
-    br_node prefab = br_prefab_instantiate_at(e, "scenes/thing.prefab.json", br_scene_root(e), br_vec2_make(7.0f, 8.0f));
+    br_node prefab = br_prefab_instantiate_at(e, "scenes/thing.prefab.json", br_stage_root(e), br_vec2_make(7.0f, 8.0f));
     BR_CHECK(br_node_position(e, prefab).x == 7.0f && br_node_position(e, prefab).y == 8.0f);
     BR_CHECK(br_assets_ref_count(e, "scenes/green.png") == 2); /* the file's prefab + this instance */
     br_node_destroy(e, prefab);
@@ -398,7 +398,7 @@ static void test_scene_file_roots(br_engine *e)
     BR_CHECK(br_assets_count(e) == assets);
     /* repeated loads do not pile up references (API_REVIEW item 6: 2 -> 9 over a soak) */
     for (int i = 0; i < 5; i++) {
-        br_node r = br_scene_file_load(e, "scenes/a.scene.json", br_scene_root(e));
+        br_node r = br_scene_file_load(e, "scenes/a.scene.json", br_stage_root(e));
         BR_CHECK(br_assets_ref_count(e, "scenes/shared.png") == 1);
         br_node_destroy(e, r);
         step(e, 1);

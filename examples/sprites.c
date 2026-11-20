@@ -201,7 +201,7 @@ static br_node add_panel(br_engine *e, demo_state *s, int column)
 {
     br_node panel = br_node_create_container(e);
     br_node_set_position(e, panel, 20.0f + (float)column * (PANEL_W + 25), 20.0f);
-    br_node_add_child(e, br_scene_root(e), panel);
+    br_node_add_child(e, br_stage_root(e), panel);
     add_rect(e, s, panel, 0.0f, 0.0f, PANEL_W, PANEL_H, 0x262a40);
     return panel;
 }
@@ -213,7 +213,7 @@ static br_node setup_bunnies(br_engine *e, demo_state *s)
     br_component_desc desc = { "bunny", sizeof(bunny), NULL, 0 };
     s->bunny_component = br_component_register(e, &desc);
     br_node layer = br_node_create_container(e);
-    br_node_add_child(e, br_scene_root(e), layer);
+    br_node_add_child(e, br_stage_root(e), layer);
     for (int i = 0; i < g_bunny_count; i++) {
         br_node b = br_sprite_create(e, s->bunny_textures[i % BUNNY_TEXTURES]);
         br_sprite_set_anchor(e, b, 0.5f, 0.5f);
@@ -508,7 +508,7 @@ static void setup_extension_strip(br_engine *e, demo_state *s, br_node top_layer
 {
     br_node strip = br_node_create_container(e);
     br_node_set_position(e, strip, 20.0f, 250.0f);
-    br_node_add_child(e, br_scene_root(e), strip);
+    br_node_add_child(e, br_stage_root(e), strip);
     add_rect(e, s, strip, 0.0f, 0.0f, 1240.0f, 95.0f, 0x1c2033);
 
     /* render group: five sprites moved together by one matrix */
@@ -693,7 +693,7 @@ static bool demo_init(br_engine *e)
     setup_render_texture_panel(e, s);
     br_node top_layer = br_node_create_container(e);
     setup_extension_strip(e, s, top_layer, bunny_parent);
-    br_node_add_child(e, br_scene_root(e), top_layer); /* last child of the stage: drawn last */
+    br_node_add_child(e, br_stage_root(e), top_layer); /* last child of the stage: drawn last */
     if (!g_static) {
         br_system_add(e, "sprites.bunnies", BR_PHASE_UPDATE, 0, bunny_system, s);
     }

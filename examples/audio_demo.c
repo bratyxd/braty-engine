@@ -156,7 +156,7 @@ static bool demo_init(br_engine *e)
         br_node_set_event_mode(e, pad, BR_EVENT_MODE_STATIC);
         br_node_set_cursor(e, pad, SDL_SYSTEM_CURSOR_POINTER);
         br_node_on(e, pad, BR_EVENT_CLICK, pad_click, s);
-        br_node_add_child(e, br_scene_root(e), pad);
+        br_node_add_child(e, br_stage_root(e), pad);
         s->pads[i] = pad;
     }
     br_system_add(e, "demo.audio", BR_PHASE_UPDATE, 0, demo_system, s);

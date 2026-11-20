@@ -3,7 +3,7 @@
  *   br_node_set_event_mode(e, button, BR_EVENT_MODE_STATIC);
  *   br_node_on(e, button, BR_EVENT_CLICK, on_click, state);
  *
- * Mouse, touch and pen SDL events are hit-tested against the stage (br_scene_root) in reverse
+ * Mouse, touch and pen SDL events are hit-tested against the stage (br_stage_root) in reverse
  * draw order: render layers, z-index sorting, masks (scissor, stencil, inverse), hit areas
  * and the node type's hit_test are respected. The target is the top-most node whose event mode
  * is STATIC or DYNAMIC (a hit on a PASSIVE/AUTO child goes to its nearest interactive ancestor).

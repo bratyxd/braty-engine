@@ -154,7 +154,7 @@ static void test_pool(br_engine *e)
 static void test_filter_lists(br_engine *e)
 {
     br_node n = br_node_create_container(e);
-    br_node_add_child(e, br_scene_root(e), n);
+    br_node_add_child(e, br_stage_root(e), n);
     BR_CHECK(!br_node_needs_effects(e, n));
     br_filter list[2] = { br_filter_blur(8.0f, 4, 5), br_filter_alpha(0.5f) };
     BR_CHECK(br_filters_set(e, n, list, 2));

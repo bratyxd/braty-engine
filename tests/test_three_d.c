@@ -354,7 +354,7 @@ static void test_picking(br_engine *e)
 {
     br_node view = br_view3d_create(e, 200.0f, 200.0f);
     BR_CHECK(br_node_valid(e, view));
-    br_node_add_child(e, br_scene_root(e), view);
+    br_node_add_child(e, br_stage_root(e), view);
     br_node3d root = br_view3d_root(e, view);
     br_node3d cam = br_view3d_camera(e, view);
     BR_CHECK(br_camera3d_get(e, cam) != NULL);

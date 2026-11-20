@@ -67,7 +67,7 @@ void br_animation_register(br_engine *e)
     br_anim_clip_register_loader(e);
     br_anim_graph_register_loader(e);
     br_anim_components_register(e);
-    br_scene_on_node_destroy(e, br_animator_on_node_destroy, NULL);
+    br_node_on_destroy(e, br_animator_on_node_destroy, NULL);
     br_node3d_on_destroy(e, br_animator_on_node3d_destroy, NULL);
     br_system_add(e, "animation.tweens", BR_PHASE_LATE_UPDATE, -200, br_animation_tween_system, NULL);
     br_system_add(e, "animation.update", BR_PHASE_LATE_UPDATE, -100, br_animator_system, NULL);

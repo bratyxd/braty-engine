@@ -694,7 +694,7 @@ void br_data_register(br_engine *e)
 #ifndef NDEBUG
     s->hot_reload = true; /* debug builds only: release games do not poll the disk */
 #endif
-    br_scene_on_node_destroy(e, br_data_on_node_destroy, NULL);
+    br_node_on_destroy(e, br_data_on_node_destroy, NULL);
     br_node3d_on_destroy(e, br_data_mesh3d_destroyed, NULL);
     br_system_add(e, "data.release_assets", BR_PHASE_INPUT, -999999, br_data_release_system, NULL);
 

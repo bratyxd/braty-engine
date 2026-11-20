@@ -104,7 +104,7 @@ static void test_game_config_main(void)
     BR_CHECK(br_app_init(&state, &desc, 2, argv) == SDL_APP_CONTINUE);
     br_engine *e = state;
     BR_CHECK(s_config.json_seen_in_init);
-    br_node booted = br_node_find_by_label(e, br_scene_root(e), "booted", true);
+    br_node booted = br_node_find_by_label(e, br_stage_root(e), "booted", true);
     probe_component *p = br_component_get(e, booted, s_config.component_id);
     BR_CHECK(p != NULL && p->value == 7);
     const cJSON *level = cJSON_GetObjectItem(cJSON_GetObjectItem(br_game_config_json(e), "game"), "level");
@@ -322,9 +322,9 @@ static void teardown_kill(br_engine *e, void *user)
 
 static bool teardown_init(br_engine *e)
 {
-    br_scene_on_node_destroy(e, teardown_listener_2d, &s_teardown);
+    br_node_on_destroy(e, teardown_listener_2d, &s_teardown);
     br_node3d_on_destroy(e, teardown_listener_3d, &s_teardown);
-    br_node_add_child(e, br_scene_root(e), br_node_create_container(e));
+    br_node_add_child(e, br_stage_root(e), br_node_create_container(e));
     br_node3d_create_group(e);
     return true;
 }

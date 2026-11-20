@@ -18,7 +18,7 @@ static br_node make_node(br_engine *e, const char *label)
 {
     br_node n = br_node_create_container(e);
     br_node_set_label(e, n, label);
-    br_node_add_child(e, br_scene_root(e), n);
+    br_node_add_child(e, br_stage_root(e), n);
     return n;
 }
 
@@ -329,7 +329,7 @@ static void test_scene_components(void)
         "    \"components\": { \"animator\": { \"clips\": \"tween_test.anim.json\", \"play\": \"slide\", \"speed\": 2 } } },"
         "  { \"type\": \"container\", \"label\": \"brain\", \"children\": [ { \"type\": \"container\", \"label\": \"arm\" } ],"
         "    \"components\": { \"animator\": { \"clips\": \"tween_test.anim.json\", \"graph\": \"tween_test.animgraph.json\" } } } ] }";
-    br_node root = br_scene_file_load_json(e, scene, SDL_strlen(scene), "components.scene.json", br_scene_root(e));
+    br_node root = br_scene_file_load_json(e, scene, SDL_strlen(scene), "components.scene.json", br_stage_root(e));
     BR_CHECK(br_node_valid(e, root));
     br_node panel = br_node_find_by_label(e, root, "panel", true);
     br_node tinted = br_node_find_by_label(e, root, "tinted", true);

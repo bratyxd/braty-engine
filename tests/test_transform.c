@@ -15,7 +15,7 @@ int main(void)
         BR_CHECK(false);
         return br_test_finish();
     }
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     br_node parent = br_node_create_container(e);
     br_node child = br_node_create_container(e);
     br_node_add_child(e, root, parent);

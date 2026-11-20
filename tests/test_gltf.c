@@ -393,7 +393,7 @@ static void test_scene_json(br_engine *e)
                        "    { \"type\": \"group\", \"label\": \"g\", \"position\": [1, 0, 0], \"children\": ["
                        "      { \"type\": \"gltf\", \"label\": \"tiny\", \"source\": \"tiny.gltf\", \"animation\": \"Move\", \"scale\": 2 } ] } ] }";
     uint32_t errors = br_scene_file_error_count(e);
-    br_node view = br_scene_file_load_json(e, json, SDL_strlen(json), "test.scene.json", br_scene_root(e));
+    br_node view = br_scene_file_load_json(e, json, SDL_strlen(json), "test.scene.json", br_stage_root(e));
     BR_CHECK(br_node_valid(e, view) && br_node_type_of(e, view) == br_view3d_type(e));
     BR_CHECK(br_scene_file_error_count(e) == errors);
     BR_CHECK(near_eq(br_view3d_size(e, view).x, 320.0f));
@@ -412,7 +412,7 @@ static void test_scene_json(br_engine *e)
     const char *bad = "{ \"type\": \"view3d\", \"scene\": [ { \"type\": \"mesh\", \"shape\": \"blob\" },"
                       " { \"type\": \"gltf\", \"source\": \"nope.glb\" }, { \"type\": \"light\", \"label\": \"ok\" } ] }";
     errors = br_scene_file_error_count(e);
-    br_node view2 = br_scene_file_load_json(e, bad, SDL_strlen(bad), "bad.scene.json", br_scene_root(e));
+    br_node view2 = br_scene_file_load_json(e, bad, SDL_strlen(bad), "bad.scene.json", br_stage_root(e));
     BR_CHECK(br_scene_file_error_count(e) == errors + 2);
     BR_CHECK(br_light3d_get(e, br_node3d_find_by_label(e, br_view3d_root(e, view2), "ok")) != NULL);
     br_node_destroy(e, view2);

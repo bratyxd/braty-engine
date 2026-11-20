@@ -53,7 +53,7 @@ c.background_color = hex(background);
 br_node cam = br_camera_create(e, &c);
 br_vec2 start = br_node_position(e, target);
 br_node_set_position(e, cam, start.x, start.y);
-br_node_add_child(e, br_scene_root(e), cam);
+br_node_add_child(e, br_stage_root(e), cam);
 br_camera_follow *f = br_component_add(e, cam, br_camera_follow_component(e));
 f->target = target;
 f->damping = 0.15f;

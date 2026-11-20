@@ -68,7 +68,7 @@ static bool init(br_engine *e)
     }
     SDL_zerop(d);
     br_engine_on_shutdown(e, free_state, d);
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     box(e, root, 0, 0, 400, 400, br_color_make(0, 1, 0, 1));
     box(e, root, 400, 0, 400, 400, br_color_make(0, 0, 1, 1));
 

@@ -4,7 +4,7 @@ Headers: `engine/include/braty/br_scene.h` (scenes), `br_asset_group.h` (groups;
 `engine/src/assets/br_asset_group.c`). Source: `engine/src/scenes/br_scenes.c`. Tests:
 `tests/test_scene.c`, `tests/test_asset_group.c` (data in `tests/data/scenes/`). Example:
 `examples/scenes_demo.c` + `examples/scenes/` (golden `tests/golden/scenes_demo.png`).
-The scene *graph* (nodes, `br_scene_root`) is the other module, `docs/agents/scene.md`.
+The scene *graph* (nodes, `br_stage_root`) is the other module, `docs/agents/scene.md`.
 
 ## The model
 

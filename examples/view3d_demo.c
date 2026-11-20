@@ -512,7 +512,7 @@ static void setup_scene(br_engine *e, demo_state *s)
 
 static void setup_2d(br_engine *e, demo_state *s)
 {
-    br_node stage = br_scene_root(e);
+    br_node stage = br_stage_root(e);
     /* under the view: a sky gradient and big text, visible where the 3D background is empty */
     br_node sky = br_sprite_create(e, make_sky(e));
     br_sprite_set_size(e, sky, 1280.0f, 720.0f);

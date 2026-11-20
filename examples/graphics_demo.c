@@ -49,7 +49,7 @@ static br_graphics_context *cell(br_engine *e, int col, int row)
 {
     br_node n = br_graphics_create(e, NULL);
     br_node_set_position(e, n, (float)(col * CELL_W + PAD), (float)(row * CELL_H + PAD));
-    br_node_add_child(e, br_scene_root(e), n);
+    br_node_add_child(e, br_stage_root(e), n);
     return br_graphics_context_of(e, n);
 }
 
@@ -57,7 +57,7 @@ static br_graphics_context *cell(br_engine *e, int col, int row)
 static void draw_grid(br_engine *e)
 {
     br_node n = br_graphics_create(e, NULL);
-    br_node_add_child(e, br_scene_root(e), n);
+    br_node_add_child(e, br_stage_root(e), n);
     br_graphics_context *g = br_graphics_context_of(e, n);
     br_stroke_style border = br_graphics_stroke_style(1.0f, hex(0x2c3550));
     border.pixel_line = true;
@@ -361,8 +361,8 @@ static void row_misc(br_engine *e, br_texture checker)
     br_node_set_rotation(e, b, 0.4f);
     br_node_set_scale(e, b, 0.75f, 1.1f);
     br_node_set_tint(e, b, hex(0x4cc9f0));
-    br_node_add_child(e, br_scene_root(e), a);
-    br_node_add_child(e, br_scene_root(e), b);
+    br_node_add_child(e, br_stage_root(e), a);
+    br_node_add_child(e, br_stage_root(e), b);
 
     g = cell(e, 2, 4); /* transform stack: a fan of rotated rects */
     for (int i = 0; i < 8; i++) {
@@ -431,7 +431,7 @@ static void row_misc(br_engine *e, br_texture checker)
     br_graphics_stroke(g, &px);
     br_node_set_scale(e, big, 3.0f, 3.0f);
     br_node_set_position(e, big, 7 * CELL_W + PAD + 14, 4 * CELL_H + PAD + 15);
-    br_node_add_child(e, br_scene_root(e), big);
+    br_node_add_child(e, br_stage_root(e), big);
 }
 
 static bool demo_init(br_engine *e)

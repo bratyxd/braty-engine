@@ -112,7 +112,7 @@ static bool demo_init(br_engine *e)
     if (g != NULL) {
         br_gpu_set_clear_color(g, br_color_from_hex(0x1d2333, 1.0f));
     }
-    br_node stage = br_scene_root(e);
+    br_node stage = br_stage_root(e);
     br_texture white = br_texture_white(e);
 
     /* the load layers go under the balls */

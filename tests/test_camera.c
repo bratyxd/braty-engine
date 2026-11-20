@@ -189,7 +189,7 @@ static void test_engine(void)
 {
     br_engine *e = br_engine_create("test_camera", NULL);
     br_camera_set_headless_screen(e, 1280.0f, 720.0f);
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
 
     /* no camera: the stage is the screen */
     BR_CHECK(near_eq(br_camera_screen_to_stage(e, br_vec2_make(10.0f, 20.0f)).x, 10.0f));
@@ -340,7 +340,7 @@ static br_node make_clickable(br_engine *e, float x, float y, br_event_listener_
     br_node_set_position(e, n, x, y);
     br_node_set_event_mode(e, n, BR_EVENT_MODE_STATIC);
     br_node_on(e, n, BR_EVENT_CLICK, fn, NULL);
-    br_node_add_child(e, br_scene_root(e), n);
+    br_node_add_child(e, br_stage_root(e), n);
     return n;
 }
 
@@ -352,7 +352,7 @@ static void test_pointer_events(void)
     c.orthographic_size = 180.0f; /* 2x zoom, centred on (1000, 1000) */
     br_node cam = br_camera_create(e, &c);
     br_node_set_position(e, cam, 1000.0f, 1000.0f);
-    br_node_add_child(e, br_scene_root(e), cam);
+    br_node_add_child(e, br_stage_root(e), cam);
     make_clickable(e, 1000.0f, 1000.0f, on_target_click); /* drawn at window (640..720, 360..440) */
     make_clickable(e, 640.0f, 360.0f, on_decoy_click);   /* where the raw window point would land */
     br_engine_step(e, 1.0f / 60.0f);

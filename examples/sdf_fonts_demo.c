@@ -50,11 +50,11 @@ static bool demo_init(br_engine *e)
     label.fill = br_color_from_hex(0xA8DADC, 1.0f);
     for (int i = 0; i < 3; i++) {
         float x = 320.0f + 320.0f * (float)i;
-        add_circle(e, br_scene_root(e), fonts[i], 192.0f, x, 170.0f);
+        add_circle(e, br_stage_root(e), fonts[i], 192.0f, x, 170.0f);
         br_node t = br_text_create(e, k_labels[i], &label);
         br_text_set_anchor(e, t, 0.5f, 0.0f);
         br_node_set_position(e, t, x, 290.0f);
-        br_node_add_child(e, br_scene_root(e), t);
+        br_node_add_child(e, br_stage_root(e), t);
     }
 
     /* bottom: the same row on a canvas3d facing the camera */
@@ -62,7 +62,7 @@ static bool demo_init(br_engine *e)
     br_node_set_position(e, view, 0.0f, 360.0f);
     br_view3d_set_background(e, view, br_color_to_linear(br_color_from_hex(0x1D3557, 1.0f)));
     br_view3d_post(e, view)->bloom = false; /* a glow would hide the ring */
-    br_node_add_child(e, br_scene_root(e), view);
+    br_node_add_child(e, br_stage_root(e), view);
     br_node3d cam = br_view3d_camera(e, view);
     br_node3d_set_position(e, cam, br_vec3_make(0.0f, 0.0f, 3.0f));
     br_node3d_look_at(e, cam, br_vec3_make(0.0f, 0.0f, 0.0f), br_vec3_make(0.0f, 1.0f, 0.0f));

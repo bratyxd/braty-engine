@@ -341,7 +341,7 @@ br_node br_camera_create_logical(br_engine *e, float width, float height)
     c.reference_aspect = height > 0.0f ? width / height : 16.0f / 9.0f;
     br_node n = br_camera_create(e, &c);
     br_node_set_position(e, n, width * 0.5f, height * 0.5f);
-    br_node_add_child(e, br_scene_root(e), n);
+    br_node_add_child(e, br_stage_root(e), n);
     return n;
 }
 

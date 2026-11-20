@@ -53,7 +53,7 @@ static br_node br_data_find_label(br_engine *e, br_node root, const char *label)
             return found;
         }
     }
-    return br_node_find_by_label(e, br_scene_root(e), label, true);
+    return br_node_find_by_label(e, br_stage_root(e), label, true);
 }
 
 void br_data_resolve_refs(br_engine *e, br_node root)
@@ -205,7 +205,7 @@ bool br_scene_file_read_field(br_engine *e, br_node owner, uint32_t component_id
             br_data_add_ref(e, &ref);
             return true;
         }
-        br_node target = br_node_find_by_label(e, br_scene_root(e), value->valuestring, true);
+        br_node target = br_node_find_by_label(e, br_stage_root(e), value->valuestring, true);
         if (!br_node_valid(e, target)) {
             br_data_errorf(e, "no node labelled '%s'", value->valuestring);
             return false;

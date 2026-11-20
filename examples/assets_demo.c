@@ -68,7 +68,7 @@ static void start_loading(br_engine *e, demo_state *s)
 static void build_scene(br_engine *e, demo_state *s)
 {
     br_spritesheet *sheet = br_assets_get(e, "atlas");       /* loaded by the bundle */
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     add_sprite(e, root, br_spritesheet_frame(e, sheet, "gem.png"), 340.0f, 60.0f);
     const br_texture *walk = NULL;
     uint32_t walk_count = br_spritesheet_animation(e, sheet, "walk", &walk);
@@ -168,7 +168,7 @@ static bool demo_init(br_engine *e)
     br_engine_on_shutdown(e, demo_shutdown, s);
     br_gpu_set_clear_color(br_engine_gpu(e), br_color_from_hex(0x101422, 1.0f));
     s->loading = br_node_create_container(e);
-    br_node_add_child(e, br_scene_root(e), s->loading);
+    br_node_add_child(e, br_stage_root(e), s->loading);
     add_rect(e, s->loading, 180.0f, 258.0f, 600.0f, 24.0f, 0x303850);
     s->bar_fill = add_rect(e, s->loading, 180.0f, 258.0f, 0.0f, 24.0f, 0x60c0ff);
     start_loading(e, s);

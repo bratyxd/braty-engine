@@ -134,7 +134,7 @@ static void test_sampling(void)
 
 static void test_loop_modes(br_engine *e)
 {
-    br_node root = make_node(e, br_scene_root(e), "loops");
+    br_node root = make_node(e, br_stage_root(e), "loops");
     br_anim_clip *clip = ramp("ramp", ":x", 0.0f, 10.0f, 1.0f, BR_ANIM_LOOP);
     br_animator a = br_animator_add(e, br_anim_target_2d(root));
     BR_CHECK(br_animator_valid(e, a) && br_animator_add_clip(e, a, clip));
@@ -201,7 +201,7 @@ static void test_loop_modes(br_engine *e)
 
 static void test_cross_fade(br_engine *e)
 {
-    br_node n = make_node(e, br_scene_root(e), "fader");
+    br_node n = make_node(e, br_stage_root(e), "fader");
     br_anim_clip *lo = ramp("lo", ":x", 0.0f, 0.0f, 1.0f, BR_ANIM_LOOP);
     br_anim_clip *hi = ramp("hi", ":x", 10.0f, 10.0f, 1.0f, BR_ANIM_LOOP);
     br_animator a = br_animator_add(e, br_anim_target_2d(n));
@@ -256,7 +256,7 @@ static void test_cross_fade(br_engine *e)
 
 static void test_layers(br_engine *e)
 {
-    br_node rig = make_node(e, br_scene_root(e), "rig");
+    br_node rig = make_node(e, br_stage_root(e), "rig");
     br_node upper = make_node(e, rig, "upper");
     br_node arm = make_node(e, upper, "arm");
     br_node leg = make_node(e, make_node(e, rig, "lower"), "leg");
@@ -307,7 +307,7 @@ static void test_layers(br_engine *e)
 
 static void test_blend_trees(br_engine *e)
 {
-    br_node n = make_node(e, br_scene_root(e), "blend");
+    br_node n = make_node(e, br_stage_root(e), "blend");
     br_anim_clip *c0 = ramp("c0", ":x", 0.0f, 0.0f, 1.0f, BR_ANIM_LOOP);
     br_anim_clip *c1 = ramp("c1", ":x", 10.0f, 10.0f, 2.0f, BR_ANIM_LOOP);
     br_anim_clip *c2 = ramp("c2", ":x", 30.0f, 30.0f, 3.0f, BR_ANIM_LOOP);
@@ -380,7 +380,7 @@ static void count_events(br_engine *e, int *start, int *half)
 
 static void test_events(br_engine *e)
 {
-    br_node n = make_node(e, br_scene_root(e), "events");
+    br_node n = make_node(e, br_stage_root(e), "events");
     br_anim_clip *c = ramp("ev", ":x", 0.0f, 1.0f, 1.0f, BR_ANIM_LOOP);
     br_anim_clip_add_marker(c, 0.0f, "start");
     br_anim_clip_add_marker(c, 0.5f, "half");
@@ -445,7 +445,7 @@ static void test_state_machine(br_engine *e)
     if (g == NULL) {
         return;
     }
-    br_node n = make_node(e, br_scene_root(e), "sm");
+    br_node n = make_node(e, br_stage_root(e), "sm");
     br_anim_clip *c0 = ramp("c0", ":x", 0.0f, 0.0f, 1.0f, BR_ANIM_LOOP);
     br_anim_clip *c1 = ramp("c1", ":x", 10.0f, 10.0f, 1.0f, BR_ANIM_LOOP);
     br_anim_clip *c2 = ramp("c2", ":x", 30.0f, 30.0f, 0.5f, BR_ANIM_LOOP);
@@ -490,7 +490,7 @@ static void test_state_machine(br_engine *e)
 
 static void test_dead_bindings(br_engine *e)
 {
-    br_node root = make_node(e, br_scene_root(e), "dead");
+    br_node root = make_node(e, br_stage_root(e), "dead");
     br_node a_node = make_node(e, root, "a");
     br_node b_node = make_node(e, root, "b");
     br_anim_clip *c = br_anim_clip_create("multi", 0.0f, BR_ANIM_LOOP);
@@ -563,7 +563,7 @@ static void test_properties(br_engine *e)
 {
     br_texture white = br_texture_white(e);
     br_texture other = br_texture_create_rgba8(e, 4, 4, NULL, NULL);
-    br_node holder = make_node(e, br_scene_root(e), "holder");
+    br_node holder = make_node(e, br_stage_root(e), "holder");
     br_node s = br_sprite_create(e, white);
     br_node_set_label(e, s, "spr");
     br_node_add_child(e, holder, s);
@@ -694,7 +694,7 @@ static void test_anim_json(br_engine *e)
     const br_anim_clip *idle = br_anim_library_find(lib, "idle");
     BR_CHECK(idle != NULL && near_eq(idle->duration, 3.0f) && br_anim_library_find(lib, "x") == NULL);
     /* plays on a node tree */
-    br_node root = make_node(e, br_scene_root(e), "json_rig");
+    br_node root = make_node(e, br_stage_root(e), "json_rig");
     br_node arm = make_node(e, root, "arm");
     br_animator a = br_animator_add(e, br_anim_target_2d(root));
     BR_CHECK(br_animator_add_library(e, a, lib) == 2);
@@ -724,7 +724,7 @@ static void test_sources(br_engine *e)
     br_anim_clip *flip = br_anim_clip_from_frames("flip", frames, 3);
     BR_CHECK(flip != NULL && near_eq(flip->duration, 0.5f) && flip->texture_count == 2);
     br_node s = br_sprite_create(e, br_texture_white(e));
-    br_node_add_child(e, br_scene_root(e), s);
+    br_node_add_child(e, br_stage_root(e), s);
     br_animator a = br_animator_add(e, br_anim_target_2d(s));
     br_animator_add_clip(e, a, flip);
     br_animator_play(e, a, "flip");
@@ -771,7 +771,7 @@ static void test_sources(br_engine *e)
 
 static void test_root_motion(br_engine *e)
 {
-    br_node n = make_node(e, br_scene_root(e), "walker");
+    br_node n = make_node(e, br_stage_root(e), "walker");
     br_node_set_position(e, n, 5.0f, 7.0f);
     br_anim_clip *c = br_anim_clip_create("walk", 0.0f, BR_ANIM_LOOP);
     float t[2] = { 0.0f, 1.0f };
@@ -801,7 +801,7 @@ static void test_root_motion(br_engine *e)
  * call: frozen clip, popping pose); a fade starts from the pose on screen. */
 static void test_fade_fixes(br_engine *e)
 {
-    br_node n = make_node(e, br_scene_root(e), "fades");
+    br_node n = make_node(e, br_stage_root(e), "fades");
     br_anim_clip *clips[6] = {
         ramp("walk", ":x", 0.0f, 10.0f, 1.0f, BR_ANIM_LOOP), ramp("run", ":x", 100.0f, 200.0f, 2.0f, BR_ANIM_LOOP),
         ramp("a", ":x", 0.0f, 0.0f, 1.0f, BR_ANIM_LOOP),      ramp("b", ":x", 10.0f, 10.0f, 1.0f, BR_ANIM_LOOP),
@@ -856,7 +856,7 @@ static void test_fade_fixes(br_engine *e)
  * teleport, a loop wrap does not hitch, and the root node itself can take the delta. */
 static void test_root_motion_track(br_engine *e)
 {
-    br_node n = make_node(e, br_scene_root(e), "mover");
+    br_node n = make_node(e, br_stage_root(e), "mover");
     br_node_set_position(e, n, 5.0f, 7.0f);
     float t[2] = { 0.0f, 1.0f };
     float walk_v[4] = { 0.0f, 0.0f, 10.0f, 4.0f };
@@ -898,7 +898,7 @@ static void test_root_motion_track(br_engine *e)
 /* Markers playing backwards: landing exactly on 0 is not one more pass. */
 static void test_markers_backwards(br_engine *e)
 {
-    br_node n = make_node(e, br_scene_root(e), "backwards");
+    br_node n = make_node(e, br_stage_root(e), "backwards");
     br_anim_clip *c = ramp("ev", ":x", 0.0f, 1.0f, 1.0f, BR_ANIM_LOOP);
     br_anim_clip_add_marker(c, 0.5f, "half");
     br_animator a = br_animator_add(e, br_anim_target_2d(n));
@@ -961,7 +961,7 @@ static void test_parameters(br_engine *e)
         "                     { \"from\": \"jump\", \"to\": \"idle\", \"exit_time\": 1.0, \"duration\": 0 } ] }";
     br_anim_graph *g = br_anim_graph_parse(e, "trigger.animgraph.json", graph, SDL_strlen(graph));
     BR_CHECK(g != NULL);
-    br_node n = make_node(e, br_scene_root(e), "params");
+    br_node n = make_node(e, br_stage_root(e), "params");
     br_anim_clip *c0 = ramp("c0", ":x", 0.0f, 0.0f, 1.0f, BR_ANIM_LOOP);
     br_anim_clip *c1 = ramp("c1", ":x", 10.0f, 10.0f, 1.0f, BR_ANIM_LOOP);
     br_anim_clip *c2 = ramp("c2", ":x", 30.0f, 30.0f, 0.5f, BR_ANIM_LOOP);
@@ -1014,7 +1014,7 @@ static void test_parameters(br_engine *e)
  * node attached after the clip was bound. */
 static void test_dead_and_rebind(br_engine *e)
 {
-    br_node root = make_node(e, br_scene_root(e), "dead2");
+    br_node root = make_node(e, br_stage_root(e), "dead2");
     br_node x = make_node(e, root, "x");
     br_anim_clip *ca = ramp("on_x", "x:x", 0.0f, 10.0f, 1.0f, BR_ANIM_LOOP);
     br_anim_clip *cb = ramp("on_root", ":alpha", 1.0f, 1.0f, 1.0f, BR_ANIM_LOOP);
@@ -1072,7 +1072,7 @@ static void test_hostile_data(br_engine *e)
         "{ \"states\": [ { \"name\": \"s\", \"clip\": \"c0\" } ], \"entry\": 5 }",
         "[1, 2, 3]", "\"just a string\"", "{}", "",
     };
-    br_node n = make_node(e, br_scene_root(e), "hostile");
+    br_node n = make_node(e, br_stage_root(e), "hostile");
     br_anim_clip *c0 = ramp("c0", ":x", 0.0f, 1.0f, 1.0f, BR_ANIM_LOOP);
     br_animator a = br_animator_add(e, br_anim_target_2d(n));
     br_animator_add_clip(e, a, c0);
@@ -1153,7 +1153,7 @@ static void test_hostile_data(br_engine *e)
  * cap, set_time, stop_layer, a queued fade on a loop wrap, additive quaternion layers. */
 static void test_clock_and_layers(br_engine *e)
 {
-    br_node n = make_node(e, br_scene_root(e), "clock");
+    br_node n = make_node(e, br_stage_root(e), "clock");
     br_anim_clip *r = ramp("r", ":x", 0.0f, 10.0f, 1.0f, BR_ANIM_LOOP);
     br_anim_clip *hold = ramp("hold", ":x", 50.0f, 50.0f, 1.0f, BR_ANIM_LOOP);
     br_animator a = br_animator_add(e, br_anim_target_2d(n));
@@ -1220,7 +1220,7 @@ static void test_clock_and_layers(br_engine *e)
 
 static void run_script(br_engine *e, float *out)
 {
-    br_node root = make_node(e, br_scene_root(e), "det");
+    br_node root = make_node(e, br_stage_root(e), "det");
     br_node arm = make_node(e, root, "arm");
     br_anim_library *lib = br_anim_library_parse(e, "det.anim.json", g_anim_json, SDL_strlen(g_anim_json));
     br_animator a = br_animator_add(e, br_anim_target_2d(root));

@@ -157,7 +157,7 @@ static bool br_scenes_is_root(br_engine *e, br_node n)
 /* Stage children that are neither scene roots nor persistent, in stage order. */
 static void br_scenes_orphans(br_engine *e, br_array *out)
 {
-    br_node stage = br_scene_root(e);
+    br_node stage = br_stage_root(e);
     uint32_t count = br_node_child_count(e, stage);
     for (uint32_t i = 0; i < count; i++) {
         br_node child = br_node_child_at(e, stage, i);
@@ -190,7 +190,7 @@ static void br_scenes_adopt(br_engine *e)
 static void br_scenes_raise_persistent(br_engine *e)
 {
     br_scenes_state *s = e->scenes;
-    br_node stage = br_scene_root(e);
+    br_node stage = br_stage_root(e);
     for (uint32_t i = 0; i < s->persistent.count; i++) {
         br_node n = *(br_node *)br_array_at(&s->persistent, i);
         if (br_node_valid(e, n) && br_node_equal(br_node_parent(e, n), stage)) {
@@ -216,7 +216,7 @@ void br_node_set_persistent(br_engine *e, br_node n, bool persistent)
     if (!persistent) {
         return;
     }
-    br_node stage = br_scene_root(e);
+    br_node stage = br_stage_root(e);
     if (!br_node_equal(br_node_parent(e, n), stage)) {
         br_node_reparent(e, n, stage); /* out of its scene, same place on screen */
     }
@@ -379,7 +379,7 @@ static void br_scenes_build(br_engine *e, br_scene scene)
     char label[BR_SCENE_NAME_SIZE + 8];
     SDL_snprintf(label, sizeof(label), "scene:%s", rec->name);
     br_node_set_label(e, root, label);
-    br_node_add_child(e, br_scene_root(e), root);
+    br_node_add_child(e, br_stage_root(e), root);
     rec->root = root;
     rec->loaded = true;
     char path[BR_SCENE_PATH_SIZE];

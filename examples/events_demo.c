@@ -214,7 +214,7 @@ static bool demo_init(br_engine *e)
     s->white = br_texture_white(e);
     br_component_desc desc = { "demo.button", sizeof(demo_button), NULL, 0 };
     s->button_component = br_component_register(e, &desc);
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     make_rect(s, e, root, 0, 0, 1280, 720, 0x1c2030);   /* background (passive: not a target) */
 
     /* buttons + click dots */

@@ -343,7 +343,7 @@ static void br_profiler_gather_counters(br_engine *e, br_profiler_state *p)
         c[BR_PROFILER_NODES_DRAWN] += rs.nodes_drawn;
     }
     if (e->scene != NULL) {
-        c[BR_PROFILER_NODES] += br_scene_node_count(e);
+        c[BR_PROFILER_NODES] += br_node_count(e);
     }
     c[BR_PROFILER_NODES_3D] += br_node3d_count(e);
     c[BR_PROFILER_MODELS_3D] += br_gltf_instance_count(e);

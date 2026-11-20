@@ -100,7 +100,7 @@ Key names are SDL scancode names, buttons SDL gamepad names (`"a"` = south face 
   from the next dispatch, destroyed nodes are skipped for the rest of the path. SDL events arrive
   outside `br_engine_step`, so a destroy inside a listener is usually immediate - keep handles,
   not pointers.
-- Listener tables are cleaned through `br_scene_on_node_destroy`; a new node reusing a slot starts
+- Listener tables are cleaned through `br_node_on_destroy`; a new node reusing a slot starts
   with no listeners. Removed rows are compacted per list (only lists marked dirty), so unloading a
   scene of N listened nodes is linear.
 - Coordinates are window coordinates = stage units. Touch coordinates are scaled by the window

@@ -180,7 +180,7 @@ static void test_animation(br_engine *e)
     }
     br_anim_frame frames[3] = { { t[0], 0.1f }, { t[1], 0.2f }, { t[2], 0.1f } };
     br_node s = br_animated_sprite_create(e, frames, 3);
-    br_node_add_child(e, br_scene_root(e), s);
+    br_node_add_child(e, br_stage_root(e), s);
     anim_counts counts = { 0, 0, 0 };
     br_animated_sprite_set_callbacks(e, s, on_complete, on_change, on_loop, &counts);
     BR_CHECK(br_animated_sprite_is(e, s) && br_animated_sprite_total_frames(e, s) == 3);
@@ -249,7 +249,7 @@ static void test_animation(br_engine *e)
     br_texture anchored = br_texture_create_frame(e, t[0], &f);
     br_texture two[2] = { t[0], anchored };
     br_node u = br_animated_sprite_create_uniform(e, two, 2, 10.0f);
-    br_node_add_child(e, br_scene_root(e), u);
+    br_node_add_child(e, br_stage_root(e), u);
     br_animated_sprite_set_update_anchor(e, u, true);
     br_animated_sprite_play(e, u);
     br_engine_step(e, 0.099f);
@@ -309,7 +309,7 @@ static void test_meshes(br_engine *e)
     br_texture tex = br_texture_create_rgba8(e, 16, 4, NULL, NULL);
     br_vec2 rp[3] = { { 0, 0 }, { 10, 0 }, { 20, 0 } };
     br_node rope = br_mesh_rope_create(e, tex, rp, 3, 0.0f);
-    br_node_add_child(e, br_scene_root(e), rope);
+    br_node_add_child(e, br_stage_root(e), rope);
     BR_CHECK(br_node_type_hit_test(e, rope, br_vec2_make(15, 1)));
     BR_CHECK(!br_node_type_hit_test(e, rope, br_vec2_make(15, 3)));
     uint32_t count = 0;

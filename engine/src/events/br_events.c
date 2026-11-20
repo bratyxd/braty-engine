@@ -521,7 +521,7 @@ br_node br_events_hit_test(br_engine *e, br_vec2 point)
     h.point = point;
     h.target = (br_node){ 0, 0 };
     h.depth = 0;
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     if (br_node_valid(e, root)) {
         br_events_hit(&h, root.index, false, false);
     }
@@ -965,7 +965,7 @@ void br_events_register(br_engine *e)
     br_array_init(&s->global_nodes, sizeof(br_node));
     s->cursor = -1;
     br_engine_add_event_handler(e, br_events_sdl_event, NULL);
-    br_scene_on_node_destroy(e, br_events_node_destroyed, NULL);
+    br_node_on_destroy(e, br_events_node_destroyed, NULL);
     br_system_add(e, "events.ticker", BR_PHASE_INPUT, -1000, br_events_ticker, NULL);
     br_engine_on_shutdown(e, br_events_shutdown, NULL);
 }

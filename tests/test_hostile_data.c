@@ -55,7 +55,7 @@ static void write_text(br_engine *e, const char *path, const char *text)
 
 static br_node load(br_engine *e, const char *json)
 {
-    return br_scene_file_load_json(e, json, strlen(json), "hostile.scene.json", br_scene_root(e));
+    return br_scene_file_load_json(e, json, strlen(json), "hostile.scene.json", br_stage_root(e));
 }
 
 /* Loads json, expects exactly one more data error containing `text`, and that it took < 200 ms. */
@@ -83,7 +83,7 @@ static void test_prefab_cycles(br_engine *e)
     /* a prefab whose child is itself */
     write_text(e, DIR "self.prefab.json", "{ \"label\": \"self\", \"children\": [ { \"prefab\": \"" DIR "self.prefab.json\" } ] }");
     uint32_t errors = br_scene_file_error_count(e);
-    br_node n = br_prefab_instantiate(e, DIR "self.prefab.json", br_scene_root(e), NULL);
+    br_node n = br_prefab_instantiate(e, DIR "self.prefab.json", br_stage_root(e), NULL);
     BR_CHECK(br_node_valid(e, n));
     BR_CHECK(br_node_child_count(e, n) == 0); /* the cyclic child is skipped */
     BR_CHECK(br_scene_file_error_count(e) - errors == 1);
@@ -93,14 +93,14 @@ static void test_prefab_cycles(br_engine *e)
     /* A -> B -> A, the chain is logged */
     write_text(e, DIR "a.prefab.json", "{ \"label\": \"a\", \"children\": [ { \"prefab\": \"" DIR "b.prefab.json\" } ] }");
     write_text(e, DIR "b.prefab.json", "{ \"label\": \"b\", \"children\": [ { \"prefab\": \"" DIR "a.prefab.json\" } ] }");
-    n = br_prefab_instantiate(e, DIR "a.prefab.json", br_scene_root(e), NULL);
+    n = br_prefab_instantiate(e, DIR "a.prefab.json", br_stage_root(e), NULL);
     BR_CHECK(br_node_valid(e, n) && br_node_child_count(e, n) == 1);
     BR_CHECK(error_has(e, DIR "a.prefab.json -> " DIR "b.prefab.json -> " DIR "a.prefab.json"));
     br_node_destroy(e, n);
 
     /* a prefab based on itself */
     write_text(e, DIR "base.prefab.json", "{ \"prefab\": \"" DIR "base.prefab.json\", \"label\": \"base\" }");
-    n = br_prefab_instantiate(e, DIR "base.prefab.json", br_scene_root(e), NULL);
+    n = br_prefab_instantiate(e, DIR "base.prefab.json", br_stage_root(e), NULL);
     BR_CHECK(!br_node_valid(e, n));
     BR_CHECK(error_has(e, "includes itself"));
 
@@ -124,7 +124,7 @@ static void test_prefab_cycles(br_engine *e)
         SDL_snprintf(text, sizeof(text), "{ \"prefab\": \"" DIR "chain%d.prefab.json\" }", i + 1);
         write_text(e, path, i < 19 ? text : "{ \"label\": \"end\" }");
     }
-    n = br_prefab_instantiate(e, DIR "chain0.prefab.json", br_scene_root(e), NULL);
+    n = br_prefab_instantiate(e, DIR "chain0.prefab.json", br_stage_root(e), NULL);
     BR_CHECK(!br_node_valid(e, n));
     BR_CHECK(error_has(e, "nest more than 16"));
 
@@ -234,14 +234,14 @@ static void test_malformed_files(br_engine *e)
 
     /* scene files */
     write_text(e, DIR "cut.scene.json", "{ \"children\": [ { \"type\": \"sprite\", \"texture\": \"a.p");
-    BR_CHECK(!br_node_valid(e, br_scene_file_load(e, DIR "cut.scene.json", br_scene_root(e))));
+    BR_CHECK(!br_node_valid(e, br_scene_file_load(e, DIR "cut.scene.json", br_stage_root(e))));
     BR_CHECK(error_has(e, "JSON syntax error"));
     br_scene s = br_scene_load(e, DIR "cut.scene.json", BR_SCENE_ADDITIVE);
     br_scene_unload(e, s);
     write_text(e, DIR "empty.scene.json", "");
-    BR_CHECK(!br_node_valid(e, br_scene_file_load(e, DIR "empty.scene.json", br_scene_root(e))));
+    BR_CHECK(!br_node_valid(e, br_scene_file_load(e, DIR "empty.scene.json", br_stage_root(e))));
     write_text(e, DIR "array.scene.json", "[1, 2, 3]");
-    BR_CHECK(!br_node_valid(e, br_scene_file_load(e, DIR "array.scene.json", br_scene_root(e))));
+    BR_CHECK(!br_node_valid(e, br_scene_file_load(e, DIR "array.scene.json", br_stage_root(e))));
     br_node n = load(e, "{ \"type\": 5, \"children\": 5 }");
     BR_CHECK(!br_node_valid(e, n));
     n = load(e, "{ \"children\": 5, \"components\": [1], \"assets\": 7, \"filters\": \"x\", \"hit_area\": 3,"
@@ -254,10 +254,10 @@ static void test_malformed_files(br_engine *e)
 
     /* prefabs */
     write_text(e, DIR "cut.prefab.json", "{ \"label\": \"x\", \"children\": [");
-    BR_CHECK(!br_node_valid(e, br_prefab_instantiate(e, DIR "cut.prefab.json", br_scene_root(e), NULL)));
+    BR_CHECK(!br_node_valid(e, br_prefab_instantiate(e, DIR "cut.prefab.json", br_stage_root(e), NULL)));
     BR_CHECK(error_has(e, "not valid JSON"));
     write_text(e, DIR "list.prefab.json", "[ { \"label\": \"x\" } ]");
-    BR_CHECK(!br_node_valid(e, br_prefab_instantiate(e, DIR "list.prefab.json", br_scene_root(e), NULL)));
+    BR_CHECK(!br_node_valid(e, br_prefab_instantiate(e, DIR "list.prefab.json", br_stage_root(e), NULL)));
     BR_CHECK(error_has(e, "must be one node object"));
     BR_CHECK(br_scene_file_error_count(e) - errors >= 8);
 

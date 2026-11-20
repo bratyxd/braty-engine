@@ -156,7 +156,7 @@ void br_render_to_texture(br_engine *e, br_node n, br_texture target);
 
 /* One way to draw the stage (or another 2D subtree) this frame. */
 typedef struct br_render_view {
-    br_node    root;           /* zero handle = the stage (br_scene_root) */
+    br_node    root;           /* zero handle = the stage (br_stage_root) */
     br_texture target;         /* zero handle = the window */
     br_mat4    projection;     /* root-space -> clip space of the WHOLE target */
     br_rect    area;           /* root-space rect the view shows (br_render_area, inverse masks) */

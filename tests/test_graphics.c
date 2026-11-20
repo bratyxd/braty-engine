@@ -316,7 +316,7 @@ static void test_nodes(br_engine *e)
     BR_CHECK(br_graphics_context_of(e, b) == shared);
     BR_CHECK(br_graphics_context_of(e, own) != NULL && br_graphics_context_of(e, own) != shared);
     br_graphics_context_destroy(shared); /* nodes keep it alive */
-    br_node_add_child(e, br_scene_root(e), a);
+    br_node_add_child(e, br_stage_root(e), a);
     br_node_set_position(e, a, 100, 100);
     br_rect r = br_node_get_local_bounds(e, a);
     BR_CHECK(near(r.width, 40.0f, 1e-4f) && near(r.height, 20.0f, 1e-4f));

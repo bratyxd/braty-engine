@@ -121,7 +121,7 @@ static void setup(br_engine *e, demo_state *s)
         p[i].tint = random_tint(s);
         p[i].alpha = 0.6f + 0.4f * rnd(s);
     }
-    br_node_add_child(e, br_scene_root(e), pc);
+    br_node_add_child(e, br_stage_root(e), pc);
     /* end snippet */
     s->container = pc;
     for (int i = 0; i < g_count; i++) {
@@ -141,7 +141,7 @@ static void setup(br_engine *e, demo_state *s)
         q[i].tint = 0xFFE080;
     }
     br_node_set_position(e, s->small, 20, 20);
-    br_node_add_child(e, br_scene_root(e), s->small);
+    br_node_add_child(e, br_stage_root(e), s->small);
 }
 
 static void particle_system(br_engine *e, float dt, void *user)

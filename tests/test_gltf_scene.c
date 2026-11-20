@@ -314,7 +314,7 @@ typedef struct counts {
 
 static counts take_counts(br_engine *e)
 {
-    counts c = { br_scene_node_count(e), br_node3d_count(e), br_assets_ref_count(e, "level.gltf"),
+    counts c = { br_node_count(e), br_node3d_count(e), br_assets_ref_count(e, "level.gltf"),
                  br_component3d_count(e, g_spin), br_animator_count(e) };
     return c;
 }
@@ -381,7 +381,7 @@ static void test_as_prefab(br_engine *e)
     br_node views[3];
     br_model *first = NULL;
     for (int i = 0; i < 3; i++) {
-        views[i] = br_prefab_instantiate_at(e, "level.gltf#Coin_02", br_scene_root(e), br_vec2_make(100.0f * i, 0.0f));
+        views[i] = br_prefab_instantiate_at(e, "level.gltf#Coin_02", br_stage_root(e), br_vec2_make(100.0f * i, 0.0f));
         BR_CHECK(br_node_type_of(e, views[i]) == br_view3d_type(e));
         br_node3d inst = br_node3d_first_child(e, br_view3d_root(e, views[i]));
         while (br_node3d_valid(e, inst) && br_model3d_model(e, inst) == NULL) {
@@ -421,7 +421,7 @@ static void test_scene_json(br_engine *e)
                        "    \"components\": { \"spin\": { \"speed\": 9 } } },"
                        "  { \"type\": \"gltf\", \"label\": \"lvl\", \"source\": \"level.gltf\", \"camera\": \"TopCam\", \"batch\": false } ] }";
     uint32_t errors = br_scene_file_error_count(e);
-    br_node view = br_scene_file_load_json(e, json, SDL_strlen(json), "kit.scene.json", br_scene_root(e));
+    br_node view = br_scene_file_load_json(e, json, SDL_strlen(json), "kit.scene.json", br_stage_root(e));
     BR_CHECK(br_scene_file_error_count(e) == errors + 5); /* the level's BadValues node again */
     br_node3d root = br_view3d_root(e, view);
     br_node3d coin = find(e, root, "coin");
@@ -437,7 +437,7 @@ static void test_scene_json(br_engine *e)
     const char *bad = "{ \"type\": \"view3d\", \"scene\": [ { \"type\": \"group\", \"components\": { \"nope\": {} } },"
                       " { \"type\": \"gltf\", \"source\": \"level.gltf#Missing\" } ] }";
     errors = br_scene_file_error_count(e);
-    br_node view2 = br_scene_file_load_json(e, bad, SDL_strlen(bad), "bad.scene.json", br_scene_root(e));
+    br_node view2 = br_scene_file_load_json(e, bad, SDL_strlen(bad), "bad.scene.json", br_stage_root(e));
     BR_CHECK(br_scene_file_error_count(e) == errors + 2);
     br_node_destroy(e, view2);
     br_node_destroy(e, view);

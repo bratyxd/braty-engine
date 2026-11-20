@@ -54,7 +54,7 @@ static bool setup_game(br_engine *e)
     br_node n = br_node_create_container(e);
     br_node_set_label(e, n, "hero");
     br_node_set_position(e, n, 100.0f, 50.0f);
-    br_node_add_child(e, br_scene_root(e), n);
+    br_node_add_child(e, br_stage_root(e), n);
     walker *w = br_component_add(e, n, s_walker_id);
     w->speed = 60.0f;
     SDL_zero(s_game);
@@ -383,7 +383,7 @@ static void test_hardening(void)
     static const br_field_desc fields[] = { { "offset", BR_FIELD_VEC2, offsetof(dotted, offset) } };
     br_component_desc desc = { "pt.follow", sizeof(dotted), fields, BR_ARRAY_COUNT(fields) };
     uint32_t id = br_component_register(e, &desc);
-    br_node hero = br_node_find_by_label(e, br_scene_root(e), "hero", true);
+    br_node hero = br_node_find_by_label(e, br_stage_root(e), "hero", true);
     dotted *d = br_component_add(e, hero, id);
     BR_CHECK(d != NULL);
     BR_CHECK(reply_has(e, "{\"cmd\":\"set\",\"path\":\"hero:pt.follow.offset\",\"value\":[3,4]}", "\"ok\":true"));
@@ -401,7 +401,7 @@ static void test_hardening(void)
     /* window: headless, the screen size every camera sees */
     br_camera c = br_camera_default_2d();
     br_node cam = br_camera_create(e, &c);
-    br_node_add_child(e, br_scene_root(e), cam);
+    br_node_add_child(e, br_stage_root(e), cam);
     BR_CHECK(reply_has(e, "{\"cmd\":\"window\",\"width\":720,\"height\":1280}", "\"ok\":true"));
     br_playtest_step(e, 1);
     br_camera_view v = br_camera_get_view(e, cam);
@@ -500,7 +500,7 @@ static void test_3d_paths(void)
     br_engine *e = make_game();
     br_node view = br_view3d_create(e, 200.0f, 200.0f);
     br_node_set_label(e, view, "world");
-    br_node_add_child(e, br_scene_root(e), view);
+    br_node_add_child(e, br_stage_root(e), view);
     br_node3d cam = br_view3d_camera(e, view);
     br_node3d_set_position(e, cam, br_vec3_make(0.0f, 0.0f, 10.0f));
     br_node3d_look_at(e, cam, br_vec3_make(0.0f, 0.0f, 0.0f), br_vec3_make(0.0f, 1.0f, 0.0f));
@@ -566,14 +566,14 @@ static void test_click_with_camera(void)
     c.orthographic_size = 180.0f;
     br_node cam = br_camera_create(e, &c);
     br_node_set_position(e, cam, 1000.0f, 1000.0f);
-    br_node_add_child(e, br_scene_root(e), cam);
+    br_node_add_child(e, br_stage_root(e), cam);
     br_node button = br_sprite_create(e, br_texture_white(e));
     br_sprite_set_size(e, button, 40.0f, 40.0f);
     br_node_set_position(e, button, 1000.0f, 1000.0f);
     br_node_set_label(e, button, "button");
     br_node_set_event_mode(e, button, BR_EVENT_MODE_STATIC);
     br_node_on(e, button, BR_EVENT_CLICK, on_button_click, NULL);
-    br_node_add_child(e, br_scene_root(e), button);
+    br_node_add_child(e, br_stage_root(e), button);
     br_playtest_step(e, 1);
     BR_CHECK(reply_has(e, "{\"cmd\":\"click\",\"label\":\"button\"}", "\"ok\":true"));
     br_playtest_step(e, 3); /* move, press, release */

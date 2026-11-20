@@ -500,7 +500,7 @@ static void test_overlay_key_release(void)
 {
     br_engine *e = br_engine_create("test_profiler_keys", NULL);
     br_node n = br_node_create_container(e);
-    br_node_add_child(e, br_scene_root(e), n);
+    br_node_add_child(e, br_stage_root(e), n);
     br_debug_set_open(e, true);
     br_debug_select(e, n);
     br_input_inject_key(e, SDL_SCANCODE_W, true); /* walking */
@@ -577,7 +577,7 @@ static void test_animation_counters(void)
 {
     br_engine *e = br_engine_create("test_profiler_counters", NULL);
     br_node n = br_node_create_container(e);
-    br_node_add_child(e, br_scene_root(e), n);
+    br_node_add_child(e, br_stage_root(e), n);
     br_animator a = br_animator_add(e, br_anim_target_2d(n));
     BR_CHECK(br_animator_valid(e, a));
     br_tween_to_f(e, br_anim_target_2d(n), "alpha", 0.0f, 10.0f, BR_EASE_LINEAR);

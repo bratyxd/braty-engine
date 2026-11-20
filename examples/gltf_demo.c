@@ -153,7 +153,7 @@ static void setup_main_view(br_engine *e, demo_state *s)
     br_view3d_set_background(e, s->view, br_color_to_linear(br_color_from_hex(0x30384A, 1.0f)));
     br_view3d_set_environment(e, s->view, br_color_to_linear(br_color_from_hex(0xA8C0E8, 1.0f)),
                               br_color_to_linear(br_color_from_hex(0x5A4A3A, 1.0f)), 0.45f);
-    br_node_add_child(e, br_scene_root(e), s->view);
+    br_node_add_child(e, br_stage_root(e), s->view);
     s->root = br_view3d_root(e, s->view);
     s->camera = br_view3d_camera(e, s->view);
     br_camera3d_get(e, s->camera)->fov_y = 42.0f * BR_DEG_TO_RAD;
@@ -197,16 +197,16 @@ static void setup_main_view(br_engine *e, demo_state *s)
 static void setup_2d(br_engine *e, demo_state *s)
 {
     /* inset: a view built entirely from a scene file */
-    s->json_view = br_scene_file_load(e, "gltf_demo.scene.json", br_scene_root(e));
+    s->json_view = br_scene_file_load(e, "gltf_demo.scene.json", br_stage_root(e));
     br_text_style ts = br_text_style_default();
     ts.font_size = 18.0f;
     ts.fill = br_color_from_hex(0xF0F0F0, 1.0f);
     s->info = br_text_create(e, "", &ts);
     br_node_set_position(e, s->info, 16.0f, 12.0f);
-    br_node_add_child(e, br_scene_root(e), s->info);
+    br_node_add_child(e, br_stage_root(e), s->info);
     br_node label = br_text_create(e, "from gltf_demo.scene.json", &ts);
     br_node_set_position(e, label, 850.0f, 430.0f);
-    br_node_add_child(e, br_scene_root(e), label);
+    br_node_add_child(e, br_stage_root(e), label);
 }
 
 static void demo_update(br_engine *e, float dt, void *user)

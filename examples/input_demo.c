@@ -87,7 +87,7 @@ static br_node make_text(br_engine *e, br_node parent, float x, float y, float s
 
 static br_node make_panel(demo_state *s, br_engine *e, float x, float y, float w, float h, const char *title)
 {
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     make_rect(s, e, root, x, y, w, h, 0x2a3040);
     make_text(e, root, x + 10, y + 6, 16, 0x9fb4d8, title);
     return root;
@@ -353,7 +353,7 @@ static void demo_shutdown(br_engine *e, void *user)
 
 static void build_pad_view(demo_state *s, br_engine *e, int slot)
 {
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     float x0 = 20.0f + (float)slot * 312.0f;
     float y0 = 262.0f;
     make_rect(s, e, root, x0, y0, 300, 262, 0x2a3040);
@@ -402,7 +402,7 @@ static bool demo_init(br_engine *e)
     }
     br_engine_on_shutdown(e, demo_shutdown, s);
     s->white = br_texture_white(e);
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     make_rect(s, e, root, 0, 0, 1280, 720, 0x1c2030);
     make_text(e, root, 20, 10, 22, 0xffffff, "Braty input: every device, pad families, glyphs");
 

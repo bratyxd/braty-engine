@@ -615,7 +615,7 @@ static void test_loader_choice(br_engine *e)
     BR_CHECK(br_assets_ref_count(e, DIR "dup_a.json") == 1);
     br_assets_unload(e, DIR "dup_a.json");
     const char *scene = "{ \"type\": \"sprite\", \"texture\": \"dup.png\" }";
-    br_node n = br_scene_file_load_json(e, scene, SDL_strlen(scene), "bare.scene.json", br_scene_root(e));
+    br_node n = br_scene_file_load_json(e, scene, SDL_strlen(scene), "bare.scene.json", br_stage_root(e));
     BR_CHECK(br_assets_ref_count(e, DIR "dup_b.json") == 2); /* the scene's reference */
     br_assets_unload(e, DIR "dup_b.json");                   /* the other owner lets go */
     BR_CHECK(br_assets_get(e, DIR "dup_b.json") != NULL);    /* still there for the scene */

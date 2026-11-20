@@ -324,7 +324,7 @@ static bool demo_init(br_engine *e)
     d->displacement_map = make_displacement_map(e);
     d->backdrop = make_backdrop(e);
     d->stage = br_node_create_container(e);
-    br_node_add_child(e, br_scene_root(e), d->stage);
+    br_node_add_child(e, br_stage_root(e), d->stage);
     build_grid(e, d);
     build_blend_row(e, d);
     br_system_add(e, "filters_demo.update", BR_PHASE_UPDATE, 0, demo_update, d);

@@ -209,7 +209,7 @@ static void build_scene(br_engine *e, demo_state *s)
     br_view3d_set_msaa(e, s->view, 4);
     br_view3d_set_background(e, s->view, lin(0x8EC5F0));
     br_view3d_set_environment(e, s->view, lin(0xBFD9F2), lin(0x5A4A3A), 0.45f);
-    br_node_add_child(e, br_scene_root(e), s->view);
+    br_node_add_child(e, br_stage_root(e), s->view);
     s->root = br_view3d_root(e, s->view);
     br_node3d cam = br_view3d_camera(e, s->view);
     br_camera3d_get(e, cam)->fov_y = 55.0f * BR_DEG_TO_RAD;

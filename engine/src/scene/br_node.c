@@ -478,18 +478,18 @@ void br_scene_flush_destroyed(br_engine *e)
     s->flushing = false;
 }
 
-br_node br_scene_root(br_engine *e)
+br_node br_stage_root(br_engine *e)
 {
     return e->scene->root;
 }
 
-uint32_t br_scene_node_count(br_engine *e)
+uint32_t br_node_count(br_engine *e)
 {
     /* nodes destroyed this frame stay allocated until the flush; they are not live */
     return e->scene->nodes.alive_count - e->scene->pending_destroy.count;
 }
 
-void br_scene_on_node_destroy(br_engine *e, br_node_destroy_fn fn, void *user)
+void br_node_on_destroy(br_engine *e, br_node_destroy_fn fn, void *user)
 {
     br_destroy_listener l = { fn, user };
     br_array_push(&e->scene->destroy_listeners, &l);

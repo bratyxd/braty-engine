@@ -81,7 +81,7 @@ static void setup_hero(br_engine *e, demo_state *s)
     br_node_set_label(e, s->hero, "hero");
     br_node_set_position(e, s->hero, 250.0f, 330.0f);
     br_node_set_scale(e, s->hero, 1.6f, 1.6f);
-    br_node_add_child(e, br_scene_root(e), s->hero);
+    br_node_add_child(e, br_stage_root(e), s->hero);
     rig_part(e, s->hero, "leg_l", 16.0f, 70.0f, 0.5f, 0.0f, -12.0f, 0.0f, 0x34495E);
     rig_part(e, s->hero, "leg_r", 16.0f, 70.0f, 0.5f, 0.0f, 12.0f, 0.0f, 0x2C3E50);
     br_node body = rig_part(e, s->hero, "body", 52.0f, 86.0f, 0.5f, 1.0f, 0.0f, 0.0f, 0x2E86C1);
@@ -132,7 +132,7 @@ static void setup_flipbook(br_engine *e, demo_state *s)
     br_sprite_set_anchor(e, s->flip, 0.5f, 0.5f);
     br_node_set_position(e, s->flip, 250.0f, 560.0f);
     br_node_set_scale(e, s->flip, 2.0f, 2.0f);
-    br_node_add_child(e, br_scene_root(e), s->flip);
+    br_node_add_child(e, br_stage_root(e), s->flip);
     /* the sprites module's frame list becomes a clip: one STEP track on "sprite.texture" */
     s->flip_clip = br_anim_clip_from_frames("spin", frames, FLIP_FRAMES);
     br_animator fa = br_animator_add(e, br_anim_target_2d(s->flip));
@@ -155,7 +155,7 @@ static void setup_panel(br_engine *e, demo_state *s)
     s->panel = br_node_create_container(e);
     br_node_set_position(e, s->panel, 1400.0f, 30.0f);
     br_node_set_alpha(e, s->panel, 0.0f);
-    br_node_add_child(e, br_scene_root(e), s->panel);
+    br_node_add_child(e, br_stage_root(e), s->panel);
     br_node bg = rig_part(e, s->panel, "bg", 300.0f, 90.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0x1B2631);
     rig_part(e, bg, "bar", 300.0f, 6.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0xF5B041);
     br_text_style ts = br_text_style_default();
@@ -216,7 +216,7 @@ static void setup_3d(br_engine *e, demo_state *s)
     br_view3d_set_background(e, s->view, br_color_to_linear(br_color_from_hex(0x27303F, 1.0f)));
     br_view3d_set_environment(e, s->view, br_color_to_linear(br_color_from_hex(0xA8C0E8, 1.0f)),
                               br_color_to_linear(br_color_from_hex(0x5A4A3A, 1.0f)), 0.5f);
-    br_node_add_child(e, br_scene_root(e), s->view);
+    br_node_add_child(e, br_stage_root(e), s->view);
     br_node3d root = br_view3d_root(e, s->view);
     br_node3d cam = br_view3d_camera(e, s->view);
     br_camera3d_get(e, cam)->fov_y = 40.0f * BR_DEG_TO_RAD;
@@ -277,7 +277,7 @@ static void setup_3d(br_engine *e, demo_state *s)
 static void setup_bench_tweens(br_engine *e)
 {
     br_node layer = br_node_create_container(e);
-    br_node_add_child(e, br_scene_root(e), layer);
+    br_node_add_child(e, br_stage_root(e), layer);
     for (int i = 0; i < g_bench_tweens; i++) {
         br_node n = br_sprite_create(e, br_texture_white(e));
         br_sprite_set_size(e, n, 3.0f, 3.0f);
@@ -384,7 +384,7 @@ static bool demo_init(br_engine *e)
     ts.fill = br_color_from_hex(0xF0F0F0, 1.0f);
     s->info = br_text_create(e, "", &ts);
     br_node_set_position(e, s->info, 16.0f, 12.0f);
-    br_node_add_child(e, br_scene_root(e), s->info);
+    br_node_add_child(e, br_stage_root(e), s->info);
     br_system_add(e, "demo.update", BR_PHASE_UPDATE, 0, demo_update, s);
     return true;
 }

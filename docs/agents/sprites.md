@@ -44,7 +44,7 @@ atlas_ns->anchor = br_vec2_make(0.5f, 0.5f);
 atlas_ns->edge_fill = BR_NINE_SLICE_TILE;
 br_node_set_tint(e, n, br_color_from_hex(0xA0FFA0, 1.0f));
 br_node_set_position(e, n, 1080, 80);
-br_node_add_child(e, br_scene_root(e), n);
+br_node_add_child(e, br_stage_root(e), n);
 ```
 
 ```c
@@ -53,7 +53,7 @@ if (gif != NULL) {
     br_node g = br_animated_sprite_create(e, gif->frames, gif->count);
     br_node_set_position(e, g, 340, 380);
     br_node_set_scale(e, g, 1.5f, 1.5f);
-    br_node_add_child(e, br_scene_root(e), g);
+    br_node_add_child(e, br_stage_root(e), g);
     br_animated_sprite_play(e, g);
     br_log_info("sprites_demo: GIF %ux%u, %u frames, first delay %.2f s", gif->width, gif->height,
                 gif->count, (double)gif->frames[0].duration);

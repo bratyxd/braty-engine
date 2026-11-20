@@ -97,7 +97,7 @@ static void test_engine(void)
 {
     br_engine *e = br_engine_create("test_canvas3d", NULL);
     br_node view = br_view3d_create(e, 200.0f, 200.0f);
-    br_node_add_child(e, br_scene_root(e), view);
+    br_node_add_child(e, br_stage_root(e), view);
     br_node3d cam = br_view3d_camera(e, view);
     br_node3d_set_position(e, cam, br_vec3_make(0.0f, 0.0f, 10.0f));
     br_node3d_look_at(e, cam, br_vec3_make(0.0f, 0.0f, 0.0f), br_vec3_make(0.0f, 1.0f, 0.0f));

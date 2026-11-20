@@ -76,7 +76,7 @@ static void start_loading(br_engine *e, demo_state *s)
 
 /* once s->loaded: */
     br_spritesheet *sheet = br_assets_get(e, "atlas");       /* loaded by the bundle */
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     add_sprite(e, root, br_spritesheet_frame(e, sheet, "gem.png"), 340.0f, 60.0f);
     const br_texture *walk = NULL;
     uint32_t walk_count = br_spritesheet_animation(e, sheet, "walk", &walk);

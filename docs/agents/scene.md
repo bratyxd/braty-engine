@@ -11,7 +11,7 @@ Tests: `tests/test_node.c`, `test_components.c`, `test_transform.c`, `test_query
 - A node has a **type** (`br_node_type_desc`). Per-type data sits in a dense pool:
   `br_node_data(e, n, type_id)`. `BR_NODE_TYPE_CONTAINER` (1) has no data; `"sprite"` is built in.
 - **Components** are user structs in dense arrays, iterated by systems.
-- Only nodes under `br_scene_root(e)` (the stage) are updated and drawn each frame.
+- Only nodes under `br_stage_root(e)` (the stage) are updated and drawn each frame.
 - Every call checks the handle: stale/destroyed handles are ignored (getters return defaults).
 
 ## Functions you actually need
@@ -106,7 +106,7 @@ is layer 1) picks which cameras draw a node (`culling_mask`, `docs/agents/camera
 - **Per-node data of your module**: register an internal component (`br_component_register`
   with a `"<module>.<name>"` name) - dense, removed automatically when the node dies - or keep
   your own table indexed by `n.index` and check `n.generation`.
-- **Cleanup when nodes die**: `br_scene_on_node_destroy(e, fn, user)`; called at the flush with
+- **Cleanup when nodes die**: `br_node_on_destroy(e, fn, user)`; called at the flush with
   the (already invalid) handle. Type data is cleaned in `desc.on_destroy`.
 - **Events (Task 7) read**: `br_node_event_mode`, `br_node_interactive_children`,
   `br_node_hit_area` + `br_hit_area_contains`, `br_node_cursor`, `br_node_type_hit_test`,
@@ -143,7 +143,7 @@ is layer 1) picks which cameras draw a node (`culling_mask`, `docs/agents/camera
 - Masks: the mask node is not drawn as content and does not count in its parent's bounds. It is
   drawn when it is the top node of `br_render_subtree_to_texture` (alpha/colour masks, render.md).
 - `br_node_child_count` includes children destroyed this frame until the flush;
-  `br_scene_node_count` does not (it counts live nodes).
+  `br_node_count` does not (it counts live nodes).
 - Component pointers die when the array grows: re-fetch after any create (prefab, scene load).
 - Scene *objects* (load/unload/switch, persistent nodes) are the `scenes` module: `docs/agents/scenes.md`.
 - Hot paths read the tables directly: transform internals cache cos/sin of the rotation

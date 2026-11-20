@@ -102,7 +102,7 @@ void sc_log_stats(br_engine *e, const char *when)
     br_memory_get_stats(&heap);
     br_log_info("star_courier stats (%s): nodes %u, textures %u, assets %u (atlas refs %u), sounds playing %u, "
                 "heap %llu blocks / %llu KB, data errors %u",
-                when, br_scene_node_count(e), br_texture_count(e), br_assets_count(e),
+                when, br_node_count(e), br_texture_count(e), br_assets_count(e),
                 br_assets_ref_count(e, "sprites/atlas.json"), br_audio_instance_count(e),
                 (unsigned long long)heap.live_allocations, (unsigned long long)(heap.live_bytes / 1024),
                 br_scene_file_error_count(e));

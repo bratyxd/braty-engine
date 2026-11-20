@@ -10,7 +10,7 @@
  * stop being valid immediately, but memory is only freed at the start of the next frame, so
  * systems and callbacks that are iterating stay safe.
  *
- * Only nodes reachable from br_scene_root(e) are updated and drawn every frame.
+ * Only nodes reachable from br_stage_root(e) are updated and drawn every frame.
  * Transforms: x right, y down, radians, positive rotation = clockwise (see br_math.h).
  */
 #ifndef BR_NODE_H
@@ -69,19 +69,19 @@ bool br_node_valid(br_engine *e, br_node n);
 bool br_node_equal(br_node a, br_node b);
 /* Destroys the node and all its descendants. Handles turn invalid now. Inside br_engine_step
  * memory is freed by the flush at the start of the next frame; outside a step the flush runs
- * now. A destroy from a destroy callback (on_destroy, br_scene_on_node_destroy) joins the
+ * now. A destroy from a destroy callback (on_destroy, br_node_on_destroy) joins the
  * flush that is running, which frees it before it returns: callbacks run once per node. */
 void br_node_destroy(br_engine *e, br_node n);
 /* The stage: the root node the engine updates and draws every frame. */
-br_node br_scene_root(br_engine *e);
+br_node br_stage_root(br_engine *e);
 /* Number of live nodes (stage included). */
-uint32_t br_scene_node_count(br_engine *e);
+uint32_t br_node_count(br_engine *e);
 
 /* Called for every node when its memory is actually freed (handle already invalid; use
  * n.index to clean per-node tables). */
 typedef void (*br_node_destroy_fn)(br_engine *e, br_node n, void *user);
 /* Adds a callback run for every destroyed node (modules use it to drop per-node data). */
-void br_scene_on_node_destroy(br_engine *e, br_node_destroy_fn fn, void *user);
+void br_node_on_destroy(br_engine *e, br_node_destroy_fn fn, void *user);
 
 /* ---- hierarchy (PixiJS Container API) */
 

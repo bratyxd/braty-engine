@@ -75,7 +75,7 @@ static void cr_update_stats(br_engine *e, cr_game *g)
     uint32_t animators = 0;
     uint32_t tracks = 0;
     br_animation_stats(e, &animators, &tracks);
-    g->stat_nodes = (int32_t)br_scene_node_count(e);
+    g->stat_nodes = (int32_t)br_node_count(e);
     g->stat_nodes3d = (int32_t)br_node3d_count(e);
     g->stat_assets = (int32_t)br_assets_count(e);
     g->stat_animators = (int32_t)animators;
@@ -92,7 +92,7 @@ void cr_log_stats(br_engine *e, cr_game *g, const char *when)
     br_animation_stats(e, &animators, &tracks);
     br_log_info("crate_rush stats (%s): nodes %u, 3d nodes %u, assets %u, animators %u, tweens %u, sounds %u, "
                 "level arena %llu bytes, heap %llu blocks, levels done %u",
-                when, br_scene_node_count(e), br_node3d_count(e), br_assets_count(e), animators, br_tween_count(e),
+                when, br_node_count(e), br_node3d_count(e), br_assets_count(e), animators, br_tween_count(e),
                 br_audio_instance_count(e), (unsigned long long)g->level_arena.stats.used,
                 (unsigned long long)heap.live_allocations, g->levels_completed);
 }

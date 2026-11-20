@@ -72,7 +72,7 @@ static br_texture make_stripes(br_engine *e, br_address_mode address)
 static void add(br_engine *e, br_node n, float x, float y)
 {
     br_node_set_position(e, n, x, y);
-    br_node_add_child(e, br_scene_root(e), n);
+    br_node_add_child(e, br_stage_root(e), n);
 }
 
 static void setup(br_engine *e, demo_state *s)

@@ -41,7 +41,7 @@ for (int i = 0; p != NULL && i < g_count; i++) {
     p[i].tint = random_tint(s);
     p[i].alpha = 0.6f + 0.4f * rnd(s);
 }
-br_node_add_child(e, br_scene_root(e), pc);
+br_node_add_child(e, br_stage_root(e), pc);
 ```
 
 ## Gotchas

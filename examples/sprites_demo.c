@@ -314,7 +314,7 @@ static br_node add_nine(br_engine *e, br_texture t, float x, float y, float w, f
     br_node n = br_nine_slice_create(e, t, BORDER, BORDER, BORDER, BORDER);
     br_nine_slice_set_size(e, n, w, h);
     br_node_set_position(e, n, x, y);
-    br_node_add_child(e, br_scene_root(e), n);
+    br_node_add_child(e, br_stage_root(e), n);
     return n;
 }
 
@@ -346,7 +346,7 @@ static void setup_nine_slices(br_engine *e, demo_state *s)
     atlas_ns->edge_fill = BR_NINE_SLICE_TILE;
     br_node_set_tint(e, n, br_color_from_hex(0xA0FFA0, 1.0f));
     br_node_set_position(e, n, 1080, 80);
-    br_node_add_child(e, br_scene_root(e), n);
+    br_node_add_child(e, br_stage_root(e), n);
     /* end snippet */
     s->spinning_panel = n;
 }
@@ -355,30 +355,30 @@ static void setup_tiling(br_engine *e, demo_state *s)
 {
     s->scroll_tiles = br_tiling_sprite_create(e, s->stripes, 300, 150);
     br_node_set_position(e, s->scroll_tiles, 20, 180);
-    br_node_add_child(e, br_scene_root(e), s->scroll_tiles);
+    br_node_add_child(e, br_stage_root(e), s->scroll_tiles);
 
     s->rotating_tiles = br_tiling_sprite_create(e, s->checker, 300, 150);
     br_tiling_sprite *ts = br_tiling_sprite_get(e, s->rotating_tiles);
     ts->tile_scale = br_vec2_make(1.5f, 0.75f);
     br_node_set_position(e, s->rotating_tiles, 340, 180);
-    br_node_add_child(e, br_scene_root(e), s->rotating_tiles);
+    br_node_add_child(e, br_stage_root(e), s->rotating_tiles);
 
     s->atlas_tiles = br_tiling_sprite_create(e, s->atlas_tile, 300, 150);
     br_node_set_position(e, s->atlas_tiles, 660, 180);
-    br_node_add_child(e, br_scene_root(e), s->atlas_tiles);
+    br_node_add_child(e, br_stage_root(e), s->atlas_tiles);
 
     /* the whole atlas, for reference: the rotated panel and tile as stored */
     br_node ref = br_sprite_create(e, s->atlas);
     br_node_set_position(e, ref, 990, 180);
-    br_node_add_child(e, br_scene_root(e), ref);
+    br_node_add_child(e, br_stage_root(e), ref);
     /* both frames as plain sprites (the sprite type's frame handling is the reference) */
     br_node tile_ref = br_sprite_create(e, s->atlas_tile);
     br_node_set_position(e, tile_ref, 1130, 180);
     br_node_set_scale(e, tile_ref, 4.0f, 4.0f);
-    br_node_add_child(e, br_scene_root(e), tile_ref);
+    br_node_add_child(e, br_stage_root(e), tile_ref);
     br_node panel_ref = br_sprite_create(e, s->atlas_panel);
     br_node_set_position(e, panel_ref, 990, 260);
-    br_node_add_child(e, br_scene_root(e), panel_ref);
+    br_node_add_child(e, br_stage_root(e), panel_ref);
 }
 
 static void setup_animation(br_engine *e, demo_state *s)
@@ -390,20 +390,20 @@ static void setup_animation(br_engine *e, demo_state *s)
     }
     br_node a = br_animated_sprite_create(e, frames, ANIM_FRAMES);
     br_node_set_position(e, a, 40, 380);
-    br_node_add_child(e, br_scene_root(e), a);
+    br_node_add_child(e, br_stage_root(e), a);
     br_animated_sprite_set_callbacks(e, a, NULL, count_frame_change, NULL, s);
     br_animated_sprite_play(e, a);
 
     br_node b = br_animated_sprite_create_uniform(e, s->anim, ANIM_FRAMES, 12.0f);
     br_node_set_position(e, b, 140, 380);
-    br_node_add_child(e, br_scene_root(e), b);
+    br_node_add_child(e, br_stage_root(e), b);
     br_animated_sprite_set_speed(e, b, -2.0f);
     br_animated_sprite_play(e, b);
 
     s->one_shot = br_animated_sprite_create_uniform(e, s->anim, ANIM_FRAMES, 20.0f);
     br_node_set_position(e, s->one_shot, 240, 380);
     br_node_set_tint(e, s->one_shot, br_color_from_hex(0xFF8080, 1.0f));
-    br_node_add_child(e, br_scene_root(e), s->one_shot);
+    br_node_add_child(e, br_stage_root(e), s->one_shot);
     br_animated_sprite_set_loop(e, s->one_shot, false);
     br_animated_sprite_set_callbacks(e, s->one_shot, restart_on_complete, NULL, NULL, s);
     br_animated_sprite_play(e, s->one_shot);
@@ -414,7 +414,7 @@ static void setup_animation(br_engine *e, demo_state *s)
             br_node g = br_animated_sprite_create(e, gif->frames, gif->count);
             br_node_set_position(e, g, 340, 380);
             br_node_set_scale(e, g, 1.5f, 1.5f);
-            br_node_add_child(e, br_scene_root(e), g);
+            br_node_add_child(e, br_stage_root(e), g);
             br_animated_sprite_play(e, g);
             br_log_info("sprites_demo: GIF %ux%u, %u frames, first delay %.2f s", gif->width, gif->height,
                         gif->count, (double)gif->frames[0].duration);
@@ -424,7 +424,7 @@ static void setup_animation(br_engine *e, demo_state *s)
     s->counter_bar = br_sprite_create(e, br_texture_white(e));
     br_node_set_position(e, s->counter_bar, 40, 460);
     br_node_set_tint(e, s->counter_bar, br_color_from_hex(0x60E0FF, 1.0f));
-    br_node_add_child(e, br_scene_root(e), s->counter_bar);
+    br_node_add_child(e, br_stage_root(e), s->counter_bar);
 }
 
 static void animate_system(br_engine *e, float dt, void *user)

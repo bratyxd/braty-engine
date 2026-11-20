@@ -178,7 +178,7 @@ static bool br_pt_write_field(br_engine *e, const br_field_desc *field, void *ba
     case BR_FIELD_NODE: {
         br_node n = { 0, 0 };
         if (cJSON_IsString(value)) {
-            n = br_node_find_by_label(e, br_scene_root(e), value->valuestring, true);
+            n = br_node_find_by_label(e, br_stage_root(e), value->valuestring, true);
         }
         if (cJSON_IsNull(value) || br_node_valid(e, n)) {
             SDL_memcpy(p, &n, sizeof(n));
@@ -238,7 +238,7 @@ static bool br_pt_resolve_field(br_engine *e, const br_pt_path *p, const char *p
     if (id == 0) {
         return true; /* not a component: a node property */
     }
-    br_node n = br_node_find_by_label(e, br_scene_root(e), p->target, true);
+    br_node n = br_node_find_by_label(e, br_stage_root(e), p->target, true);
     *base = br_component_get(e, n, id);
     if (!br_node_valid(e, n)) {
         return br_playtest_fail(e, "path '%s': no node labelled '%s'", path, p->target);
@@ -386,7 +386,7 @@ static bool br_pt_find_node3d(br_engine *e, const char *target, const char *path
     }
     br_array views;
     br_array_init(&views, sizeof(br_node));
-    br_pt_collect_views(e, br_scene_root(e), &views);
+    br_pt_collect_views(e, br_stage_root(e), &views);
     bool view_found = false;
     for (uint32_t i = 0; i < views.count; i++) {
         br_node v = *(br_node *)br_array_at(&views, i);
@@ -625,7 +625,7 @@ cJSON *br_playtest_query_get(br_engine *e, const char *path)
     if (is_field) {
         value = br_scene_file_write_field(e, field, base);
     } else {
-        br_node n = br_node_find_by_label(e, br_scene_root(e), p.target, true);
+        br_node n = br_node_find_by_label(e, br_stage_root(e), p.target, true);
         if (SDL_strcmp(p.parts[0], "exists") == 0) {
             return cJSON_CreateBool(br_node_valid(e, n));
         }
@@ -695,7 +695,7 @@ bool br_playtest_query_set(br_engine *e, const char *path, const cJSON *value)
     if (is_field) {
         return br_pt_write_field(e, field, base, value, path);
     }
-    br_node n = br_node_find_by_label(e, br_scene_root(e), p.target, true);
+    br_node n = br_node_find_by_label(e, br_stage_root(e), p.target, true);
     if (!br_node_valid(e, n)) {
         return br_playtest_fail(e, "path '%s': no node labelled '%s'", path, p.target);
     }
@@ -740,7 +740,7 @@ cJSON *br_playtest_query_dump(br_engine *e)
     cJSON *dump = cJSON_CreateObject();
     cJSON_AddNumberToObject(dump, "frame", (double)e->ticker.frame);
     cJSON_AddNumberToObject(dump, "time", e->ticker.elapsed);
-    cJSON_AddNumberToObject(dump, "nodes", br_scene_node_count(e));
+    cJSON_AddNumberToObject(dump, "nodes", br_node_count(e));
     /* exposed game state first: it is what an agent usually wants */
     cJSON *state = cJSON_CreateObject();
     br_playtest_state *s = e->playtest;
@@ -753,13 +753,13 @@ cJSON *br_playtest_query_dump(br_engine *e)
         cJSON_AddItemToObject(state, x->name, fields);
     }
     cJSON_AddItemToObject(dump, "state", state);
-    cJSON *scene = br_scene_file_to_json(e, br_scene_root(e));
+    cJSON *scene = br_scene_file_to_json(e, br_stage_root(e));
     cJSON_AddItemToObject(dump, "scene", scene != NULL ? scene : cJSON_CreateNull());
     /* the 3D subtree of every view3d (the scene above has only its 2D side) */
     cJSON *views3d = cJSON_AddArrayToObject(dump, "views3d");
     br_array views;
     br_array_init(&views, sizeof(br_node));
-    br_pt_collect_views(e, br_scene_root(e), &views);
+    br_pt_collect_views(e, br_stage_root(e), &views);
     for (uint32_t i = 0; i < views.count; i++) {
         br_node v = *(br_node *)br_array_at(&views, i);
         cJSON *item = cJSON_CreateObject();
@@ -804,7 +804,7 @@ cJSON *br_playtest_query_list(br_engine *e, const char *type, const char *compon
         }
         return out;
     }
-    br_pt_list_walk(e, br_scene_root(e), type, out);
+    br_pt_list_walk(e, br_stage_root(e), type, out);
     return out;
 }
 
@@ -906,7 +906,7 @@ bool br_playtest_query_click_point(br_engine *e, const char *label, float *x, fl
         *y = p.y;
         return true;
     }
-    br_node n = br_node_find_by_label(e, br_scene_root(e), label, true);
+    br_node n = br_node_find_by_label(e, br_stage_root(e), label, true);
     if (!br_node_valid(e, n)) {
         return br_playtest_fail(e, "click: no node labelled '%s'", label);
     }

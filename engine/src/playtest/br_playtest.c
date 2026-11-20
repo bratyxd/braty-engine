@@ -644,7 +644,7 @@ static void br_pt_add_stats(br_engine *e, cJSON *out)
     cJSON_AddNumberToObject(out, "frame", (double)e->ticker.frame);
     cJSON_AddNumberToObject(out, "time", e->ticker.elapsed);
     cJSON_AddNumberToObject(out, "fps", e->ticker.fps);
-    cJSON_AddNumberToObject(out, "nodes", br_scene_node_count(e));
+    cJSON_AddNumberToObject(out, "nodes", br_node_count(e));
     cJSON_AddNumberToObject(out, "draw_calls", rs.draw_calls);
     cJSON_AddNumberToObject(out, "textures", br_texture_count(e));
     cJSON_AddNumberToObject(out, "skipped_frames", (double)e->skipped_frames);

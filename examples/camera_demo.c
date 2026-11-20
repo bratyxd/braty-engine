@@ -51,7 +51,7 @@ static br_vec2 player_position(int i, float t)
 
 static void build_world(demo_state *s, br_engine *e)
 {
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     br_node ground = br_graphics_create(e, NULL);
     br_graphics_context *g = br_graphics_context_of(e, ground);
     for (int y = 0; y < WORLD_H / TILE; y++) {
@@ -116,7 +116,7 @@ static br_node make_follow_camera(br_engine *e, br_node target, float viewport_x
     br_node cam = br_camera_create(e, &c);
     br_vec2 start = br_node_position(e, target);
     br_node_set_position(e, cam, start.x, start.y);
-    br_node_add_child(e, br_scene_root(e), cam);
+    br_node_add_child(e, br_stage_root(e), cam);
     br_camera_follow *f = br_component_add(e, cam, br_camera_follow_component(e));
     f->target = target;
     f->damping = 0.15f;
@@ -131,7 +131,7 @@ static void make_panel(br_engine *e, demo_state *s, const char *text, br_vec2 an
 {
     br_node n = br_node_create_container(e);
     br_node_set_layer_bits(e, n, LAYER_UI);
-    br_node_add_child(e, br_scene_root(e), n);
+    br_node_add_child(e, br_stage_root(e), n);
     /* the content grows away from the anchored corner */
     float x0 = -anchor.x * w;
     float y0 = -anchor.y * h;
@@ -165,7 +165,7 @@ static void build_ui(demo_state *s, br_engine *e)
     c.clear_flags = BR_CAMERA_CLEAR_NOTHING;
     s->ui_camera = br_camera_create(e, &c);
     br_node_set_position(e, s->ui_camera, 640.0f, 360.0f);
-    br_node_add_child(e, br_scene_root(e), s->ui_camera);
+    br_node_add_child(e, br_stage_root(e), s->ui_camera);
 
     char size[64];
     SDL_snprintf(size, sizeof(size), "%d x %d", g_width, g_height);
@@ -181,7 +181,7 @@ static void build_ui(demo_state *s, br_engine *e)
     br_graphics_rect(br_graphics_context_of(e, line), -3.0f, 0.0f, 6.0f, 720.0f);
     br_graphics_fill_color(br_graphics_context_of(e, line), hex(0x10131C));
     br_node_set_layer_bits(e, line, LAYER_UI);
-    br_node_add_child(e, br_scene_root(e), line);
+    br_node_add_child(e, br_stage_root(e), line);
     br_camera_anchor *a = br_component_add(e, line, br_camera_anchor_component(e));
     a->camera = s->ui_camera;
     a->anchor = br_vec2_make(0.5f, 0.0f);
@@ -195,7 +195,7 @@ static void build_ui(demo_state *s, br_engine *e)
     br_node map = br_sprite_create(e, s->minimap);
     br_sprite_set_anchor(e, map, 0.5f, 0.0f);
     br_node_set_layer_bits(e, map, LAYER_UI);
-    br_node_add_child(e, br_scene_root(e), map);
+    br_node_add_child(e, br_stage_root(e), map);
     a = br_component_add(e, map, br_camera_anchor_component(e));
     a->camera = s->ui_camera;
     a->anchor = br_vec2_make(0.5f, 0.0f);
@@ -304,7 +304,7 @@ static bool demo_init(br_engine *e)
     m.background_color = hex(0x10131C);
     s->minimap_camera = br_camera_create(e, &m);
     br_node_set_position(e, s->minimap_camera, WORLD_W * 0.5f, WORLD_H * 0.5f);
-    br_node_add_child(e, br_scene_root(e), s->minimap_camera);
+    br_node_add_child(e, br_stage_root(e), s->minimap_camera);
 
     build_ui(s, e);
     br_system_add(e, "demo.move", BR_PHASE_UPDATE, 0, demo_system, s);

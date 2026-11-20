@@ -885,7 +885,7 @@ void br_filters_register(br_engine *e)
     br_array_init(&fs->jobs, sizeof(br_fx_job *));
     br_array_init(&fs->generate_jobs, sizeof(br_generate_job));
     br_engine_on_shutdown(e, br_fx_shutdown, fs);
-    br_scene_on_node_destroy(e, br_fx_on_node_destroy, NULL);
+    br_node_on_destroy(e, br_fx_on_node_destroy, NULL);
     br_render_set_effects_hook(e, br_fx_hook, fs);
     br_system_add(e, "filters.frame", BR_PHASE_PRE_RENDER, 900, br_fx_frame_system, fs);
     br_extract_init(e);

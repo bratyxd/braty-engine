@@ -519,7 +519,7 @@ static void coin_system(br_engine *e, float dt, void *user)
     if (!g->ready) {
         return;
     }
-    br_node ship = br_node_find_by_label(e, br_scene_root(e), "ship", true);
+    br_node ship = br_node_find_by_label(e, br_stage_root(e), "ship", true);
     br_vec2 at = br_node_position(e, ship);
     int alive = 0;
     for (uint32_t i = 0; i < br_component_count(e, g->coin_id); i++) {
@@ -536,7 +536,7 @@ static void coin_system(br_engine *e, float dt, void *user)
             br_audio_play(e, g->sfx, &play);
             char text[32];
             SDL_snprintf(text, sizeof(text), "COINS %d", (int)g->score);
-            br_text_set_text(e, br_node_find_by_label(e, br_scene_root(e), "score", true), text);
+            br_text_set_text(e, br_node_find_by_label(e, br_stage_root(e), "score", true), text);
         } else {
             alive++;
         }
@@ -544,7 +544,7 @@ static void coin_system(br_engine *e, float dt, void *user)
     const cJSON *wanted = cJSON_GetObjectItemCaseSensitive(
         cJSON_GetObjectItemCaseSensitive(br_game_config_json(e), "game"), "coins_on_screen");
     for (; cJSON_IsNumber(wanted) && alive < wanted->valueint; alive++) {
-        br_node n = br_prefab_instantiate(e, "prefabs/coin.prefab.json", br_scene_root(e), NULL);
+        br_node n = br_prefab_instantiate(e, "prefabs/coin.prefab.json", br_stage_root(e), NULL);
         br_node_set_position(e, n, 60.0f + random01(g) * 840.0f, 80.0f + random01(g) * 420.0f);
     }
 }

@@ -37,7 +37,7 @@ static void on_node_destroyed(br_engine *e, br_node n, void *user)
 
 static void test_hierarchy(br_engine *e)
 {
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     BR_CHECK(br_node_valid(e, root));
     br_node a = br_node_create_container(e);
     br_node b = br_node_create_container(e);
@@ -121,7 +121,7 @@ static void test_types_and_stale(br_engine *e)
     br_node reused = br_node_create_container(e);
     BR_CHECK(reused.index == n1.index && reused.generation != n1.generation);
     BR_CHECK(br_node_data(e, n1, type) == NULL);
-    BR_CHECK(!br_node_add_child(e, br_scene_root(e), n1));
+    BR_CHECK(!br_node_add_child(e, br_stage_root(e), n1));
     br_node_set_position(e, n1, 5.0f, 5.0f); /* ignored */
     BR_CHECK(br_node_position(e, reused).x == 0.0f);
     BR_CHECK(br_node_child_count(e, n1) == 0);
@@ -189,7 +189,7 @@ static void test_deferred_destroy(br_engine *e)
     SDL_zero(t);
     t.component = br_component_register(e, &cdesc);
     t.parent = br_node_create_container(e);
-    br_node_add_child(e, br_scene_root(e), t.parent);
+    br_node_add_child(e, br_stage_root(e), t.parent);
     br_node first = br_node_create_container(e);
     t.victim = br_node_create_container(e);
     br_node last = br_node_create_container(e);
@@ -200,17 +200,17 @@ static void test_deferred_destroy(br_engine *e)
     br_node_add_child(e, t.victim, t.grandchild);
     *(int *)br_component_add(e, t.victim, t.component) = 7;
     *(int *)br_component_add(e, last, t.component) = 9;
-    uint32_t nodes_before = br_scene_node_count(e);
+    uint32_t nodes_before = br_node_count(e);
 
-    br_scene_on_node_destroy(e, on_node_destroyed, NULL);
+    br_node_on_destroy(e, on_node_destroyed, NULL);
     br_system_add(e, "test.destroy", BR_PHASE_UPDATE, 0, destroy_system, &t);
     br_engine_step(e, 1.0f / 60.0f);
     BR_CHECK(t.checked);
     /* API_REVIEW item 5: destroyed nodes stop counting at once, not at the flush */
-    BR_CHECK(br_scene_node_count(e) == nodes_before - 2);
+    BR_CHECK(br_node_count(e) == nodes_before - 2);
     br_engine_step(e, 1.0f / 60.0f); /* the flush runs at the start of this frame */
     BR_CHECK(g_listener_calls == 2);
-    BR_CHECK(br_scene_node_count(e) == nodes_before - 2);
+    BR_CHECK(br_node_count(e) == nodes_before - 2);
     BR_CHECK(br_node_child_count(e, t.parent) == 2);
     BR_CHECK(br_node_child_index(e, t.parent, last) == 1);
     BR_CHECK(br_component_count(e, t.component) == 1);
@@ -221,7 +221,7 @@ static void test_deferred_destroy(br_engine *e)
 
 static void test_sort_and_layers(br_engine *e)
 {
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     br_node parent = br_node_create_container(e);
     br_node_add_child(e, root, parent);
     br_node kids[4];
@@ -286,7 +286,7 @@ static void test_cullable_list(br_engine *e)
     br_node nodes[6];
     for (int i = 0; i < 6; i++) {
         nodes[i] = br_node_create_container(e);
-        br_node_add_child(e, br_scene_root(e), nodes[i]);
+        br_node_add_child(e, br_stage_root(e), nodes[i]);
         br_node_set_cullable(e, nodes[i], true);
     }
     br_node_set_cullable(e, nodes[0], false); /* removed from the front, the last moves in */
@@ -332,13 +332,13 @@ static void test_reentrant_destroy(br_engine *e)
     desc.on_destroy = owner_destroy;
     uint32_t type = br_node_type_register(e, &desc);
     BR_CHECK(type != 0);
-    uint32_t before = br_scene_node_count(e);
+    uint32_t before = br_node_count(e);
     br_node owners[3];
     br_node helpers[3];
     for (int i = 0; i < 3; i++) {
         owners[i] = br_node_create(e, type);
         helpers[i] = br_node_create_container(e);
-        br_node_add_child(e, br_scene_root(e), helpers[i]);
+        br_node_add_child(e, br_stage_root(e), helpers[i]);
         owner_data *d = br_node_data(e, owners[i], type);
         d->helper = helpers[i];
         d->value = 100 + i;
@@ -356,14 +356,14 @@ static void test_reentrant_destroy(br_engine *e)
     br_node_destroy(e, owners[2]);
     br_node_destroy(e, owners[1]);
     BR_CHECK(g_owner_destroy_calls == 3);
-    BR_CHECK(br_scene_node_count(e) == before);
+    BR_CHECK(br_node_count(e) == before);
 }
 
 /* ---- graph relations that would loop the renderer are rejected by the setters */
 
 static void test_mask_and_layer_cycles(br_engine *e)
 {
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     br_node mask = br_node_create_container(e);
     br_node inside = br_node_create_container(e);
     br_node content = br_node_create_container(e);
@@ -395,9 +395,9 @@ static void test_mask_and_layer_cycles(br_engine *e)
 static void test_deep_chain(br_engine *e)
 {
     const uint32_t depth = 50000;
-    uint32_t before = br_scene_node_count(e);
+    uint32_t before = br_node_count(e);
     br_node top = br_node_create_container(e);
-    br_node_add_child(e, br_scene_root(e), top);
+    br_node_add_child(e, br_stage_root(e), top);
     br_node parent = top;
     br_node leaf = top;
     for (uint32_t i = 0; i < depth; i++) {
@@ -418,7 +418,7 @@ static void test_deep_chain(br_engine *e)
     br_node_set_cullable(e, top, false);
     br_node_destroy(e, top);
     BR_CHECK(!br_node_valid(e, leaf));
-    BR_CHECK(br_scene_node_count(e) == before);
+    BR_CHECK(br_node_count(e) == before);
 }
 
 /* ---- destroying many children of one parent keeps the others in order */
@@ -445,8 +445,8 @@ static void test_mass_destroy(br_engine *e)
     SDL_zero(m);
     br_node parent = br_node_create_container(e);
     br_node layer = br_node_create_container(e);
-    br_node_add_child(e, br_scene_root(e), parent);
-    br_node_add_child(e, br_scene_root(e), layer);
+    br_node_add_child(e, br_stage_root(e), parent);
+    br_node_add_child(e, br_stage_root(e), layer);
     for (int i = 0; i < 1000; i++) {
         m.kids[i] = br_node_create_container(e);
         br_node_add_child(e, parent, m.kids[i]);
@@ -473,7 +473,7 @@ int main(void)
     if (e == NULL) {
         return br_test_finish();
     }
-    uint32_t base = br_scene_node_count(e);
+    uint32_t base = br_node_count(e);
     BR_CHECK(base == 1); /* the stage */
     test_hierarchy(e);
     test_types_and_stale(e);
@@ -486,7 +486,7 @@ int main(void)
     test_deep_chain(e);
     test_mass_destroy(e);
     br_engine_step(e, 1.0f / 60.0f);
-    BR_CHECK(br_scene_node_count(e) == base);
+    BR_CHECK(br_node_count(e) == base);
     br_engine_destroy(e);
     BR_CHECK(g_destroyed == g_created);
     return br_test_finish();

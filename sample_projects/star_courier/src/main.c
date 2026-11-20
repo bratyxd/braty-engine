@@ -62,7 +62,7 @@ static bool sc_init(br_engine *e)
 
     /* game.json (window, input, audio, manifest, scene names) was applied before init; there
      * is no start_scene: the state machine loads the "scenes" by name */
-    g->tuning_node = br_scene_file_load(e, sc_config_string(e, NULL, "tuning"), br_scene_root(e));
+    g->tuning_node = br_scene_file_load(e, sc_config_string(e, NULL, "tuning"), br_stage_root(e));
     if (br_component_get(e, g->tuning_node, g->id.tuning) == NULL) {
         return false; /* reasons are logged with file and JSON path */
     }

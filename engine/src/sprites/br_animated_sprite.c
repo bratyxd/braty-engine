@@ -375,7 +375,7 @@ void br_animated_sprite_register(br_engine *e)
 {
     br_component_desc desc = { "sprites.animated", sizeof(br_anim_state), NULL, 0 };
     e->sprites->anim_component = br_component_register(e, &desc);
-    br_scene_on_node_destroy(e, br_anim_node_destroyed, NULL);
+    br_node_on_destroy(e, br_anim_node_destroyed, NULL);
     br_system_add(e, "sprites.animated", BR_PHASE_UPDATE, 1000, br_anim_system, NULL);
 
     br_asset_loader_desc loader;

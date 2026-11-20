@@ -40,7 +40,7 @@ static bool demo_init(br_engine *e)
     br_view3d_set_auto_resize(e, view, true);
     br_view3d_set_background(e, view, br_color_to_linear(br_color_from_hex(0x1D3557, 1.0f)));
     br_view3d_post(e, view)->bloom = false;
-    br_node_add_child(e, br_scene_root(e), view);
+    br_node_add_child(e, br_stage_root(e), view);
     br_node3d root = br_view3d_root(e, view);
     br_node3d cam = br_view3d_camera(e, view);
     br_node3d_set_position(e, cam, br_vec3_make(0.0f, 5.0f, 3.5f));

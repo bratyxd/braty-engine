@@ -97,7 +97,7 @@ static void cr_make_ui_camera(br_engine *e, cr_game *g)
     g->ui_camera = br_camera_create(e, &c);
     br_node_set_label(e, g->ui_camera, "ui_camera");
     br_node_set_position(e, g->ui_camera, 640.0f, 360.0f);
-    br_node_add_child(e, br_scene_root(e), g->ui_camera);
+    br_node_add_child(e, br_stage_root(e), g->ui_camera);
     br_node_set_persistent(e, g->ui_camera, true);
 }
 
@@ -116,7 +116,7 @@ static bool cr_init(br_engine *e)
     cr_ui_register(e, g);
     cr_expose(e, g);
 
-    g->tuning_node = br_scene_file_load(e, cr_config_string(e, "tuning"), br_scene_root(e));
+    g->tuning_node = br_scene_file_load(e, cr_config_string(e, "tuning"), br_stage_root(e));
     if (br_component_get(e, g->tuning_node, g->id.tuning) == NULL) {
         return false; /* reasons are logged with file and JSON path */
     }

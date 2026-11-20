@@ -58,7 +58,7 @@ static void br_debug_stats(br_engine *e, br_debug_state *s)
     mu_layout_row(ui, 1, br_debug_full_row, 0);
     br_debug_labelf(ui, "draw calls %u   batches %u   passes %u", rs.draw_calls, rs.batches, rs.passes);
     br_debug_labelf(ui, "vertices %u   nodes drawn %u", rs.vertices, rs.nodes_drawn);
-    br_debug_labelf(ui, "nodes %u   textures %u   assets %u", br_scene_node_count(e), br_texture_count(e),
+    br_debug_labelf(ui, "nodes %u   textures %u   assets %u", br_node_count(e), br_texture_count(e),
                     br_assets_count(e));
     br_debug_labelf(ui, "render-target pool %u   systems %u", br_filters_pool_count(e), br_system_count(e));
     br_memory_stats mem;
@@ -167,7 +167,7 @@ static void br_debug_scene(br_engine *e, br_debug_state *s)
     if (!mu_begin_window_ex(s->ui, "Scene", mu_rect(350, 10, 330, 400), MU_OPT_NOCLOSE)) {
         return;
     }
-    br_debug_tree_node(e, s, br_scene_root(e), 0);
+    br_debug_tree_node(e, s, br_stage_root(e), 0);
     mu_end_window(s->ui);
 }
 

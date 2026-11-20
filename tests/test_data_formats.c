@@ -180,7 +180,7 @@ static void load_nodes(br_engine *e, const char *text, const char *source)
             return;
         }
         char *one = cJSON_PrintUnformatted(node);
-        br_node root = br_scene_file_load_json(e, one, strlen(one), source, br_scene_root(e));
+        br_node root = br_scene_file_load_json(e, one, strlen(one), source, br_stage_root(e));
         BR_CHECK(br_node_valid(e, root));
         /* components that act on their first frame (animator, tween) run once too */
         br_engine_step(e, 1.0f / 60.0f);

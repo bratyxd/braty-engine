@@ -103,7 +103,7 @@ static const char *hit_label(br_engine *e, float x, float y)
 static void test_hit_order(void)
 {
     br_engine *e = make_engine();
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     br_node a = make_box(e, root, "a", 0, 0, 100, 100, BR_EVENT_MODE_STATIC);
     br_node b = make_box(e, root, "b", 50, 50, 100, 100, BR_EVENT_MODE_STATIC);
     (void)b;
@@ -144,7 +144,7 @@ static void test_hit_order(void)
 static void test_hit_modes(void)
 {
     br_engine *e = make_engine();
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     /* AUTO / PASSIVE children of an interactive parent: the parent is the target */
     br_node p = make_box(e, root, "p", 0, 0, 10, 10, BR_EVENT_MODE_STATIC);
     make_box(e, p, "auto", 100, 0, 50, 50, BR_EVENT_MODE_AUTO);
@@ -179,7 +179,7 @@ static void test_hit_modes(void)
 static void test_hit_masks(void)
 {
     br_engine *e = make_engine();
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     /* scissor: content 0..100, mask box 0..50 */
     br_node group = br_node_create_container(e);
     br_node_add_child(e, root, group);
@@ -221,7 +221,7 @@ static br_node make_chain(br_engine *e, br_node parent, uint32_t depth, float x,
 static void test_hit_deep_chain(void)
 {
     br_engine *e = make_engine();
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     make_chain(e, root, 50000, 0, BR_EVENT_MODE_STATIC);
     BR_CHECK(SDL_strcmp(hit_label(e, 5, 5), "n5") == 0); /* the deepest box under the point */
 
@@ -249,7 +249,7 @@ static void stop_listener(br_engine *e, br_event *ev, void *user)
 static void test_propagation(void)
 {
     br_engine *e = make_engine();
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     br_node_set_label(e, root, "root");
     br_node p = make_box(e, root, "p", 0, 0, 200, 200, BR_EVENT_MODE_STATIC);
     br_node c = make_box(e, p, "c", 0, 0, 50, 50, BR_EVENT_MODE_STATIC);
@@ -306,7 +306,7 @@ static void listen_all(br_engine *e, br_node n)
 static void test_hover_and_click(void)
 {
     br_engine *e = make_engine();
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     br_node_set_label(e, root, "root");
     br_node a = make_box(e, root, "A", 0, 0, 100, 100, BR_EVENT_MODE_STATIC);
     br_node a1 = make_box(e, a, "A1", 0, 0, 50, 50, BR_EVENT_MODE_STATIC);
@@ -391,7 +391,7 @@ static void global_listener(br_engine *e, br_event *ev, void *user)
 static void test_wheel_and_global_move(void)
 {
     br_engine *e = make_engine();
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     br_node a = make_box(e, root, "A", 100, 100, 100, 100, BR_EVENT_MODE_STATIC);
     br_node far = make_box(e, root, "far", 1000, 1000, 10, 10, BR_EVENT_MODE_STATIC);
     br_node_on(e, a, BR_EVENT_WHEEL, wheel_listener, NULL);
@@ -413,7 +413,7 @@ static void test_wheel_and_global_move(void)
 static void test_move_coalescing(void)
 {
     br_engine *e = make_engine();
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     br_node a = make_box(e, root, "A", 100, 100, 100, 100, BR_EVENT_MODE_STATIC);
     br_node far = make_box(e, root, "far", 1000, 1000, 10, 10, BR_EVENT_MODE_STATIC);
     br_node_on(e, far, BR_EVENT_GLOBAL_MOVE, global_listener, NULL);
@@ -439,7 +439,7 @@ static void test_move_coalescing(void)
 static void test_listener_removal_cost(void)
 {
     br_engine *e = make_engine();
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     enum { COUNT = 16000 };
     static br_node nodes[COUNT];
     for (int i = 0; i < COUNT; i++) {
@@ -517,7 +517,7 @@ static void destroy_in_system(br_engine *e, float dt, void *user)
 static void test_lifetime(void)
 {
     br_engine *e = make_engine();
-    br_node root = br_scene_root(e);
+    br_node root = br_stage_root(e);
     br_node p = make_box(e, root, "p", 0, 0, 100, 100, BR_EVENT_MODE_STATIC);
     br_node c = make_box(e, p, "c", 0, 0, 50, 50, BR_EVENT_MODE_STATIC);
 

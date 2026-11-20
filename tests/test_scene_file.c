@@ -40,7 +40,7 @@ static uint32_t register_every_field(br_engine *e)
 
 static br_node load(br_engine *e, const char *json)
 {
-    return br_scene_file_load_json(e, json, strlen(json), "test.scene.json", br_scene_root(e));
+    return br_scene_file_load_json(e, json, strlen(json), "test.scene.json", br_stage_root(e));
 }
 
 static br_node find(br_engine *e, br_node root, const char *label)
@@ -313,8 +313,8 @@ static void test_prefabs(br_engine *e, const char *dir)
 
     cJSON *overrides = cJSON_Parse("{ \"position\": [5, 6], \"components\": { \"every\": { \"speed\": 9 } },"
                                    "  \"children\": [ { \"label\": \"hat\" } ] }");
-    br_node a = br_prefab_instantiate(e, prefab_path, br_scene_root(e), overrides);
-    br_node b = br_prefab_instantiate(e, prefab_path, br_scene_root(e), NULL);
+    br_node a = br_prefab_instantiate(e, prefab_path, br_stage_root(e), overrides);
+    br_node b = br_prefab_instantiate(e, prefab_path, br_stage_root(e), NULL);
     cJSON_Delete(overrides);
     BR_CHECK(br_node_valid(e, a) && br_node_valid(e, b));
     every_field *fa = br_component_get(e, a, id);
@@ -351,7 +351,7 @@ static void test_save_and_reload(br_engine *e, const char *dir)
     br_node src = load(e, "{ \"label\": \"level\", \"children\": [ { \"label\": \"one\", \"position\": [3, 4] } ] }");
     br_node_set_position(e, find(e, src, "one"), 30, 40); /* live state is what gets saved */
     BR_CHECK(br_scene_file_save(e, src, path));
-    br_node loaded = br_scene_file_load(e, path, br_scene_root(e));
+    br_node loaded = br_scene_file_load(e, path, br_stage_root(e));
     BR_CHECK(br_node_valid(e, loaded));
     BR_CHECK(br_node_position(e, find(e, loaded, "one")).x == 30.0f);
 
@@ -400,7 +400,7 @@ static void test_reload_in_frame(br_engine *e, const char *dir)
     uint32_t refs = br_assets_ref_count(e, font);
     const char *with_text = "{ \"children\": [ { \"type\": \"bitmap_text\", \"text\": \"HI\", \"font\": \"fonts/pixel5x7.fnt\" } ] }";
     BR_CHECK(br_file_write_all(e, path, with_text, strlen(with_text)));
-    br_node root = br_scene_file_load(e, path, br_scene_root(e));
+    br_node root = br_scene_file_load(e, path, br_stage_root(e));
     BR_CHECK(br_assets_ref_count(e, font) == refs + 1);
     const char *empty = "{ \"children\": [] }";
     BR_CHECK(br_file_write_all(e, path, empty, strlen(empty)));
