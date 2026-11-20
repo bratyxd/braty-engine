@@ -1,7 +1,6 @@
-/* br_camera3d: projection, AABB and NDC-ray maths (pure), shadow cascade splits, orbit camera. */
+/* br_camera3d: projection, AABB and NDC-ray maths (pure), shadow cascade splits. */
 #include "three_d/br_three_d_internal.h"
 
-#include "braty/br_input.h"
 
 br_camera3d br_camera3d_perspective(float fov_y, float near_z, float far_z)
 {
@@ -113,41 +112,3 @@ void br_shadow3d_cascade_splits(float near_z, float far_z, uint32_t count, float
     out_far[count - 1] = far_z;
 }
 
-/* ---- orbit camera */
-
-br_orbit_camera br_orbit_camera_make(br_vec3 target, float distance, float yaw, float pitch)
-{
-    br_orbit_camera o;
-    o.target = target;
-    o.distance = distance;
-    o.yaw = yaw;
-    o.pitch = pitch;
-    o.min_distance = 0.5f;
-    o.max_distance = 500.0f;
-    o.rotate_speed = 0.01f;
-    o.zoom_speed = 0.1f;
-    return o;
-}
-
-void br_orbit_camera_apply(br_engine *e, const br_orbit_camera *orbit, br_node3d camera)
-{
-    float cp = SDL_cosf(orbit->pitch);
-    br_vec3 offset = br_vec3_make(SDL_sinf(orbit->yaw) * cp, SDL_sinf(orbit->pitch), SDL_cosf(orbit->yaw) * cp);
-    br_node3d_set_position(e, camera, br_vec3_add(orbit->target, br_vec3_scale(offset, orbit->distance)));
-    br_node3d_look_at(e, camera, orbit->target, br_vec3_make(0.0f, 1.0f, 0.0f));
-}
-
-void br_orbit_camera_update(br_engine *e, br_orbit_camera *orbit, br_node3d camera)
-{
-    if (br_input_mouse_down(e, SDL_BUTTON_LEFT)) {
-        br_vec2 d = br_input_mouse_delta(e);
-        orbit->yaw -= d.x * orbit->rotate_speed;
-        orbit->pitch = br_clampf(orbit->pitch + d.y * orbit->rotate_speed, -1.5f, 1.5f);
-    }
-    br_vec2 wheel = br_input_mouse_wheel(e);
-    if (wheel.y != 0.0f) {
-        orbit->distance *= SDL_powf(1.0f - orbit->zoom_speed, wheel.y);
-        orbit->distance = br_clampf(orbit->distance, orbit->min_distance, orbit->max_distance);
-    }
-    br_orbit_camera_apply(e, orbit, camera);
-}

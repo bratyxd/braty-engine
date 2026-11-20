@@ -31,7 +31,7 @@ typedef struct demo_state {
     br_node         view;
     br_node3d       root;
     br_node3d       camera;
-    br_orbit_camera orbit;
+    br_camera_orbit orbit;
     br_node3d       fox;
     br_animator     fox_anim;
     uint32_t        fox_clip;
@@ -44,6 +44,26 @@ typedef struct demo_state {
     uint64_t        animate_ns_sum;
     uint64_t        frame_count;
 } demo_state;
+
+/* The View3D's own camera on an orbit: left-drag turns, the wheel zooms. (A br_camera gets the
+ * same from its "camera.orbit" component; this example drives a View3D camera node itself.) */
+static void orbit_view_camera(br_engine *e, br_camera_orbit *orbit, br_node3d camera, bool use_input)
+{
+    if (use_input && br_input_mouse_down(e, SDL_BUTTON_LEFT)) {
+        br_vec2 d = br_input_mouse_delta(e);
+        orbit->yaw -= d.x * orbit->rotate_speed;
+        orbit->pitch = br_clampf(orbit->pitch + d.y * orbit->rotate_speed, -1.5f, 1.5f);
+    }
+    br_vec2 wheel = use_input ? br_input_mouse_wheel(e) : br_vec2_make(0.0f, 0.0f);
+    if (wheel.y != 0.0f) {
+        orbit->distance *= SDL_powf(1.0f - orbit->zoom_speed, wheel.y);
+        orbit->distance = br_clampf(orbit->distance, orbit->min_distance, orbit->max_distance);
+    }
+    float cp = SDL_cosf(orbit->pitch);
+    br_vec3 offset = br_vec3_make(SDL_sinf(orbit->yaw) * cp, SDL_sinf(orbit->pitch), SDL_cosf(orbit->yaw) * cp);
+    br_node3d_set_position(e, camera, br_vec3_add(orbit->target, br_vec3_scale(offset, orbit->distance)));
+    br_node3d_look_at(e, camera, orbit->target, br_vec3_make(0.0f, 1.0f, 0.0f));
+}
 
 /* Instantiates a model under the main root, scaled so its largest extent is `size`, standing on
  * the ground at (x, z). */
@@ -137,11 +157,11 @@ static void setup_main_view(br_engine *e, demo_state *s)
     s->root = br_view3d_root(e, s->view);
     s->camera = br_view3d_camera(e, s->view);
     br_camera3d_get(e, s->camera)->fov_y = 42.0f * BR_DEG_TO_RAD;
-    s->orbit = br_orbit_camera_make(br_vec3_make(0.0f, 0.9f, 0.5f), 10.5f, 0.0f, 0.28f);
+    s->orbit = br_camera_orbit_make(br_vec3_make(0.0f, 0.9f, 0.5f), 10.5f, 0.0f, 0.28f);
     if (g_focus >= 0 && g_focus < 7) {
-        s->orbit = br_orbit_camera_make(br_vec3_make(g_row_x[g_focus], 0.8f, g_focus == 6 ? 2.6f : 0.0f), 3.2f, g_focus == 5 ? 0.7f : 0.0f, g_focus == 5 ? 0.45f : 0.2f);
+        s->orbit = br_camera_orbit_make(br_vec3_make(g_row_x[g_focus], 0.8f, g_focus == 6 ? 2.6f : 0.0f), 3.2f, g_focus == 5 ? 0.7f : 0.0f, g_focus == 5 ? 0.45f : 0.2f);
     }
-    br_orbit_camera_apply(e, &s->orbit, s->camera);
+    orbit_view_camera(e, &s->orbit, s->camera, false);
 
     br_node3d ground = br_mesh3d_create(e, br_geometry3d_plane(e, 60.0f, 60.0f, 1, 1), make_material(e, 0x6B7078, 0.9f));
     br_mesh3d_get(e, ground)->cast_shadows = false;
@@ -193,7 +213,7 @@ static void demo_update(br_engine *e, float dt, void *user)
 {
     demo_state *s = user;
     s->time += dt;
-    br_orbit_camera_update(e, &s->orbit, s->camera);
+    orbit_view_camera(e, &s->orbit, s->camera, true);
     if (br_node3d_valid(e, s->fox) && s->time >= s->next_fade) {
         s->fox_clip = (s->fox_clip + 1) % 3;
         br_animator_cross_fade(e, s->fox_anim, g_fox_clips[s->fox_clip], 2.0f);

@@ -89,7 +89,7 @@ a->safe_area = true;
   a 3D one; `max_angle` 0.05 rad.
 - 3D `near_z <= 0` means 0.1 and `far_z <= near_z` (0 after `SDL_zero`) means `near_z + 1000`,
   in the view maths and in the camera3d the camera drives.
-- `camera.orbit`: a `br_orbit_camera` driving a 3D camera's rig (left-drag, wheel). UPDATE 0.
+- `camera.orbit`: a `br_camera_orbit` (fill it with `br_camera_orbit_make`) driving a 3D camera's rig (left-drag, wheel). UPDATE 0.
 - `camera.anchor`: puts a node at `anchor` of a 2D camera's viewport (or of the window when
   `camera` is zero), inside the safe area if asked, plus `offset`. PRE_RENDER -1050.
 - `pixel_perfect` (2D): whole screen pixels per stage unit (zoom floored to an integer), camera

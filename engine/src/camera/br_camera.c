@@ -3,6 +3,7 @@
 #include "camera/br_camera_internal.h"
 
 #include "braty/br_events.h"
+#include "braty/br_input.h"
 #include "braty/br_noise.h"
 #include "braty/br_random.h"
 #include "scene/br_scene_internal.h"
@@ -601,16 +602,49 @@ static void br_camera_shake_system(br_engine *e, float dt, void *user)
     }
 }
 
+br_camera_orbit br_camera_orbit_make(br_vec3 target, float distance, float yaw, float pitch)
+{
+    br_camera_orbit o;
+    o.target = target;
+    o.distance = distance;
+    o.yaw = yaw;
+    o.pitch = pitch;
+    o.min_distance = 0.5f;
+    o.max_distance = 500.0f;
+    o.rotate_speed = 0.01f;
+    o.zoom_speed = 0.1f;
+    return o;
+}
+
+/* Left-drag turns, the wheel zooms, then the rig sits on the orbit looking at its target. */
+static void br_camera_orbit_update(br_engine *e, br_camera_orbit *orbit, br_node3d camera)
+{
+    if (br_input_mouse_down(e, SDL_BUTTON_LEFT)) {
+        br_vec2 d = br_input_mouse_delta(e);
+        orbit->yaw -= d.x * orbit->rotate_speed;
+        orbit->pitch = br_clampf(orbit->pitch + d.y * orbit->rotate_speed, -1.5f, 1.5f);
+    }
+    br_vec2 wheel = br_input_mouse_wheel(e);
+    if (wheel.y != 0.0f) {
+        orbit->distance *= SDL_powf(1.0f - orbit->zoom_speed, wheel.y);
+        orbit->distance = br_clampf(orbit->distance, orbit->min_distance, orbit->max_distance);
+    }
+    float cp = SDL_cosf(orbit->pitch);
+    br_vec3 offset = br_vec3_make(SDL_sinf(orbit->yaw) * cp, SDL_sinf(orbit->pitch), SDL_cosf(orbit->yaw) * cp);
+    br_node3d_set_position(e, camera, br_vec3_add(orbit->target, br_vec3_scale(offset, orbit->distance)));
+    br_node3d_look_at(e, camera, orbit->target, br_vec3_make(0.0f, 1.0f, 0.0f));
+}
+
 static void br_camera_orbit_system(br_engine *e, float dt, void *user)
 {
     (void)dt;
     br_camera_state *s = user;
     uint32_t count = br_component_count(e, s->orbit_id);
     for (uint32_t i = 0; i < count; i++) {
-        br_orbit_camera *o = br_component_at(e, s->orbit_id, i);
+        br_camera_orbit *o = br_component_at(e, s->orbit_id, i);
         br_camera_data *d = br_camera_data_get(e, br_component_owner_at(e, s->orbit_id, i));
         if (d != NULL && d->is_3d) {
-            br_orbit_camera_update(e, o, d->rig);
+            br_camera_orbit_update(e, o, d->rig);
         }
     }
 }
@@ -857,14 +891,14 @@ static void br_camera_register_components(br_engine *e, br_camera_state *s)
         { "frequency", BR_FIELD_FLOAT, offsetof(br_camera_shake, frequency) },
     };
     static const br_field_desc orbit_fields[] = {
-        { "target", BR_FIELD_VEC3, offsetof(br_orbit_camera, target) },
-        { "distance", BR_FIELD_FLOAT, offsetof(br_orbit_camera, distance) },
-        { "yaw", BR_FIELD_FLOAT, offsetof(br_orbit_camera, yaw) },
-        { "pitch", BR_FIELD_FLOAT, offsetof(br_orbit_camera, pitch) },
-        { "min_distance", BR_FIELD_FLOAT, offsetof(br_orbit_camera, min_distance) },
-        { "max_distance", BR_FIELD_FLOAT, offsetof(br_orbit_camera, max_distance) },
-        { "rotate_speed", BR_FIELD_FLOAT, offsetof(br_orbit_camera, rotate_speed) },
-        { "zoom_speed", BR_FIELD_FLOAT, offsetof(br_orbit_camera, zoom_speed) },
+        { "target", BR_FIELD_VEC3, offsetof(br_camera_orbit, target) },
+        { "distance", BR_FIELD_FLOAT, offsetof(br_camera_orbit, distance) },
+        { "yaw", BR_FIELD_FLOAT, offsetof(br_camera_orbit, yaw) },
+        { "pitch", BR_FIELD_FLOAT, offsetof(br_camera_orbit, pitch) },
+        { "min_distance", BR_FIELD_FLOAT, offsetof(br_camera_orbit, min_distance) },
+        { "max_distance", BR_FIELD_FLOAT, offsetof(br_camera_orbit, max_distance) },
+        { "rotate_speed", BR_FIELD_FLOAT, offsetof(br_camera_orbit, rotate_speed) },
+        { "zoom_speed", BR_FIELD_FLOAT, offsetof(br_camera_orbit, zoom_speed) },
     };
     static const br_field_desc anchor_fields[] = {
         { "camera", BR_FIELD_NODE, offsetof(br_camera_anchor, camera) },
@@ -877,7 +911,7 @@ static void br_camera_register_components(br_engine *e, br_camera_state *s)
     s->follow_id = br_component_register(e, &c);
     c = (br_component_desc){ "camera.shake", sizeof(br_camera_shake), shake_fields, BR_ARRAY_COUNT(shake_fields) };
     s->shake_id = br_component_register(e, &c);
-    c = (br_component_desc){ "camera.orbit", sizeof(br_orbit_camera), orbit_fields, BR_ARRAY_COUNT(orbit_fields) };
+    c = (br_component_desc){ "camera.orbit", sizeof(br_camera_orbit), orbit_fields, BR_ARRAY_COUNT(orbit_fields) };
     s->orbit_id = br_component_register(e, &c);
     c = (br_component_desc){ "camera.anchor", sizeof(br_camera_anchor), anchor_fields, BR_ARRAY_COUNT(anchor_fields) };
     s->anchor_id = br_component_register(e, &c);

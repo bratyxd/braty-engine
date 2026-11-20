@@ -180,6 +180,19 @@ typedef struct br_camera_shake {
     float    time;
 } br_camera_shake;
 
+/* "camera.orbit": left-drag turns a 3D camera around target, the wheel zooms (PixiJS 3D
+ * OrbitCameraControl). Fill it with br_camera_orbit_make: zeroed limits and speeds do not move. */
+typedef struct br_camera_orbit {
+    br_vec3 target;
+    float   distance;
+    float   yaw;            /* radians around +Y */
+    float   pitch;          /* radians, positive looks down */
+    float   min_distance;
+    float   max_distance;
+    float   rotate_speed;   /* radians per mouse pixel (default 0.01) */
+    float   zoom_speed;     /* fraction of distance per wheel step (default 0.1) */
+} br_camera_orbit;
+
 /* "camera.anchor": keeps a UI node at a point of a camera's viewport (or of the screen). */
 typedef struct br_camera_anchor {
     br_node camera;        /* zero = the screen without a camera (stage = window coordinates) */
@@ -192,10 +205,12 @@ typedef struct br_camera_anchor {
 uint32_t br_camera_follow_component(br_engine *e);
 /* Component id of "camera.shake". */
 uint32_t br_camera_shake_component(br_engine *e);
-/* Component id of "camera.orbit" (data: br_orbit_camera, drives a 3D camera's rig). */
+/* Component id of "camera.orbit" (data: br_camera_orbit, drives a 3D camera's rig). */
 uint32_t br_camera_orbit_component(br_engine *e);
 /* Component id of "camera.anchor". */
 uint32_t br_camera_anchor_component(br_engine *e);
+/* An orbit at distance around target with default limits (0.5..500) and speeds. */
+br_camera_orbit br_camera_orbit_make(br_vec3 target, float distance, float yaw, float pitch);
 /* Adds trauma (clamped to 1) to a camera, adding a shake component with defaults if missing. */
 void br_camera_shake_add(br_engine *e, br_node cam, float trauma);
 

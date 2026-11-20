@@ -45,7 +45,7 @@ typedef struct demo_state {
     br_node         view;
     br_node3d       root;
     br_node3d       camera;
-    br_orbit_camera orbit;
+    br_camera_orbit orbit;
     br_node3d       shapes[SHAPES];
     br_material3d   shape_materials[SHAPES];
     br_node3d       torus;
@@ -65,6 +65,26 @@ typedef struct demo_state {
     uint64_t        frame_ns_count;
     uint32_t        rng;
 } demo_state;
+
+/* The View3D's own camera on an orbit: left-drag turns, the wheel zooms. (A br_camera gets the
+ * same from its "camera.orbit" component; this example drives a View3D camera node itself.) */
+static void orbit_view_camera(br_engine *e, br_camera_orbit *orbit, br_node3d camera, bool use_input)
+{
+    if (use_input && br_input_mouse_down(e, SDL_BUTTON_LEFT)) {
+        br_vec2 d = br_input_mouse_delta(e);
+        orbit->yaw -= d.x * orbit->rotate_speed;
+        orbit->pitch = br_clampf(orbit->pitch + d.y * orbit->rotate_speed, -1.5f, 1.5f);
+    }
+    br_vec2 wheel = use_input ? br_input_mouse_wheel(e) : br_vec2_make(0.0f, 0.0f);
+    if (wheel.y != 0.0f) {
+        orbit->distance *= SDL_powf(1.0f - orbit->zoom_speed, wheel.y);
+        orbit->distance = br_clampf(orbit->distance, orbit->min_distance, orbit->max_distance);
+    }
+    float cp = SDL_cosf(orbit->pitch);
+    br_vec3 offset = br_vec3_make(SDL_sinf(orbit->yaw) * cp, SDL_sinf(orbit->pitch), SDL_cosf(orbit->yaw) * cp);
+    br_node3d_set_position(e, camera, br_vec3_add(orbit->target, br_vec3_scale(offset, orbit->distance)));
+    br_node3d_look_at(e, camera, orbit->target, br_vec3_make(0.0f, 1.0f, 0.0f));
+}
 
 static float frand(demo_state *s)
 {
@@ -483,11 +503,11 @@ static void setup_scene(br_engine *e, demo_state *s)
     br_view3d_add_post_pass(e, s->view, &br_shader_post3d_vignette_frag, vignette, sizeof(vignette));
 
     if (g_camera == 1) {
-        s->orbit = br_orbit_camera_make(br_vec3_make(1.0f, 1.0f, -3.0f), 19.0f, -1.05f, 0.32f);
+        s->orbit = br_camera_orbit_make(br_vec3_make(1.0f, 1.0f, -3.0f), 19.0f, -1.05f, 0.32f);
     } else {
-        s->orbit = br_orbit_camera_make(br_vec3_make(0.0f, 1.2f, -2.5f), 20.0f, 0.0f, 0.42f);
+        s->orbit = br_camera_orbit_make(br_vec3_make(0.0f, 1.2f, -2.5f), 20.0f, 0.0f, 0.42f);
     }
-    br_orbit_camera_apply(e, &s->orbit, s->camera);
+    orbit_view_camera(e, &s->orbit, s->camera, false);
 }
 
 static void setup_2d(br_engine *e, demo_state *s)
@@ -556,7 +576,7 @@ static void demo_update(br_engine *e, float dt, void *user)
     demo_state *s = user;
     float t = (float)br_ticker_elapsed(e);
 
-    br_orbit_camera_update(e, &s->orbit, s->camera);
+    orbit_view_camera(e, &s->orbit, s->camera, true);
 
     /* skin: joint 1 bends the upper half around the middle (mesh space, bind pose at origin) */
     float bend = SDL_sinf(t * 1.6f) * 0.9f + 0.4f;

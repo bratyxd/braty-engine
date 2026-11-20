@@ -1,4 +1,6 @@
-/* br_camera3d.h - 3D cameras, projection maths, rays, frustums, orbit camera.
+/* br_camera3d.h - 3D camera nodes, projection maths, rays, frustums.
+ *
+ * An orbiting mouse camera is the "camera.orbit" component on a br_camera (br_camera.h).
  *
  * Unity-style projection: the VERTICAL extent is what you set (vertical field of view, or the
  * orthographic size = half the visible height); the horizontal extent follows the aspect ratio.
@@ -55,25 +57,5 @@ bool br_aabb_is_valid(br_aabb box);
 br_aabb br_aabb_transform(br_aabb box, br_mat4 m);
 /* World ray through normalised device coordinates (x, y in -1..1, y up). */
 br_ray3d br_ray3d_from_ndc(br_mat4 inverse_view_projection, float ndc_x, float ndc_y);
-
-/* ---- orbit camera (PixiJS 3D OrbitCameraControl) */
-
-typedef struct br_orbit_camera {
-    br_vec3 target;
-    float   distance;
-    float   yaw;            /* radians around +Y */
-    float   pitch;          /* radians, positive looks down */
-    float   min_distance;
-    float   max_distance;
-    float   rotate_speed;   /* radians per mouse pixel (default 0.01) */
-    float   zoom_speed;     /* fraction of distance per wheel step (default 0.1) */
-} br_orbit_camera;
-
-/* An orbit at distance around target with default limits and speeds. */
-br_orbit_camera br_orbit_camera_make(br_vec3 target, float distance, float yaw, float pitch);
-/* Places and aims the camera node from the orbit values. */
-void br_orbit_camera_apply(br_engine *e, const br_orbit_camera *orbit, br_node3d camera);
-/* Left-drag rotates, wheel zooms (reads br_input), then applies. Call from an UPDATE system. */
-void br_orbit_camera_update(br_engine *e, br_orbit_camera *orbit, br_node3d camera);
 
 #endif

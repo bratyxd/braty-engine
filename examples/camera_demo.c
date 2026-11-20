@@ -234,8 +234,8 @@ static void build_3d(br_engine *e)
     br_node cam = br_camera_create_3d(e, root, &main3d);
     br_view3d_set_environment(e, br_camera_view3d(e, cam), br_color_to_linear(hex(0xBFD9F2)),
                               br_color_to_linear(hex(0x5A4A3A)), 0.4f);
-    br_orbit_camera *orbit = br_component_add(e, cam, br_camera_orbit_component(e));
-    *orbit = br_orbit_camera_make(br_vec3_make(0.0f, 0.5f, 0.0f), 14.0f, 0.6f, 0.5f);
+    br_camera_orbit *orbit = br_component_add(e, cam, br_camera_orbit_component(e));
+    *orbit = br_camera_orbit_make(br_vec3_make(0.0f, 0.5f, 0.0f), 14.0f, 0.6f, 0.5f);
 
     br_camera top = br_camera_default_3d();            /* top-down map, 8 world units half height */
     top.projection = BR_CAMERA_ORTHOGRAPHIC;
