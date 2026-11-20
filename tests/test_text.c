@@ -104,7 +104,8 @@ static void test_fnt_text(br_engine *e, br_font *f)
     BR_CHECK(near(br_font_kerning(f, 'a', 'b', 16.0f), -2.0f));
     BR_CHECK(near(br_font_kerning(f, 'b', 'a', 16.0f), 0.0f));
     BR_CHECK(near(br_font_kerning(f, 'a', 'b', 32.0f), -4.0f)); /* scales with size */
-    br_font_metrics m = br_font_get_metrics(f, 32.0f);
+    br_font_metrics m;
+    BR_CHECK(br_font_get_metrics(f, 32.0f, &m));
     BR_CHECK(near(m.ascent, 32.0f) && near(m.line_height, 40.0f));
     (void)e;
 }
@@ -166,7 +167,8 @@ static void test_measure(br_engine *e, br_font *f)
     BR_CHECK(near(br_text_measure(e, "AV", &ts).width, expect));
     BR_CHECK(br_font_kerning(ttf, 'A', 'V', 40.0f) < 0.0f); /* Noto Sans kerns AV (GPOS) */
     BR_CHECK(br_font_has_glyph(ttf, 0x0416) && br_font_has_glyph(ttf, 0x03A9)); /* Cyrillic, Greek */
-    br_font_metrics fm = br_font_get_metrics(ttf, 40.0f);
+    br_font_metrics fm;
+    BR_CHECK(br_font_get_metrics(ttf, 40.0f, &fm));
     BR_CHECK(fm.ascent > 30.0f && fm.descent < -5.0f);
 }
 
@@ -226,7 +228,7 @@ static void test_wrap(br_engine *e, br_font *f)
     br_text_set_anchor(e, n, 0.5f, 1.0f);
     st.padding = 4.0f;
     br_text_set_style(e, n, &st);
-    br_rect b = br_node_get_local_bounds(e, n);
+    br_rect b = br_node_local_bounds(e, n);
     BR_CHECK(near(b.x, -19.0f) && near(b.y, -24.0f) && near(b.width, 38.0f) && near(b.height, 28.0f));
     br_node_destroy(e, n);
 }
@@ -274,15 +276,15 @@ static void test_split(br_engine *e, br_font *f)
     br_node chars = br_split_text_create(e, "ab cd", &st, BR_SPLIT_CHARS);
     BR_CHECK(br_node_child_count(e, chars) == 4);
     br_node c = br_node_child_at(e, chars, 2); /* 'c' */
-    BR_CHECK(SDL_strcmp(br_text_get_text(e, c), "c") == 0);
+    BR_CHECK(SDL_strcmp(br_text_text(e, c), "c") == 0);
     br_vec2 p = br_node_position(e, c);
     BR_CHECK(near(p.x, 18.0f + 10.0f + 5.0f) && near(p.y, 10.0f)); /* after kerned "ab" and a space */
     br_node words = br_split_text_create(e, "ab cd", &st, BR_SPLIT_WORDS);
     BR_CHECK(br_node_child_count(e, words) == 2);
-    BR_CHECK(SDL_strcmp(br_text_get_text(e, br_node_child_at(e, words, 1)), "cd") == 0);
+    BR_CHECK(SDL_strcmp(br_text_text(e, br_node_child_at(e, words, 1)), "cd") == 0);
     br_node lines = br_split_text_create(e, "ab\ncd e", &st, BR_SPLIT_LINES);
     BR_CHECK(br_node_child_count(e, lines) == 2);
-    BR_CHECK(SDL_strcmp(br_text_get_text(e, br_node_child_at(e, lines, 1)), "cd e") == 0);
+    BR_CHECK(SDL_strcmp(br_text_text(e, br_node_child_at(e, lines, 1)), "cd e") == 0);
     br_node_destroy(e, chars);
     br_node_destroy(e, words);
     br_node_destroy(e, lines);
@@ -296,13 +298,13 @@ static void test_split(br_engine *e, br_font *f)
     long_line[2000] = 0;
     lines = br_split_text_create(e, long_line, &st, BR_SPLIT_LINES);
     BR_CHECK(br_node_child_count(e, lines) == 1);
-    BR_CHECK(SDL_strcmp(br_text_get_text(e, br_node_child_at(e, lines, 0)), long_line) == 0);
+    BR_CHECK(SDL_strcmp(br_text_text(e, br_node_child_at(e, lines, 0)), long_line) == 0);
     for (int i = 0; i < 2000; i++) {
         long_line[i] = 'c';
     }
     words = br_split_text_create(e, long_line, &st, BR_SPLIT_WORDS);
     BR_CHECK(br_node_child_count(e, words) == 1);
-    BR_CHECK(SDL_strlen(br_text_get_text(e, br_node_child_at(e, words, 0))) == 2000);
+    BR_CHECK(SDL_strlen(br_text_text(e, br_node_child_at(e, words, 0))) == 2000);
     br_node_destroy(e, lines);
     br_node_destroy(e, words);
     SDL_free(long_line);

@@ -39,7 +39,7 @@ int main(void)
     BR_CHECK(br_component_register(e, &desc) == 0); /* duplicate */
     BR_CHECK(br_component_find(e, "velocity") == id);
     BR_CHECK(br_component_find(e, "nope") == 0);
-    const br_component_desc *copy = br_component_get_desc(e, id);
+    const br_component_desc *copy = br_component_desc_get(e, id);
     BR_CHECK(copy != NULL && copy->field_count == 3 && copy->fields != velocity_fields);
     BR_CHECK(copy != NULL && SDL_strcmp(copy->fields[1].name, "damping") == 0);
 

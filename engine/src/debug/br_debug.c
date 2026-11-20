@@ -59,12 +59,12 @@ bool br_debug_log_line(br_engine *e, uint32_t i, char *out, size_t out_size)
 
 /* ---- public state */
 
-void br_debug_set_open(br_engine *e, bool open)
+void br_debug_set_visible(br_engine *e, bool visible)
 {
-    e->debug->open = open;
+    e->debug->open = visible;
 }
 
-bool br_debug_is_open(br_engine *e)
+bool br_debug_visible(br_engine *e)
 {
     return e->debug != NULL && e->debug->open;
 }
@@ -108,7 +108,7 @@ static void br_debug_system(br_engine *e, float dt, void *user)
     }
     if (keys && e->profiler != NULL && s->profiler_key != SDL_SCANCODE_UNKNOWN &&
         br_input_key_pressed(e, s->profiler_key)) {
-        br_profiler_set_open(e, !br_profiler_is_open(e));
+        br_profiler_set_visible(e, !br_profiler_visible(e));
     }
     uint64_t now = SDL_GetTicksNS();
     if (s->last_ns != 0) {
@@ -429,7 +429,7 @@ static void br_debug_ui_system(br_engine *e, float dt, void *user)
 {
     (void)dt;
     br_debug_state *s = user;
-    bool show = s->open || br_profiler_is_open(e) || br_profiler_hud(e);
+    bool show = s->open || br_profiler_visible(e) || br_profiler_hud(e);
     s->ui_live = false;
     s->hud = NULL;
     if (!show) {
@@ -451,7 +451,7 @@ static void br_debug_ui_system(br_engine *e, float dt, void *user)
     if (s->open) {
         br_debug_panels(e, s);
     }
-    if (br_profiler_is_open(e)) {
+    if (br_profiler_visible(e)) {
         br_debug_profiler_panel(e, s);
     }
     if (br_profiler_hud(e)) {

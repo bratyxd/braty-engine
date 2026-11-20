@@ -68,8 +68,8 @@ br_font *br_font_find(br_engine *e, const char *family, bool bold, bool italic, 
 
 /* ---- queries (all sizes in pixels; bitmap fonts scale from their native size) */
 
-/* Vertical metrics at `size`. */
-br_font_metrics br_font_get_metrics(br_font *font, float size);
+/* Copies the vertical metrics at `size` into *out. False (zeroed) if font is NULL. */
+bool br_font_get_metrics(br_font *font, float size, br_font_metrics *out);
 /* Horizontal advance of a codepoint at `size`. */
 float br_font_advance(br_font *font, uint32_t codepoint, float size);
 /* Kerning adjustment between two codepoints at `size` (usually <= 0). */

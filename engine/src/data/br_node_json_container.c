@@ -561,7 +561,7 @@ void br_node_json_container_write(br_engine *e, br_node n, cJSON *out)
     const char *blend_name = br_data_enum_name(br_blend_names, BR_ARRAY_COUNT(br_blend_names), blend);
     br_data_put(out, "blend", blend != BR_BLEND_INHERIT && blend_name != NULL, cJSON_CreateString(blend_name ? blend_name : ""));
     br_data_put(out, "cullable", br_node_cullable(e, n), cJSON_CreateTrue());
-    br_data_put(out, "render_group", br_node_is_render_group(e, n), cJSON_CreateTrue());
+    br_data_put(out, "render_group", br_node_render_group(e, n), cJSON_CreateTrue());
     br_data_put(out, "cache_as_texture", br_node_cache_as_texture(e, n), cJSON_CreateTrue());
     br_event_mode mode = br_node_event_mode(e, n);
     const char *mode_name = br_data_enum_name(br_event_mode_names, BR_ARRAY_COUNT(br_event_mode_names), (int)mode);

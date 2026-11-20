@@ -329,7 +329,7 @@ static void test_blend_trees(br_engine *e)
     br_animator_set_float(e, a, "speed", -3.0f); /* clamped to the ends */
     br_engine_step(e, 0.1f);
     BR_CHECK(near_eq(node_x(e, n), 0.0f) && near_eq(br_animator_blend_weight(e, a, "move", 0), 1.0f));
-    BR_CHECK(near_eq(br_animator_get_float(e, a, "speed"), -3.0f));
+    BR_CHECK(near_eq(br_animator_float(e, a, "speed"), -3.0f));
 
     br_vec2 pos[3] = { { 0.0f, 0.0f }, { 1.0f, 0.0f }, { 0.0f, 1.0f } };
     const char *clips2[3] = { "c0", "c1", "c2" };
@@ -471,7 +471,7 @@ static void test_state_machine(br_engine *e)
     br_animator_set_trigger(e, a, "jump");
     br_engine_step(e, 0.05f);
     BR_CHECK(SDL_strcmp(br_animator_state(e, a), "jump") == 0);
-    BR_CHECK(near_eq(br_animator_get_float(e, a, "jump"), 0.0f)); /* consumed */
+    BR_CHECK(near_eq(br_animator_float(e, a, "jump"), 0.0f)); /* consumed */
     br_animator_set_float(e, a, "speed", 0.0f);
     for (int i = 0; i < 10; i++) {
         br_engine_step(e, 0.1f); /* the once clip ends, exit time 1 leads back to idle */
@@ -625,7 +625,7 @@ static void test_properties(br_engine *e)
     BR_CHECK(id != UINT32_MAX && br_anim_property_find(e, BR_ANIM_TARGET_2D, "demo.glow") == id);
     BR_CHECK(br_anim_property_register(e, &custom) == id); /* same name: replaced, not added */
     BR_CHECK(round_trip(e, t, "spr:demo.glow", v1, 1) && near_eq(g_custom, 0.75f));
-    BR_CHECK(br_anim_property_get_desc(e, id) != NULL && br_anim_property_count(e) > id);
+    BR_CHECK(br_anim_property_desc_get(e, id) != NULL && br_anim_property_count(e) > id);
 
     /* 3D: node, material, morph weights */
     br_node3d g = br_node3d_create_container(e);
@@ -980,7 +980,7 @@ static void test_parameters(br_engine *e)
         entered += is_jump && !was_jump ? 1 : 0;
         was_jump = is_jump;
     }
-    BR_CHECK(entered == 1 && near_eq(br_animator_get_float(e, a, "jump"), 0.0f));
+    BR_CHECK(entered == 1 && near_eq(br_animator_float(e, a, "jump"), 0.0f));
     g_warnings = 0;
     br_animator_set_bool(e, a, "jump", false); /* a trigger set as a bool: one warning */
     br_animator_set_bool(e, a, "jump", false);
@@ -988,7 +988,7 @@ static void test_parameters(br_engine *e)
     g_errors = 0;
     const char *long_name = "a_parameter_name_that_is_far_too_long_40";
     br_animator_set_float(e, a, long_name, 1.0f);
-    BR_CHECK(g_errors == 1 && near_eq(br_animator_get_float(e, a, long_name), 0.0f));
+    BR_CHECK(g_errors == 1 && near_eq(br_animator_float(e, a, long_name), 0.0f));
     g_errors = 0;
     const char *long_state = "{ \"states\": [ { \"name\": \"a_state_name_that_is_far_too_long_to_fit\", \"clip\": \"c0\" } ] }";
     BR_CHECK(br_anim_graph_parse(e, "long.animgraph.json", long_state, SDL_strlen(long_state)) == NULL && g_errors > 0);

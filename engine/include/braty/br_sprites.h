@@ -47,6 +47,7 @@ uint32_t br_nine_slice_type(br_engine *e);
 /* Creates a nine-slice sprite with the given borders, sized like the texture. */
 br_node br_nine_slice_create(br_engine *e, br_texture texture, float left, float top, float right, float bottom);
 /* The data to read or change in place (NULL if not a nine-slice). Pointer dies when nine-slices are created/freed. */
+/* Pointer rule (br_core.h): valid until the next create or destroy of this kind of object. */
 br_nine_slice *br_nine_slice_get(br_engine *e, br_node n);
 /* Sets the drawn size in local units. */
 void br_nine_slice_set_size(br_engine *e, br_node n, float width, float height);
@@ -74,6 +75,7 @@ uint32_t br_tiling_sprite_type(br_engine *e);
 /* Creates a tiling sprite of width x height showing `texture` repeated. */
 br_node br_tiling_sprite_create(br_engine *e, br_texture texture, float width, float height);
 /* The data to read or change in place (NULL if not a tiling sprite). */
+/* Pointer rule (br_core.h): valid until the next create or destroy of this kind of object. */
 br_tiling_sprite *br_tiling_sprite_get(br_engine *e, br_node n);
 
 /* ---- animated sprite (PixiJS AnimatedSprite) */

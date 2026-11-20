@@ -157,7 +157,7 @@ static void test_every_type_round_trip(br_engine *e)
     BR_CHECK(br_mesh_rope_points(e, find(e, root, "rope"), &count) != NULL && count == 3);
     br_particle_container_particles(e, find(e, root, "sparks"), &count);
     BR_CHECK(count == 2);
-    BR_CHECK(strcmp(br_text_get_text(e, find(e, root, "title")), "Hello") == 0);
+    BR_CHECK(strcmp(br_text_text(e, find(e, root, "title")), "Hello") == 0);
     br_text_style style;
     BR_CHECK(br_text_get_style(e, find(e, root, "title"), &style) && style.font_size == 20.0f &&
              style.stroke_width == 2.0f && style.align == BR_TEXT_ALIGN_CENTER);
@@ -240,7 +240,7 @@ static void test_component_fields(br_engine *e)
     BR_CHECK(fb->target.generation == 0);
 
     /* write_field gives back what read_field takes */
-    const br_component_desc *desc = br_component_get_desc(e, id);
+    const br_component_desc *desc = br_component_desc_get(e, id);
     for (uint32_t i = 0; i < desc->field_count; i++) {
         cJSON *v = br_scene_file_write_field(e, &desc->fields[i], fa);
         BR_CHECK(v != NULL);
@@ -472,7 +472,7 @@ static void test_game_config_apply(br_engine *e)
     br_node none = br_game_config_apply(e, &c);
     BR_CHECK(!br_node_valid(e, none)); /* no start scene */
     BR_CHECK(c.json == NULL && br_game_config_json(e) != NULL);
-    BR_CHECK(br_debug_is_open(e));
+    BR_CHECK(br_debug_visible(e));
     BR_CHECK(br_audio_bus_find(e, "music") > 0);
     br_input_inject_key(e, SDL_SCANCODE_SPACE, true);
     br_engine_step(e, 1.0f / 60.0f);
@@ -480,7 +480,7 @@ static void test_game_config_apply(br_engine *e)
     br_input_inject_key(e, SDL_SCANCODE_SPACE, false);
     br_input_inject_key(e, SDL_SCANCODE_F1, true); /* toggles the overlay */
     br_engine_step(e, 1.0f / 60.0f);
-    BR_CHECK(!br_debug_is_open(e));
+    BR_CHECK(!br_debug_visible(e));
     br_input_inject_key(e, SDL_SCANCODE_F1, false);
     br_ticker_set_speed(e, 1.0f);
 
@@ -490,14 +490,14 @@ static void test_game_config_apply(br_engine *e)
     br_game_config_apply(e, &c);
     br_input_inject_key(e, SDL_SCANCODE_F1, true);
     br_engine_step(e, 1.0f / 60.0f);
-    BR_CHECK(!br_debug_is_open(e));
+    BR_CHECK(!br_debug_visible(e));
     br_input_inject_key(e, SDL_SCANCODE_F1, false);
     const char *nokey = "{ \"debug\": { \"toggle_key\": \"none\" } }";
     BR_CHECK(br_game_config_parse(nokey, strlen(nokey), "game.json", &c) && c.debug_keys);
     br_game_config_apply(e, &c);
     br_input_inject_key(e, SDL_SCANCODE_F1, true);
     br_engine_step(e, 1.0f / 60.0f);
-    BR_CHECK(!br_debug_is_open(e));
+    BR_CHECK(!br_debug_visible(e));
     br_input_inject_key(e, SDL_SCANCODE_F1, false);
     br_debug_set_toggle_key(e, SDL_SCANCODE_F1);
     br_engine_step(e, 1.0f / 60.0f);

@@ -294,7 +294,7 @@ bool br_scene_file_apply_component(br_engine *e, br_node n, const char *name, co
         br_data_errorf(e, "expected an object of fields");
         return false;
     }
-    const br_component_desc *desc = br_component_get_desc(e, id);
+    const br_component_desc *desc = br_component_desc_get(e, id);
     bool ok = true;
     const cJSON *item = NULL;
     cJSON_ArrayForEach(item, fields)
@@ -780,8 +780,8 @@ static cJSON *br_data_node_to_json(br_engine *e, br_node n)
     }
 
     cJSON *components = cJSON_CreateObject();
-    for (uint32_t id = 1; br_component_get_desc(e, id) != NULL; id++) {
-        const br_component_desc *cd = br_component_get_desc(e, id);
+    for (uint32_t id = 1; br_component_desc_get(e, id) != NULL; id++) {
+        const br_component_desc *cd = br_component_desc_get(e, id);
         const void *data = br_component_get(e, n, id);
         if (data == NULL || !br_data_component_saved(cd)) {
             continue;
@@ -965,7 +965,7 @@ static void br_data_collect(br_engine *e, const cJSON *json, br_data_collector *
             const cJSON *component = NULL;
             cJSON_ArrayForEach(component, item)
             {
-                const br_component_desc *desc = br_component_get_desc(e, br_component_find(e, component->string));
+                const br_component_desc *desc = br_component_desc_get(e, br_component_find(e, component->string));
                 for (uint32_t f = 0; desc != NULL && f < desc->field_count; f++) {
                     const cJSON *v = cJSON_GetObjectItemCaseSensitive(component, desc->fields[f].name);
                     if (desc->fields[f].type == BR_FIELD_ASSET && cJSON_IsString(v)) {

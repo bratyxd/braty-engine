@@ -568,7 +568,8 @@ br_font *br_bitmap_font_install(br_engine *e, const char *name, const br_text_st
         br_array_free(&cps);
         return NULL;
     }
-    br_font_metrics fm = br_font_get_metrics(src, (float)raster);
+    br_font_metrics fm;
+    br_font_get_metrics(src, (float)raster, &fm);
     float bold = span.synth_bold ? SDL_max(0.5f, (float)raster * 0.03f) : 0.0f;
     float stroke = br_text_effect_clamp(e, style->stroke_width * 0.5f / texel);
     /* shadow offset in raster pixels, bounded so the glyph canvas stays page-sized */

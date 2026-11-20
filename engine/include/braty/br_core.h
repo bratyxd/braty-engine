@@ -2,6 +2,16 @@
  *
  * Everything here is plain C over SDL3. Containers own their memory and are freed with
  * their *_free function. Nothing here needs a window or a GPU.
+ *
+ * Naming of accessors, the same in every module:
+ *   T    br_<module>_<noun>(...)               returns a value; br_<module>_set_<noun> sets it.
+ *   bool br_<module>_get_<noun>(..., T *out)   copies into the caller's *out (false: nothing found).
+ *   T   *br_<module>[_<noun>]_get(e, key)      looks up what a handle / id / name / index / path
+ *                                              names (a pointer into engine storage, a handle,
+ *                                              or a copy into *out).
+ * Pointer rule: a pointer returned by a _get lookup is valid until the next create or destroy of
+ * that kind of object (some modules keep it longer; their headers say so); edits through it are
+ * read by the module's next update or render. Every header that hands one out repeats the rule.
  */
 #ifndef BR_CORE_H
 #define BR_CORE_H

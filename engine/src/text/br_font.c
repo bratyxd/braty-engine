@@ -727,26 +727,29 @@ static float br_font_bitmap_scale(br_font *font, float size)
     return font->native_size > 0.0f && size > 0.0f ? size / font->native_size : 1.0f;
 }
 
-br_font_metrics br_font_get_metrics(br_font *font, float size)
+bool br_font_get_metrics(br_font *font, float size, br_font_metrics *out)
 {
     br_font_metrics m;
     SDL_zero(m);
     if (font == NULL) {
-        return m;
+        *out = m;
+        return false;
     }
     if (font->is_bitmap) {
         float k = br_font_bitmap_scale(font, size);
         m.ascent = font->base * k;
         m.descent = -(font->line_height - font->base) * k;
         m.line_height = font->line_height * k;
-        return m;
+        *out = m;
+        return true;
     }
     float scale = br_font_ttf_scale(font, size);
     m.ascent = (float)font->ascent * scale;
     m.descent = (float)font->descent * scale;
     m.line_gap = (float)font->line_gap * scale;
     m.line_height = m.ascent - m.descent;
-    return m;
+    *out = m;
+    return true;
 }
 
 float br_font_advance(br_font *font, uint32_t codepoint, float size)

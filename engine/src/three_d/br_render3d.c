@@ -83,7 +83,7 @@ void br_render3d_submit_with_parent(br_render3d_ctx *ctx, const br_draw3d *draw,
     br_engine *e = ctx->e;
     br_view3d_state *v = ctx->view;
     br_gpu *g = br_engine_gpu(e);
-    br_material3d_desc *mat = br_material3d_params(e, draw->material);
+    br_material3d_desc *mat = br_material3d_get(e, draw->material);
     br_geometry3d_data *geo = br_geometry3d_data_get(e, draw->geometry);
     if (g == NULL || mat == NULL || geo == NULL || draw->instances == NULL || draw->instance_count == 0) {
         return;
@@ -645,7 +645,7 @@ static void br_render3d_shadow_pass(br_engine *e, br_view3d_state *v, SDL_GPUCom
                 continue;
             }
             br_geometry3d_data *geo = br_geometry3d_data_get(e, item->geometry);
-            br_material3d_desc *mat = br_material3d_params(e, item->material);
+            br_material3d_desc *mat = br_material3d_get(e, item->material);
             if (geo == NULL || mat == NULL || geo->vertex_buffer == NULL) {
                 continue;
             }
@@ -689,7 +689,7 @@ static void br_render3d_draw_item(br_engine *e, br_view3d_state *v, SDL_GPURende
         return;
     }
     br_geometry3d_data *geo = br_geometry3d_data_get(e, item->geometry);
-    br_material3d_desc *mat = br_material3d_params(e, item->material);
+    br_material3d_desc *mat = br_material3d_get(e, item->material);
     if (geo == NULL || mat == NULL || geo->vertex_buffer == NULL) {
         return;
     }
@@ -710,7 +710,7 @@ static void br_render3d_draw_item(br_engine *e, br_view3d_state *v, SDL_GPURende
     SDL_BindGPUGraphicsPipeline(pass, pipeline);
     br_bind_geometry(e, v, pass, cmd, item, geo);
     if (custom) {
-        /* the desc is editable in place (br_material3d_params): clamp what create checked */
+        /* the desc is editable in place (br_material3d_get): clamp what create checked */
         uint32_t texture_count = SDL_min(mat->custom_texture_count, (uint32_t)BR_MATERIAL3D_CUSTOM_TEXTURES);
         uint32_t uniform_size = SDL_min(mat->custom_uniform_size, (uint32_t)BR_MATERIAL3D_CUSTOM_UNIFORM_SIZE);
         SDL_GPUTextureSamplerBinding bindings[BR_MATERIAL3D_CUSTOM_TEXTURES];

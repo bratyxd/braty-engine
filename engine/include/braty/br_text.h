@@ -120,7 +120,7 @@ br_node br_text_create(br_engine *e, const char *utf8, const br_text_style *styl
 /* Replaces the text (copied). Works on text, bitmap text and rich text nodes. */
 void br_text_set_text(br_engine *e, br_node n, const char *utf8);
 /* The text as set ("" for non-text nodes). */
-const char *br_text_get_text(br_engine *e, br_node n);
+const char *br_text_text(br_engine *e, br_node n);
 /* Replaces the style (copied). */
 void br_text_set_style(br_engine *e, br_node n, const br_text_style *style);
 /* Copies the style out. False for non-text nodes. */

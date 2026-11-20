@@ -25,7 +25,7 @@ pause, step back, click a spike). `--profiler-hud` shows a corner readout instea
 | `br_profiler_get_summary(e, &s)` | FPS, CPU / GPU ms, verdict, top three scopes (last 30 frames). |
 | `br_profiler_save(e, "out.json")` | Chrome trace (Perfetto) + `out.json.txt` summary. `--profile out.json` does it at exit. |
 | `br_profiler_summary(e, frames, buf, size)` / `_summary_json(e, frames, obj)` | avg / p95 / p99 frame ms, verdict, top scopes as text or JSON. |
-| `br_profiler_set_open(e, true)`, `br_profiler_set_hud(e, true)` | Panel / corner readout from code. |
+| `br_profiler_set_visible(e, true)`, `br_profiler_set_hud(e, true)` | Panel / corner readout from code. |
 | `br_profiler_scope_time(e, age, "name", &total, &self, &calls)` | One scope's numbers in a recorded frame (tests). |
 | `br_profiler_set_clock(e, fn, user)` | Inject timestamps (tests). |
 

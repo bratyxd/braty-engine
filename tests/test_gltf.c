@@ -198,7 +198,7 @@ static void test_parse(br_engine *e)
              vec3_eq(m->bounds.max, br_vec3_make(2.0f, 3.0f, 3.0f)));
     /* material: factors, texture from a data URI, sampler, transform, extensions */
     BR_CHECK(m->material_count == 1 && SDL_strcmp(m->material_names[0], "Red") == 0);
-    br_material3d_desc *md = br_material3d_params(e, m->materials[0]);
+    br_material3d_desc *md = br_material3d_get(e, m->materials[0]);
     BR_CHECK(md != NULL);
     if (md != NULL) {
         BR_CHECK(md->model == BR_MATERIAL3D_PBR);
@@ -374,7 +374,7 @@ static void test_texture_spaces(br_engine *e)
         return;
     }
     BR_CHECK(m->texture_count == 2);
-    const br_material3d_desc *md = br_material3d_params(e, m->materials[0]);
+    const br_material3d_desc *md = br_material3d_get(e, m->materials[0]);
     br_texture base = md->textures[BR_MATERIAL3D_BASE_COLOR].texture;
     br_texture normal = md->textures[BR_MATERIAL3D_NORMAL].texture;
     BR_CHECK(br_texture_valid(e, base) && br_texture_valid(e, normal));

@@ -85,7 +85,7 @@ uint32_t br_component_find(br_engine *e, const char *name)
     return 0;
 }
 
-const br_component_desc *br_component_get_desc(br_engine *e, uint32_t component_id)
+const br_component_desc *br_component_desc_get(br_engine *e, uint32_t component_id)
 {
     br_component_entry *c = br_component_entry_get(e, component_id);
     return c != NULL ? &c->desc : NULL;

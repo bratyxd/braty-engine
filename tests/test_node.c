@@ -409,7 +409,7 @@ static void test_deep_chain(br_engine *e)
     br_node_set_label(e, leaf, "leaf");
     br_node_set_cullable(e, top, true);
     br_engine_step(e, 1.0f / 60.0f); /* transform, cull (bounds) */
-    br_rect b = br_node_get_bounds(e, top);
+    br_rect b = br_node_bounds(e, top);
     BR_CHECK(b.width > (float)depth - 1.0f);
     BR_CHECK(br_node_equal(br_node_find_by_label(e, top, "leaf", true), leaf));
     br_node_set_alpha(e, top, 0.5f);

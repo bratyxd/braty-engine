@@ -111,6 +111,7 @@ bool br_filters_set(br_engine *e, br_node n, const br_filter *filters, uint32_t 
 /* Number of filters on n. */
 uint32_t br_filters_count(br_engine *e, br_node n);
 /* The i-th filter of n, editable in place; NULL if out of range. */
+/* Pointer rule (br_core.h): valid until the next create or destroy of this kind of object. */
 br_filter *br_filters_get(br_engine *e, br_node n, uint32_t i);
 /* Filter texture pixels per target pixel (default 1; 0.5 = half resolution, cheaper blur). */
 void br_filters_set_resolution(br_engine *e, br_node n, float resolution);

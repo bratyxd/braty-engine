@@ -104,7 +104,7 @@ uint32_t br_anim_property_register(br_engine *e, const br_anim_property_desc *de
 /* Id of a property row, UINT32_MAX if none. */
 uint32_t br_anim_property_find(br_engine *e, br_anim_target_kind kind, const char *name);
 /* The row of an id, NULL if out of range. */
-const br_anim_property_desc *br_anim_property_get_desc(br_engine *e, uint32_t id);
+const br_anim_property_desc *br_anim_property_desc_get(br_engine *e, uint32_t id);
 /* Number of rows (ids are 0..count-1). */
 uint32_t br_anim_property_count(br_engine *e);
 /* Floats a value of `type` uses (8 for weights). */
@@ -283,7 +283,7 @@ void br_animator_set_bool(br_engine *e, br_animator a, const char *name, bool va
 /* Sets a trigger (a bool that a state-machine transition consumes, declared in the graph or not). */
 void br_animator_set_trigger(br_engine *e, br_animator a, const char *name);
 /* A parameter's value (bools/triggers as 0/1), 0 if unknown. */
-float br_animator_get_float(br_engine *e, br_animator a, const char *name);
+float br_animator_float(br_engine *e, br_animator a, const char *name);
 /* A 1D blend tree playable by name: clips placed at thresholds of `parameter` (up to 8). */
 bool br_animator_add_blend1d(br_engine *e, br_animator a, const char *name, const char *parameter,
                              const char *const *clips, const float *thresholds, uint32_t count);

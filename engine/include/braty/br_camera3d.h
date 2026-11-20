@@ -37,6 +37,7 @@ uint32_t br_camera3d_type(br_engine *e);
 /* Creates a detached camera node. */
 br_node3d br_camera3d_create(br_engine *e, const br_camera3d *camera);
 /* The camera data, NULL if n is not a live camera3d. */
+/* Pointer rule (br_core.h): valid until the next create or destroy of this kind of object. */
 br_camera3d *br_camera3d_get(br_engine *e, br_node3d n);
 /* Projection matrix for an aspect ratio (width / height; camera->aspect overrides when > 0). */
 br_mat4 br_camera3d_projection(const br_camera3d *camera, float aspect);

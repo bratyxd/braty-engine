@@ -107,6 +107,7 @@ uint32_t br_mesh3d_type(br_engine *e);
 /* Creates a detached mesh node. */
 br_node3d br_mesh3d_create(br_engine *e, br_geometry3d geometry, br_material3d material);
 /* The mesh data, NULL if n is not a live mesh3d. */
+/* Pointer rule (br_core.h): valid until the next create or destroy of this kind of object. */
 br_mesh3d *br_mesh3d_get(br_engine *e, br_node3d n);
 
 /* ---- batched_mesh3d node: one geometry + material, N instances, one instanced draw */

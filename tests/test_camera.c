@@ -274,7 +274,8 @@ static void test_engine(void)
     br_engine_step(e, 1.0f / 60.0f);
     /* the UI camera keeps 720 stage units vertically: its bottom-right is (640 + 360 * 9/16, 720) */
     BR_CHECK(near_eq(br_node_position(e, hud).x, 640.0f + 202.5f - 16.0f) && near_eq(br_node_position(e, hud).y, 704.0f));
-    BR_CHECK(near_eq(br_camera_get_view(e, world_cam).half_height, 180.0f));
+    br_camera_view world_view;
+    BR_CHECK(br_camera_get_view(e, world_cam, &world_view) && near_eq(world_view.half_height, 180.0f));
 
     /* destroying cameras goes back to the plain stage */
     br_node_destroy(e, world_cam);

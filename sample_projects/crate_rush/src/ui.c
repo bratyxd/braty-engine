@@ -16,7 +16,7 @@
 void cr_ui_text(br_engine *e, br_node root, const char *label, const char *text)
 {
     br_node n = br_node_find_by_label(e, root, label, true);
-    if (br_node_valid(e, n) && SDL_strcmp(br_text_get_text(e, n), text) != 0) {
+    if (br_node_valid(e, n) && SDL_strcmp(br_text_text(e, n), text) != 0) {
         br_text_set_text(e, n, text);
     }
 }

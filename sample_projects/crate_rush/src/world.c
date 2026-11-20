@@ -244,7 +244,7 @@ static void cr_signs_system(br_engine *e, float dt, void *user)
         if (near) {
             char hint[160];
             br_input_format_prompt(e, s->hint, hint, sizeof(hint)); /* "{jump}" -> "Space" / "A" / "Cross" */
-            if (SDL_strcmp(br_text_get_text(e, text), hint) != 0) {
+            if (SDL_strcmp(br_text_text(e, text), hint) != 0) {
                 br_text_set_text(e, text, hint);
                 cr_sign_layout(e, s->plate, text);
             }

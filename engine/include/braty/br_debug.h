@@ -32,16 +32,16 @@
 /* Registers the module (overlay state, log capture, systems, the render overlay). Called once by br_builtin.c. */
 void br_debug_register(br_engine *e);
 
-/* Opens or closes the overlay. */
-void br_debug_set_open(br_engine *e, bool open);
+/* Shows or hides the overlay (F1). */
+void br_debug_set_visible(br_engine *e, bool visible);
 /* True while the overlay is shown. */
-bool br_debug_is_open(br_engine *e);
+bool br_debug_visible(br_engine *e);
 /* The key that toggles the overlay (default SDL_SCANCODE_F1; SDL_SCANCODE_UNKNOWN = none). */
 void br_debug_set_toggle_key(br_engine *e, SDL_Scancode key);
 /* The key that toggles the profiler panel (default SDL_SCANCODE_F2; SDL_SCANCODE_UNKNOWN = none). */
 void br_debug_set_profiler_key(br_engine *e, SDL_Scancode key);
 /* Turns both keys on or off (default on). Off for shipped games: players cannot open the
- * inspector or the profiler; br_debug_set_open / br_profiler_set_open still work from code. */
+ * inspector or the profiler; br_debug_set_visible / br_profiler_set_visible still work from code. */
 void br_debug_set_keys_enabled(br_engine *e, bool enabled);
 /* Selects the node shown in the inspector (zero handle = none). */
 void br_debug_select(br_engine *e, br_node n);

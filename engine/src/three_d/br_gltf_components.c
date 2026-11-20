@@ -6,7 +6,7 @@
 static br_component3d_set *br_component3d_set_get(br_engine *e, uint32_t component_id, bool create)
 {
     br_gltf_state *s = e->gltf;
-    const br_component_desc *desc = br_component_get_desc(e, component_id);
+    const br_component_desc *desc = br_component_desc_get(e, component_id);
     if (s == NULL || desc == NULL) {
         return NULL;
     }
@@ -20,7 +20,7 @@ static br_component3d_set *br_component3d_set_get(br_engine *e, uint32_t compone
         }
         for (uint32_t i = old; i < component_id; i++) {
             br_component3d_set *set = br_array_at(&s->components3d, i);
-            const br_component_desc *d = br_component_get_desc(e, i + 1);
+            const br_component_desc *d = br_component_desc_get(e, i + 1);
             br_array_init(&set->data, (uint32_t)(d != NULL ? d->size : 1));
             br_array_init(&set->owners, sizeof(br_node3d));
             br_array_init(&set->sparse, sizeof(uint32_t));

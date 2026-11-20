@@ -459,7 +459,7 @@ static void test_overlay_input(void)
     br_engine_step(e, 1.0f / 60.0f);
     BR_CHECK(!br_debug_wants_event(e, &down)); /* nothing shown */
 
-    br_debug_set_open(e, true);
+    br_debug_set_visible(e, true);
     br_engine_step(e, 1.0f / 60.0f); /* the UI is built (headless too) */
     BR_CHECK(br_debug_wants_event(e, &down)); /* on the Stats window */
     SDL_Event up = mouse_event(SDL_EVENT_MOUSE_BUTTON_UP, 600.0f, 700.0f);
@@ -481,13 +481,13 @@ static void test_overlay_input(void)
     BR_CHECK(!br_debug_wants_event(e, &key)); /* no field is being edited */
 
     /* the corner readout is display only; the profiler panel takes clicks */
-    br_debug_set_open(e, false);
+    br_debug_set_visible(e, false);
     br_profiler_set_hud(e, true);
     br_engine_step(e, 1.0f / 60.0f);
     SDL_Event on_hud = mouse_event(SDL_EVENT_MOUSE_BUTTON_DOWN, 1100.0f, 690.0f);
     BR_CHECK(!br_debug_wants_event(e, &on_hud));
     BR_CHECK(!br_debug_wants_event(e, &down)); /* Stats is closed now */
-    br_profiler_set_open(e, true);
+    br_profiler_set_visible(e, true);
     br_engine_step(e, 1.0f / 60.0f);
     SDL_Event on_panel = mouse_event(SDL_EVENT_MOUSE_BUTTON_DOWN, 1000.0f, 100.0f);
     BR_CHECK(br_debug_wants_event(e, &on_panel));
@@ -501,7 +501,7 @@ static void test_overlay_key_release(void)
     br_engine *e = br_engine_create("test_profiler_keys", NULL);
     br_node n = br_node_create_container(e);
     br_node_add_child(e, br_stage_root(e), n);
-    br_debug_set_open(e, true);
+    br_debug_set_visible(e, true);
     br_debug_select(e, n);
     br_input_inject_key(e, SDL_SCANCODE_W, true); /* walking */
     br_engine_step(e, 1.0f / 60.0f);
@@ -526,12 +526,12 @@ static void test_overlay_key_release(void)
     BR_CHECK(!br_debug_wants_event(e, &key)); /* but W's release reaches the game */
 
     /* shipped games switch the keys off; code can still open things */
-    br_debug_set_open(e, false);
+    br_debug_set_visible(e, false);
     br_debug_set_keys_enabled(e, false);
     br_input_inject_key(e, SDL_SCANCODE_F1, true);
     br_input_inject_key(e, SDL_SCANCODE_F2, true);
     br_engine_step(e, 1.0f / 60.0f);
-    BR_CHECK(!br_debug_is_open(e) && !br_profiler_is_open(e));
+    BR_CHECK(!br_debug_visible(e) && !br_profiler_visible(e));
     br_input_inject_key(e, SDL_SCANCODE_F1, false);
     br_input_inject_key(e, SDL_SCANCODE_F2, false);
     br_debug_set_keys_enabled(e, true);
@@ -539,7 +539,7 @@ static void test_overlay_key_release(void)
     br_input_inject_key(e, SDL_SCANCODE_F1, true);
     br_input_inject_key(e, SDL_SCANCODE_F2, true);
     br_engine_step(e, 1.0f / 60.0f);
-    BR_CHECK(br_debug_is_open(e) && !br_profiler_is_open(e));
+    BR_CHECK(br_debug_visible(e) && !br_profiler_visible(e));
     br_engine_destroy(e);
 }
 
@@ -563,7 +563,7 @@ static void test_fence_thread_on_demand(void)
     br_profiler_set_hud(e, false);
     br_engine_step(e, 1.0f / 60.0f);
     BR_CHECK(!br_profiler_gpu_estimating(e));
-    br_profiler_set_open(e, true);
+    br_profiler_set_visible(e, true);
     br_engine_step(e, 1.0f / 60.0f);
     BR_CHECK(br_profiler_gpu_estimating(e)); /* started again */
     br_engine_destroy(e);

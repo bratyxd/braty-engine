@@ -428,35 +428,42 @@ static br_camera_view br_camera_view_now(br_engine *e, br_node cam, const br_cam
     return br_camera_compute_view(&d->camera, br_camera_world(e, cam, d), d->is_3d, size, density);
 }
 
-br_camera_view br_camera_get_view(br_engine *e, br_node cam)
+bool br_camera_get_view(br_engine *e, br_node cam, br_camera_view *out)
 {
-    br_camera_view none;
-    SDL_zero(none);
     br_camera_data *d = br_camera_data_get(e, cam);
-    return d != NULL ? br_camera_view_now(e, cam, d) : none;
+    if (d == NULL) {
+        SDL_zero(*out);
+        return false;
+    }
+    *out = br_camera_view_now(e, cam, d);
+    return true;
 }
 
 br_vec3 br_camera_screen_to_world(br_engine *e, br_node cam, br_vec3 screen)
 {
-    br_camera_view v = br_camera_get_view(e, cam);
+    br_camera_view v;
+    br_camera_get_view(e, cam, &v);
     return br_camera_view_screen_to_world(&v, screen);
 }
 
 br_vec3 br_camera_world_to_screen(br_engine *e, br_node cam, br_vec3 world)
 {
-    br_camera_view v = br_camera_get_view(e, cam);
+    br_camera_view v;
+    br_camera_get_view(e, cam, &v);
     return br_camera_view_world_to_screen(&v, world);
 }
 
 br_ray3d br_camera_screen_point_to_ray(br_engine *e, br_node cam, br_vec2 screen)
 {
-    br_camera_view v = br_camera_get_view(e, cam);
+    br_camera_view v;
+    br_camera_get_view(e, cam, &v);
     return br_camera_view_screen_to_ray(&v, screen);
 }
 
 br_vec3 br_camera_viewport_to_world(br_engine *e, br_node cam, br_vec3 viewport)
 {
-    br_camera_view v = br_camera_get_view(e, cam);
+    br_camera_view v;
+    br_camera_get_view(e, cam, &v);
     return br_camera_view_viewport_to_world(&v, viewport);
 }
 

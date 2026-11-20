@@ -404,10 +404,11 @@ static void test_hardening(void)
     br_node_add_child(e, br_stage_root(e), cam);
     BR_CHECK(reply_has(e, "{\"cmd\":\"window\",\"width\":720,\"height\":1280}", "\"ok\":true"));
     br_playtest_step(e, 1);
-    br_camera_view v = br_camera_get_view(e, cam);
+    br_camera_view v;
+    BR_CHECK(br_camera_get_view(e, cam, &v));
     BR_CHECK(v.screen_size.x == 720.0f && v.screen_size.y == 1280.0f);
     BR_CHECK(reply_has(e, "{\"cmd\":\"window\",\"width\":2520,\"height\":1080}", "\"ok\":true"));
-    v = br_camera_get_view(e, cam);
+    BR_CHECK(br_camera_get_view(e, cam, &v));
     BR_CHECK(v.screen_size.x == 2520.0f && v.screen_size.y == 1080.0f);
     BR_CHECK(reply_has(e, "{\"cmd\":\"window\",\"width\":0,\"height\":1080}", "16..16384"));
     br_engine_destroy(e);

@@ -252,7 +252,7 @@ static void test_import(br_engine *e, br_model *model, br_node3d inst)
     BR_CHECK(SDL_fabsf(br_quat_dot(before, after)) < 0.99f);
     /* material extensions */
     for (uint32_t i = 0; i < model->material_count; i++) {
-        br_material3d_desc *d = br_material3d_params(e, model->materials[i]);
+        br_material3d_desc *d = br_material3d_get(e, model->materials[i]);
         if (SDL_strcmp(model->material_names[i], "Glass") == 0) {
             BR_CHECK(d->alpha_mode == BR_ALPHA_BLEND && near_eq(d->base_color.a, 1.0f - 0.7f * 0.8f));
         } else if (SDL_strcmp(model->material_names[i], "Sail") == 0) {

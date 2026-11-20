@@ -33,7 +33,7 @@ clicks through.
 
 | Function | What for |
 |---|---|
-| `br_debug_set_open(e, true)`, `br_debug_is_open` | Open/close from code. |
+| `br_debug_set_visible(e, true)`, `br_debug_visible` | Open/close from code. |
 | `br_debug_set_toggle_key(e, SDL_SCANCODE_F12)` | Another toggle key (game.json `debug.toggle_key`; `SDL_SCANCODE_UNKNOWN` / `"none"` = no key). |
 | `br_debug_set_profiler_key(e, key)` | Another profiler key (default F2; `SDL_SCANCODE_UNKNOWN` = none). |
 | `br_debug_set_keys_enabled(e, false)` | Shipping: F1 / F2 do nothing (game.json `"debug": { "keys": false }`); code can still open both. |

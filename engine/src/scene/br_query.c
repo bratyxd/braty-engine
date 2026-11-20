@@ -168,7 +168,7 @@ void br_query_end(br_query *q)
         const br_query_op *op = (const br_query_op *)q->ops.data + i;
         if (op->kind == BR_QUERY_OP_ADD) {
             void *data = br_component_add(q->e, op->node, op->component_id);
-            const br_component_desc *desc = br_component_get_desc(q->e, op->component_id);
+            const br_component_desc *desc = br_component_desc_get(q->e, op->component_id);
             if (data != NULL && op->bytes_size > 0) {
                 size_t size = op->bytes_size < desc->size ? op->bytes_size : desc->size;
                 SDL_memcpy(data, (const uint8_t *)q->op_bytes.data + op->bytes_offset, size);

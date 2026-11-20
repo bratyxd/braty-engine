@@ -103,7 +103,7 @@ static void test_nine_slice(br_engine *e)
     ns->anchor = br_vec2_make(0.5f, 0.5f);
     br_nine_slice_geometry(ns, &info, &out);
     BR_CHECK(quad_is(&out, 0, -50, -30, -40, -20));
-    BR_CHECK(br_rect_contains(br_node_get_local_bounds(e, n), -49, -29));
+    BR_CHECK(br_rect_contains(br_node_local_bounds(e, n), -49, -29));
     ns->anchor = br_vec2_make(0, 0);
 
     /* trimmed atlas frame: 20x20 stored, 30x30 original, trimmed 5 px on the top-left */

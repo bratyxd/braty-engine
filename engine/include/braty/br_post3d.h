@@ -46,6 +46,7 @@ br_post3d_settings br_post3d_default(void);
 /* Replaces the view's post settings. */
 void br_view3d_set_post(br_engine *e, br_node view, const br_post3d_settings *settings);
 /* The view's post settings, editable in place (NULL if view is not a view3d). */
+/* Pointer rule (br_core.h): valid until the next create or destroy of this kind of object. */
 br_post3d_settings *br_view3d_post(br_engine *e, br_node view);
 /* Appends a custom pass (uniforms copied). Returns its index, or -1 when full. */
 int br_view3d_add_post_pass(br_engine *e, br_node view, const br_shader_blob *fragment_shader,

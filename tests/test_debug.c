@@ -75,7 +75,7 @@ static void test_font_replaced(void)
         br_engine_destroy(e);
         return;
     }
-    br_debug_set_open(e, true);
+    br_debug_set_visible(e, true);
     steps(e, 2); /* installs "braty.debug" and draws with it */
     bool synth_bold, synth_italic;
     BR_CHECK(br_font_find(e, "braty.debug", false, false, &synth_bold, &synth_italic) != br_font_default(e));

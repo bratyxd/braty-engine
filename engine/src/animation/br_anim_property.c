@@ -190,7 +190,7 @@ uint32_t br_anim_property_register(br_engine *e, const br_anim_property_desc *de
     return s->properties.count - 1;
 }
 
-const br_anim_property_desc *br_anim_property_get_desc(br_engine *e, uint32_t id)
+const br_anim_property_desc *br_anim_property_desc_get(br_engine *e, uint32_t id)
 {
     br_animation_state *s = e->animation;
     if (s == NULL || id >= s->properties.count) {
@@ -217,7 +217,7 @@ static bool br_anim_resolve_field(br_engine *e, const char *name, br_anim_prop_r
     SDL_memcpy(comp, name, (size_t)(dot - name));
     comp[dot - name] = '\0';
     uint32_t id = br_component_find(e, comp);
-    const br_component_desc *desc = id != 0 ? br_component_get_desc(e, id) : NULL;
+    const br_component_desc *desc = id != 0 ? br_component_desc_get(e, id) : NULL;
     if (desc == NULL) {
         return false;
     }
@@ -268,7 +268,7 @@ bool br_anim_resolve(br_engine *e, br_anim_target root, const char *path, br_ani
         prop->property = id;
         prop->component = 0;
         prop->offset = 0;
-        prop->type = br_anim_property_get_desc(e, id)->type;
+        prop->type = br_anim_property_desc_get(e, id)->type;
         return true;
     }
     return node->kind == BR_ANIM_TARGET_2D && br_anim_resolve_field(e, name, prop);
@@ -279,7 +279,7 @@ void br_anim_prop_get(br_engine *e, br_anim_target t, const br_anim_prop_ref *pr
     SDL_zerop(out);
     out->count = br_anim_value_components(prop->type);
     if (prop->property != BR_ANIM_NONE) {
-        const br_anim_property_desc *d = br_anim_property_get_desc(e, prop->property);
+        const br_anim_property_desc *d = br_anim_property_desc_get(e, prop->property);
         if (d != NULL) {
             d->get(e, t, out);
         }
@@ -306,7 +306,7 @@ void br_anim_prop_get(br_engine *e, br_anim_target t, const br_anim_prop_ref *pr
 void br_anim_prop_set(br_engine *e, br_anim_target t, const br_anim_prop_ref *prop, const br_anim_value *value)
 {
     if (prop->property != BR_ANIM_NONE) {
-        const br_anim_property_desc *d = br_anim_property_get_desc(e, prop->property);
+        const br_anim_property_desc *d = br_anim_property_desc_get(e, prop->property);
         if (d != NULL) {
             d->set(e, t, value);
         }
@@ -544,7 +544,7 @@ static br_mesh3d *br_anim_mesh(br_engine *e, br_node3d n)
 static br_material3d_desc *br_anim_material(br_engine *e, br_anim_target t)
 {
     br_mesh3d *m = br_anim_mesh(e, br_n3(t));
-    return m != NULL ? br_material3d_params(e, m->material) : NULL;
+    return m != NULL ? br_material3d_get(e, m->material) : NULL;
 }
 
 /* Material colours are linear in the material, sRGB in animation data (like every data file). */

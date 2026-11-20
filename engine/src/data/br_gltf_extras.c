@@ -159,7 +159,7 @@ static const br_field_desc *br_gltf_find_field(const br_component_desc *desc, co
 static bool br_gltf_set_field(br_engine *e, br_node3d n, uint32_t id, const char *field_name, const cJSON *value,
                               br_node3d search_root)
 {
-    const br_component_desc *desc = br_component_get_desc(e, id);
+    const br_component_desc *desc = br_component_desc_get(e, id);
     const br_field_desc *field = br_gltf_find_field(desc, field_name);
     if (field == NULL) {
         br_data_errorf(e, "component '%s' has no field '%s'", desc->name, field_name);

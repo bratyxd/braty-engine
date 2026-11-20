@@ -23,7 +23,7 @@ Tests: `tests/test_node.c`, `test_components.c`, `test_transform.c`, `test_query
 | `br_node_set_position/scale/rotation/skew/pivot/origin` | Transform (radians, y down). |
 | `br_node_to_global` / `br_node_to_local` / `br_node_world_transform` | Always current, computed from ancestors. |
 | `br_node_set_alpha/tint/visible/z_index/sortable_children/blend_mode` | Appearance and order. |
-| `br_node_get_bounds` / `get_local_bounds`, `br_node_set_cullable` | Bounds, culling. |
+| `br_node_bounds` / `get_local_bounds`, `br_node_set_cullable` | Bounds, culling. |
 | `br_node_destroy(e, n)` | Invalid now; freed by the next flush (start of next frame, or at once outside a step). |
 | `br_node_type_register(e, &desc)` | Add a node type (from your module's register function). |
 | `br_component_register/add/get/remove/count/at/owner_at` | Components. |
@@ -116,7 +116,7 @@ is layer 1) picks which cameras draw a node (`culling_mask`, `docs/agents/camera
   `BR_MASK_ALPHA/COLOR`, blend modes `>= BR_BLEND_ADVANCED_FIRST`. All four route the node to the
   effects hook (`br_node_needs_effects`; see render.md). Free your filter list in a destroy listener.
 - **Scene files (Task 10)**: `br_node_type_set_from_json(e, type_id, fn)` installs JSON parsing
-  for any type; `br_component_get_desc` exposes field lists.
+  for any type; `br_component_desc_get` exposes field lists.
 - Engine code may read the tables directly through `engine/src/scene/br_scene_internal.h`
   (read-only: setters maintain dirty flags).
 

@@ -448,7 +448,7 @@ static uint32_t br_animator_slot_for(br_engine *e, br_animator_data *d, const br
     br_anim_prop_get(e, node, &prop, &v);
     SDL_memcpy(slot.rest, v.f, sizeof(slot.rest));
     slot.rest_texture = v.texture;
-    slot.set = prop.property != BR_ANIM_NONE ? br_anim_property_get_desc(e, prop.property)->set : NULL;
+    slot.set = prop.property != BR_ANIM_NONE ? br_anim_property_desc_get(e, prop.property)->set : NULL;
     if (br_array_push(&d->slots, &slot) == NULL) {
         return BR_ANIM_NONE;
     }
@@ -551,7 +551,7 @@ void br_animator_set_trigger(br_engine *e, br_animator a, const char *name)
     br_animator_set_param(e, a, name, BR_ANIM_PARAM_TRIGGER, 1.0f);
 }
 
-float br_animator_get_float(br_engine *e, br_animator a, const char *name)
+float br_animator_float(br_engine *e, br_animator a, const char *name)
 {
     br_animator_data *d = br_animator_data_get(e, a);
     uint32_t i = d != NULL ? br_animator_param_index(d, name, BR_ANIM_PARAM_FLOAT, false) : BR_ANIM_NONE;

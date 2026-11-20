@@ -17,7 +17,7 @@ br_texture br_generate_texture(br_engine *e, br_node n, const br_generate_textur
     }
     br_rect region = o.region;
     if (br_rect_is_empty(region)) {
-        region = br_node_get_bounds(e, n);
+        region = br_node_bounds(e, n);
     }
     if (br_rect_is_empty(region)) {
         br_log_error("br_generate_texture: empty region");

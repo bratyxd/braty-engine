@@ -501,7 +501,7 @@ static void test_game_config_profiler_logical(void)
     br_engine *e = br_engine_create("test_scene_config_logical", BRATY_SOURCE_DIR "/tests/data");
     br_camera_set_headless_screen(e, 1280.0f, 720.0f);
     br_game_config_apply(e, &config);
-    BR_CHECK(br_profiler_hud(e) && br_profiler_is_open(e));
+    BR_CHECK(br_profiler_hud(e) && br_profiler_visible(e));
     br_engine_step(e, DT);
     /* a 640 x 360 design shown 2x in a 1280 x 720 window: window centre = design centre */
     br_vec2 p = br_camera_screen_to_stage(e, br_vec2_make(640.0f, 360.0f));

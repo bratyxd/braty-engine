@@ -595,7 +595,7 @@ static bool br_fx_draw_cached(br_engine *e, br_node n, br_fx_record *rec, br_ren
     float scale = br_render_pixel_ratio(rc);
     br_mat3 world = br_node_world_transform(e, n);
     if (!rec->cache_valid || rec->cache_scale != scale || !br_texture_valid(e, rec->cache)) {
-        br_rect b = br_node_get_bounds(e, n);
+        br_rect b = br_node_bounds(e, n);
         if (br_rect_is_empty(b)) {
             return true;
         }
@@ -677,7 +677,7 @@ static bool br_fx_hook(br_engine *e, br_node n, br_render_ctx *rc, void *user)
     if (rec != NULL && rec->use_area) {
         b = br_rect_transform_bounds(rec->area, br_node_world_transform(e, n));
     } else {
-        b = br_node_get_bounds(e, n);
+        b = br_node_bounds(e, n);
     }
     if (br_rect_is_empty(b)) {
         return true;

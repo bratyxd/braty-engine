@@ -666,13 +666,13 @@ bool br_profiler_scope_time(br_engine *e, uint32_t age, const char *name, float 
 
 /* ---- UI flags, budgets */
 
-void br_profiler_set_open(br_engine *e, bool open)
+void br_profiler_set_visible(br_engine *e, bool visible)
 {
     br_profiler_read_args(e, e->profiler); /* code wins over the command line from here on */
-    e->profiler->open = open;
+    e->profiler->open = visible;
 }
 
-bool br_profiler_is_open(br_engine *e)
+bool br_profiler_visible(br_engine *e)
 {
     if (e->profiler == NULL) {
         return false;

@@ -136,7 +136,7 @@ static bool demo_effects(br_engine *e, br_node n, br_render_ctx *rc, void *user)
     if (!br_node_equal(n, s->cached)) {
         return s->next_effects != NULL && s->next_effects(e, n, rc, s->next_effects_user);
     }
-    br_rect b = br_node_get_bounds(e, n);
+    br_rect b = br_node_bounds(e, n);
     if (br_rect_is_empty(b) || !br_render_texture_resize(e, s->effect_target, b.width, b.height)) {
         return true;
     }

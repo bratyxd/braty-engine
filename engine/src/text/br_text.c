@@ -703,7 +703,7 @@ void br_text_set_text(br_engine *e, br_node n, const char *utf8)
     t->dirty = true;
 }
 
-const char *br_text_get_text(br_engine *e, br_node n)
+const char *br_text_text(br_engine *e, br_node n)
 {
     br_text_node *t = br_text_node_get(e, n);
     return t != NULL && t->text != NULL ? t->text : "";

@@ -213,9 +213,9 @@ int br_node_blend_mode(br_engine *e, br_node n);
 /* ---- bounds and culling (PixiJS getBounds, Culler) */
 
 /* World-space axis-aligned bounds of the node and its visible descendants (zero rect if empty). */
-br_rect br_node_get_bounds(br_engine *e, br_node n);
+br_rect br_node_bounds(br_engine *e, br_node n);
 /* Bounds of the node and its visible descendants in the node's own local space. */
-br_rect br_node_get_local_bounds(br_engine *e, br_node n);
+br_rect br_node_local_bounds(br_engine *e, br_node n);
 /* Culled nodes (bounds outside the screen) are skipped by rendering. Default false. */
 void br_node_set_cullable(br_engine *e, br_node n, bool cullable);
 /* True if cullable. */
@@ -235,7 +235,7 @@ bool br_node_is_culled(br_engine *e, br_node n);
  * applied on the GPU: moving a group (camera, scrolling layer) costs one matrix. */
 void br_node_set_render_group(br_engine *e, br_node n, bool is_render_group);
 /* True if the node is a render group. */
-bool br_node_is_render_group(br_engine *e, br_node n);
+bool br_node_render_group(br_engine *e, br_node n);
 /* Draws n (with its subtree) where `layer` is in the draw order instead of where n sits in the
  * hierarchy (Pixi RenderLayer.attach). Any node can be a layer. Transforms still come from n's parent.
  * False (logged) if layer is n or inside n's subtree (the walk would never end). */
@@ -367,7 +367,7 @@ uint32_t br_component_register(br_engine *e, const br_component_desc *desc);
 /* Finds a component id by name, 0 if unknown. */
 uint32_t br_component_find(br_engine *e, const char *name);
 /* The registered descriptor, NULL if unknown. */
-const br_component_desc *br_component_get_desc(br_engine *e, uint32_t component_id);
+const br_component_desc *br_component_desc_get(br_engine *e, uint32_t component_id);
 /* Adds a zeroed component to n (returns the existing one if present). NULL on failure. */
 void *br_component_add(br_engine *e, br_node n, uint32_t component_id);
 /* The component data of n, NULL if absent. Pointers die when the component array grows or shrinks. */

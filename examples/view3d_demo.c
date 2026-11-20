@@ -178,7 +178,7 @@ static void on_shape_click(br_engine *e, br_event3d *ev, void *user)
     demo_state *s = user;
     br_mesh3d *m = br_mesh3d_get(e, ev->target);
     if (m != NULL) {
-        br_material3d_params(e, m->material)->base_color = br_color_make(frand(s), frand(s), frand(s), 1.0f);
+        br_material3d_get(e, m->material)->base_color = br_color_make(frand(s), frand(s), frand(s), 1.0f);
         br_log_info("view3d_demo: clicked %s at (%.2f, %.2f, %.2f)", br_node3d_label(e, ev->target), ev->hit.point.x,
                     ev->hit.point.y, ev->hit.point.z);
     }
@@ -376,7 +376,7 @@ static void setup_scene(br_engine *e, demo_state *s)
     br_node3d_set_position(e, point_node, br_vec3_make(-3.0f, 2.2f, 3.2f));
     br_node3d_add_child(e, s->root, point_node);
     br_material3d bulb = make_material(e, BR_MATERIAL3D_FLAT, 0xFFC080, 0.0f, 1.0f);
-    br_material3d_params(e, bulb)->emissive = br_color_make(3.0f, 1.6f, 0.6f, 1.0f);
+    br_material3d_get(e, bulb)->emissive = br_color_make(3.0f, 1.6f, 0.6f, 1.0f);
     br_node3d bulb_node = add_mesh(e, s, br_geometry3d_sphere(e, 0.12f, 12, 6), bulb, -3.0f, 2.2f, 3.2f);
     br_mesh3d_get(e, bulb_node)->cast_shadows = false;
 

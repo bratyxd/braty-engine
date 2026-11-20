@@ -65,6 +65,7 @@ uint32_t br_canvas3d_type(br_engine *e);
 /* Creates a detached canvas node (desc NULL = br_canvas3d_default(100, 100)). */
 br_node3d br_canvas3d_create(br_engine *e, const br_canvas3d_desc *desc);
 /* The settings, NULL if n is not a live canvas. Stable until n is destroyed. */
+/* Pointer rule (br_core.h): valid until the next create or destroy of this kind of object. */
 br_canvas3d_desc *br_canvas3d_get(br_engine *e, br_node3d n);
 /* The 2D container whose subtree the canvas shows (detached from the stage). */
 br_node br_canvas3d_root(br_engine *e, br_node3d n);

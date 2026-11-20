@@ -175,10 +175,10 @@ bool br_profiler_scope_time(br_engine *e, uint32_t age, const char *name, float 
 
 /* ---- UI state */
 
-/* Opens or closes the profiler panel (F2). */
-void br_profiler_set_open(br_engine *e, bool open);
+/* Shows or hides the profiler panel (F2). */
+void br_profiler_set_visible(br_engine *e, bool visible);
 /* True while the profiler panel is shown. */
-bool br_profiler_is_open(br_engine *e);
+bool br_profiler_visible(br_engine *e);
 /* Shows the compact corner readout (FPS, CPU, GPU, verdict), with or without the panel. */
 void br_profiler_set_hud(br_engine *e, bool on);
 /* True while the corner readout is shown. */

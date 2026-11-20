@@ -123,6 +123,7 @@ br_node br_camera_create_3d(br_engine *e, br_node3d scene_root, const br_camera 
  * logical resolution (API_REVIEW item 17). Added under the stage. */
 br_node br_camera_create_logical(br_engine *e, float width, float height);
 /* The settings, NULL if cam is not a live camera. The pointer dies when cameras are created. */
+/* Pointer rule (br_core.h): valid until the next create or destroy of this kind of object. */
 br_camera *br_camera_get(br_engine *e, br_node cam);
 /* True for 3D cameras. */
 bool br_camera_is_3d(br_engine *e, br_node cam);
@@ -130,8 +131,9 @@ bool br_camera_is_3d(br_engine *e, br_node cam);
 br_node3d br_camera_node3d(br_engine *e, br_node cam);
 /* 3D: the View3D the camera renders through (environment, post, MSAA). Zero for 2D cameras. */
 br_node br_camera_view3d(br_engine *e, br_node cam);
-/* The camera's view on the current window (or its target texture). */
-br_camera_view br_camera_get_view(br_engine *e, br_node cam);
+/* Copies the camera's view on the current window (or its target texture) into *out. False (and
+ * a zeroed view) if cam is not a camera. */
+bool br_camera_get_view(br_engine *e, br_node cam, br_camera_view *out);
 /* Screen -> world (z = distance from a 3D camera). */
 br_vec3 br_camera_screen_to_world(br_engine *e, br_node cam, br_vec3 screen);
 /* World -> screen (z = distance from a 3D camera). */

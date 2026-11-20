@@ -59,7 +59,7 @@ Test: `tests/test_three_d.c`. Example: `examples/view3d_demo.c` (`--camera 0|1`,
 | `br_view3d_set_environment`, `_set_background`, `br_view3d_post` / `_add_post_pass` | Ambient, background, bloom/tone map/custom passes. |
 | `br_node3d_create(e, type)`, `_add_child`, `_set_position/rotation/euler/scale`, `_look_at`, `_destroy` | Scene graph. |
 | `br_geometry3d_cube/sphere/plane/cylinder/cone/torus/capsule`, `br_geometry3d_create(desc)` | Geometry (full vertex layout, 32-bit indices, morph targets). |
-| `br_material3d_default(model)` + `br_material3d_create`, `br_material3d_params` | PBR / Phong / Flat / Toon / custom materials, edit live. |
+| `br_material3d_default(model)` + `br_material3d_create`, `br_material3d_get` | PBR / Phong / Flat / Toon / custom materials, edit live. |
 | `br_mesh3d_create(e, geo, mat)`, `br_mesh3d_get` (skin + morph slots) | A mesh node. |
 | `br_batched_mesh3d_create`, `_add(e, n, matrix, color)` | Instancing: one draw for N copies. |
 | `br_light3d_default(kind)` + `br_light3d_create` | Directional (cascaded shadows), point, spot (shadows). |
@@ -173,7 +173,7 @@ In the SHADOW pass the target is the R32F shadow atlas: write `SV_Position.z` to
 - Morph slot (`br_mesh3d.morph_weights[8]/morph_weight_count`); deltas live on the geometry.
   Skinned/morphed meshes use `mesh3d_deform.vert.hlsl` automatically.
 - Animation targets are plain data: node TRS (`br_node3d_set_*`), material params
-  (`br_material3d_params`), morph weights, light/camera data (`br_light3d_get`, `br_camera3d_get`).
+  (`br_material3d_get`), morph weights, light/camera data (`br_light3d_get`, `br_camera3d_get`).
 
 ## Limits (documented, `// ponytail:` where it matters)
 

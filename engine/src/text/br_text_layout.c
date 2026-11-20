@@ -305,7 +305,8 @@ void br_text_layout_build(br_text_layout *out, const br_array *chars, const br_t
             } else {
                 break;
             }
-            br_font_metrics m = br_font_get_metrics(span->font, span->size);
+            br_font_metrics m;
+            br_font_get_metrics(span->font, span->size, &m);
             ascent = m.ascent > ascent ? m.ascent : ascent;
             descent = m.descent < descent ? m.descent : descent;
         }

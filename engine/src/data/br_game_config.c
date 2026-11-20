@@ -384,13 +384,13 @@ void br_game_config_apply_settings(br_engine *e, br_game_config *config)
         br_debug_set_toggle_key(e, key);
     }
     br_debug_set_keys_enabled(e, config->debug_keys);
-    br_debug_set_open(e, config->debug_overlay);
+    br_debug_set_visible(e, config->debug_overlay);
     /* only switched on: false is the default, and must not undo --profiler / --profiler-hud */
     if (config->profiler_hud) {
         br_profiler_set_hud(e, true);
     }
     if (config->profiler_panel) {
-        br_profiler_set_open(e, true);
+        br_profiler_set_visible(e, true);
     }
     if (config->logical_width > 0.0f && config->logical_height > 0.0f) {
         br_camera_create_logical(e, config->logical_width, config->logical_height);

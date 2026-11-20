@@ -986,7 +986,7 @@ int br_node_blend_mode(br_engine *e, br_node n)
 
 /* ---- bounds and culling */
 
-br_rect br_node_get_bounds(br_engine *e, br_node n)
+br_rect br_node_bounds(br_engine *e, br_node n)
 {
     br_rect r = br_rect_make(0.0f, 0.0f, 0.0f, 0.0f);
     bool has = false;
@@ -996,7 +996,7 @@ br_rect br_node_get_bounds(br_engine *e, br_node n)
     return r;
 }
 
-br_rect br_node_get_local_bounds(br_engine *e, br_node n)
+br_rect br_node_local_bounds(br_engine *e, br_node n)
 {
     br_rect r = br_rect_make(0.0f, 0.0f, 0.0f, 0.0f);
     bool has = false;
@@ -1072,7 +1072,7 @@ void br_node_set_render_group(br_engine *e, br_node n, bool is_render_group)
     }
 }
 
-bool br_node_is_render_group(br_engine *e, br_node n)
+bool br_node_render_group(br_engine *e, br_node n)
 {
     br_node_record *rec = br_scene_record(e, n);
     return rec != NULL && rec->render_group;

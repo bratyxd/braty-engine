@@ -61,10 +61,10 @@ void br_material3d_free_all(br_engine *e)
 
 bool br_material3d_valid(br_engine *e, br_material3d m)
 {
-    return br_material3d_params(e, m) != NULL;
+    return br_material3d_get(e, m) != NULL;
 }
 
-br_material3d_desc *br_material3d_params(br_engine *e, br_material3d m)
+br_material3d_desc *br_material3d_get(br_engine *e, br_material3d m)
 {
     if (e->three_d == NULL) {
         return NULL;
@@ -74,7 +74,7 @@ br_material3d_desc *br_material3d_params(br_engine *e, br_material3d m)
 
 void br_material3d_set_texture(br_engine *e, br_material3d m, br_material3d_slot slot, br_texture texture)
 {
-    br_material3d_desc *d = br_material3d_params(e, m);
+    br_material3d_desc *d = br_material3d_get(e, m);
     if (d == NULL || (int)slot < 0 || slot >= BR_MATERIAL3D_SLOT_COUNT) {
         return;
     }

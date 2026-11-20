@@ -47,7 +47,7 @@ static br_tween br_tween_make(br_engine *e, br_anim_target target, const char *p
     }
     d.owner = target;
     d.count = br_anim_value_components(d.prop.type);
-    d.set = d.prop.property != BR_ANIM_NONE ? br_anim_property_get_desc(e, d.prop.property)->set : NULL;
+    d.set = d.prop.property != BR_ANIM_NONE ? br_anim_property_desc_get(e, d.prop.property)->set : NULL;
     if (from != NULL) {
         SDL_memcpy(d.from, from, sizeof(float) * d.count);
         d.has_from = true;

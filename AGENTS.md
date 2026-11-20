@@ -141,6 +141,10 @@ Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
 - Straightforward code: plain structs, plain functions, plain `for` loops. If a reader must stop
   and decode a line, rewrite it.
 - Zero warnings with `-Wall -Wextra -Wpedantic` (and `/W4` on MSVC) in engine code.
+- Accessors: `br_<module>_<noun>` returns a value and `br_<module>_set_<noun>` sets it;
+  `br_<module>_get_<noun>(..., T *out)` copies into the caller's `*out`; `br_<module>[_<noun>]_get`
+  looks up by handle / id / name / path (rule and pointer lifetime: top of `br_core.h`). 2D and 3D
+  nodes use the same verbs (`br_node_*` / `br_node3d_*`).
 - Naming: functions `br_<module>_<verb>[_<noun>]`, types `br_<name>`, enum values
   `BR_<MODULE>_<VALUE>`, files `br_<module>.h/.c`. Public headers in `engine/include/braty/`,
   private headers next to their `.c` with suffix `_internal.h`.

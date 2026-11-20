@@ -226,7 +226,7 @@ static bool br_data_text_from_json(br_engine *e, br_node n, void *data, const cJ
 
 static void br_data_text_write(br_engine *e, br_node n, cJSON *out)
 {
-    br_data_json_set(out, "text", cJSON_CreateString(br_text_get_text(e, n)));
+    br_data_json_set(out, "text", cJSON_CreateString(br_text_text(e, n)));
 }
 
 /* Each kind is made by its own create call (rich text and bitmap defaults are set there). */

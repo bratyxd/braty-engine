@@ -245,9 +245,9 @@ static bool br_pt_resolve_field(br_engine *e, const br_pt_path *p, const char *p
     }
     if (*base == NULL) {
         return br_playtest_fail(e, "path '%s': node '%s' has no component '%s'", path, p->target,
-                                br_component_get_desc(e, id)->name);
+                                br_component_desc_get(e, id)->name);
     }
-    const br_component_desc *desc = br_component_get_desc(e, id);
+    const br_component_desc *desc = br_component_desc_get(e, id);
     if (p->part_count <= used) {
         return br_playtest_fail(e, "path '%s': name a field of '%s'", path, desc->name);
     }
@@ -316,7 +316,7 @@ static cJSON *br_pt_node_property(br_engine *e, br_node n, const char *name, con
         return br_data_vec2_json(br_node_to_global(e, n, br_vec2_make(0.0f, 0.0f)));
     }
     if (SDL_strcmp(name, "bounds") == 0) {
-        br_rect r = br_node_get_bounds(e, n);
+        br_rect r = br_node_bounds(e, n);
         cJSON *a = cJSON_CreateArray();
         cJSON_AddItemToArray(a, br_data_number(r.x));
         cJSON_AddItemToArray(a, br_data_number(r.y));
@@ -911,7 +911,7 @@ bool br_playtest_query_click_point(br_engine *e, const char *label, float *x, fl
     if (!br_node_valid(e, n)) {
         return br_playtest_fail(e, "click: no node labelled '%s'", label);
     }
-    br_rect r = br_node_get_bounds(e, n);
+    br_rect r = br_node_bounds(e, n);
     if (r.width <= 0.0f || r.height <= 0.0f) {
         return br_playtest_fail(e, "click: node '%s' has empty bounds (not drawn yet?)", label);
     }

@@ -149,7 +149,7 @@ static bool demo_init(br_engine *e)
     }
 
     /* the panel (F2) is open from the start; --profiler-hud shows only the corner readout */
-    br_profiler_set_open(e, !br_profiler_hud(e));
+    br_profiler_set_visible(e, !br_profiler_hud(e));
     br_profiler_set_budget(e, "demo.cpu_load", 20.0f); /* logs once when a frame's busy loop exceeds 20 ms */
     return true;
 }

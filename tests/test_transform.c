@@ -99,10 +99,10 @@ int main(void)
     br_node_set_position(e, holder, br_vec2_make(100.0f, 100.0f));
     br_node_add_child(e, holder, s);
     br_node_set_scale(e, s, br_vec2_make(2.0f, 2.0f));
-    br_rect b = br_node_get_bounds(e, holder);
+    br_rect b = br_node_bounds(e, holder);
     BR_CHECK(br_nearly_equal(b.x, 90.0f, 1e-4f) && br_nearly_equal(b.y, 80.0f, 1e-4f));
     BR_CHECK(br_nearly_equal(b.width, 20.0f, 1e-4f) && br_nearly_equal(b.height, 40.0f, 1e-4f));
-    br_rect lb = br_node_get_local_bounds(e, holder);
+    br_rect lb = br_node_local_bounds(e, holder);
     BR_CHECK(br_nearly_equal(lb.x, -10.0f, 1e-4f) && br_nearly_equal(lb.width, 20.0f, 1e-4f));
     br_sprite_set_size(e, s, 50.0f, 10.0f);
     BR_CHECK(near_vec(br_sprite_size(e, s), 50.0f, 10.0f));

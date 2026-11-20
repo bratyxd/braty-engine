@@ -1,7 +1,7 @@
 /* br_material3d.h - 3D materials: PBR metallic-roughness, Phong, Flat (unlit), Toon, custom.
  *
  * A material is a handle to a plain parameter struct (br_material3d_desc). Edit it live through
- * br_material3d_params: changes show on the next frame (animation writes here too).
+ * br_material3d_get: changes show on the next frame (animation writes here too).
  *
  * Colours are LINEAR. Textures: base colour and emissive are decoded from sRGB in the shader;
  * metallic-roughness (G = roughness, B = metallic, glTF layout), normal (tangent space) and
@@ -95,7 +95,8 @@ bool br_material3d_valid(br_engine *e, br_material3d m);
 /* The live parameters to edit in place, NULL if stale. Valid until the next material create (the
  * pool may move; re-fetch it, e.g. after loading a model). Custom counts over the limits are
  * clamped when drawn. */
-br_material3d_desc *br_material3d_params(br_engine *e, br_material3d m);
+/* Pointer rule (br_core.h): valid until the next create or destroy of this kind of object. */
+br_material3d_desc *br_material3d_get(br_engine *e, br_material3d m);
 /* Sets a texture slot with default sampling and no transform. */
 void br_material3d_set_texture(br_engine *e, br_material3d m, br_material3d_slot slot, br_texture texture);
 
