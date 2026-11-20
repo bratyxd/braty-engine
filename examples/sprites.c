@@ -674,7 +674,7 @@ static bool demo_init(br_engine *e)
     br_engine_on_shutdown(e, demo_shutdown, s);
     s->rng = 12345u;
     if (g_no_vsync) {
-        br_gpu_set_vsync(br_engine_gpu(e), false);
+        br_app_set_vsync(e, BR_VSYNC_OFF);
     }
     br_gpu_set_clear_color(br_engine_gpu(e), br_color_from_hex(0x101422, 1.0f));
     s->bunny_textures[0] = make_bunny(e, 255, 255, 255);

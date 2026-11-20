@@ -57,9 +57,8 @@ const char *br_gpu_driver_name(br_gpu *g);
 SDL_GPUTextureFormat br_gpu_swapchain_format(br_gpu *g);
 /* Best supported depth+stencil format (D24S8 or D32S8). */
 SDL_GPUTextureFormat br_gpu_depth_stencil_format(br_gpu *g);
-/* Turns vsync on (default) or off (mailbox / immediate when supported). Games use br_app_set_vsync. */
-bool br_gpu_set_vsync(br_gpu *g, bool vsync);
-/* Sets exactly this present mode. False (not logged) when the window does not support it. */
+/* Sets exactly this present mode. False (not logged) when the window does not support it.
+ * Games use br_app_set_vsync, which calls this and keeps br_app_vsync in step. */
 bool br_gpu_set_present_mode(br_gpu *g, SDL_GPUPresentMode mode);
 
 /* ---- shaders */
