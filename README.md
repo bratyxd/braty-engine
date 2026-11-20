@@ -74,7 +74,7 @@ and game state, and `expect` values (`docs/PLAYTESTING.md`, module `br_playtest`
 
 ```sh
 python tools/playtest.py build/windows-gcc/sample_projects/star_courier/star_courier.exe "step 60" "action start" "step 30" "screenshot build/playtest_shot.png" "get ship:position" quit
-python tools/playtest.py build/windows-gcc/sample_projects/crate_rush/crate_rush.exe "step 30" "action confirm" "step 120" "key W down" "step 20" "key W up" "screenshot build/crate_shot.png" "get */player:position" "get game:crates" quit
+python tools/playtest.py build/windows-gcc/sample_projects/crate_rush/crate_rush.exe "step 30" "action confirm" "step 120" "key W down" "step 30" "key W up" "screenshot build/crate_shot.png" "get */player:position" "get game:crates" quit
 ```
 
 prints one JSON reply per command (`{"ok": true, "frame": 90, "value": [400, 400]}` for the last
