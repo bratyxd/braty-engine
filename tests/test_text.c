@@ -283,6 +283,104 @@ static void test_split(br_engine *e, br_font *f)
     br_node_destroy(e, lines);
 }
 
+static uint32_t be16(const uint8_t *p)
+{
+    return (uint32_t)p[0] << 8 | p[1];
+}
+
+static uint32_t be32(const uint8_t *p)
+{
+    return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
+}
+
+static void put16(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)(v >> 8);
+    p[1] = (uint8_t)v;
+}
+
+static void put32(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)(v >> 24);
+    p[1] = (uint8_t)(v >> 16);
+    p[2] = (uint8_t)(v >> 8);
+    p[3] = (uint8_t)v;
+}
+
+/* The table directory record of `tag` in a font file (NULL if missing). */
+static uint8_t *font_record(uint8_t *font, const char *tag)
+{
+    uint32_t n = be16(font + 4);
+    for (uint32_t i = 0; i < n; i++) {
+        uint8_t *rec = font + 12 + 16 * i;
+        if (SDL_memcmp(rec, tag, 4) == 0) {
+            return rec;
+        }
+    }
+    return NULL;
+}
+
+/* Truncated and corrupted TTF files fail cleanly instead of reading past the buffer. */
+static void test_bad_fonts(br_engine *e)
+{
+    size_t size = 0;
+    const uint8_t *data = br_font_default_data(&size);
+    BR_CHECK(br_font_create(e, data, 300, NULL) == NULL);
+    BR_CHECK(br_font_create(e, data, 4096, NULL) == NULL);
+    BR_CHECK(br_font_create(e, data, size / 2, NULL) == NULL);
+    BR_CHECK(br_font_create(e, data, size - 1, NULL) == NULL);
+
+    uint8_t *copy = SDL_malloc(size);
+    BR_CHECK(copy != NULL);
+    if (copy == NULL) {
+        return;
+    }
+    br_font *ok = br_font_create(e, data, size, NULL);
+    BR_CHECK(ok != NULL); /* the real font passes the checks */
+    br_font_destroy(e, ok);
+
+    /* table directory: cmap far past the end; head length past the end */
+    SDL_memcpy(copy, data, size);
+    put32(font_record(copy, "cmap") + 8, 0x7FFFFF00u);
+    BR_CHECK(br_font_create(e, copy, size, NULL) == NULL);
+    SDL_memcpy(copy, data, size);
+    put32(font_record(copy, "head") + 12, 0x7FFFFFFFu);
+    BR_CHECK(br_font_create(e, copy, size, NULL) == NULL);
+
+    /* a cmap encoding record pointing outside cmap */
+    SDL_memcpy(copy, data, size);
+    uint8_t *cmap = copy + be32(font_record(copy, "cmap") + 8);
+    uint32_t encodings = be16(cmap + 2);
+    for (uint32_t i = 0; i < encodings; i++) {
+        put32(cmap + 4 + 8 * i + 4, 0x7FFFFF00u);
+    }
+    BR_CHECK(br_font_create(e, copy, size, NULL) == NULL);
+
+    /* format 4 binary-search fields that walk off the subtable */
+    SDL_memcpy(copy, data, size);
+    cmap = copy + be32(font_record(copy, "cmap") + 8);
+    bool patched = false;
+    for (uint32_t i = 0; i < encodings; i++) {
+        uint8_t *sub = cmap + be32(cmap + 4 + 8 * i + 4);
+        if (be16(sub) == 4) {
+            put16(sub + 12, 0xFFFE); /* rangeShift */
+            put16(sub + 10, 15);     /* entrySelector */
+            patched = true;
+        }
+    }
+    BR_CHECK(patched);
+    BR_CHECK(br_font_create(e, copy, size, NULL) == NULL);
+
+    /* no long horizontal metrics (stb reads hmtx[-1]); more glyphs than loca has entries */
+    SDL_memcpy(copy, data, size);
+    put16(copy + be32(font_record(copy, "hhea") + 8) + 34, 0);
+    BR_CHECK(br_font_create(e, copy, size, NULL) == NULL);
+    SDL_memcpy(copy, data, size);
+    put16(copy + be32(font_record(copy, "maxp") + 8) + 4, 0xFFFF);
+    BR_CHECK(br_font_create(e, copy, size, NULL) == NULL);
+    SDL_free(copy);
+}
+
 int main(void)
 {
     test_utf8();
@@ -294,6 +392,7 @@ int main(void)
     br_font *f = br_bitmap_font_parse(e, k_fnt_text, SDL_strlen(k_fnt_text), "", false);
     test_fnt_text(e, f);
     test_fnt_xml(e);
+    test_bad_fonts(e);
     if (f != NULL) {
         test_measure(e, f);
         test_wrap(e, f);

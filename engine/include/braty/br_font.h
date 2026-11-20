@@ -12,6 +12,11 @@
  *
  * Asset loaders: "ttf", "otf" -> br_font (coverage glyphs); "fnt", "xml" -> bitmap br_font.
  *   br_font *f = br_assets_load(e, "fonts/Title.ttf");
+ *
+ * Trust: stb_truetype does no bounds checks, so br_font_create checks first that the table
+ * directory, the fixed-size tables, the Unicode cmap subtables, loca, hmtx and kern lie inside
+ * the file (a truncated or corrupted file fails with an error). Glyph outlines, GPOS kerning
+ * and CFF data are still trusted: load fonts you ship, not fonts from players.
  */
 #ifndef BR_FONT_H
 #define BR_FONT_H
