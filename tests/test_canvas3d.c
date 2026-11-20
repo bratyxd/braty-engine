@@ -140,6 +140,16 @@ static void test_engine(void)
     br_input_inject_pointer_down(e, corner.x, corner.y, SDL_BUTTON_LEFT);
     br_input_inject_pointer_up(e, corner.x, corner.y, SDL_BUTTON_LEFT);
     BR_CHECK(g_clicks == 1);
+    /* a 50,000-level chain on the canvas: the canvas hit test must not overflow the stack */
+    br_node chain = root;
+    for (int i = 0; i < 50000; i++) {
+        br_node next = br_node_create_container(e);
+        br_node_add_child(e, chain, next);
+        chain = next;
+    }
+    br_input_inject_pointer_down(e, corner.x, corner.y, SDL_BUTTON_LEFT);
+    br_input_inject_pointer_up(e, corner.x, corner.y, SDL_BUTTON_LEFT);
+    BR_CHECK(g_clicks == 1);
 
     /* convenience creators size the canvas to their content */
     br_node3d sprite = br_sprite3d_create(e, br_texture_white(e), 100.0f);

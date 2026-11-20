@@ -508,11 +508,14 @@ static bool br_canvas3d_pick(br_engine *e, br_node3d n, const void *data, br_ray
     return true;
 }
 
-/* Deepest visible node of the subtree whose shape contains p (root coordinates). */
-static br_node br_canvas3d_shape_hit(br_engine *e, br_node n, br_vec2 p)
+/* Deepest visible node of the subtree whose shape contains p (root coordinates). Recurses per
+ * level, so it stops where the render walk stops drawing (BR_RENDER_MAX_DEPTH). */
+#define BR_CANVAS3D_MAX_HIT_DEPTH 2048
+
+static br_node br_canvas3d_shape_hit(br_engine *e, br_node n, br_vec2 p, uint32_t depth)
 {
     br_node none = { 0, 0 };
-    if (!br_node_visible(e, n) || br_node_event_mode(e, n) == BR_EVENT_MODE_NONE) {
+    if (depth >= BR_CANVAS3D_MAX_HIT_DEPTH || !br_node_visible(e, n) || br_node_event_mode(e, n) == BR_EVENT_MODE_NONE) {
         return none;
     }
     for (uint32_t i = br_node_child_count(e, n); i > 0; i--) {
@@ -520,7 +523,7 @@ static br_node br_canvas3d_shape_hit(br_engine *e, br_node n, br_vec2 p)
         if (!br_node_valid(e, child)) {
             continue;
         }
-        br_node hit = br_canvas3d_shape_hit(e, child, p);
+        br_node hit = br_canvas3d_shape_hit(e, child, p, depth + 1);
         if (br_node_valid(e, hit)) {
             return hit;
         }
@@ -535,7 +538,7 @@ static br_node br_canvas3d_shape_hit(br_engine *e, br_node n, br_vec2 p)
 static br_node br_canvas3d_target(br_engine *e, br_canvas3d_rec *c, br_vec2 p)
 {
     // ponytail: no z-index / render-layer order and no masks in canvas hit tests; add them if UIs in 3D need them.
-    br_node n = br_canvas3d_shape_hit(e, c->root, p);
+    br_node n = br_canvas3d_shape_hit(e, c->root, p, 0);
     while (br_node_valid(e, n)) {
         br_event_mode mode = br_node_event_mode(e, n);
         if (mode == BR_EVENT_MODE_STATIC || mode == BR_EVENT_MODE_DYNAMIC) {
