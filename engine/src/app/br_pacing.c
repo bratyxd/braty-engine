@@ -79,11 +79,6 @@ float br_app_max_fps(br_engine *e)
     return e->ticker.max_fps;
 }
 
-void br_ticker_set_max_fps(br_engine *e, float max_fps)
-{
-    br_app_set_max_fps(e, max_fps);
-}
-
 void br_app_pace_frame(br_engine *e)
 {
     br_ticker_state *t = &e->ticker;

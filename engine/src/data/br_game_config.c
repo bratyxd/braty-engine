@@ -369,7 +369,7 @@ void br_game_config_apply_settings(br_engine *e, br_game_config *config)
             br_gpu_set_clear_color(gpu, config->clear_color);
         }
     }
-    br_ticker_set_max_fps(e, config->max_fps);
+    br_app_set_max_fps(e, config->max_fps);
     br_ticker_set_min_fps(e, config->min_fps);
     br_ticker_set_speed(e, config->speed);
     br_app_set_fixed_timestep(e, config->fixed_hz);

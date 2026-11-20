@@ -191,8 +191,6 @@ uint64_t br_ticker_frame(br_engine *e);
 float br_ticker_fps(br_engine *e);
 /* Time scale: 0.5 = slow motion, 0 = paused. Default 1. Negative or NaN is clamped to 0. */
 void br_ticker_set_speed(br_engine *e, float speed);
-/* Same as br_app_set_max_fps (kept for existing code). */
-void br_ticker_set_max_fps(br_engine *e, float max_fps);
 /* Clamps delta to at most 1/min_fps so a long stall does not produce one huge step. Default 10. */
 void br_ticker_set_min_fps(br_engine *e, float min_fps);
 /* Pure helper used by the app: raw seconds -> clamped, scaled delta. */
