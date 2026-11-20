@@ -11,7 +11,7 @@ import json
 import os
 
 # counts on the menu, 60 frames after it appears (the first visit included)
-BASELINE = {"stat_nodes": 36, "stat_nodes3d": 47, "stat_assets": 21, "stat_animators": 1,
+BASELINE = {"stat_nodes": 37, "stat_nodes3d": 47, "stat_assets": 22, "stat_animators": 1,
             "stat_tweens": 0, "stat_sounds": 0}
 FRAME_BUDGET_MS = 8.0    # p95 of gameplay frames, Debug build, vsync off (measured ~1.2 ms on an RTX 3060 Ti)
 CYCLES = 3
@@ -20,7 +20,9 @@ LEVELS = ["level1", "level2", "level3"]
 
 def main():
     s = [{"cmd": "log", "message": "Crate Rush soak: %d cycles x %d levels" % (CYCLES, len(LEVELS))},
-         {"cmd": "wait", "frames": 60}]
+         {"cmd": "wait", "frames": 60},
+         # a saved name: every results screen shows it in the name field
+         {"cmd": "set", "path": "game:player_name", "value": "Soak"}]
     for cycle in range(CYCLES):
         for index, level in enumerate(LEVELS):
             s.append({"cmd": "log", "message": "cycle %d, %s" % (cycle + 1, level)})
@@ -55,6 +57,7 @@ def main():
                   {"cmd": "wait_until", "path": "engine:scene", "value": "results", "timeout_frames": 400},
                   {"cmd": "expect", "path": "game:stat_nodes3d", "value": 0},
                   {"cmd": "wait", "frames": 40},
+                  {"cmd": "expect", "path": "player_name:text", "value": "Soak"},
                   {"cmd": "action", "name": "back"},
                   {"cmd": "wait_until", "path": "engine:scene", "value": "menu", "timeout_frames": 400},
                   {"cmd": "wait", "frames": 60}]

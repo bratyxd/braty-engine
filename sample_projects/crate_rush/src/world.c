@@ -42,7 +42,7 @@ static void cr_popup_text(br_engine *e, cr_game *g, br_vec3 at, const char *text
     br_node3d_set_position(e, n, at);
     br_node3d_add_child(e, g->level_root, n);
     float to[3] = { at.x, at.y + t->popup_rise, at.z };
-    br_tween_to(e, br_anim_target_3d(n), "position", to, t->popup_time, cr_ease(t->popup_ease));
+    br_tween_to(e, br_anim_target_3d(n), "position", to, t->popup_time, (br_ease_type)t->popup_ease);
     br_tween fade = br_tween_to_f(e, br_anim_target_2d(br_canvas3d_content(e, n)), "alpha", 0.0f, t->popup_time * 0.4f,
                                   BR_EASE_IN_QUAD);
     br_tween_set_delay(e, fade, t->popup_time * 0.6f);
@@ -65,6 +65,12 @@ static void cr_sign_layout(br_engine *e, br_node3d plate, br_node text)
     br_node_set_position(e, text, br_vec2_make(w * 0.5f, h * 0.5f));
 }
 
+/* The text of a string-table key held by a BR_FIELD_TEXT field (NULL = none). */
+static const char *cr_key_text(br_engine *e, const char *key)
+{
+    return key != NULL && key[0] != '\0' ? br_loc_get(e, key) : "";
+}
+
 /* ---- setup: name plates for the signs */
 
 void cr_world_setup(br_engine *e, cr_game *g)
@@ -78,7 +84,7 @@ void cr_world_setup(br_engine *e, cr_game *g)
         br_node3d plate = br_nine_slice3d_create(e, panel, b[0], b[1], b[2], b[3], 400.0f, 100.0f, 340.0f);
         br_canvas3d_get(e, plate)->billboard = BR_CANVAS3D_BILLBOARD_Y_AXIS;
         br_text_style style = cr_world_style(g, 34.0f, 0x3a2a1a);
-        br_node text = br_text_create(e, s->text, &style);
+        br_node text = br_text_create(e, cr_key_text(e, s->text), &style);
         br_text_set_anchor(e, text, 0.5f, 0.5f);
         br_node_set_label(e, text, "sign_text");
         br_node_add_child(e, br_canvas3d_root(e, plate), text);
@@ -108,7 +114,7 @@ static void cr_pickup(br_engine *e, cr_game *g, br_node3d n, cr_crate *c)
     float gone[3] = { 0.0f, 0.0f, 0.0f };
     float lift[3] = { at.x, at.y + 0.6f, at.z };
     br_tween_sequence seq = br_tween_sequence_begin(0);
-    br_tween_sequence_add(e, &seq, br_tween_to(e, target, "scale", big, t->pickup_time * 0.35f, cr_ease(t->pickup_ease)));
+    br_tween_sequence_add(e, &seq, br_tween_to(e, target, "scale", big, t->pickup_time * 0.35f, (br_ease_type)t->pickup_ease));
     br_tween_sequence_add(e, &seq, br_tween_to(e, target, "scale", gone, t->pickup_time * 0.65f, BR_EASE_IN_BACK));
     br_tween_sequence_join(e, &seq, br_tween_to(e, target, "position", lift, t->pickup_time * 0.65f, BR_EASE_OUT_QUAD));
     cr_popup *p = br_component3d_add(e, n, g->id.popup);
@@ -170,9 +176,11 @@ void cr_world_hit(br_engine *e, cr_game *g, br_vec3 from)
     br_camera_shake_add(e, g->camera, t->shake_hit);
     br_input_gamepad_rumble(e, br_input_last_gamepad(e), 0.6f, 0.9f, 220);
     cr_sound(e, g, "hit");
-    char text[16];
-    SDL_snprintf(text, sizeof(text), "-%d SEC", (int)t->hit_penalty);
-    cr_popup_text(e, g, br_vec3_add(p->position, br_vec3_make(0.0f, 1.3f, 0.0f)), text, 0xff5a4a);
+    char seconds[16];
+    SDL_snprintf(seconds, sizeof(seconds), "%d", (int)t->hit_penalty);
+    br_loc_arg arg = { "seconds", seconds };
+    cr_popup_text(e, g, br_vec3_add(p->position, br_vec3_make(0.0f, 1.3f, 0.0f)), br_loc_format(e, "hud.penalty", &arg, 1),
+                  0xff5a4a);
     br_log_info("crate_rush: hit at frame %llu", (unsigned long long)br_ticker_frame(e));
 }
 
@@ -241,22 +249,19 @@ static void cr_signs_system(br_engine *e, float dt, void *user)
         float dz = at.z - p->position.z;
         bool near = dx * dx + dz * dz < s->radius * s->radius;
         br_node text = br_node_find_by_label(e, br_canvas3d_root(e, s->plate), "sign_text", true);
-        if (near) {
-            char hint[160];
-            br_input_format_prompt(e, s->hint, hint, sizeof(hint)); /* "{jump}" -> "Space" / "A" / "Cross" */
-            if (SDL_strcmp(br_text_text(e, text), hint) != 0) {
-                br_text_set_text(e, text, hint);
-                cr_sign_layout(e, s->plate, text);
-            }
+        /* checked every frame: the device used last ("{jump}" -> "Space" / "A" / "Cross") and the
+         * language (settings in the pause menu) can change what it says */
+        char shown[512];
+        br_input_format_prompt(e, cr_key_text(e, near ? s->hint : s->text), shown, sizeof(shown));
+        if (SDL_strcmp(br_text_text(e, text), shown) != 0) {
+            br_text_set_text(e, text, shown);
+            cr_sign_layout(e, s->plate, text);
         }
         if (near == s->near) {
             continue;
         }
         s->near = near;
-        if (!near) {
-            br_text_set_text(e, text, s->text);
-            cr_sign_layout(e, s->plate, text);
-        }
+
         br_canvas3d_get(e, s->plate)->tint = br_color_from_hex(near ? 0xffe9a8 : 0xffffff, 1.0f);
         float from[3] = { 1.25f, 1.25f, 1.25f };
         float to[3] = { 1.0f, 1.0f, 1.0f };

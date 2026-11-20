@@ -1,4 +1,4 @@
 { "type": "nine_slice", "texture": "ui/ui.json#yellow_button", "width": 300, "height": 64, "anchor": [0.5, 0.5],
   "event_mode": "static", "cursor": "pointer",
   "on": { "click": "button_click", "pointerover": "button_over" },
-  "components": { "button": { "action": "", "order": 0 } } }
+  "components": { "button": { "action": "none", "order": 0 } } }

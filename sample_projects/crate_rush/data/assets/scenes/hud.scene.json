@@ -5,7 +5,7 @@
       "components": { "camera.anchor": { "camera": "ui_camera", "anchor": [0, 0], "offset": [24, 20], "safe_area": true } },
       "children": [
         { "type": "nine_slice", "texture": "ui/ui.json#grey_square", "width": 230, "height": 72 },
-        { "type": "text", "text": "SCORE", "position": [18, 12],
+        { "type": "text", "text_key": "hud.score", "position": [18, 12],
           "style": { "font": "fonts/kenney_future.ttf", "font_size": 16, "fill": "#6b6b80" } },
         { "type": "text", "label": "score_value", "text": "0", "position": [18, 30],
           "style": { "font": "fonts/kenney_future.ttf", "font_size": 30, "fill": "#2a2a3a" },
@@ -23,7 +23,7 @@
       "components": { "camera.anchor": { "camera": "ui_camera", "anchor": [1, 0], "offset": [-254, 20], "safe_area": true } },
       "children": [
         { "type": "nine_slice", "texture": "ui/ui.json#grey_square", "width": 230, "height": 72 },
-        { "type": "text", "text": "CRATES", "position": [18, 12],
+        { "type": "text", "text_key": "hud.crates", "position": [18, 12],
           "style": { "font": "fonts/kenney_future.ttf", "font_size": 16, "fill": "#6b6b80" } },
         { "type": "text", "label": "crates", "text": "0 / 0", "position": [18, 30],
           "style": { "font": "fonts/kenney_future.ttf", "font_size": 30, "fill": "#2a2a3a" } } ] },
@@ -32,9 +32,9 @@
       "children": [
         { "type": "sprite", "label": "jump_glyph", "texture": "glyphs/glyphs.json#key_space", "anchor": [0, 0.5], "scale": 0.7,
           "components": { "prompt": { "action": "jump" } } },
-        { "type": "text", "text": "JUMP", "position": [52, 0], "anchor": [0, 0.5],
+        { "type": "text", "label": "jump_text", "text_key": "hud.jump", "position": [52, 0], "anchor": [0, 0.5],
           "style": { "font": "fonts/kenney_future.ttf", "font_size": 22, "fill": "#ffffff", "stroke": { "width": 5, "color": "#1d3550" } } },
         { "type": "sprite", "label": "pause_glyph", "texture": "glyphs/glyphs.json#key_escape", "anchor": [0, 0.5], "scale": 0.7,
           "position": [150, 0], "components": { "prompt": { "action": "pause" } } },
-        { "type": "text", "text": "PAUSE", "position": [202, 0], "anchor": [0, 0.5],
+        { "type": "text", "label": "pause_text", "text_key": "hud.pause", "position": [202, 0], "anchor": [0, 0.5],
           "style": { "font": "fonts/kenney_future.ttf", "font_size": 22, "fill": "#ffffff", "stroke": { "width": 5, "color": "#1d3550" } } } ] } ] }

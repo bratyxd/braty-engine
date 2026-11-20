@@ -30,8 +30,7 @@ const char *cr_config_string(br_engine *e, const char *key)
     return cJSON_IsString(v) ? v->valuestring : "";
 }
 
-/* Plays a sound by path (already loaded by a group: no reference is taken here). */
-void cr_play(br_engine *e, cr_game *g, const char *path, float volume)
+static void cr_play_on(br_engine *e, const char *path, float volume, int bus)
 {
     br_sound *s = path[0] != '\0' ? br_assets_get(e, path) : NULL;
     if (s == NULL) {
@@ -39,25 +38,33 @@ void cr_play(br_engine *e, cr_game *g, const char *path, float volume)
     }
     br_audio_play_desc play = br_audio_play_defaults();
     play.volume = volume;
-    play.bus = g->sfx_bus;
+    play.bus = bus;
     br_audio_play(e, s, &play);
 }
 
-/* Plays the sound game.json names under "game.sounds.<name>". */
-void cr_sound(br_engine *e, cr_game *g, const char *name)
+/* Plays a sound by path on the sfx bus (already loaded by a group: no reference is taken here). */
+void cr_play(br_engine *e, cr_game *g, const char *path, float volume)
+{
+    cr_play_on(e, path, volume, g->sfx_bus);
+}
+
+static const char *cr_sound_path(br_engine *e, const char *name)
 {
     const cJSON *game = cJSON_GetObjectItemCaseSensitive(br_game_config_json(e), "game");
     const cJSON *v = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(game, "sounds"), name);
-    if (cJSON_IsString(v)) {
-        cr_play(e, g, v->valuestring, 1.0f);
-    }
+    return cJSON_IsString(v) ? v->valuestring : "";
 }
 
-br_ease_type cr_ease(const char *name)
+/* Plays the sound game.json names under "game.sounds.<name>" on the sfx bus (the pause holds it). */
+void cr_sound(br_engine *e, cr_game *g, const char *name)
 {
-    bool ok = false;
-    br_ease_type t = br_ease_from_name(name, &ok);
-    return ok ? t : BR_EASE_OUT_QUAD;
+    cr_play_on(e, cr_sound_path(e, name), 1.0f, g->sfx_bus);
+}
+
+/* The same on the ui bus, which the pause leaves running (menu clicks while paused). */
+void cr_ui_sound(br_engine *e, cr_game *g, const char *name)
+{
+    cr_play_on(e, cr_sound_path(e, name), 1.0f, g->ui_bus);
 }
 
 float cr_random(cr_game *g)
@@ -81,6 +88,8 @@ static void cr_update_stats(br_engine *e, cr_game *g)
     g->stat_animators = (int32_t)animators;
     g->stat_tweens = (int32_t)br_tween_count(e);
     g->stat_sounds = (int32_t)br_audio_instance_count(e);
+    g->stat_speed = br_ticker_speed(e);
+    g->stat_sfx_paused = br_audio_bus_paused(e, g->sfx_bus);
 }
 
 void cr_log_stats(br_engine *e, cr_game *g, const char *when)
@@ -129,11 +138,20 @@ void cr_settings_save(br_engine *e, cr_game *g)
     if (br_app_deterministic(e)) {
         return;
     }
-    char text[256];
-    SDL_snprintf(text, sizeof(text), "{ \"vsync\": %d, \"max_fps\": %d, \"volume\": %d, \"profiler_hud\": %s }\n",
-                 (int)g->settings.vsync, (int)g->settings.max_fps, (int)g->settings.volume,
-                 g->settings.profiler_hud ? "true" : "false");
-    br_save_write(e, "settings.json", text, SDL_strlen(text));
+    /* cJSON escapes the name's quotes and backslashes */
+    cJSON *doc = cJSON_CreateObject();
+    cJSON_AddNumberToObject(doc, "vsync", g->settings.vsync);
+    cJSON_AddNumberToObject(doc, "max_fps", g->settings.max_fps);
+    cJSON_AddNumberToObject(doc, "volume", g->settings.volume);
+    cJSON_AddBoolToObject(doc, "profiler_hud", g->settings.profiler_hud);
+    cJSON_AddStringToObject(doc, "language", g->settings.language);
+    cJSON_AddStringToObject(doc, "name", g->settings.name);
+    char *text = cJSON_Print(doc);
+    cJSON_Delete(doc);
+    if (text != NULL) {
+        br_save_write(e, "settings.json", text, SDL_strlen(text));
+        cJSON_free(text);
+    }
     br_input_bindings_save(e, "bindings.json");
 }
 
@@ -162,6 +180,13 @@ static void cr_settings_load(br_engine *e, cr_game *g)
             g->settings.volume = SDL_clamp(v, 0, 100);
         }
         br_data_get_bool(e, doc, "profiler_hud", &g->settings.profiler_hud);
+        br_data_get_string(e, doc, "name", g->settings.name, sizeof(g->settings.name));
+        char language[BR_LOC_NAME_SIZE] = "";
+        /* a language the game no longer ships keeps the one br_loc_setup picked (logged) */
+        if (br_data_get_string(e, doc, "language", language, sizeof(language)) && language[0] != '\0' &&
+            br_loc_set_locale(e, language)) {
+            br_str_copy(g->settings.language, sizeof(g->settings.language), language);
+        }
         cJSON_Delete(doc);
     }
     br_input_bindings_load(e, "bindings.json"); /* missing file: the game.json bindings stay */
@@ -385,6 +410,11 @@ void cr_enter_state(br_engine *e, cr_game *g, cr_state state)
     g->state_time = 0.0f;
     g->focus = 0;
     g->filled = false;
+    /* the pause freezes game time (tweens, animators, camera shake and follow, popups) and holds
+     * the gameplay sounds; the pause and settings UI run on the unscaled clock and the ui bus */
+    bool paused = state == CR_STATE_PAUSED;
+    br_ticker_set_speed(e, paused ? 0.0f : g->speed);
+    br_audio_bus_set_paused(e, g->sfx_bus, paused);
     switch (state) {
     case CR_STATE_MENU:
         br_scene_set_loading_scene(e, NULL);
@@ -405,13 +435,11 @@ void cr_enter_state(br_engine *e, cr_game *g, cr_state state)
         if (from == CR_STATE_PAUSED) {
             cr_close_overlay(e, g);
             br_system_group_set_enabled(e, "gameplay", true);
-            br_animator_set_paused(e, g->animator, false);
             cr_context(e, "gameplay");
         }
         break;
     case CR_STATE_PAUSED:
-        br_system_group_set_enabled(e, "gameplay", false);
-        br_animator_set_paused(e, g->animator, true);
+        br_system_group_set_enabled(e, "gameplay", false); /* their input reads stop too */
         cr_open_overlay(e, g, "pause");
         break;
     case CR_STATE_LEVEL_END:
@@ -467,19 +495,42 @@ static void cr_finish_level(br_engine *e, cr_game *g)
                 (int)g->result_time_bonus, (int)g->result_stars);
 }
 
+/* The name field: Enter keeps the name (save data), and the menu greets the player with it. */
+static void cr_on_name(br_engine *e, br_node field, br_text_field_event event, void *user)
+{
+    cr_game *g = user;
+    if (event != BR_TEXT_FIELD_SUBMITTED) {
+        return;
+    }
+    br_str_copy(g->settings.name, sizeof(g->settings.name), br_text_field_text(e, field));
+    cr_settings_save(e, g);
+    br_node none = { 0, 0 };
+    br_text_field_focus(e, none);
+    cr_ui_sound(e, g, "confirm");
+}
+
 /* The results scene became active: fill it in. */
 static void cr_results_fill(br_engine *e, cr_game *g)
 {
     br_scene s = br_scene_active(e);
+    br_node root = br_scene_root_2d(e, s);
     char text[64];
-    cr_ui_text(e, br_scene_root_2d(e, s), "result_title", g->cleared ? "LEVEL CLEAR!" : "TIME UP!");
-    cr_ui_text(e, br_scene_root_2d(e, s), "result_level", g->level_title);
+    /* bound to their keys: the texts follow a language change */
+    br_loc_bind_text(e, cr_find(e, s, "result_title"), g->cleared ? "results.clear" : "results.time_up");
+    br_loc_bind_text(e, cr_find(e, s, "result_level"), g->level_title);
     SDL_snprintf(text, sizeof(text), "%d / %d", (int)g->result_crates, (int)g->result_total);
-    cr_ui_text(e, br_scene_root_2d(e, s), "result_crates", text);
-    cr_ui_count_to(e, g, br_scene_root_2d(e, s), "result_score", (float)g->score);
-    cr_ui_count_to(e, g, br_scene_root_2d(e, s), "result_bonus", (float)g->result_time_bonus);
-    cr_ui_count_to(e, g, br_scene_root_2d(e, s), "result_total", (float)g->result_score);
-    cr_ui_text(e, br_scene_root_2d(e, s), "result_best", g->result_new_best ? "NEW BEST!" : "");
+    cr_ui_text(e, root, "result_crates", text);
+    cr_ui_count_to(e, g, root, "result_score", (float)g->score);
+    cr_ui_count_to(e, g, root, "result_bonus", (float)g->result_time_bonus);
+    cr_ui_count_to(e, g, root, "result_total", (float)g->result_score);
+    if (g->result_new_best) {
+        br_loc_bind_text(e, cr_find(e, s, "result_best"), "results.new_best");
+    }
+    br_node name = cr_find(e, s, "player_name");
+    br_text_field_set_max_length(e, name, CR_NAME_MAX);
+    br_text_field_set_placeholder(e, name, br_loc_get(e, "results.name_placeholder"));
+    br_text_field_set_text(e, name, g->settings.name); /* the name entered last time */
+    br_text_field_set_listener(e, name, cr_on_name, g);
     for (int i = 1; i <= 3; i++) {
         SDL_snprintf(text, sizeof(text), "star_%d", i);
         br_node star = cr_find(e, s, text);
@@ -510,21 +561,31 @@ static void cr_results_fill(br_engine *e, cr_game *g)
     br_node_set_visible(e, next_button, g->cleared && next[0] != '\0');
 }
 
-/* The menu became active: best scores in the level select. */
+/* The menu's texts made from data: best scores in the level select, the greeting. */
+static void cr_menu_texts(br_engine *e, cr_game *g)
+{
+    br_scene s = br_scene_find(e, "menu");
+    if (!br_scene_is_loaded(e, s)) {
+        return;
+    }
+    br_node root = br_scene_root_2d(e, s);
+    for (int i = 1; i <= CR_MAX_LEVELS; i++) {
+        char label[32];
+        char score[16];
+        SDL_snprintf(label, sizeof(label), "best_%d", i);
+        SDL_snprintf(score, sizeof(score), "%d", (int)g->best[i]);
+        br_loc_arg arg = { "score", score };
+        cr_ui_text(e, root, label, g->best[i] > 0 ? br_loc_format(e, "menu.best", &arg, 1) : br_loc_get(e, "menu.not_played"));
+    }
+    br_loc_arg name = { "name", g->settings.name };
+    cr_ui_text(e, root, "player_greeting", g->settings.name[0] != '\0' ? br_loc_format(e, "menu.greeting", &name, 1) : "");
+}
+
+/* The menu became active. */
 static void cr_menu_fill(br_engine *e, cr_game *g)
 {
     br_scene s = br_scene_active(e);
-    for (int i = 1; i <= CR_MAX_LEVELS; i++) {
-        char label[32];
-        char text[48];
-        SDL_snprintf(label, sizeof(label), "best_%d", i);
-        if (g->best[i] > 0) {
-            SDL_snprintf(text, sizeof(text), "BEST %d", (int)g->best[i]);
-        } else {
-            br_str_copy(text, sizeof(text), "NOT PLAYED");
-        }
-        cr_ui_text(e, br_scene_root_2d(e, s), label, text);
-    }
+    cr_menu_texts(e, g);
     br_node_set_visible(e, cr_find(e, s, "levels_panel"), false);
     cr_log_stats(e, g, "menu");
     br_assets_report(e); /* every live asset with refs and owners: per-level assets must be gone */
@@ -540,7 +601,7 @@ static void cr_flow_system(br_engine *e, float dt, void *user)
 {
     cr_game *g = user;
     const cr_tuning *t = cr_tuning_get(e, g);
-    g->state_time += dt;
+    g->state_time += br_ticker_unscaled_delta(e); /* runs in the pause too (dt is 0 there) */
     cr_update_stats(e, g);
     switch (g->state) {
     case CR_STATE_BOOT:
@@ -614,19 +675,42 @@ static int32_t cr_cycle(int32_t value, const int32_t *values, int count, int ste
 }
 
 /* A settings row changed by `step` (confirm / click = +1, left / right = -1 / +1). */
-void cr_setting_change(br_engine *e, cr_game *g, const char *key, int step)
+/* The next of game.json "game.languages" (["en", "de"]) after the current locale. */
+static void cr_language_change(br_engine *e, cr_game *g, int step)
+{
+    const cJSON *game = cJSON_GetObjectItemCaseSensitive(br_game_config_json(e), "game");
+    const cJSON *list = cJSON_GetObjectItemCaseSensitive(game, "languages");
+    int count = cJSON_GetArraySize(list);
+    if (count <= 0) {
+        return;
+    }
+    int at = 0;
+    for (int i = 0; i < count; i++) {
+        const cJSON *v = cJSON_GetArrayItem(list, i);
+        at = cJSON_IsString(v) && SDL_strcmp(v->valuestring, br_loc_locale(e)) == 0 ? i : at;
+    }
+    const cJSON *next = cJSON_GetArrayItem(list, ((at + step) % count + count) % count);
+    if (cJSON_IsString(next) && br_loc_set_locale(e, next->valuestring)) {
+        br_str_copy(g->settings.language, sizeof(g->settings.language), next->valuestring);
+        cr_menu_texts(e, g); /* bound texts follow by themselves; these are formatted */
+    }
+}
+
+void cr_setting_change(br_engine *e, cr_game *g, int32_t key, int step)
 {
     static const int32_t vsync_modes[] = { BR_VSYNC_OFF, BR_VSYNC_ON, BR_VSYNC_MAILBOX };
     static const int32_t fps_caps[] = { 0, 30, 60, 120, 144 };
-    if (SDL_strcmp(key, "vsync") == 0) {
+    if (key == CR_SETTING_LANGUAGE) {
+        cr_language_change(e, g, step);
+    } else if (key == CR_SETTING_VSYNC) {
         g->settings.vsync = cr_cycle(g->settings.vsync, vsync_modes, 3, step);
-    } else if (SDL_strcmp(key, "fps") == 0) {
+    } else if (key == CR_SETTING_FPS) {
         g->settings.max_fps = cr_cycle(g->settings.max_fps, fps_caps, 5, step);
-    } else if (SDL_strcmp(key, "volume") == 0) {
+    } else if (key == CR_SETTING_VOLUME) {
         g->settings.volume = SDL_clamp(g->settings.volume + step * 10, 0, 100);
-    } else if (SDL_strcmp(key, "profiler") == 0) {
+    } else if (key == CR_SETTING_PROFILER) {
         g->settings.profiler_hud = !g->settings.profiler_hud;
-    } else if (SDL_strcmp(key, "bind_jump") == 0) {
+    } else if (key == CR_SETTING_BIND_JUMP) {
         br_input_device device = br_input_last_device(e) == BR_INPUT_DEVICE_GAMEPAD ? BR_INPUT_DEVICE_GAMEPAD
                                                                                      : BR_INPUT_DEVICE_KEYBOARD_MOUSE;
         g->capturing = true;
@@ -638,39 +722,64 @@ void cr_setting_change(br_engine *e, cr_game *g, const char *key, int step)
     cr_settings_save(e, g);
 }
 
-void cr_button_action(br_engine *e, cr_game *g, const cr_button *b)
+/* b's action; row is the settings row on the same node (NULL if none). */
+void cr_button_action(br_engine *e, cr_game *g, const cr_button *b, const cr_setting *row)
 {
-    const char *a = b->action;
-    cr_sound(e, g, "confirm");
-    if (SDL_strcmp(a, "play") == 0) {
+    cr_ui_sound(e, g, "confirm");
+    switch ((cr_action)b->action) {
+    case CR_ACTION_PLAY:
         cr_start_level(e, g, b->arg[0] != '\0' ? b->arg : "level1");
-    } else if (SDL_strcmp(a, "levels") == 0 || SDL_strcmp(a, "main") == 0) {
-        bool levels = SDL_strcmp(a, "levels") == 0;
+        break;
+    case CR_ACTION_LEVELS:
+    case CR_ACTION_MAIN: {
+        bool levels = b->action == CR_ACTION_LEVELS;
         br_scene s = br_scene_active(e);
         br_node_set_visible(e, cr_find(e, s, "levels_panel"), levels);
         br_node_set_visible(e, cr_find(e, s, "main_panel"), !levels);
         g->focus = 0;
-    } else if (SDL_strcmp(a, "settings") == 0) {
+        break;
+    }
+    case CR_ACTION_SETTINGS:
         cr_open_overlay(e, g, "settings");
-    } else if (SDL_strcmp(a, "close_settings") == 0) {
+        break;
+    case CR_ACTION_CLOSE_SETTINGS:
         if (g->state == CR_STATE_PAUSED) {
             cr_open_overlay(e, g, "pause");
         } else {
             cr_close_overlay(e, g);
             cr_context(e, "menu");
         }
-    } else if (SDL_strcmp(a, "setting") == 0) {
-        cr_setting_change(e, g, b->arg, 1);
-    } else if (SDL_strcmp(a, "quit") == 0) {
+        break;
+    case CR_ACTION_SETTING:
+        if (row != NULL) {
+            cr_setting_change(e, g, row->key, 1);
+        }
+        break;
+    case CR_ACTION_QUIT:
         br_engine_quit(e);
-    } else if (SDL_strcmp(a, "resume") == 0) {
+        break;
+    case CR_ACTION_RESUME:
         cr_enter_state(e, g, CR_STATE_PLAYING);
-    } else if (SDL_strcmp(a, "restart") == 0 || SDL_strcmp(a, "retry") == 0) {
+        break;
+    case CR_ACTION_RESTART:
+    case CR_ACTION_RETRY:
         cr_start_level(e, g, g->level_scene);
-    } else if (SDL_strcmp(a, "next") == 0 && b->arg[0] != '\0') {
-        cr_start_level(e, g, b->arg);
-    } else if (SDL_strcmp(a, "menu") == 0) {
+        break;
+    case CR_ACTION_NEXT:
+        if (b->arg[0] != '\0') {
+            cr_start_level(e, g, b->arg);
+        }
+        break;
+    case CR_ACTION_MENU:
         cr_enter_state(e, g, CR_STATE_MENU);
+        break;
+    case CR_ACTION_EDIT_NAME:
+        /* the menu's focus landed on the name row: the field takes the keyboard */
+        br_text_field_focus(e, cr_find(e, br_scene_active(e), "player_name"));
+        break;
+    case CR_ACTION_NONE:
+    case CR_ACTION_COUNT:
+        break;
     }
 }
 
@@ -678,6 +787,7 @@ void cr_flow_register(br_engine *e, cr_game *g)
 {
     br_arena_linear_create(&g->level_arena, "crate_rush.level", 16 * 1024, true);
     br_arena_track(e, &g->level_arena.stats); /* the profiler's memory tab lists it */
+    g->speed = br_ticker_speed(e); /* game.json "ticker.speed"; the pause sets 0 and puts it back */
     cr_settings_load(e, g);
     cr_settings_apply(e, g);
     br_scene_on_event(e, cr_on_scene_event, g);

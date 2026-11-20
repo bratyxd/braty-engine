@@ -32,7 +32,7 @@ void cr_ui_count_to(br_engine *e, cr_game *g, br_node root, const char *label, f
     br_anim_target target = br_anim_target_2d(n);
     br_tween_kill_target(e, target);
     float to[1] = { value };
-    br_tween_to(e, target, "counter.value", to, t->counter_time, cr_ease(t->counter_ease));
+    br_tween_to(e, target, "counter.value", to, t->counter_time, (br_ease_type)t->counter_ease);
     float pop_from[2] = { 1.25f, 1.25f };
     float pop_to[2] = { 1.0f, 1.0f };
     br_tween_from_to(e, target, "scale", pop_from, pop_to, 0.3f, BR_EASE_OUT_BACK);
@@ -94,6 +94,27 @@ static uint32_t cr_ui_buttons(br_engine *e, cr_game *g, br_node *out)
 }
 
 
+/* Runs a button node's action (copies first: the action may switch scenes). */
+static void cr_ui_activate(br_engine *e, cr_game *g, br_node n)
+{
+    cr_button b = *(const cr_button *)br_component_get(e, n, g->id.button);
+    const cr_setting *row_data = br_component_get(e, n, g->id.setting);
+    cr_setting row = { -1 };
+    if (row_data != NULL) {
+        row = *row_data;
+    }
+    cr_button_action(e, g, &b, row_data != NULL ? &row : NULL);
+}
+
+/* An action without a button (Escape / B on a menu). */
+static void cr_ui_do(br_engine *e, cr_game *g, cr_action action)
+{
+    cr_button b;
+    SDL_zero(b);
+    b.action = (int32_t)action;
+    cr_button_action(e, g, &b, NULL);
+}
+
 /* ---- mouse: scene files attach these by name ("on": { "click": "button_click", ... }) */
 
 static void cr_on_button_click(br_engine *e, br_event *ev, void *user)
@@ -104,8 +125,7 @@ static void cr_on_button_click(br_engine *e, br_event *ev, void *user)
     for (uint32_t i = 0; i < n && !g->capturing; i++) {
         if (buttons[i].index == ev->current_target.index && buttons[i].generation == ev->current_target.generation) {
             g->focus = (int32_t)i;
-            cr_button b = *(const cr_button *)br_component_get(e, buttons[i], g->id.button);
-            cr_button_action(e, g, &b);
+            cr_ui_activate(e, g, buttons[i]);
             return;
         }
     }
@@ -119,7 +139,7 @@ static void cr_on_button_over(br_engine *e, br_event *ev, void *user)
     for (uint32_t i = 0; i < n; i++) {
         if (buttons[i].index == ev->current_target.index && g->focus != (int32_t)i) {
             g->focus = (int32_t)i;
-            cr_sound(e, g, "focus");
+            cr_ui_sound(e, g, "focus");
         }
     }
 }
@@ -147,13 +167,13 @@ static void cr_ui_system(br_engine *e, float dt, void *user)
     }
     g->focus = (g->focus % (int32_t)n + (int32_t)n) % (int32_t)n;
     if (g->focus != before) {
-        cr_sound(e, g, "focus");
+        cr_ui_sound(e, g, "focus");
     }
     br_node focused = buttons[g->focus];
     const cr_setting *row = br_component_get(e, focused, g->id.setting);
     if (row != NULL && on_row && (br_input_action_pressed(e, "nav_left") || br_input_action_pressed(e, "nav_right"))) {
         cr_setting_change(e, g, row->key, br_input_action_pressed(e, "nav_left") ? -1 : 1);
-        cr_sound(e, g, "focus");
+        cr_ui_sound(e, g, "focus");
     }
     /* the focused button grows a little (easing from tuning.json); the others settle back */
     for (uint32_t i = 0; i < n; i++) {
@@ -169,24 +189,17 @@ static void cr_ui_system(br_engine *e, float dt, void *user)
             float to[2] = { b->base_scale.x * k, b->base_scale.y * k };
             br_anim_target target = br_anim_target_2d(buttons[i]);
             br_tween_kill_target(e, target);
-            br_tween_to(e, target, "scale", to, 0.18f, cr_ease(t->focus_ease));
+            /* unscaled: the pause menu's buttons animate while game time is stopped */
+            br_tween_set_unscaled(e, br_tween_to(e, target, "scale", to, 0.18f, (br_ease_type)t->focus_ease), true);
             br_node_set_tint(e, buttons[i], br_color_from_hex(focus ? 0xffffff : 0xd8d8e0, 1.0f));
         }
     }
     if (br_input_action_pressed(e, "confirm")) {
-        cr_button b = *(const cr_button *)br_component_get(e, focused, g->id.button);
-        cr_button_action(e, g, &b); /* may switch scenes: nothing of this frame's list is used after */
+        cr_ui_activate(e, g, focused); /* may switch scenes: nothing of this frame's list is used after */
     } else if (br_input_action_pressed(e, "back") && g->state == CR_STATE_MENU) {
-        if (br_scene_valid(e, g->overlay)) {
-            cr_button close = { "close_settings", "", 0, false, { 1.0f, 1.0f }, false };
-            cr_button_action(e, g, &close);
-        } else {
-            cr_button main = { "main", "", 0, false, { 1.0f, 1.0f }, false };
-            cr_button_action(e, g, &main);
-        }
+        cr_ui_do(e, g, br_scene_valid(e, g->overlay) ? CR_ACTION_CLOSE_SETTINGS : CR_ACTION_MAIN);
     } else if (br_input_action_pressed(e, "back") && g->state == CR_STATE_RESULTS) {
-        cr_button menu = { "menu", "", 0, false, { 1.0f, 1.0f }, false };
-        cr_button_action(e, g, &menu);
+        cr_ui_do(e, g, CR_ACTION_MENU);
     }
 }
 
@@ -207,7 +220,7 @@ static void cr_capture_system(br_engine *e, float dt, void *user)
     const char *taken = br_input_binding_conflict(e, got, "jump");
     if (taken != NULL) {
         br_log_info("crate_rush: that input is already used by '%s'", taken);
-        cr_sound(e, g, "back");
+        cr_ui_sound(e, g, "back");
         return;
     }
     /* replace jump's binding of the same device family (keyboard/mouse or pad) */
@@ -220,7 +233,7 @@ static void cr_capture_system(br_engine *e, float dt, void *user)
         if (old_pad == pad) {
             br_input_action_binding_set(e, "jump", i, got);
             cr_settings_save(e, g);
-            cr_sound(e, g, "confirm");
+            cr_ui_sound(e, g, "confirm");
             return;
         }
     }
@@ -241,11 +254,11 @@ static void cr_prompts_system(br_engine *e, float dt, void *user)
         if (!br_node_valid(e, n)) {
             continue;
         }
-        if (p->text[0] != '\0') {
-            char text[160];
-            br_input_format_prompt(e, p->text, text, sizeof(text));
-            if (SDL_strcmp(text, p->shown) != 0) {
-                br_str_copy(p->shown, sizeof(p->shown), text);
+        if (p->key[0] != '\0') {
+            /* the key's text in the current language, "{jump}" -> the glyph label of the device used last */
+            char text[512];
+            br_input_format_prompt(e, br_loc_get(e, p->key), text, sizeof(text));
+            if (SDL_strcmp(text, br_text_text(e, n)) != 0) {
                 br_text_set_text(e, n, text);
             }
             continue;
@@ -289,27 +302,38 @@ static void cr_settings_rows_system(br_engine *e, float dt, void *user)
     br_query q = br_query_begin(e, ids, 2);
     while (br_query_next(&q)) {
         const cr_setting *s = q.data[1];
-        char text[64] = "";
-        if (SDL_strcmp(s->key, "vsync") == 0) {
-            static const char *names[] = { "OFF", "ON", "ADAPTIVE", "MAILBOX" };
-            br_str_copy(text, sizeof(text), names[SDL_clamp(g->settings.vsync, 0, 3)]);
-        } else if (SDL_strcmp(s->key, "fps") == 0) {
-            if (g->settings.max_fps > 0) {
-                SDL_snprintf(text, sizeof(text), "%d", (int)g->settings.max_fps);
-            } else {
-                br_str_copy(text, sizeof(text), "UNCAPPED");
-            }
-        } else if (SDL_strcmp(s->key, "volume") == 0) {
-            SDL_snprintf(text, sizeof(text), "%d", (int)g->settings.volume); /* the font has no percent sign */
-        } else if (SDL_strcmp(s->key, "profiler") == 0) {
-            br_str_copy(text, sizeof(text), g->settings.profiler_hud ? "ON" : "OFF");
-        } else if (SDL_strcmp(s->key, "bind_jump") == 0) {
-            br_glyph glyph;
+        char number[16];
+        br_glyph glyph;
+        const char *text = "";
+        switch ((cr_setting_key)s->key) {
+        case CR_SETTING_LANGUAGE:
+            text = br_loc_get(e, "language.name"); /* each table names its own language */
+            break;
+        case CR_SETTING_VSYNC: {
+            static const char *keys[] = { "settings.off", "settings.on", "settings.adaptive", "settings.mailbox" };
+            text = br_loc_get(e, keys[SDL_clamp(g->settings.vsync, 0, 3)]);
+            break;
+        }
+        case CR_SETTING_FPS:
+            SDL_snprintf(number, sizeof(number), "%d", (int)g->settings.max_fps);
+            text = g->settings.max_fps > 0 ? number : br_loc_get(e, "settings.uncapped");
+            break;
+        case CR_SETTING_VOLUME:
+            SDL_snprintf(number, sizeof(number), "%d", (int)g->settings.volume); /* the font has no percent sign */
+            text = number;
+            break;
+        case CR_SETTING_PROFILER:
+            text = br_loc_get(e, g->settings.profiler_hud ? "settings.on" : "settings.off");
+            break;
+        case CR_SETTING_BIND_JUMP:
             if (g->capturing) {
-                br_str_copy(text, sizeof(text), "PRESS...");
+                text = br_loc_get(e, "settings.press");
             } else if (br_input_glyph(e, "jump", &glyph)) {
-                br_str_copy(text, sizeof(text), glyph.label);
+                text = glyph.label;
             }
+            break;
+        case CR_SETTING_COUNT:
+            break;
         }
         cr_ui_text(e, q.node, "value", text);
     }
@@ -333,12 +357,19 @@ static void cr_hud_system(br_engine *e, float dt, void *user)
     cr_ui_text(e, root, "timer", text);
     SDL_snprintf(text, sizeof(text), "%d / %d", (int)g->crates_taken, (int)g->crates_total);
     cr_ui_text(e, root, "crates", text);
-    cr_ui_text(e, root, "level_title", g->level_title);
+    /* the level's title is a string-table key ("level1.title") */
+    cr_ui_text(e, root, "level_title", g->level_title[0] != '\0' ? br_loc_get(e, g->level_title) : "");
     br_node timer = br_node_find_by_label(e, root, "timer", true);
     bool low = secs <= 10 && g->state == CR_STATE_PLAYING;
     float pulse = low ? 0.5f + 0.5f * SDL_sinf(g->time_left * 12.0f) : 0.0f;
     br_node_set_tint(e, timer, br_color_lerp(br_color_from_hex(0xffffff, 1.0f), br_color_from_hex(0xff5a4a, 1.0f),
                                              low ? 0.6f + 0.4f * pulse : 0.0f));
+    /* the prompts sit at the right edge: a long jump word ("SPRINGEN") moves the jump prompt left
+     * so it does not run into the pause prompt at x 150 (the layout's own spacing for "JUMP") */
+    br_node jump = br_node_find_by_label(e, root, "jump_text", true);
+    float shift = SDL_max(0.0f, 52.0f + br_text_size(e, jump).x + 20.0f - 150.0f);
+    br_node_set_position(e, jump, br_vec2_make(52.0f - shift, 0.0f));
+    br_node_set_position(e, br_node_find_by_label(e, root, "jump_glyph", true), br_vec2_make(-shift, 0.0f));
 }
 
 static void cr_loading_system(br_engine *e, float dt, void *user)

@@ -4,7 +4,8 @@
  * Data lives in data/: game.json (window, scenes, input actions, audio), assets/tuning.json (every
  * gameplay number), assets/levels/levelN.glb (the levels: kit meshes + extras components +
  * scene-extras settings, written by tools/build_assets.py), assets/scenes/ (menu, loading, HUD,
- * pause, settings, results), assets/animation/character.animgraph.json. C only says how the
+ * pause, settings, results), assets/strings/strings.<locale>.json (every player-visible text, English
+ * and German), assets/animation/character.animgraph.json. C only says how the
  * components behave.
  */
 #ifndef CRATE_RUSH_GAME_H
@@ -37,10 +38,11 @@ typedef struct cr_hazard {
     br_vec3 base;
 } cr_hazard;
 
-/* "sign": a sign post that gets a world-space name plate; it says `hint` while the player is near. */
+/* "sign": a sign post that gets a world-space name plate; it says `hint` while the player is near.
+ * Both are string-table keys (BR_FIELD_TEXT: any length, freed with the row). */
 typedef struct cr_sign {
-    char  text[BR_FIELD_STRING_SIZE];
-    char  hint[BR_FIELD_STRING_SIZE];
+    char *text;
+    char *hint;
     float radius;
     /* runtime */
     br_node3d plate;   /* the canvas3d made for it */
@@ -70,7 +72,7 @@ typedef struct cr_popup {
 
 /* "level": a level's settings, from the glTF scene extras {"level": {...}} (on the level's view). */
 typedef struct cr_level {
-    char    title[BR_FIELD_STRING_SIZE];
+    char    title[BR_FIELD_STRING_SIZE];  /* string-table key ("level1.title") */
     float   time_limit;     /* seconds */
     char    next[BR_FIELD_STRING_SIZE];      /* scene name of the next level, "" = last */
     char    footsteps[BR_FIELD_STRING_SIZE]; /* sound path prefix: <prefix>_000.ogg .. _004.ogg */
@@ -78,9 +80,24 @@ typedef struct cr_level {
     int32_t index;          /* 1-based, for the level select and best scores */
 } cr_level;
 
+/* What a button does (BR_FIELD_ENUM: scene files name it, "action": "play"; cr_action_names). */
+typedef enum cr_action {
+    CR_ACTION_NONE, CR_ACTION_PLAY, CR_ACTION_LEVELS, CR_ACTION_MAIN, CR_ACTION_SETTINGS,
+    CR_ACTION_CLOSE_SETTINGS, CR_ACTION_SETTING, CR_ACTION_QUIT, CR_ACTION_RESUME, CR_ACTION_RESTART,
+    CR_ACTION_RETRY, CR_ACTION_NEXT, CR_ACTION_MENU, CR_ACTION_EDIT_NAME,
+    CR_ACTION_COUNT
+} cr_action;
+
+/* A settings row's key (BR_FIELD_ENUM, cr_setting_names). */
+typedef enum cr_setting_key {
+    CR_SETTING_LANGUAGE, CR_SETTING_VSYNC, CR_SETTING_FPS, CR_SETTING_VOLUME, CR_SETTING_PROFILER,
+    CR_SETTING_BIND_JUMP,
+    CR_SETTING_COUNT
+} cr_setting_key;
+
 /* "button": a UI button (keyboard / pad focus + mouse). */
 typedef struct cr_button {
-    char    action[BR_FIELD_STRING_SIZE];   /* "play", "levels", "settings", "resume", ... */
+    int32_t action;                         /* cr_action */
     char    arg[BR_FIELD_STRING_SIZE];      /* e.g. the level scene name */
     int32_t order;                          /* focus order inside its scene */
     /* runtime */
@@ -89,16 +106,16 @@ typedef struct cr_button {
     bool    ready;
 } cr_button;
 
-/* "setting": a settings row: its text child shows the current value of `key`. */
+/* "setting": a settings row (activating it changes `key`); its "value" child shows the value. */
 typedef struct cr_setting {
-    char key[BR_FIELD_STRING_SIZE];         /* "vsync", "fps", "volume", "profiler", "bind_jump" */
+    int32_t key;                            /* cr_setting_key */
 } cr_setting;
 
 /* "prompt": a button prompt. On a sprite: the glyph of `action` for the device used last; on a
- * text: `text` with "{action}" placeholders expanded. */
+ * text: the string-table text of `key` with "{action}" placeholders expanded. */
 typedef struct cr_prompt {
     char action[BR_FIELD_STRING_SIZE];
-    char text[BR_FIELD_STRING_SIZE];
+    char key[BR_FIELD_STRING_SIZE];
     /* runtime */
     char shown[BR_FIELD_STRING_SIZE];
 } cr_prompt;
@@ -124,10 +141,8 @@ typedef struct cr_tuning {
     float   knockback, invulnerable_time;
     float   pickup_radius;
     float   camera_damping, camera_distance, shake_hit, shake_fall, shake_pickup;
-    char    pickup_ease[BR_FIELD_STRING_SIZE];  /* easing names (br_ease_from_name) */
-    char    popup_ease[BR_FIELD_STRING_SIZE];
-    char    counter_ease[BR_FIELD_STRING_SIZE];
-    char    focus_ease[BR_FIELD_STRING_SIZE];
+    int32_t pickup_ease, popup_ease;           /* br_ease_type, by name (BR_FIELD_ENUM: "out_back") */
+    int32_t counter_ease, focus_ease;
     float   pickup_time, popup_time, popup_rise, counter_time;
     br_vec2 footstep_walk, footstep_sprint;    /* marker times (seconds) in the walk / sprint clips */
     float   end_delay;                         /* seconds between the last crate and the results */
@@ -155,12 +170,16 @@ typedef struct cr_ids {
     uint32_t level, button, setting, prompt, counter, tuning;
 } cr_ids;
 
+#define CR_NAME_MAX 12    /* the results screen's name field, in code points */
+
 /* Player settings, saved with br_save_write("settings.json") and applied live. */
 typedef struct cr_settings {
     int32_t vsync;        /* br_vsync */
     int32_t max_fps;      /* 0 = uncapped */
     int32_t volume;       /* percent */
     bool    profiler_hud;
+    char    language[BR_LOC_NAME_SIZE];   /* "" = the locale br_loc_setup picked */
+    char    name[BR_FIELD_STRING_SIZE];   /* the player's name (results screen), UTF-8 */
 } cr_settings;
 
 #define CR_MAX_LEVELS 3
@@ -217,13 +236,15 @@ typedef struct cr_game {
     int32_t   last_pad_type;
 
     /* assets */
+    float     speed;                /* the ticker speed outside the pause (game.json "ticker.speed") */
+
     br_asset_group *shared;         /* character, UI atlases, fonts, sounds: every scene uses them */
     br_model  *character_model;
     br_anim_clip *clips[CR_CLIPS];  /* the character's clips with footstep markers (owned) */
     uint32_t  clip_count;
     const br_anim_graph *graph;
     br_font   *sdf_font;            /* world text */
-    int       sfx_bus, music_bus;
+    int       sfx_bus, music_bus, ui_bus;  /* the pause holds sfx; menu sounds play on ui */
     char      footsteps[BR_FIELD_STRING_SIZE];
     uint32_t  footstep_index;
 
@@ -233,6 +254,8 @@ typedef struct cr_game {
     uint32_t  levels_completed;     /* for the soak log */
     /* live counts (updated every frame by cr.flow; the soak play-test compares them between menu visits) */
     int32_t   stat_nodes, stat_nodes3d, stat_assets, stat_animators, stat_tweens, stat_sounds;
+    float     stat_speed;           /* br_ticker_speed: 0 while paused */
+    bool      stat_sfx_paused;      /* the sfx bus is held (the pause) */
 } cr_game;
 
 /* components.c */
@@ -242,8 +265,8 @@ void cr_components_register(br_engine *e, cr_game *g);
 void cr_flow_register(br_engine *e, cr_game *g);
 void cr_enter_state(br_engine *e, cr_game *g, cr_state state);
 void cr_start_level(br_engine *e, cr_game *g, const char *scene_name);
-void cr_button_action(br_engine *e, cr_game *g, const cr_button *b);
-void cr_setting_change(br_engine *e, cr_game *g, const char *key, int step);
+void cr_button_action(br_engine *e, cr_game *g, const cr_button *b, const cr_setting *row);
+void cr_setting_change(br_engine *e, cr_game *g, int32_t key, int step);
 void cr_settings_apply(br_engine *e, cr_game *g);
 void cr_settings_save(br_engine *e, cr_game *g);
 void cr_log_stats(br_engine *e, cr_game *g, const char *when);
@@ -268,7 +291,7 @@ const cr_tuning *cr_tuning_get(br_engine *e, cr_game *g);
 const char *cr_config_string(br_engine *e, const char *key);
 void cr_play(br_engine *e, cr_game *g, const char *path, float volume);
 void cr_sound(br_engine *e, cr_game *g, const char *name);
-br_ease_type cr_ease(const char *name);
+void cr_ui_sound(br_engine *e, cr_game *g, const char *name);
 float cr_random(cr_game *g);
 
 #endif

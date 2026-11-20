@@ -402,6 +402,7 @@ def build_kit():
 
 # ---- levels
 #
+# Level titles and sign texts are string-table keys (data/assets/strings/strings.<locale>.json).
 # One cell per 2 x 2 tile, two characters: ground, then object.
 #   ground: '.' water  '#' ground block (top at y = 1)  'T' tall block (top at y = 2)  'p' wooden rafts
 #   object: '.' none  'S' spawn  'c' crate  's' floor spikes  'x' spike block  'w' saw (moves along x)
@@ -415,9 +416,9 @@ THEMES = {
 LEVELS = [
     {"file": "level1", "theme": "grass", "water": "#2c7cc0",
      "scene": {"background": "#3f86c0", "sky": "#bfe3ff", "ground": "#6f8f5a", "ambient": 0.45, "msaa": 4,
-               "level": {"title": "Meadow Isle", "time_limit": 60, "next": "level2",
+               "level": {"title": "level1.title", "time_limit": 60, "next": "level2",
                          "footsteps": "sounds/impact/footstep_grass", "kill_y": 0.0, "index": 1}},
-     "sign": {"sign.text": "MEADOW ISLE", "sign.hint": "{jump} to jump onto the hill", "sign.radius": 1.7},
+     "sign": {"sign.text": "level1.sign", "sign.hint": "level1.hint", "sign.radius": 1.7},
      "map": [
          ".. #t #. #f #. #t ..",
          "#r #c #. Tc T. #. #.",
@@ -428,9 +429,9 @@ LEVELS = [
      ]},
     {"file": "level2", "theme": "snow", "water": "#2a6aa8",
      "scene": {"background": "#5b86ad", "sky": "#dfeeff", "ground": "#7a8698", "ambient": 0.45, "msaa": 4,
-               "level": {"title": "Frost Ridge", "time_limit": 75, "next": "level3",
+               "level": {"title": "level2.title", "time_limit": 75, "next": "level3",
                          "footsteps": "sounds/impact/footstep_snow", "kill_y": 0.0, "index": 2}},
-     "sign": {"sign.text": "FROST RIDGE", "sign.hint": "Mind the spikes!", "sign.radius": 1.7},
+     "sign": {"sign.text": "level2.sign", "sign.hint": "level2.hint", "sign.radius": 1.7},
      "map": [
          "#t #c #. .. T. Tc #t",
          "#. #s #x .. #. #s #.",
@@ -441,9 +442,9 @@ LEVELS = [
      ]},
     {"file": "level3", "theme": "grass", "water": "#2a78a8",
      "scene": {"background": "#c9814a", "sky": "#ffd9a8", "ground": "#6a5a48", "ambient": 0.45, "msaa": 4,
-               "level": {"title": "Sawmill Bay", "time_limit": 80, "next": "",
+               "level": {"title": "level3.title", "time_limit": 80, "next": "",
                          "footsteps": "sounds/impact/footstep_wood", "kill_y": 0.0, "index": 3}},
-     "sign": {"sign.text": "SAWMILL BAY", "sign.hint": "Saws! Time your run", "sign.radius": 1.7},
+     "sign": {"sign.text": "level3.sign", "sign.hint": "level3.hint", "sign.radius": 1.7},
      "map": [
          "#t #c pw pc #c #b ..",
          "#. #. p. p. #. #. #t",

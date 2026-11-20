@@ -1,6 +1,7 @@
 {
   "window": { "title": "Crate Rush", "width": 1280, "height": 720, "vsync": true, "resizable": true },
   "asset_root": "assets",
+  "packs": ["assets.brpack"],
   "manifest": "manifest.json",
   "clear_color": "#14202e",
   "scenes": {
@@ -24,12 +25,15 @@
     "confirm":    { "keys": ["Return", "Space"], "buttons": ["a"], "context": "menu" },
     "back":       { "keys": ["Escape", "Backspace"], "buttons": ["b"], "context": "menu" }
   },
-  "audio": { "master_volume": 0.8, "buses": { "music": 0.6, "sfx": 0.9 } },
+  "audio": { "master_volume": 0.8, "buses": { "music": 0.6, "sfx": 0.9, "ui": 0.9 } },
+  "locale": { "default": "en", "fallback": ["en"], "dir": "strings" },
+  "save": { "org": "braty", "app": "Crate Rush" },
   "debug": { "overlay": false, "toggle_key": "F1", "hot_reload": true },
   "game": {
     "tuning": "tuning.json",
     "shared_bundle": "shared",
     "levels": ["level1", "level2", "level3"],
+    "languages": ["en", "de"],
     "sounds": {
       "focus": "sounds/ui/tap-a.ogg",
       "confirm": "sounds/ui/click-a.ogg",

@@ -2,6 +2,15 @@
  * fill them. Runtime-only fields are simply not listed. */
 #include "game.h"
 
+/* Enum names, index = value (cr_action / cr_setting_key in game.h). */
+static const char *const cr_action_names[CR_ACTION_COUNT] = {
+    "none", "play", "levels", "main", "settings", "close_settings", "setting", "quit", "resume", "restart",
+    "retry", "next", "menu", "edit_name"
+};
+static const char *const cr_setting_names[CR_SETTING_COUNT] = {
+    "language", "vsync", "fps", "volume", "profiler", "bind_jump"
+};
+
 static uint32_t cr_register(br_engine *e, const char *name, size_t size, const br_field_desc *fields, uint32_t count)
 {
     br_component_desc desc = { name, size, fields, count };
@@ -25,8 +34,8 @@ void cr_components_register(br_engine *e, cr_game *g)
         { "phase", BR_FIELD_FLOAT, offsetof(cr_hazard, phase) },
     };
     static const br_field_desc sign[] = {
-        { "text", BR_FIELD_STRING, offsetof(cr_sign, text) },
-        { "hint", BR_FIELD_STRING, offsetof(cr_sign, hint) },
+        { "text", BR_FIELD_TEXT, offsetof(cr_sign, text) },
+        { "hint", BR_FIELD_TEXT, offsetof(cr_sign, hint) },
         { "radius", BR_FIELD_FLOAT, offsetof(cr_sign, radius) },
     };
     /* runtime-only 3D components: no fields to fill, but play-tests can read them by name */
@@ -49,16 +58,16 @@ void cr_components_register(br_engine *e, cr_game *g)
         { "index", BR_FIELD_INT, offsetof(cr_level, index) },
     };
     static const br_field_desc button[] = {
-        { "action", BR_FIELD_STRING, offsetof(cr_button, action) },
+        { "action", BR_FIELD_ENUM, offsetof(cr_button, action) },
         { "arg", BR_FIELD_STRING, offsetof(cr_button, arg) },
         { "order", BR_FIELD_INT, offsetof(cr_button, order) },
     };
     static const br_field_desc setting[] = {
-        { "key", BR_FIELD_STRING, offsetof(cr_setting, key) },
+        { "key", BR_FIELD_ENUM, offsetof(cr_setting, key) },
     };
     static const br_field_desc prompt[] = {
         { "action", BR_FIELD_STRING, offsetof(cr_prompt, action) },
-        { "text", BR_FIELD_STRING, offsetof(cr_prompt, text) },
+        { "key", BR_FIELD_STRING, offsetof(cr_prompt, key) },
     };
     static const br_field_desc counter[] = {
         { "value", BR_FIELD_FLOAT, offsetof(cr_counter, value) },
@@ -90,10 +99,10 @@ void cr_components_register(br_engine *e, cr_game *g)
         { "shake_hit", BR_FIELD_FLOAT, offsetof(cr_tuning, shake_hit) },
         { "shake_fall", BR_FIELD_FLOAT, offsetof(cr_tuning, shake_fall) },
         { "shake_pickup", BR_FIELD_FLOAT, offsetof(cr_tuning, shake_pickup) },
-        { "pickup_ease", BR_FIELD_STRING, offsetof(cr_tuning, pickup_ease) },
-        { "popup_ease", BR_FIELD_STRING, offsetof(cr_tuning, popup_ease) },
-        { "counter_ease", BR_FIELD_STRING, offsetof(cr_tuning, counter_ease) },
-        { "focus_ease", BR_FIELD_STRING, offsetof(cr_tuning, focus_ease) },
+        { "pickup_ease", BR_FIELD_ENUM, offsetof(cr_tuning, pickup_ease) },
+        { "popup_ease", BR_FIELD_ENUM, offsetof(cr_tuning, popup_ease) },
+        { "counter_ease", BR_FIELD_ENUM, offsetof(cr_tuning, counter_ease) },
+        { "focus_ease", BR_FIELD_ENUM, offsetof(cr_tuning, focus_ease) },
         { "pickup_time", BR_FIELD_FLOAT, offsetof(cr_tuning, pickup_time) },
         { "popup_time", BR_FIELD_FLOAT, offsetof(cr_tuning, popup_time) },
         { "popup_rise", BR_FIELD_FLOAT, offsetof(cr_tuning, popup_rise) },
@@ -119,4 +128,16 @@ void cr_components_register(br_engine *e, cr_game *g)
     g->id.prompt = cr_register(e, "prompt", sizeof(cr_prompt), prompt, BR_ARRAY_COUNT(prompt));
     g->id.counter = cr_register(e, "counter", sizeof(cr_counter), counter, BR_ARRAY_COUNT(counter));
     g->id.tuning = cr_register(e, "tuning", sizeof(cr_tuning), tuning, BR_ARRAY_COUNT(tuning));
+
+    /* enum fields read names: "action": "play", "key": "vsync", "pickup_ease": "out_back" */
+    br_component_set_enum(e, g->id.button, "action", cr_action_names, CR_ACTION_COUNT);
+    br_component_set_enum(e, g->id.setting, "key", cr_setting_names, CR_SETTING_COUNT);
+    const char *eases[BR_EASE_COUNT];
+    for (int i = 0; i < BR_EASE_COUNT; i++) {
+        eases[i] = br_ease_name((br_ease_type)i);
+    }
+    br_component_set_enum(e, g->id.tuning, "pickup_ease", eases, BR_EASE_COUNT);
+    br_component_set_enum(e, g->id.tuning, "popup_ease", eases, BR_EASE_COUNT);
+    br_component_set_enum(e, g->id.tuning, "counter_ease", eases, BR_EASE_COUNT);
+    br_component_set_enum(e, g->id.tuning, "focus_ease", eases, BR_EASE_COUNT);
 }

@@ -81,6 +81,9 @@ static void cr_expose(br_engine *e, cr_game *g)
         { "stat_animators", BR_FIELD_INT, offsetof(cr_game, stat_animators) },
         { "stat_tweens", BR_FIELD_INT, offsetof(cr_game, stat_tweens) },
         { "stat_sounds", BR_FIELD_INT, offsetof(cr_game, stat_sounds) },
+        { "speed", BR_FIELD_FLOAT, offsetof(cr_game, stat_speed) },
+        { "sfx_paused", BR_FIELD_BOOL, offsetof(cr_game, stat_sfx_paused) },
+        { "player_name", BR_FIELD_STRING, offsetof(cr_game, settings.name) },
     };
     br_playtest_expose(e, "game", fields, BR_ARRAY_COUNT(fields), g);
 }
@@ -142,6 +145,7 @@ static bool cr_init(br_engine *e)
     }
     g->sfx_bus = br_audio_bus_find(e, "sfx");
     g->music_bus = br_audio_bus_find(e, "music");
+    g->ui_bus = br_audio_bus_find(e, "ui");
     cr_make_ui_camera(e, g);
     cr_enter_state(e, g, CR_STATE_MENU);
     /* --level NAME: straight into a level (profiling, screenshots) */
