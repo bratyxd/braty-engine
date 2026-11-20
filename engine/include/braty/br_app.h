@@ -56,6 +56,8 @@ typedef struct br_app_desc {
     void *user;                           /* for the game: br_engine_app_user(e) in init and later */
     const char *save_org;                 /* save identity (br_engine_set_save_name); NULL = "braty" */
     const char *save_app;                 /* NULL = the title */
+    bool run_when_inactive;               /* false: pause while unfocused / minimised / in the
+                                             background (br_app_set_pause_when_inactive) */
     /* Set by br_game_config_main, owned by the engine: applied before init (window, input,
      * audio, manifest, ...), its start scene loaded after init, then freed. */
     struct br_game_config *config;
@@ -176,8 +178,11 @@ void br_engine_on_shutdown(br_engine *e, br_shutdown_fn fn, void *user);
 
 /* ---- ticker (PixiJS Ticker) */
 
-/* Scaled, clamped delta of the current frame in seconds. */
+/* Scaled, clamped delta of the current frame in seconds (what systems get as dt). */
 float br_ticker_delta(br_engine *e);
+/* Clamped delta NOT scaled by the ticker speed: pause menus and UI animate with it while
+ * br_ticker_set_speed(e, 0) freezes the game. 0 while the app is paused for being inactive. */
+float br_ticker_unscaled_delta(br_engine *e);
 /* Sum of all deltas so far, in seconds. */
 double br_ticker_elapsed(br_engine *e);
 /* Number of frames stepped so far. */
@@ -230,6 +235,32 @@ uint32_t br_app_fixed_steps(br_engine *e);
 /* The frame time the pacing aims for, in ms: the FPS cap, or the display refresh with vsync on
  * (whichever is slower); 1000/60 when neither is known. The debug frame graph colours by it. */
 float br_app_frame_budget_ms(br_engine *e);
+
+/* ---- app lifecycle: focus, minimise, background (mobile), low memory, terminating
+ *
+ * The app is active while its window has focus, is not minimised and the OS has not sent it to
+ * the background. While inactive, by default (br_app_set_pause_when_inactive, game.json
+ * window.pause_when_inactive, br_app_desc.run_when_inactive) every system still runs but with
+ * dt 0 (FIXED_UPDATE does not step, ticker elapsed stops) and audio output is paused. Never in
+ * --deterministic, --frames or headless runs: those must not depend on the window manager. */
+
+typedef enum br_app_lifecycle {
+    BR_APP_LIFECYCLE_DEACTIVATED,  /* lost focus, minimised or sent to the background */
+    BR_APP_LIFECYCLE_ACTIVATED,    /* active again */
+    BR_APP_LIFECYCLE_LOW_MEMORY,   /* the OS asks the app to free what it can (drop caches) */
+    BR_APP_LIFECYCLE_TERMINATING   /* the OS is ending the app (mobile): save now */
+} br_app_lifecycle;
+
+/* Lifecycle callback (show a pause menu on DEACTIVATED, save on TERMINATING). */
+typedef void (*br_app_lifecycle_fn)(br_engine *e, br_app_lifecycle event, void *user);
+/* Adds a lifecycle callback, called in the order added, from the event that caused it. */
+void br_app_on_lifecycle(br_engine *e, br_app_lifecycle_fn fn, void *user);
+/* True while focused, not minimised and in the foreground (true until told otherwise). */
+bool br_app_is_active(br_engine *e);
+/* True while time and audio are paused because the app is inactive. */
+bool br_app_is_paused(br_engine *e);
+/* Pause time and audio while inactive (default true). */
+void br_app_set_pause_when_inactive(br_engine *e, bool on);
 
 /* ---- SDL main-callback glue (called by braty_main.h, not by games) */
 

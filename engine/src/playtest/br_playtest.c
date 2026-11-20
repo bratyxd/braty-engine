@@ -912,7 +912,7 @@ bool br_playtest_run_script(br_engine *e, const char *path)
     }
     float dt = br_playtest_frame_dt(e);
     while (e->playtest->running) {
-        br_engine_step(e, dt);
+        br_engine_step_frame(e, dt, br_ticker_compute_delta(1.0f / 60.0f, e->ticker.min_fps, 1.0f));
     }
     return !e->playtest->failed;
 }
@@ -950,7 +950,7 @@ char *br_playtest_command(br_engine *e, const char *json_line)
         r = br_pt_exec(e, cmd, results);
         float dt = br_playtest_frame_dt(e);
         while (r == BR_PT_WAIT) {
-            br_engine_step(e, dt);
+            br_engine_step_frame(e, dt, br_ticker_compute_delta(1.0f / 60.0f, e->ticker.min_fps, 1.0f));
             r = br_pt_wait_check(e);
         }
     }
@@ -988,7 +988,7 @@ void br_playtest_step(br_engine *e, uint32_t frames)
 {
     float dt = br_playtest_frame_dt(e);
     for (uint32_t i = 0; i < frames; i++) {
-        br_engine_step(e, dt);
+        br_engine_step_frame(e, dt, br_ticker_compute_delta(1.0f / 60.0f, e->ticker.min_fps, 1.0f));
     }
 }
 

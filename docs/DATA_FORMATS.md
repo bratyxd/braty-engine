@@ -38,7 +38,8 @@ Every key is optional; the values below are the defaults unless noted.
 ```json
 {
   "window": { "title": "My Game", "width": 1280, "height": 720,
-              "fullscreen": false, "vsync": true, "resizable": true, "logical_size": [1280, 720] },
+              "fullscreen": false, "vsync": true, "resizable": true, "logical_size": [1280, 720],
+              "pause_when_inactive": true },
   "asset_root": "assets",
   "manifest": "manifest.json",
   "start_scene": "title",
@@ -71,6 +72,7 @@ overlay closed, F1, hot reload on in debug builds, no logical size (the example'
 |---|---|
 | `window.*` | Window title and size (in `br_app_desc`), fullscreen / resizable (applied). |
 | `window.logical_size` | `[width, height]`: a fixed design resolution. Applied as `br_camera_create_logical(e, w, h)`, a letterbox 2D camera under the stage: the stage is always w x h units, scaled to fit the window with bars, and pointer events map through it (`docs/agents/camera.md`). Absent = no camera, the stage is the window. |
+| `window.pause_when_inactive` | Default `true`: while the window is unfocused, minimised or in the background, game time stops (dt 0) and audio output pauses (`br_app_set_pause_when_inactive`; never in `--deterministic` / `--frames` / headless runs). |
 | `window.vsync` | `true` / `false`, or `"on"`, `"off"`, `"mailbox"`, `"adaptive"` (`br_app_set_vsync`; unsupported modes fall back with a log line; SDL GPU has no adaptive mode, it becomes on). |
 | `asset_root` | Directory of all other paths, relative to the executable directory. |
 | `manifest` | Added with `br_assets_load_manifest` (aliases and bundles). |

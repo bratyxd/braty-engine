@@ -42,6 +42,9 @@ next frame.
 | `br_engine_on_shutdown(e, fn, user)` | Free your state (runs after every node was destroyed, before the GPU is destroyed). |
 | `br_engine_add_event_handler(e, fn, user)` | Raw SDL events (input modules). |
 | `br_ticker_delta/elapsed/fps`, `br_ticker_set_speed/max_fps/min_fps` | Time. |
+| `br_ticker_unscaled_delta(e)` | The frame's dt without the ticker speed: pause menus and UI animate with it while `br_ticker_set_speed(e, 0)` freezes the game. |
+| `br_app_on_lifecycle(e, fn, user)`, `br_app_is_active(e)`, `br_app_is_paused(e)` | Focus / minimise / background: show a pause menu on `DEACTIVATED`, save on `TERMINATING`, drop caches on `LOW_MEMORY`. |
+| `br_app_set_pause_when_inactive(e, on)` | Default on: while inactive, dt is 0 and audio output is paused (game.json `window.pause_when_inactive`, `br_app_desc.run_when_inactive`). |
 | `br_engine_window_size`, `br_engine_pixel_size`, `br_engine_pixel_density` | Layout vs pixels. |
 | `br_engine_create(title, asset_root)` + `br_engine_step(e, dt)` | Headless engine for tests. |
 
@@ -102,6 +105,17 @@ average error at 60 / 144.
   and frees it in an on-shutdown callback.
 - `min_fps` (default 10) clamps `dt` so a stall does not produce one giant step; `speed` scales it
   (negative or NaN speed is clamped to 0 = paused).
+- Pause menus: switch the gameplay group off (`br_system_group_set_enabled`) or set the ticker
+  speed to 0, and animate the menu with `br_ticker_unscaled_delta(e)` instead of the system's
+  `dt` (which is scaled). Tweens, animators and particles are engine systems that use the scaled
+  dt, so speed 0 freezes them too.
+- Lifecycle: the app is active while its window is focused, not minimised and not in the
+  background (SDL focus / minimise / restore and will/did-enter-background / foreground events,
+  handled in `br_app_event`). Going inactive calls the lifecycle callbacks with `DEACTIVATED`;
+  with `pause_when_inactive` (default) every system keeps running with dt 0 (FIXED_UPDATE does
+  not step, elapsed stops, the loop naps 16 ms per frame) and the audio device is paused; coming
+  back resumes without one giant dt. Never in `--deterministic`, `--frames` or headless runs.
+  `LOW_MEMORY` and `TERMINATING` are passed to the callbacks as they come.
 - Vsync (default on) and the FPS cap are independent. With vsync on and a cap below the refresh
   rate the cap wins; above it the display does. The cap schedules deadlines, so a late frame is
   not followed by a rushed one; more than a whole frame late restarts the schedule.

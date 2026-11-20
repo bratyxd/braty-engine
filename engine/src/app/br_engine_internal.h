@@ -35,8 +35,14 @@ typedef struct br_shutdown_entry {
     void          *user;
 } br_shutdown_entry;
 
+typedef struct br_lifecycle_entry {
+    br_app_lifecycle_fn fn;
+    void               *user;
+} br_lifecycle_entry;
+
 typedef struct br_ticker_state {
     float    delta;        /* scaled, clamped seconds of the current frame */
+    float    unscaled_delta; /* clamped, not scaled by speed (pause menus); 0 while paused inactive */
     double   elapsed;      /* sum of delta */
     uint64_t frame;        /* frames stepped so far */
     float    fps;          /* smoothed frames per second (unscaled) */
@@ -73,6 +79,14 @@ struct br_engine {
     br_array disabled_groups;       /* char *, system groups switched off */
     br_array event_handlers;       /* br_event_handler_entry */
     br_array shutdown_handlers;     /* br_shutdown_entry, run in reverse order */
+    br_array lifecycle_handlers;    /* br_lifecycle_entry, called in the order added */
+
+    /* app lifecycle (br_app.c): active = focused, not minimised, not in the background */
+    bool focus_lost;
+    bool minimized;
+    bool in_background;
+    bool pause_when_inactive;       /* default true; br_app_set_pause_when_inactive */
+    bool paused_inactive;           /* the pause is applied now (time stopped, audio paused) */
 
     br_ticker_state ticker;
     br_vsync vsync;                 /* present mode in effect (or requested, while headless) */
@@ -123,6 +137,9 @@ struct br_engine {
 
 /* A br_strdup of name made safe as a save folder name (br_file.c). */
 char *br_save_name_sanitize(const char *name);
+
+/* br_engine_step with the unscaled delta given separately (br_engine_step passes dt for both). */
+bool br_engine_step_frame(br_engine *e, float dt_seconds, float unscaled_seconds);
 
 /* FPS cap: waits until the next frame's deadline (br_pacing.c). No-op when uncapped. */
 void br_app_pace_frame(br_engine *e);

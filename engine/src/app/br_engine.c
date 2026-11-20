@@ -55,6 +55,8 @@ br_engine *br_engine_create(const char *title, const char *asset_root)
     br_array_init(&e->disabled_groups, sizeof(char *));
     br_array_init(&e->event_handlers, sizeof(br_event_handler_entry));
     br_array_init(&e->shutdown_handlers, sizeof(br_shutdown_entry));
+    br_array_init(&e->lifecycle_handlers, sizeof(br_lifecycle_entry));
+    e->pause_when_inactive = true;
     e->ticker.speed = 1.0f;
     e->ticker.min_fps = 10.0f;
     e->vsync = BR_VSYNC_ON;
@@ -105,6 +107,7 @@ void br_engine_destroy(br_engine *e)
     }
     br_array_free(&e->disabled_groups);
     br_array_free(&e->event_handlers);
+    br_array_free(&e->lifecycle_handlers);
     br_gpu_destroy(e->gpu);
     if (e->window != NULL) {
         SDL_DestroyWindow(e->window);
@@ -492,7 +495,13 @@ static void br_run_fixed_update(br_engine *e, float dt)
 
 bool br_engine_step(br_engine *e, float dt_seconds)
 {
+    return br_engine_step_frame(e, dt_seconds, dt_seconds);
+}
+
+bool br_engine_step_frame(br_engine *e, float dt_seconds, float unscaled_seconds)
+{
     e->ticker.delta = dt_seconds;
+    e->ticker.unscaled_delta = unscaled_seconds;
     e->ticker.elapsed += dt_seconds;
     e->ticker.frame += 1;
     if (e->gpu != NULL) {
@@ -544,6 +553,7 @@ bool br_engine_step(br_engine *e, float dt_seconds)
 /* ---- ticker */
 
 float br_ticker_delta(br_engine *e) { return e->ticker.delta; }
+float br_ticker_unscaled_delta(br_engine *e) { return e->ticker.unscaled_delta; }
 double br_ticker_elapsed(br_engine *e) { return e->ticker.elapsed; }
 uint64_t br_ticker_frame(br_engine *e) { return e->ticker.frame; }
 float br_ticker_fps(br_engine *e) { return e->ticker.fps; }

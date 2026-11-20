@@ -73,6 +73,7 @@ typedef struct br_audio_state {
     float            stream_seconds;  /* main thread only (loaders) */
     SDL_AudioStream *device;
     bool             device_failed;
+    bool             device_paused;   /* br_audio_set_device_paused (the app is inactive) */
     double           game_clock_frames; /* no device + deterministic: mixer frames owed to game time */
     /* audio-thread scratch (only br_audio_mix touches these) */
     float            mix_buf[BR_AUDIO_CHUNK_FRAMES * BR_AUDIO_CHANNELS];
@@ -451,7 +452,9 @@ static void br_audio_open_device(br_engine *e)
         return;
     }
     s->device_failed = false;
-    SDL_ResumeAudioStreamDevice(s->device);
+    if (!s->device_paused) {
+        SDL_ResumeAudioStreamDevice(s->device);
+    }
     const char *name = SDL_GetAudioDeviceName(SDL_GetAudioStreamDevice(s->device));
     br_log_info("audio: device opened (%s, %d Hz, %d channels, driver %s)", name != NULL ? name : "default",
                 BR_AUDIO_RATE, BR_AUDIO_CHANNELS, SDL_GetCurrentAudioDriver());
@@ -460,6 +463,25 @@ static void br_audio_open_device(br_engine *e)
 void br_audio_set_stream_threshold(br_engine *e, float seconds)
 {
     e->audio->stream_seconds = seconds < 0.0f ? 0.0f : seconds;
+}
+
+void br_audio_set_device_paused(br_engine *e, bool paused)
+{
+    br_audio_state *s = e->audio;
+    if (s == NULL) {
+        return;
+    }
+    s->device_paused = paused;
+    if (s->device != NULL && paused) {
+        SDL_PauseAudioStreamDevice(s->device);
+    } else if (s->device != NULL) {
+        SDL_ResumeAudioStreamDevice(s->device);
+    }
+}
+
+bool br_audio_device_paused(br_engine *e)
+{
+    return e->audio != NULL && e->audio->device_paused;
 }
 
 bool br_audio_device_open(br_engine *e)

@@ -122,6 +122,20 @@ static void test_game_config_main(void)
     br_app_quit(state, SDL_APP_SUCCESS);
 }
 
+/* game.json window.pause_when_inactive and "save" reach the br_app_desc */
+static void test_game_config_lifecycle_keys(void)
+{
+    const char *json = "{ \"window\": { \"pause_when_inactive\": false }, \"save\": { \"org\": \"o\", \"app\": \"a\" } }";
+    br_game_config config;
+    BR_CHECK(br_game_config_parse(json, SDL_strlen(json), "test", &config));
+    br_app_desc desc = br_game_config_app_desc(&config);
+    BR_CHECK(desc.run_when_inactive && SDL_strcmp(desc.save_org, "o") == 0 && SDL_strcmp(desc.save_app, "a") == 0);
+    cJSON_Delete(config.json);
+    br_game_config_defaults(&config);
+    desc = br_game_config_app_desc(&config);
+    BR_CHECK(!desc.run_when_inactive && desc.save_org == NULL && desc.save_app == NULL);
+}
+
 /* API_REVIEW item 4: --assets / BRATY_ASSETS point the asset root anywhere (cwd-relative). */
 static void test_assets_override(void)
 {
@@ -346,8 +360,186 @@ static void test_teardown_order(void)
     BR_CHECK(s_teardown.calls_after_death == 0);
 }
 
+/* ---- R8: app lifecycle (focus, minimise, background) through injected SDL events */
+
+typedef struct lifecycle_log {
+    int activated;
+    int deactivated;
+    int low_memory;
+    int terminating;
+} lifecycle_log;
+
+static void on_lifecycle(br_engine *e, br_app_lifecycle event, void *user)
+{
+    (void)e;
+    lifecycle_log *log = user;
+    log->activated += event == BR_APP_LIFECYCLE_ACTIVATED ? 1 : 0;
+    log->deactivated += event == BR_APP_LIFECYCLE_DEACTIVATED ? 1 : 0;
+    log->low_memory += event == BR_APP_LIFECYCLE_LOW_MEMORY ? 1 : 0;
+    log->terminating += event == BR_APP_LIFECYCLE_TERMINATING ? 1 : 0;
+}
+
+static void send_event(void *state, Uint32 type)
+{
+    SDL_Event ev;
+    SDL_zero(ev);
+    ev.type = type;
+    br_app_event(state, &ev);
+}
+
+static void test_lifecycle_state(void)
+{
+    char *argv[] = { "test_app", "--headless" };
+    br_app_desc desc;
+    SDL_zero(desc);
+    void *state = NULL;
+    BR_CHECK(br_app_init(&state, &desc, 2, argv) == SDL_APP_CONTINUE);
+    br_engine *e = state;
+    lifecycle_log log;
+    SDL_zero(log);
+    br_app_on_lifecycle(e, on_lifecycle, &log);
+    BR_CHECK(br_app_is_active(e));
+
+    send_event(state, SDL_EVENT_WINDOW_FOCUS_LOST);
+    BR_CHECK(!br_app_is_active(e) && log.deactivated == 1);
+    send_event(state, SDL_EVENT_WINDOW_MINIMIZED); /* still inactive: no second callback */
+    BR_CHECK(log.deactivated == 1);
+    send_event(state, SDL_EVENT_WINDOW_FOCUS_GAINED);
+    BR_CHECK(!br_app_is_active(e) && log.activated == 0); /* still minimised */
+    send_event(state, SDL_EVENT_WINDOW_RESTORED);
+    BR_CHECK(br_app_is_active(e) && log.activated == 1);
+
+    send_event(state, SDL_EVENT_WILL_ENTER_BACKGROUND);
+    BR_CHECK(!br_app_is_active(e) && log.deactivated == 2);
+    send_event(state, SDL_EVENT_DID_ENTER_BACKGROUND);
+    send_event(state, SDL_EVENT_WILL_ENTER_FOREGROUND);
+    BR_CHECK(!br_app_is_active(e));
+    send_event(state, SDL_EVENT_DID_ENTER_FOREGROUND);
+    BR_CHECK(br_app_is_active(e) && log.activated == 2);
+
+    send_event(state, SDL_EVENT_LOW_MEMORY);
+    send_event(state, SDL_EVENT_TERMINATING);
+    BR_CHECK(log.low_memory == 1 && log.terminating == 1 && br_app_is_active(e));
+
+    /* headless: inactive never pauses time */
+    send_event(state, SDL_EVENT_WINDOW_FOCUS_LOST);
+    BR_CHECK(!br_app_is_paused(e));
+    br_app_iterate(state);
+    BR_CHECK(br_ticker_delta(e) > 0.0f);
+    br_app_quit(state, SDL_APP_SUCCESS);
+}
+
+/* Unscaled delta: pause menus animate with it while the ticker speed is 0. */
+static void test_unscaled_delta(void)
+{
+    char *argv[] = { "test_app", "--headless", "--deterministic" };
+    br_app_desc desc;
+    SDL_zero(desc);
+    void *state = NULL;
+    BR_CHECK(br_app_init(&state, &desc, 3, argv) == SDL_APP_CONTINUE);
+    br_engine *e = state;
+    br_ticker_set_speed(e, 0.0f);
+    br_app_iterate(state);
+    BR_CHECK(br_ticker_delta(e) == 0.0f);
+    BR_CHECK(br_ticker_unscaled_delta(e) == 1.0f / 60.0f);
+    br_ticker_set_speed(e, 0.5f);
+    br_app_iterate(state);
+    BR_CHECK(br_ticker_delta(e) == 0.5f / 60.0f && br_ticker_unscaled_delta(e) == 1.0f / 60.0f);
+    br_engine_step(e, 0.02f); /* a plain step: both are the given dt */
+    BR_CHECK(br_ticker_unscaled_delta(e) == 0.02f);
+    br_app_quit(state, SDL_APP_SUCCESS);
+}
+
+/* --deterministic drops real device input (br_app_device_event) but not window events. */
+static void count_events(br_engine *e, const SDL_Event *event, void *user)
+{
+    (void)e;
+    (void)event;
+    *(int *)user += 1;
+}
+
+static void test_deterministic_input_filter(void)
+{
+    char *argv[] = { "test_app", "--headless", "--deterministic" };
+    br_app_desc desc;
+    SDL_zero(desc);
+    void *state = NULL;
+    BR_CHECK(br_app_init(&state, &desc, 3, argv) == SDL_APP_CONTINUE);
+    int seen = 0;
+    br_engine_add_event_handler(state, count_events, &seen);
+    SDL_Event ev;
+    SDL_zero(ev);
+    ev.type = SDL_EVENT_KEY_DOWN;
+    br_app_device_event(state, &ev);
+    ev.type = SDL_EVENT_MOUSE_MOTION;
+    br_app_device_event(state, &ev);
+    BR_CHECK(seen == 0);
+    ev.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+    br_app_device_event(state, &ev);
+    BR_CHECK(seen == 1 && !br_app_is_active(state) && !br_app_is_paused(state)); /* deterministic: no pause */
+    br_app_quit(state, SDL_APP_SUCCESS);
+}
+
+/* With a window, an inactive app stops time and audio (skipped when no window/GPU). */
+static void test_pause_when_inactive(void)
+{
+    char *argv[] = { "test_app" };
+    br_app_desc desc;
+    SDL_zero(desc);
+    desc.width = 64;
+    desc.height = 64;
+    void *state = NULL;
+    if (br_app_init(&state, &desc, 1, argv) != SDL_APP_CONTINUE) {
+        printf("test_pause_when_inactive: skipped, no window or GPU\n");
+        if (state != NULL) {
+            br_app_quit(state, SDL_APP_FAILURE);
+        }
+        return;
+    }
+    br_engine *e = state;
+    br_app_iterate(state);
+    double elapsed = br_ticker_elapsed(e);
+    send_event(state, SDL_EVENT_WINDOW_FOCUS_LOST);
+    BR_CHECK(br_app_is_paused(e) && br_audio_device_paused(e));
+    br_app_iterate(state);
+    BR_CHECK(br_ticker_delta(e) == 0.0f && br_ticker_unscaled_delta(e) == 0.0f);
+    BR_CHECK(br_ticker_elapsed(e) == elapsed);
+    send_event(state, SDL_EVENT_WINDOW_FOCUS_GAINED);
+    BR_CHECK(!br_app_is_paused(e) && !br_audio_device_paused(e));
+    br_app_iterate(state);
+    BR_CHECK(br_ticker_delta(e) > 0.0f && br_ticker_delta(e) <= 0.1f);
+
+    br_app_set_pause_when_inactive(e, false); /* opted out: keeps running */
+    send_event(state, SDL_EVENT_WINDOW_MINIMIZED);
+    BR_CHECK(!br_app_is_active(e) && !br_app_is_paused(e));
+    br_app_set_pause_when_inactive(e, true); /* applies at once while inactive */
+    BR_CHECK(br_app_is_paused(e));
+    br_app_quit(state, SDL_APP_SUCCESS);
+
+    /* --frames runs are scripted: never paused */
+    char *frames_argv[] = { "test_app", "--frames", "100" };
+    state = NULL;
+    BR_CHECK(br_app_init(&state, &desc, 3, frames_argv) == SDL_APP_CONTINUE);
+    send_event(state, SDL_EVENT_WINDOW_FOCUS_LOST);
+    BR_CHECK(!br_app_is_paused(state));
+    br_app_quit(state, SDL_APP_SUCCESS);
+
+    /* br_app_desc.run_when_inactive opts out from the start */
+    desc.run_when_inactive = true;
+    state = NULL;
+    BR_CHECK(br_app_init(&state, &desc, 1, argv) == SDL_APP_CONTINUE);
+    send_event(state, SDL_EVENT_WINDOW_FOCUS_LOST);
+    BR_CHECK(!br_app_is_paused(state));
+    br_app_quit(state, SDL_APP_SUCCESS);
+}
+
 int main(void)
 {
+    test_lifecycle_state();
+    test_game_config_lifecycle_keys();
+    test_unscaled_delta();
+    test_deterministic_input_filter();
+    test_pause_when_inactive();
     test_teardown_order();
     test_deterministic();
     test_system_groups();
