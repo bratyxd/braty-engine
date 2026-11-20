@@ -84,5 +84,6 @@
 #include "braty/br_animation.h"
 #include "braty/br_tween.h"
 #include "braty/br_profiler.h"
+#include "braty/br_text_field.h"
 
 #endif

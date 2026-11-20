@@ -133,6 +133,7 @@ struct br_engine {
     struct br_scenes_state      *scenes;
     struct br_animation_state   *animation;
     struct br_profiler_state    *profiler;
+    struct br_text_field_state  *text_field;
 };
 
 /* A br_strdup of name made safe as a save folder name (br_file.c). */
