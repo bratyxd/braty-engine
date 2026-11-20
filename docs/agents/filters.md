@@ -111,7 +111,7 @@ Blending is off: you write the final pixel. The vertex shader is the engine's (`
   only caches the content (colour baked in: a fade needs `br_cache_update_texture`) and
   re-renders it when the bounds move.
 - Known limit: a cached node drawn by two views (cameras) of different zoom re-renders its cache
-  twice per frame (the cache keys on pixel size). Inside a geometry-mode canvas3d no effect runs
+  twice per frame (the cache keys on the pixel scale). Inside a geometry-mode canvas3d no effect runs
   (one logged error; `docs/agents/canvas3d.md`).
 - Advanced blend backdrops are copied from the target pixels under the node, viewport offset and
   view zoom included (`br_render_rect_to_pixels`); a rotated view copies the bounding box,
