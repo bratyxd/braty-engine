@@ -559,6 +559,11 @@ way (54, 62); the rest are open.
     it is written (a real GPU happens to hide it) or a WARP limit. The CI golden step skips this
     one case on Windows (`BRATY_GOLDEN_SKIP`); Linux still checks it.
 
+65. **open - the `sprites` golden is not repeatable on CI.** Two runs of the same commit on the
+    GitHub runners (WARP and lavapipe) differ in 3 to 6 pixels (worst channel difference 28 to
+    68); on a real GPU it is stable. Something in that example depends on timing or thread
+    count under a software renderer. CI skips the case (`BRATY_GOLDEN_SKIP`) until it is found.
+
 ## Migration table (Phase 3 Task A)
 
 Every name below was removed without an alias: a game that still uses one gets a compiler

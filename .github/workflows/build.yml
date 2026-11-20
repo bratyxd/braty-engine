@@ -51,7 +51,7 @@ jobs:
       - name: Golden images (WARP; references in tests/golden/ci-windows win)
         env:
           BRATY_GOLDEN_VARIANT: ci-windows
-          BRATY_GOLDEN_SKIP: view3d_demo
+          BRATY_GOLDEN_SKIP: view3d_demo sprites
         run: ctest --preset windows-gcc -L golden
       - name: Getting-started guide builds and runs
         run: python tools/check_getting_started.py
@@ -113,6 +113,7 @@ jobs:
       - name: Golden images (lavapipe under Xvfb; references in tests/golden/ci-linux win)
         env:
           BRATY_GOLDEN_VARIANT: ci-linux
+          BRATY_GOLDEN_SKIP: sprites # a few pixels differ from run to run on CI (API_REVIEW item 65)
           SDL_AUDIODRIVER: dummy
         run: xvfb-run -a ctest --preset linux -L golden
       - uses: actions/upload-artifact@v4
