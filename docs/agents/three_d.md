@@ -137,6 +137,9 @@ Mesh draws: fill a `br_draw3d` (geometry, material, instances with world matrice
 write) or TRANSPARENT (`BR_ALPHA_BLEND`: back to front, premultiplied blend, no depth write);
 `cast_shadows` adds the SHADOW pass. Items outside the camera frustum skip the main passes but
 still cast shadows. Instances are copied into this frame's transient vertex buffer at submit.
+Collect is CPU only (items, instances, joints, lights, shadow tiles); RENDER uploads and draws. A
+headless engine collects too (`br_render_debug_*`, `docs/agents/render.md`), so culling, sort
+order, tiles and instancing are unit-tested in `tests/test_draw_list.c`.
 
 Custom draws (own shaders, any geometry): allocate transient data during collect, then
 `br_render3d_submit_custom(ctx, BR_PASS3D_OPAQUE | BR_PASS3D_SHADOW ..., sort_point, fn, user)`.

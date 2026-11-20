@@ -186,7 +186,14 @@ window coordinates, same push functions. Overlays added later draw on top.
   changes. Fragment input must equal vertex output (SV_Position included).
 - `br_render_pack_color(c, alpha)` premultiplies; do not premultiply twice.
 - Callback `user` pointers must live until RENDER of the same frame.
-- Headless engines skip collect entirely (no GPU).
+- Headless engines skip collect unless a test gives them a screen: `br_render_debug_set_screen(e,
+  w, h)` (engine-internal `engine/src/render/br_render_debug_internal.h`, not in `braty.h`; tests
+  get `engine/src` on their include path). Then collect runs fully on the CPU (batch vertices go
+  to a render-owned stream with the GPU stream's offsets, 3D views collect without targets) and
+  `br_render_debug_cmds` / `_batch_vertices` / `_batch_indices` / `_custom` / `_view3d` /
+  `_instances3d` read what a GPU frame would draw. `tests/test_draw_list.c` is the example.
+  Custom vertex and index data in a node's render callback: `br_render_transient_vertices` /
+  `_indices` (render internal) work headless; `br_gpu_transient_alloc_*` need a GPU.
 - Performance (examples/sprites.c `--count 100000 --novsync --profile [--static]`, Release,
   RTX 3060 Ti, best of 5): 31 batches; rotating ~12 ms/frame (the example's own bunny system
   5 ms, scene.transform 1.6, render.collect 4.0, submit 0.8), static ~4.3 ms (collect 3.5).

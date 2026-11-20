@@ -651,7 +651,12 @@ static void br_render_collect_system(br_engine *e, float dt, void *user)
     int w, h, pw, ph;
     br_engine_window_size(e, &w, &h);
     br_engine_pixel_size(e, &pw, &ph);
-    if (br_engine_gpu(e) == NULL || w <= 0 || h <= 0 || pw <= 0 || ph <= 0) {
+    if (br_engine_gpu(e) == NULL) {
+        /* headless: record the draw list for br_render_debug_set_screen's screen (tests) */
+        w = pw = r->headless_width;
+        h = ph = r->headless_height;
+    }
+    if (w <= 0 || h <= 0 || pw <= 0 || ph <= 0) {
         br_array_clear(&r->rtt_jobs);
         return;
     }
@@ -718,6 +723,8 @@ static void br_render_shutdown(br_engine *e, void *user)
     br_array_free(&r->customs);
     br_array_free(&r->indices);
     br_array_free(&r->uniforms);
+    br_array_free(&r->headless_vertices);
+    br_array_free(&r->headless_indices);
     br_array_free(&r->rtt_jobs);
     br_array_free(&r->overlays);
     br_array_free(&r->views);
@@ -737,6 +744,8 @@ void br_render_register(br_engine *e)
     br_array_init(&r->customs, sizeof(br_custom_cmd));
     br_array_init(&r->indices, sizeof(uint16_t));
     br_array_init(&r->uniforms, 1);
+    br_array_init(&r->headless_vertices, 1);
+    br_array_init(&r->headless_indices, 1);
     br_array_init(&r->rtt_jobs, sizeof(br_rtt_job));
     br_array_init(&r->overlays, sizeof(br_overlay_entry));
     br_array_init(&r->views, sizeof(br_render_view));

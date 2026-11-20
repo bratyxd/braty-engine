@@ -75,6 +75,8 @@ if(BRATY_BUILD_TESTS)
         add_executable(${name} ${src})
         target_compile_options(${name} PRIVATE ${BR_WARNINGS})
         target_link_libraries(${name} PRIVATE braty)
+        # engine-internal test APIs (render/br_render_debug_internal.h)
+        target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/engine/src)
         # tests read tests/data, examples/ and docs/ from the source tree, so any build directory works
         target_compile_definitions(${name} PRIVATE BRATY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
         if(BRATY_PLAYTEST_STDIN)

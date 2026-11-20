@@ -375,8 +375,8 @@ static void br_cull_system(br_engine *e, float dt, void *user)
     int w, h;
     br_engine_window_size(e, &w, &h);
     s->cull_frame += 1;
-    if (w <= 0 || h <= 0) {
-        return;
+    if (!s->has_cull_view && (w <= 0 || h <= 0)) {
+        return; /* no window and no camera / headless screen (br_render_debug_set_screen) */
     }
     br_rect screen = s->has_cull_view ? s->cull_view : br_rect_make(0.0f, 0.0f, (float)w, (float)h);
     /* only the cullable nodes are visited (not the whole tree). A cullable node inside a culled

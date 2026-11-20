@@ -2,6 +2,7 @@
  * PRE_RENDER, and the RENDER callback that runs the shadow pass, the main HDR pass and post. */
 #include "three_d/br_three_d_internal.h"
 #include "braty/br_profiler.h"
+#include "render/br_render_internal.h"
 
 #include "mesh3d.frag.h"
 #include "mesh3d.vert.h"
@@ -82,10 +83,9 @@ void br_render3d_submit_with_parent(br_render3d_ctx *ctx, const br_draw3d *draw,
 {
     br_engine *e = ctx->e;
     br_view3d_state *v = ctx->view;
-    br_gpu *g = br_engine_gpu(e);
     br_material3d_desc *mat = br_material3d_get(e, draw->material);
     br_geometry3d_data *geo = br_geometry3d_data_get(e, draw->geometry);
-    if (g == NULL || mat == NULL || geo == NULL || draw->instances == NULL || draw->instance_count == 0) {
+    if (mat == NULL || geo == NULL || draw->instances == NULL || draw->instance_count == 0) {
         return;
     }
     uint32_t passes = mat->alpha_mode == BR_ALPHA_BLEND ? BR_PASS3D_TRANSPARENT : BR_PASS3D_OPAQUE;
@@ -105,8 +105,9 @@ void br_render3d_submit_with_parent(br_render3d_ctx *ctx, const br_draw3d *draw,
     item.geometry = draw->geometry;
     item.material = draw->material;
     item.instance_count = draw->instance_count;
-    br_instance3d *dst = br_gpu_transient_alloc_vertices(g, draw->instance_count * (uint32_t)sizeof(br_instance3d),
-                                                         &item.instance_offset);
+    /* CPU memory (the GPU's transient stream, or the headless one); uploaded in RENDER */
+    br_instance3d *dst = br_render_transient_vertices(e, draw->instance_count * (uint32_t)sizeof(br_instance3d),
+                                                      &item.instance_offset);
     if (dst == NULL) {
         return;
     }

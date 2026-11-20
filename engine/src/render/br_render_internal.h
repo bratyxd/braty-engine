@@ -151,6 +151,12 @@ typedef struct br_render_state {
     br_array   rtt_jobs;          /* br_rtt_job */
     br_array   overlays;          /* br_overlay_entry */
     br_array   views;             /* br_render_view (br_render_set_views); empty = default stage */
+    /* headless (no GPU): the transient vertex / index streams live here instead, with the same
+     * offsets and alignment, so collect records exactly what a GPU frame would */
+    br_array   headless_vertices; /* uint8_t */
+    br_array   headless_indices;  /* uint8_t */
+    int        headless_width;    /* screen a headless collect draws for; 0 = skip collect */
+    int        headless_height;
     uint32_t   index_base;        /* byte offset of `indices` in the transient index buffer */
     uint32_t   serial_counter;
     bool       collected;         /* the draw list belongs to this frame */
@@ -204,6 +210,13 @@ bool br_render_capture_subtree(br_engine *e, br_node n, br_mat4 projection, br_r
                                br_array *out);
 
 /* ---- br_batch.c */
+
+/* br_gpu_transient_alloc_vertices / _indices, or the render module's CPU stream when headless
+ * (same offsets; reset at the start of render.collect). Use from collect (PRE_RENDER). */
+void *br_render_transient_vertices(br_engine *e, uint32_t size, uint32_t *offset);
+void *br_render_transient_indices(br_engine *e, uint32_t size, uint32_t *offset);
+/* Start of this frame's transient vertex / index bytes on the CPU (GPU stream or headless). */
+const uint8_t *br_render_transient_data(br_engine *e, bool indices);
 
 /* Reserves a quad (4 vertices + its 6 indices) of `texture` in the current batch: fill the
  * returned vertices in place (they are already in the GPU transient buffer), with .texture =
