@@ -98,6 +98,9 @@ typedef struct br_installed_font {
     br_font *font;
 } br_installed_font;
 
+/* The font installed under `name` by br_bitmap_font_install, or NULL. */
+br_font *br_bitmap_font_installed(br_engine *e, const char *name);
+
 /* Resolved style of a run of characters. */
 typedef struct br_text_span {
     br_font *font;

@@ -18,8 +18,8 @@ typedef struct br_debug_state {
     br_node      selected;
     br_array     expanded;   /* br_node: scene-tree rows the user opened */
 
-    /* glyphs: a bitmap font installed from the text module's default font on first draw */
-    br_font *font;
+    /* glyphs: the bitmap font "braty.debug", installed from the text module's default font on first
+     * draw and looked up by name on every use (a game may uninstall or replace it) */
     bool     font_failed;
     float    line_height;
 

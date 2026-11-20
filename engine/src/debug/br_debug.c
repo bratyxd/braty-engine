@@ -1,6 +1,7 @@
 /* br_debug: overlay state, toggle key, frame timing, log capture, microui input and drawing
  * (microui commands -> clipped quads pushed through the batcher). Panels: br_debug_panels.c. */
 #include "debug/br_debug_internal.h"
+#include "text/br_text_internal.h"
 
 /* ---- log capture */
 
@@ -119,35 +120,41 @@ static void br_debug_system(br_engine *e, float dt, void *user)
 
 /* ---- font */
 
+/* Looked up on every use, never kept: a game may uninstall or replace "braty.debug". */
+static br_font *br_debug_font(br_engine *e)
+{
+    return br_bitmap_font_installed(e, "braty.debug");
+}
+
 static bool br_debug_font_ready(br_engine *e, br_debug_state *s)
 {
-    if (s->font != NULL || s->font_failed) {
-        return s->font != NULL;
+    br_font *font = br_debug_font(e);
+    if (font == NULL && !s->font_failed) {
+        br_text_style style = br_text_style_default();
+        style.font_size = 14.0f;
+        style.fill = br_color_make(1.0f, 1.0f, 1.0f, 1.0f);
+        // ponytail: glyphs rasterised at 1 pixel per unit (soft on HiDPI); install with opts.resolution = pixel density and scale metrics if that matters.
+        font = br_bitmap_font_install(e, "braty.debug", &style, NULL);
+        s->font_failed = font == NULL;
     }
-    br_text_style style = br_text_style_default();
-    style.font_size = 14.0f;
-    style.fill = br_color_make(1.0f, 1.0f, 1.0f, 1.0f);
-    // ponytail: glyphs rasterised at 1 pixel per unit (soft on HiDPI); install with opts.resolution = pixel density and scale metrics if that matters.
-    s->font = br_bitmap_font_install(e, "braty.debug", &style, NULL);
-    s->font_failed = s->font == NULL;
-    if (s->font != NULL) {
+    if (font != NULL) {
         float base = 0.0f;
-        br_bitmap_font_line_metrics(s->font, &s->line_height, &base);
+        br_bitmap_font_line_metrics(font, &s->line_height, &base);
     }
-    return s->font != NULL;
+    return font != NULL;
 }
 
 static int br_debug_text_width(mu_Font font, const char *str, int len)
 {
     br_engine *e = font;
-    br_debug_state *s = e->debug;
+    br_font *f = br_debug_font(e);
     size_t length = len < 0 ? SDL_strlen(str) : (size_t)len;
     size_t offset = 0;
     float width = 0.0f;
     uint32_t cp;
     while ((cp = br_text_utf8_next(str, length, &offset)) != 0) {
         br_bitmap_char ch;
-        if (s->font != NULL && br_bitmap_font_get_char(s->font, cp, &ch)) {
+        if (f != NULL && br_bitmap_font_get_char(f, cp, &ch)) {
             width += ch.xadvance;
         }
     }
@@ -208,16 +215,16 @@ static uint32_t br_debug_color(mu_Color c)
 static void br_debug_draw_text(br_engine *e, br_render_ctx *rc, const char *str, float x, float y, mu_Rect clip,
                                uint32_t color)
 {
-    br_debug_state *s = e->debug;
+    br_font *font = br_debug_font(e);
     size_t length = SDL_strlen(str);
     size_t offset = 0;
     uint32_t cp;
     while ((cp = br_text_utf8_next(str, length, &offset)) != 0) {
         br_bitmap_char ch;
-        if (!br_bitmap_font_get_char(s->font, cp, &ch)) {
+        if (!br_bitmap_font_get_char(font, cp, &ch)) {
             continue;
         }
-        br_texture page = br_bitmap_font_page_texture(s->font, ch.page);
+        br_texture page = br_bitmap_font_page_texture(font, ch.page);
         const br_texture_info *info = br_render_texture_info(rc, page);
         if (ch.width > 0.0f && info->source_width > 0) {
             float sw = (float)info->source_width;
@@ -457,7 +464,7 @@ static void br_debug_ui_system(br_engine *e, float dt, void *user)
 static void br_debug_overlay(br_engine *e, br_render_ctx *rc, void *user)
 {
     br_debug_state *s = user;
-    if (!s->ui_live || s->font == NULL) {
+    if (!s->ui_live || br_debug_font(e) == NULL) {
         return;
     }
     br_render_set_blend(rc, BR_BLEND_NORMAL);

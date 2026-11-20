@@ -728,6 +728,20 @@ br_font *br_bitmap_font_install(br_engine *e, const char *name, const br_text_st
     return f;
 }
 
+br_font *br_bitmap_font_installed(br_engine *e, const char *name)
+{
+    if (e->text == NULL || name == NULL) {
+        return NULL;
+    }
+    for (uint32_t i = 0; i < e->text->installed.count; i++) {
+        br_installed_font *inst = br_array_at(&e->text->installed, i);
+        if (SDL_strcmp(inst->name, name) == 0) {
+            return inst->font;
+        }
+    }
+    return NULL;
+}
+
 void br_bitmap_font_uninstall(br_engine *e, const char *name)
 {
     if (e->text == NULL || name == NULL) {
