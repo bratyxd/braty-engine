@@ -443,7 +443,7 @@ filter shaders, `tests/test_filters.c`, `examples/filters_demo.c`.
       (`br_node3d`: TRS with quaternion, hierarchy, world `br_mat4`), camera, environment
       (sky/ground hemisphere colours), auto-resize; rendered to an HDR target then composited, so
       2D filters and masks work on it.
-- [ ] Cameras: perspective and orthographic, `look_at`, screen<->world ray; `br_orbit_camera`.
+- [ ] Cameras: perspective and orthographic, `look_at`, screen<->world ray; an orbit camera (now the `camera.orbit` component).
 - [ ] Geometry: vertex layout (position, normal, tangent, uv0, uv1, colour, joints, weights),
       builders for cube, sphere, plane, cylinder, cone, torus, capsule; tangents; AABB.
 - [ ] Materials: PBR metallic-roughness (base colour, metallic, roughness, normal, occlusion,
@@ -494,7 +494,7 @@ skinning/morph shader variants, `tests/test_gltf.c`, `examples/gltf_demo.c`, `ex
       strength, KHR_materials_unlit, KHR_texture_transform.
 - [ ] `br_view3d_from_model(e, model)` (Pixi `View3D.from`), `br_model_instantiate` into a view.
 - [ ] Skinning (joint matrices in a uniform/storage buffer), morph targets, animation clips with
-      linear/step/cubic-spline sampling, `br_animator3d` (play, cross-fade, speed, loop, events).
+      linear/step/cubic-spline sampling, a 3D animator (play, cross-fade, speed, loop, events; now `br_animator`).
 - [ ] 3D pointer-event wiring if Task 9 left it open.
 - [ ] Tests: sampler interpolation, joint matrix maths on a two-bone fixture built in code.
 

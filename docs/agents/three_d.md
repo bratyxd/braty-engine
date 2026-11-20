@@ -14,6 +14,15 @@ Test: `tests/test_three_d.c`. Example: `examples/view3d_demo.c` (`--camera 0|1`,
   world `br_mat4`, visible, pickable, layer bits. Stale handles are ignored. Destroy is deferred
   inside a frame (freed by `three_d.flush_destroyed`, INPUT -999000), immediate outside. An
   `on_destroy` or destroy listener may destroy other nodes: they join the running flush.
+- **The 3D node API mirrors the 2D one** (`br_node3d_*` next to `br_node_*`, same verbs and
+  argument order, checked by `tests/test_api_parity.c`): `_create`, `_create_container`,
+  `_add_child(_at)`, `_remove_from_parent`, `_reparent` (keeps the world transform),
+  `_child_count` + `_child_at`, `_find_by_label(e, root, label, deep)` (root not matched),
+  `_set_visible`, `_set_layer_bits`, position / rotation / scale setters taking what the getters
+  return, `_to_global` / `_to_local`, `_count`, `_on_destroy`. Where 3D differs the header says so
+  in one line: rotations are quaternions (plus `_set_euler` / `_euler`), layer bits default to 1
+  and 0 does not inherit, and `_child_at` is O(1) only when walked in order (children are a
+  linked list).
 - **3D node types** (`br_node3d_type_desc`) mirror the 2D registry: name, `data_size` (dense
   pool), `on_create/on_destroy`, `local_bounds`, `collect` (submit draw items), `pick` (ray in
   local space), `from_json`. `mesh3d`, `batched_mesh3d`, `light3d`, `camera3d` (and the plain
@@ -57,7 +66,7 @@ Test: `tests/test_three_d.c`. Example: `examples/view3d_demo.c` (`--camera 0|1`,
 |---|---|
 | `br_view3d_create(e, w, h)`, `br_view3d_root`, `br_view3d_camera`, `_set_auto_resize`, `_set_msaa` | A view in the 2D stage. |
 | `br_view3d_set_environment`, `_set_background`, `br_view3d_post` / `_add_post_pass` | Ambient, background, bloom/tone map/custom passes. |
-| `br_node3d_create(e, type)`, `_add_child`, `_set_position/rotation/euler/scale`, `_look_at`, `_destroy` | Scene graph. |
+| `br_node3d_create(e, type)`, `_add_child`, `_child_at`, `_set_position/rotation/euler/scale`, `_look_at`, `_destroy` | Scene graph (same verbs as `br_node_*`). |
 | `br_geometry3d_cube/sphere/plane/cylinder/cone/torus/capsule`, `br_geometry3d_create(desc)` | Geometry (full vertex layout, 32-bit indices, morph targets). |
 | `br_material3d_default(model)` + `br_material3d_create`, `br_material3d_get` | PBR / Phong / Flat / Toon / custom materials, edit live. |
 | `br_mesh3d_create(e, geo, mat)`, `br_mesh3d_get` (skin + morph slots) | A mesh node. |

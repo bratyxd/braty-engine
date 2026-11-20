@@ -41,10 +41,11 @@ packed, with text entry.
 
 API_REVIEW 42, 44, 45, 47, 49, 50 and 48.
 
-- Remove duplicates: `br_animator3d_*` (keep `br_animator`), `br_orbit_camera_*` in favour of
-  the `br_camera` orbit controller, `br_ticker_set_max_fps` in favour of `br_app_set_max_fps`,
-  the second colour helper, `br_engine_random*` in favour of `br_random` (the engine keeps one
-  seeded `br_random` reachable through one accessor).
+- Remove duplicates: the legacy glTF animator (keep `br_animator`), the legacy orbit camera in
+  favour of the `br_camera` orbit controller, the ticker's max-FPS setter in favour of
+  `br_app_set_max_fps`, the second colour helper, the engine RNG wrappers in favour of
+  `br_random` (the engine keeps one seeded `br_random` reachable through one accessor). Old
+  names: the migration table in `docs/API_REVIEW.md`.
 - Align 2D and 3D nodes: same verbs and argument order for create / destroy / parent / child
   iteration / find by label / visibility / layers / position-rotation-scale getters and setters /
   destroy listeners / counts. `br_node3d_*` mirrors `br_node_*`; where behaviour must differ the

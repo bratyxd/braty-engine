@@ -65,7 +65,7 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
 
 ## 2. Scene graph and data
 
-5. **bug - `br_scene_node_count` counts destroyed nodes** (`br_node.h` says "number of live
+5. **bug - `br_node_count` counts destroyed nodes** (`br_node.h` says "number of live
    nodes"; `engine/src/scene/br_node.c` returns the pool's `alive_count`, which drops only at the
    flush). Right after switching from the play scene the game logged 57 nodes, a few frames
    later 14. **Fix:** decrement a separate counter in `br_node_destroy`, or document "including
@@ -77,7 +77,7 @@ needs that is missing; **friction** = works, but awkward or easy to get wrong.
    count stays 6, so nothing is reloaded or lost). `br_assets_unload` can therefore never free
    a scene's atlas. **Fix:** Phase 2 Task 16 asset groups; interim: record the paths a load
    referenced (`br_scene_file_collect_assets` already finds them) on the root and drop them in
-   a `br_scene_on_node_destroy` listener.
+   a `br_node_on_destroy` listener.
    **Resolved (Task 16):** the outermost load of a scene file / prefab captures every reference
    it takes; a `br_scene`'s asset group or the subtree root owns them and releases them after the
    node flush. Measured: the soak's atlas count stays at 3 at every round start (bundle + old and
@@ -382,17 +382,13 @@ below, and removed one duplicate the list did not name (`br_gpu_set_vsync`, now 
 `br_app_set_vsync`). Items 23-25 above are ranked by the same review as the most valuable open
 ones from the earlier lists. Summary of the whole review: `docs/REVIEW_2026-11-20.md`.
 
-42. **friction - two ways to do one thing.** (a) `br_animator3d_*` (`br_anim3d.h`) is a legacy
-    shim over the unified `br_animator`, still public and still used by scene JSON
-    (`br_node_json_view3d.c`, `"animation"`), although Phase 2 Task 17 says it is replaced.
-    (b) `br_orbit_camera_*` (`br_camera3d.h`) next to the `camera.orbit` component.
-    (c) `br_ticker_set_max_fps` next to `br_app_set_max_fps` (`br_app.h`).
-    (d) `br_color_srgb_to_linear` (`br_material3d.h`) next to `br_color_to_linear` (`br_math.h`).
-    (e) `br_engine_random` / `_random_float` / `_set_seed` (`br_app.h`) next to
-    `br_random_engine(e)` + `br_random_*` (`br_random.h`). Every duplicate doubles what an agent
-    reads and must choose between. **Fix:** delete (c)-(e) now (one caller each); mark (a) and (b)
-    deprecated in their headers, move scene JSON `"animation"` to `br_animator`, delete them in
-    the next phase. Rank 1: cheap, and the cost grows with every game written.
+42. **friction - two ways to do one thing** (the legacy glTF animator next to `br_animator`, the
+    legacy orbit camera next to the `camera.orbit` component, a second max-FPS setter, a second
+    sRGB-to-linear colour helper, engine RNG wrappers next to `br_random_engine`).
+    **Resolved (Phase 3 Task A):** all five removed, no aliases; scene JSON `"animation"` and glTF
+    autoplay drive a `br_animator` (`br_animator_add_model_clips`). Old -> new names: the
+    migration table below. Test: the whole suite on the surviving API; `tests/test_gltf.c`,
+    `tests/test_gltf_scene.c` play glTF clips through `br_animator`.
 43. **friction - component fields are too narrow for data-driven games** (`br_node.h`,
     `br_field_type`). Types are bool / int / float / vec2 / vec3 / color / string / asset / node.
     Strings are `char[BR_FIELD_STRING_SIZE]` = 64, so 63 UTF-8 bytes: Crate Rush's sign `text`
@@ -402,24 +398,22 @@ ones from the earlier lists. Summary of the whole review: `docs/REVIEW_2026-11-2
     string freed with the row), `BR_FIELD_ENUM` with a name table, `BR_FIELD_VEC4` / `_QUAT`, a
     `BR_FIELD_NODE3D`, and a fixed-capacity array field (count + inline elements of one type).
     Rank 2: blocks localisation and every list-shaped design.
-44. **friction - 2D and 3D node APIs disagree** (`br_node.h` vs `br_view3d.h`). Position takes
-    `(x, y)` in 2D and a `br_vec3` in 3D; children by index in 2D (`br_node_child_at`) vs
-    first-child / next-sibling in 3D; `br_node_find_by_label(e, root, label, deep)` excludes root,
-    `br_node3d_find_by_label(e, root, label)` includes it and is always deep; layer bits are
-    "0 = inherit" in 2D (`br_node_set_layer_bits`) and "default 1, no inherit" in 3D
-    (`br_node3d_set_layer`); counts are `br_scene_node_count` vs `br_node3d_count`; destroy hooks
-    `br_scene_on_node_destroy` vs `br_node3d_on_destroy`. 3D lacks reparent-keeping-world,
-    add-child-at, world-to-local and an Euler getter. 3D components are declared in `br_gltf.h`
-    although they have nothing to do with glTF. An agent writing 3D code by analogy with 2D gets
-    each of these wrong once. **Fix:** add the missing 3D functions; give find-by-label the same
-    root / deep rule in both; rename the odd ones keeping the old names as one-line deprecated
-    wrappers for one phase; move the `br_component3d_*` block to `br_view3d.h`. Rank 3.
-45. **friction - "scene" means two things** (`br_node.h`, `br_scene.h`). `br_scene_root(e)` is
-    the stage (every node), `br_scene_root_2d(e, scene)` one loaded scene's root,
-    `br_scene_node_count` counts all nodes; modules "scene", "scenes", "scene_file" and "data"
-    (`br_data_register` lives in `br_scene_file.h`) are four names for overlapping things.
-    **Fix:** `br_stage(e)`, `br_node_count(e)`, `br_node_on_destroy(e, ...)` with the old names
-    kept as deprecated one-liners; "scene" then only means a loaded scene (`br_scene`). Rank 4.
+44. **friction - 2D and 3D node APIs disagree** (position types, child iteration, find-by-label
+    rules, layer-bit names, counts and destroy hooks; 3D lacked add-child-at, reparent keeping
+    the world transform, to_local and an Euler getter; 3D components were declared in
+    `br_gltf.h`). **Resolved (Phase 3 Task A):** `br_node3d_*` uses the verbs and argument order
+    of `br_node_*` (table below): setters take the vector their getter returns in both,
+    `child_count` + `child_at` in both, `find_by_label(e, root, label, deep)` with root excluded
+    and the same search order in both, `_layer_bits` in both (the 3D header says in one line how
+    0 differs), `br_node_count` / `br_node3d_count`, `br_node_on_destroy` /
+    `br_node3d_on_destroy`; new `br_node3d_add_child_at`, `_reparent`, `_to_global`,
+    `_to_local`, `_euler`; `br_component3d_*` is declared in `br_node.h` next to
+    `br_component_*`. Test: `tests/test_api_parity.c`.
+45. **friction - "scene" means two things** (the stage accessors were named `br_scene_*`).
+    **Resolved (Phase 3 Task A):** the stage is `br_stage_root`; node counts and destroy hooks
+    are `br_node_*`; "scene" only means the loadable unit (`br_scene.h`). Not renamed: the
+    module names "scene_file" and "data" (`br_data_register` in `br_scene_file.h`): renaming
+    modules is larger than this task and changes no call a game writes.
 46. **gap - pausing a game is incomplete** (`br_app.h`, `br_tween.h`, `br_animation.h`). System
     groups pause game systems, but tweens, animators, particles and audio are engine systems that
     keep running; `br_ticker_set_speed(0)` freezes the UI too, and there is no unscaled delta.
@@ -431,21 +425,29 @@ ones from the earlier lists. Summary of the whole review: `docs/REVIEW_2026-11-2
     `tests/test_app.c`, `test_unscaled_delta`, `test_pause_when_inactive`. Still open: tweens and
     animators have no unscaled flag, so they cannot keep animating a pause menu while
     `br_ticker_set_speed(e, 0)` stops the game.
-47. **friction - two mutation styles.** 2D nodes, audio and input use setters; `br_camera_get`,
-    `br_light3d_get`, `br_canvas3d_get`, `br_material3d_params`, `br_view3d_post` and
-    `br_animator3d_get` return a mutable struct pointer whose lifetime differs per module. An
-    agent cannot tell whether an edit needs a "dirty" call or whether the pointer survives the
-    next create. **Fix:** state the rule once in each header with the same wording ("valid until
-    the next create or destroy of this type; edits apply next frame"); long term one style per
-    kind of object. Rank 6: doc-only first step.
-48. **friction - two RNG and two colour helpers** are items 42 (d) and (e); listed here so a
-    search for "random" or "linear" finds them.
-49. **friction - getters are named three ways**: bare noun (`br_node_alpha`), `_get_`
-    (`br_text_get_text`, `br_node_get_bounds`, `br_view3d_get_stats`) and `_get` returning a
-    pointer (`br_camera_get`). **Fix:** bare noun for values, `_get` only for pointers into a
-    table; rename with deprecated wrappers. Rank 7.
-50. **friction - `br_node_set_blend_mode` takes `int`** because the advanced modes live in
-    `br_filter.h`. **Fix:** one `br_blend_mode` enum in `br_node.h`. Rank 8.
+47. **friction - two mutation styles** (setters next to `_get` lookups returning mutable struct
+    pointers whose lifetime differs per module). **Resolved, doc step (Phase 3 Task A):** the
+    pointer rule is stated once at the top of `br_core.h` ("valid until the next create or
+    destroy of that kind of object; edits are read by the next update or render") and repeated
+    in one identical line in every header that hands out such a pointer (`br_camera_get`,
+    `br_camera3d_get`, `br_light3d_get`, `br_canvas3d_get`, `br_mesh3d_get`,
+    `br_material3d_get`, `br_nine_slice_get`, `br_tiling_sprite_get`, `br_filters_get`,
+    `br_view3d_post`). **Still open:** one mutation style per kind of object (setters
+    everywhere, or struct pointers everywhere) is an API redesign of cameras, lights, materials
+    and post settings; left for a later phase.
+48. **friction - two RNG and two colour helpers** (part of item 42). **Resolved (Phase 3
+    Task A):** `br_random_engine(e)` + `br_random_*` and `br_color_to_linear` only.
+49. **friction - getters named three ways.** **Resolved (Phase 3 Task A):** one rule, stated at
+    the top of `br_core.h` and in AGENTS.md: `br_<module>_<noun>` returns a value and
+    `br_<module>_set_<noun>` sets it; `br_<module>_get_<noun>(..., T *out)` copies into the
+    caller's `*out`; `br_<module>[_<noun>]_get(e, key)` looks up what a handle / id / name /
+    path names. Where the bare noun is the name of the returned struct type (C has one name
+    space for both), the getter copies into `*out` (`br_camera_get_view`, `br_font_get_metrics`).
+    Renames: table below. Predicates (`br_node_is_descendant_of`, `br_node_is_culled`) keep
+    `is_`: they answer a question, they are not the getter of a setter.
+50. **friction - `br_node_set_blend_mode` takes `int`.** **Resolved (Phase 3 Task A):** one
+    `br_blend_mode` enum in `br_node.h` holds the built-in and the 21 advanced modes (same
+    values); `br_node_set_blend_mode` / `br_node_blend_mode` take and return it.
 51. **friction - path bases differ:** game.json and the asset root are relative to the
     executable, `--assets` / `--screenshot` / `--record` / `--profile` to the working directory,
     `br_file_*` to the asset root. **Fix:** document the three in `br_app.h` in one table; long
@@ -454,3 +456,54 @@ ones from the earlier lists. Summary of the whole review: `docs/REVIEW_2026-11-2
 52. **gap - audio has no volume getters and no global pause** (`br_audio.h`). Settings screens
     keep their own copy of bus volumes. **Fix:** `br_audio_bus_volume`, `br_audio_master_volume`,
     `br_audio_set_paused`. Rank 10.
+
+## Migration table (Phase 3 Task A)
+
+Every name below was removed without an alias: a game that still uses one gets a compiler
+error naming it; find it in the left column. "Signature" rows keep their name and change their
+arguments.
+
+| Old | New |
+|---|---|
+| `br_animator3d_play(e, n, "Run")` | `a = br_animator_add(e, br_anim_target_3d(n))`, `br_animator_add_model_clips(e, a, br_model3d_model(e, n))`, `br_animator_play(e, a, "Run")` |
+| `br_animator3d_play_index(e, n, i)` | `br_animator_play(e, a, model->clips[i].name)` (scene JSON `"animation": i` still works) |
+| `br_animator3d_cross_fade(e, n, clip, s)` | `br_animator_cross_fade(e, a, clip, s)` |
+| `br_animator3d_stop(e, n)` | `br_animator_stop(e, a)` |
+| `br_animator3d_get(e, n)->speed / ->loop / ->paused / ->time` | `br_animator_set_speed`, `br_animator_set_loop(e, a, 0, BR_ANIM_LOOP or BR_ANIM_CLAMP)`, `br_animator_set_paused`, `br_animator_set_time(e, a, 0, t)`; read with `br_animator_time`, `br_animator_current`, `br_animator_fade_progress` |
+| `br_animator3d_get(e, n)->on_event` (`br_anim3d_event`, `br_anim3d_event_fn`, `BR_ANIM3D_EVENT_LOOP / _END`) | `br_animator_finished(e, a, 0)` for the end of a ONCE / CLAMP clip; markers through `br_animator_set_event_callback` |
+| `br_animator3d_count(e)` | `br_animator_count(e)` (counts animators, not model instances) |
+| `br_animator3d` (type) | `br_animator` (handle) |
+| `BR_PROFILER_ANIMATORS_3D` ("3D animators") | `BR_PROFILER_MODELS_3D` ("3D models", the same value: model instances alive) |
+| `br_orbit_camera` (type) | `br_camera_orbit` (`br_camera.h`, the `camera.orbit` component's data) |
+| `br_orbit_camera_make(target, d, yaw, pitch)` | `br_camera_orbit_make(target, d, yaw, pitch)` |
+| `br_orbit_camera_update(e, &orbit, camera3d)` / `br_orbit_camera_apply` | a `br_camera_create_3d` camera with the `camera.orbit` component (`*(br_camera_orbit *)br_component_add(e, cam, br_camera_orbit_component(e)) = br_camera_orbit_make(...)`) |
+| `br_ticker_set_max_fps(e, fps)` | `br_app_set_max_fps(e, fps)` |
+| `br_color_srgb_to_linear(c)` | `br_color_to_linear(c)` |
+| `br_engine_random(e)` | `br_random_u32(br_random_engine(e))` |
+| `br_engine_random_float(e)` | `br_random_float(br_random_engine(e))` |
+| `br_engine_set_seed(e, seed)` | `br_random_seed(br_random_engine(e), seed, 0)` |
+| `br_scene_root(e)` | `br_stage_root(e)` |
+| `br_scene_node_count(e)` | `br_node_count(e)` |
+| `br_scene_on_node_destroy(e, fn, user)` | `br_node_on_destroy(e, fn, user)` |
+| `br_node_set_position(e, n, x, y)` (also `_set_scale`, `_set_skew`, `_set_pivot`, `_set_origin`) | signature: `br_node_set_position(e, n, br_vec2_make(x, y))` |
+| `br_node3d_create_group(e)`, `BR_NODE3D_TYPE_GROUP` | `br_node3d_create_container(e)`, `BR_NODE3D_TYPE_CONTAINER` (scene JSON type still `"group"`) |
+| `br_node3d_first_child(e, n)` / `br_node3d_next_sibling(e, c)` | `for (i = 0; i < br_node3d_child_count(e, n); i++) c = br_node3d_child_at(e, n, i);` |
+| `br_node3d_find_by_label(e, root, label)` | signature: `br_node3d_find_by_label(e, root, label, true)`; root itself is no longer matched |
+| `br_node3d_set_layer(e, n, bits)` / `br_node3d_layer(e, n)` | `br_node3d_set_layer_bits` / `br_node3d_layer_bits` |
+| `br_node3d_local_matrix` / `br_node3d_world_matrix` | `br_node3d_local_transform` / `br_node3d_world_transform` |
+| `br_node3d_set_euler(e, n, x, y, z)` | signature: `br_node3d_set_euler(e, n, br_vec3_make(x, y, z))`; getter `br_node3d_euler` |
+| (none) | new: `br_node3d_add_child_at`, `br_node3d_reparent`, `br_node3d_to_global`, `br_node3d_to_local`, `br_node3d_euler` |
+| `br_component3d_*` in `br_gltf.h` | same names, declared in `br_node.h` |
+| `br_node_get_bounds` / `br_node_get_local_bounds` | `br_node_bounds` / `br_node_local_bounds` |
+| `br_text_get_text` | `br_text_text` |
+| `br_animator_get_float` | `br_animator_float` |
+| `br_node_is_render_group` | `br_node_render_group` |
+| `br_debug_set_open` / `br_debug_is_open` | `br_debug_set_visible` / `br_debug_visible` |
+| `br_profiler_set_open` / `br_profiler_is_open` | `br_profiler_set_visible` / `br_profiler_visible` |
+| `br_component_get_desc` | `br_component_desc_get` |
+| `br_anim_property_get_desc` | `br_anim_property_desc_get` |
+| `br_material3d_params` | `br_material3d_get` |
+| `br_camera_view v = br_camera_get_view(e, cam)` | signature: `br_camera_get_view(e, cam, &v)` (false if not a camera) |
+| `br_font_metrics m = br_font_get_metrics(font, size)` | signature: `br_font_get_metrics(font, size, &m)` (false if font is NULL) |
+| `br_node_set_blend_mode(e, n, int)` / `int br_node_blend_mode` | signature: takes / returns `br_blend_mode` |
+| `br_blend_advanced` (`br_filter.h`) | `br_blend_mode` (`br_node.h`), same `BR_BLEND_*` values |

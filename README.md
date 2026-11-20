@@ -113,7 +113,8 @@ Everything the numbers mean: `docs/PROFILING.md`.
 Both build from the root project or on their own (`cmake -S sample_projects/<name> -B
 build/<name> -G Ninja -DCMAKE_PREFIX_PATH=<SDL3>`), copy their `data/` next to the executable,
 and ship a `playtest/round.json` that CTest runs headless. What writing them taught us about the
-API: `docs/API_REVIEW.md` (Star Courier: items 1-22, Crate Rush: 23-41).
+API: `docs/API_REVIEW.md` (Star Courier: items 1-22, Crate Rush: 23-41; the full review: 42-52;
+renamed and removed functions: its migration table).
 
 ### Crate Rush (3D)
 
