@@ -116,7 +116,7 @@ static bool write_file(const char *root, const char *path, const void *data, siz
 static bool stage_file(const char *root, const char *from, const char *to)
 {
     char src[1024];
-    SDL_snprintf(src, sizeof(src), "%s../../%s", SDL_GetBasePath(), from);
+    SDL_snprintf(src, sizeof(src), "%s/%s", BRATY_SOURCE_DIR, from);
     size_t size = 0;
     void *data = SDL_LoadFile(src, &size);
     if (data == NULL) {
@@ -289,7 +289,7 @@ static void register_components(br_engine *e)
 int main(void)
 {
     char doc_path[1024];
-    SDL_snprintf(doc_path, sizeof(doc_path), "%s../../docs/DATA_FORMATS.md", SDL_GetBasePath());
+    SDL_snprintf(doc_path, sizeof(doc_path), "%s/docs/DATA_FORMATS.md", BRATY_SOURCE_DIR);
     size_t size = 0;
     char *doc = SDL_LoadFile(doc_path, &size);
     BR_CHECK(doc != NULL);

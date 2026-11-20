@@ -506,7 +506,7 @@ static void test_debug(br_engine *e)
 
 int main(void)
 {
-    br_engine *e = br_engine_create("test_scene_file", "../../examples");
+    br_engine *e = br_engine_create("test_scene_file", BRATY_SOURCE_DIR "/examples");
     if (e == NULL) {
         printf("no engine\n");
         return 1;

@@ -350,7 +350,7 @@ int main(void)
     test_sampling();
     test_two_bone_skin();
     test_decompose();
-    br_engine *e = br_engine_create("test_gltf", "../../tests/data"); /* relative to the exe */
+    br_engine *e = br_engine_create("test_gltf", BRATY_SOURCE_DIR "/tests/data"); /* the source tree (CMake) */
     BR_CHECK(e != NULL);
     if (e != NULL) {
         test_parse(e);

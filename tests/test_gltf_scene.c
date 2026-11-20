@@ -421,7 +421,7 @@ static void test_scene_json(br_engine *e)
 
 int main(void)
 {
-    br_engine *e = br_engine_create("test_gltf_scene", "../../tests/data"); /* relative to the exe */
+    br_engine *e = br_engine_create("test_gltf_scene", BRATY_SOURCE_DIR "/tests/data"); /* the source tree (CMake) */
     BR_CHECK(e != NULL);
     if (e != NULL) {
         register_components(e);

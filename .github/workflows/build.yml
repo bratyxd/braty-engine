@@ -2,8 +2,10 @@
 # runs the headless tests (ctest).
 #
 # NOT YET RUN: this workflow was written without access to GitHub Actions. Only the Windows/GCC
-# build has ever been run (locally); the Linux and macOS jobs are the first time those platforms
-# get built at all, so expect fixes. SDL 3.4.20 is fetched and built by CMake (FetchContent),
+# build has ever been run (locally); the MSVC, Linux and macOS jobs are the first time those
+# toolchains / platforms get built at all, so expect fixes. Engine warnings are errors
+# (BRATY_WERROR). The Windows/GCC job also builds and tests the release preset in a build
+# directory of a different depth (tests must not depend on where the build directory is). SDL 3.4.20 is fetched and built by CMake (FetchContent),
 # which takes a few minutes per job. No GPU on CI runners: tests are headless by design; the
 # examples and the game are built, not run.
 name: build
@@ -30,11 +32,28 @@ jobs:
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
       - name: Configure
-        run: cmake --preset windows-gcc
+        run: cmake --preset windows-gcc -DBRATY_WERROR=ON
       - name: Build
         run: cmake --build --preset windows-gcc
       - name: Test
         run: ctest --preset windows-gcc
+      - name: Release (configure, build, test in build/ci/release)
+        run: |
+          cmake --preset windows-gcc-release -B build/ci/release -DBRATY_WERROR=ON
+          cmake --build build/ci/release
+          ctest --test-dir build/ci/release --output-on-failure
+
+  windows-msvc:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Configure
+        run: cmake --preset windows-msvc -DBRATY_WERROR=ON
+      - name: Build
+        run: cmake --build --preset windows-msvc
+      - name: Test
+        run: ctest --preset windows-msvc
 
   linux:
     runs-on: ubuntu-24.04
@@ -51,7 +70,7 @@ jobs:
             libxkbcommon-dev libwayland-dev wayland-protocols libegl1-mesa-dev libdrm-dev libgbm-dev \
             libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev libdbus-1-dev
       - name: Configure
-        run: cmake --preset linux
+        run: cmake --preset linux -DBRATY_WERROR=ON
       - name: Build
         run: cmake --build --preset linux
       - name: Test
@@ -67,7 +86,7 @@ jobs:
       - name: Install Ninja
         run: brew install ninja
       - name: Configure
-        run: cmake --preset macos
+        run: cmake --preset macos -DBRATY_WERROR=ON
       - name: Build
         run: cmake --build --preset macos
       - name: Test

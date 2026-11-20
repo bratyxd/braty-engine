@@ -440,7 +440,7 @@ static void test_click_with_camera(void)
 
 static void test_profile_and_scene(void)
 {
-    br_engine *e = br_engine_create("test_playtest_profile", "../../tests/data");
+    br_engine *e = br_engine_create("test_playtest_profile", BRATY_SOURCE_DIR "/tests/data");
     BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"engine:scene\"}", "\"value\":\"\""));
     BR_CHECK(reply_has(e, "{\"cmd\":\"profile\",\"frames\":10}", "\"ok\":true,\"frame\":10,\"profile\":{\"frames\":9"));
     BR_CHECK(reply_has(e, "{\"cmd\":\"profile\"}", "\"frame\":310,\"profile\":{\"frames\":299"));
@@ -520,6 +520,10 @@ static void test_examples_headless(void)
 
 static void test_stdin_session(void)
 {
+#ifndef BRATY_PLAYTEST_STDIN
+    printf("test_stdin_session skipped: BRATY_PLAYTEST_STDIN is off (release preset)\n");
+    return;
+#endif
     char path[1024];
     if (!example_path("hello_quad", path, sizeof(path))) {
         return;

@@ -1,6 +1,10 @@
 {
   "version": 6,
-  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
   "configurePresets": [
     {
       "name": "base",
@@ -12,18 +16,31 @@
       }
     },
     {
+      "name": "release",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BRATY_PROFILER": "OFF",
+        "BRATY_PLAYTEST_STDIN": "OFF"
+      }
+    },
+    {
       "name": "windows-gcc",
       "displayName": "Windows, MinGW-w64 GCC + Ninja (tested)",
       "inherits": "base",
       "generator": "Ninja",
-      "cacheVariables": { "CMAKE_C_COMPILER": "gcc" }
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc"
+      }
     },
     {
       "name": "windows-msvc",
       "displayName": "Windows, MSVC + Ninja (untested; run from a VS developer prompt)",
       "inherits": "base",
       "generator": "Ninja",
-      "cacheVariables": { "CMAKE_C_COMPILER": "cl" }
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl"
+      }
     },
     {
       "name": "linux",
@@ -58,18 +75,146 @@
         "ANDROID_PLATFORM": "android-24",
         "BRATY_BUILD_TESTS": "OFF"
       }
+    },
+    {
+      "name": "windows-gcc-release",
+      "displayName": "Windows, MinGW-w64 GCC + Ninja (tested), release",
+      "inherits": [
+        "release",
+        "windows-gcc"
+      ]
+    },
+    {
+      "name": "windows-msvc-release",
+      "displayName": "Windows, MSVC + Ninja (untested; run from a VS developer prompt), release",
+      "inherits": [
+        "release",
+        "windows-msvc"
+      ]
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux, system compiler + Ninja (untested), release",
+      "inherits": [
+        "release",
+        "linux"
+      ]
+    },
+    {
+      "name": "macos-release",
+      "displayName": "macOS, Apple clang + Ninja (untested), release",
+      "inherits": [
+        "release",
+        "macos"
+      ]
+    },
+    {
+      "name": "ios-release",
+      "displayName": "iOS, Xcode (untested), release",
+      "inherits": [
+        "release",
+        "ios"
+      ]
+    },
+    {
+      "name": "android-release",
+      "displayName": "Android, NDK toolchain + Ninja (untested; set ANDROID_NDK), release",
+      "inherits": [
+        "release",
+        "android"
+      ]
     }
   ],
   "buildPresets": [
-    { "name": "windows-gcc", "configurePreset": "windows-gcc" },
-    { "name": "windows-msvc", "configurePreset": "windows-msvc" },
-    { "name": "linux", "configurePreset": "linux" },
-    { "name": "macos", "configurePreset": "macos" }
+    {
+      "name": "windows-gcc",
+      "configurePreset": "windows-gcc"
+    },
+    {
+      "name": "windows-msvc",
+      "configurePreset": "windows-msvc"
+    },
+    {
+      "name": "linux",
+      "configurePreset": "linux"
+    },
+    {
+      "name": "macos",
+      "configurePreset": "macos"
+    },
+    {
+      "name": "windows-gcc-release",
+      "configurePreset": "windows-gcc-release"
+    },
+    {
+      "name": "windows-msvc-release",
+      "configurePreset": "windows-msvc-release"
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release"
+    },
+    {
+      "name": "macos-release",
+      "configurePreset": "macos-release"
+    }
   ],
   "testPresets": [
-    { "name": "windows-gcc", "configurePreset": "windows-gcc", "output": { "outputOnFailure": true } },
-    { "name": "windows-msvc", "configurePreset": "windows-msvc", "output": { "outputOnFailure": true } },
-    { "name": "linux", "configurePreset": "linux", "output": { "outputOnFailure": true } },
-    { "name": "macos", "configurePreset": "macos", "output": { "outputOnFailure": true } }
+    {
+      "name": "windows-gcc",
+      "configurePreset": "windows-gcc",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-msvc",
+      "configurePreset": "windows-msvc",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux",
+      "configurePreset": "linux",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos",
+      "configurePreset": "macos",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-gcc-release",
+      "configurePreset": "windows-gcc-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-msvc-release",
+      "configurePreset": "windows-msvc-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-release",
+      "configurePreset": "macos-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
   ]
 }

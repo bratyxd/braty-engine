@@ -426,7 +426,7 @@ static void test_game_config_keys(void)
     SDL_SetLogOutputFunction(g_default_log, g_default_log_user);
     BR_CHECK(g_unknown_key_warnings == 0);
 
-    br_engine *e = br_engine_create("test_scene_config", "../../tests/data");
+    br_engine *e = br_engine_create("test_scene_config", BRATY_SOURCE_DIR "/tests/data");
     br_game_config_apply(e, &config); /* the engine takes the JSON; no start scene */
     br_scene s = br_scene_load(e, "first", BR_SCENE_SINGLE);
     BR_CHECK(br_scene_is_loaded(e, s) && strcmp(br_scene_name(e, s), "first") == 0);
@@ -450,7 +450,7 @@ static void test_game_config_profiler_logical(void)
     BR_CHECK(g_unknown_key_warnings == 0);
     BR_CHECK(config.logical_width == 640.0f && config.logical_height == 360.0f);
 
-    br_engine *e = br_engine_create("test_scene_config_logical", "../../tests/data");
+    br_engine *e = br_engine_create("test_scene_config_logical", BRATY_SOURCE_DIR "/tests/data");
     br_camera_set_headless_screen(e, 1280.0f, 720.0f);
     br_game_config_apply(e, &config);
     BR_CHECK(br_profiler_hud(e) && br_profiler_is_open(e));
@@ -472,7 +472,7 @@ static void test_game_config_profiler_logical(void)
 
 static void test_deterministic_order(void)
 {
-    br_engine *e = br_engine_create("test_scene_det", "../../tests/data");
+    br_engine *e = br_engine_create("test_scene_det", BRATY_SOURCE_DIR "/tests/data");
     br_app_set_deterministic(e, true, 1);
     br_scene s = br_scene_load_async(e, "scenes/a.scene.json", BR_SCENE_SINGLE);
     float progress[6];
@@ -490,7 +490,7 @@ static void test_deterministic_order(void)
 
 int main(void)
 {
-    br_engine *e = br_engine_create("test_scene", "../../tests/data"); /* relative to the exe */
+    br_engine *e = br_engine_create("test_scene", BRATY_SOURCE_DIR "/tests/data"); /* the source tree (CMake) */
     event_log log;
     log.text[0] = '\0';
     br_scene_on_event(e, on_scene_event, &log);
