@@ -293,13 +293,7 @@ static void br_trace_frame(br_profiler_state *p, br_array *buf, const br_profile
 /* Absolute path: relative paths are relative to the working directory, like --screenshot. */
 static bool br_profiler_out_path(const char *path, char *out, size_t size)
 {
-    if (br_path_is_absolute(path)) {
-        return br_str_copy(out, size, path);
-    }
-    char *cwd = SDL_GetCurrentDirectory();
-    bool ok = cwd != NULL ? br_path_join(out, size, cwd, path) : br_str_copy(out, size, path);
-    SDL_free(cwd);
-    return ok;
+    return br_file_resolve_cwd(path, out, size);
 }
 
 bool br_profiler_save(br_engine *e, const char *path)

@@ -1,5 +1,6 @@
 /* SDL main-callback glue: command line, the per-frame tick, --frames / --screenshot. */
 #include "app/br_engine_internal.h"
+#include "core/br_storage_internal.h"
 #include "data/br_data_internal.h"
 #include "playtest/br_playtest_internal.h"
 #include "braty/br_audio.h"
@@ -20,6 +21,8 @@ typedef struct br_app_args {
     const char *playtest; /* --playtest FILE */
     bool        playtest_stdin;
     const char *record;   /* --record FILE */
+    const char *packs[8]; /* --pack FILE (repeatable; the first given wins) */
+    uint32_t    pack_count;
 } br_app_args;
 
 static void br_app_parse_args(int argc, char **argv, br_app_args *out)
@@ -53,6 +56,13 @@ static void br_app_parse_args(int argc, char **argv, br_app_args *out)
             out->playtest_stdin = true;
         } else if (SDL_strcmp(argv[i], "--record") == 0 && has_value) {
             out->record = argv[++i];
+        } else if (SDL_strcmp(argv[i], "--pack") == 0 && has_value) {
+            if (out->pack_count < BR_ARRAY_COUNT(out->packs)) {
+                out->packs[out->pack_count++] = argv[i + 1];
+            } else {
+                br_log_error("--pack: at most %u packs, '%s' ignored", (unsigned)BR_ARRAY_COUNT(out->packs), argv[i + 1]);
+            }
+            i++;
         }
         /* anything else belongs to the game (it sees argv in br_main) */
     }
@@ -66,8 +76,7 @@ static void br_app_parse_args(int argc, char **argv, br_app_args *out)
 
 static void br_png_write_callback(void *context, void *data, int size)
 {
-    SDL_IOStream *io = context;
-    SDL_WriteIO(io, data, (size_t)size);
+    br_array_push_n(context, data, (uint32_t)size);
 }
 
 /* Averages each n x n block of RGBA pixels into one, in place. Returns the new size. */
@@ -124,21 +133,40 @@ bool br_engine_screenshot_downsampled(br_engine *e, const char *path, uint32_t d
     if (downsample > 1 && width >= downsample && height >= downsample) {
         br_app_downsample(pixels, &width, &height, downsample);
     }
-    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
-    bool ok = false;
-    if (io == NULL) {
-        br_log_error("screenshot: cannot open '%s': %s", path, SDL_GetError());
+    /* a command-line path: relative to the working directory (br_core.h path table) */
+    char full[1024];
+    br_array png;
+    br_array_init(&png, 1);
+    bool ok = br_file_resolve_cwd(path, full, sizeof(full)) &&
+              stbi_write_png_to_func(br_png_write_callback, &png, (int)width, (int)height, 4, pixels, (int)width * 4) != 0 &&
+              br_file_write_all(e, full, png.data, png.count);
+    if (ok) {
+        br_log_info("screenshot: wrote %ux%u to '%s'", width, height, path);
     } else {
-        ok = stbi_write_png_to_func(br_png_write_callback, io, (int)width, (int)height, 4, pixels, (int)width * 4) != 0;
-        ok = SDL_CloseIO(io) && ok;
-        if (ok) {
-            br_log_info("screenshot: wrote %ux%u to '%s'", width, height, path);
-        } else {
-            br_log_error("screenshot: cannot write '%s'", path);
-        }
+        br_log_error("screenshot: cannot write '%s'", path);
     }
+    br_array_free(&png);
     br_free(pixels);
     return ok;
+}
+
+/* The start-up failure dialog: the last error and where the log file is. */
+static void br_app_show_start_error(br_engine *e, const char *title)
+{
+    char text[1536];
+    const char *reason = e != NULL ? br_storage_last_error(e) : "";
+    int n = SDL_snprintf(text, sizeof(text), "%s could not start.\n\n%s", title,
+                         reason[0] != 0 ? reason : "Out of memory, or no window or GPU could be created.");
+    char log_file[1024];
+    if (e != NULL && br_storage_log_location(e, log_file, sizeof(log_file))) {
+        br_storage_flush_log(e); /* now, not at exit: the player may look before closing the dialog */
+        if (n > 0 && (size_t)n < sizeof(text)) {
+            SDL_snprintf(text + n, sizeof(text) - (size_t)n, "\n\nDetails: %s", log_file);
+        }
+    }
+    if (!SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, title, text, e != NULL ? e->window : NULL)) {
+        br_log_error("start-up dialog: %s", SDL_GetError());
+    }
 }
 
 /* Window, game.json (desc->config), the game's init, the start scene. */
@@ -199,22 +227,32 @@ SDL_AppResult br_app_init(void **appstate, const br_app_desc *desc, int argc, ch
     char override_root[1024];
     if (args.assets != NULL && args.assets[0] != '\0') {
         /* relative to the working directory (a shell path), unlike asset_root (exe-relative) */
-        char *cwd = SDL_GetCurrentDirectory();
-        bool ok = br_path_is_absolute(args.assets) || cwd == NULL
-                      ? br_str_copy(override_root, sizeof(override_root), args.assets)
-                      : br_path_join(override_root, sizeof(override_root), cwd, args.assets);
-        SDL_free(cwd);
-        if (ok) {
+        if (br_file_resolve_cwd(args.assets, override_root, sizeof(override_root))) {
             asset_root = override_root;
             br_log_info("asset root overridden: %s", override_root);
         } else {
             br_log_error("--assets / BRATY_ASSETS: path too long, ignored");
         }
     }
+    /* a player sees a dialog when the game cannot start; scripted runs must never block on one */
+    bool interactive = !args.headless && args.frames == 0 && !args.deterministic && args.playtest == NULL &&
+                       !args.playtest_stdin;
     br_engine *e = br_engine_create(title, asset_root);
     bool ok = e != NULL;
     if (ok) {
         *appstate = e;
+#ifdef NDEBUG
+        if (interactive) {
+            br_save_set_log_file(e, "log.txt");
+        }
+#endif
+        for (uint32_t i = 0; i < args.pack_count; i++) {
+            char full[1024];
+            /* a bad pack is logged and skipped: loose files (or the next pack) may still do */
+            if (br_file_resolve_cwd(args.packs[i], full, sizeof(full))) {
+                br_file_mount_pack(e, full);
+            }
+        }
         e->frame_limit = args.frames;
         e->screenshot_path = br_strdup(args.screenshot);
         e->app_user = desc->user;
@@ -230,6 +268,9 @@ SDL_AppResult br_app_init(void **appstate, const br_app_desc *desc, int argc, ch
     if (desc->config != NULL) {
         br_game_config_free(desc->config);
         br_free(desc->config);
+    }
+    if (!ok && interactive) {
+        br_app_show_start_error(e, title);
     }
     return ok ? SDL_APP_CONTINUE : SDL_APP_FAILURE;
 }

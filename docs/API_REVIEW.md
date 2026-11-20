@@ -452,7 +452,11 @@ ones from the earlier lists. Summary of the whole review: `docs/REVIEW_2026-11-2
     executable, `--assets` / `--screenshot` / `--record` / `--profile` to the working directory,
     `br_file_*` to the asset root. **Fix:** document the three in `br_app.h` in one table; long
     term route all file access through one storage layer (title storage for data, user storage
-    for saves). Rank 9.
+    for saves). Rank 9. **Resolved (Phase 3 Task B3):** one storage layer (`engine/src/core/br_file.c`,
+    `br_pack.c`) opens every file; the path table (asset root = loose files + `.brpack` packs,
+    executable folder, working directory, user storage) is at the "files" section of
+    `br_core.h`, with `br_file_resolve` / `_resolve_exe` / `_resolve_cwd`; packs, the log file
+    and the start-up dialog came with it.
 52. **gap - audio has no volume getters and no global pause** (`br_audio.h`). Settings screens
     keep their own copy of bus volumes. **Fix:** `br_audio_bus_volume`, `br_audio_master_volume`,
     `br_audio_set_paused`. Rank 10.

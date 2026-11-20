@@ -128,7 +128,7 @@ static void br_config_warn_keys(const char *source, const char *section, const c
 static void br_config_check_keys(const char *source, const cJSON *doc)
 {
     br_config_warn_keys(source, "", doc,
-                        " window asset_root manifest start_scene scenes clear_color ticker input audio debug profiler save game ");
+                        " window asset_root manifest start_scene scenes clear_color ticker input audio debug profiler save game packs ");
     const char *sections[] = { "window", "ticker", "debug", "audio", "profiler", "save" };
     const char *keys[] = { " title width height fullscreen vsync resizable logical_size pause_when_inactive ", " max_fps min_fps speed fixed_hz ",
                            " overlay toggle_key keys hot_reload ", " master_volume muted buses sprites ", " hud panel ", " org app " };
@@ -228,6 +228,19 @@ bool br_game_config_parse(const char *json, size_t size, const char *source_name
         br_config_error(&r, "input", "expected an object of actions");
     }
     br_config_section(&r, doc, "audio");
+    r.section = "";
+    const cJSON *packs = cJSON_GetObjectItemCaseSensitive(doc, "packs");
+    const cJSON *pack = NULL;
+    if (packs != NULL && !cJSON_IsArray(packs)) {
+        br_config_error(&r, "packs", "expected an array of .brpack paths (relative to the executable)");
+    }
+    const cJSON *pack_list = cJSON_IsArray(packs) ? packs : NULL;
+    cJSON_ArrayForEach(pack, pack_list)
+    {
+        if (!cJSON_IsString(pack) || pack->valuestring[0] == '\0') {
+            br_config_error(&r, "packs", "every entry must be a .brpack path");
+        }
+    }
     const cJSON *scenes = cJSON_GetObjectItemCaseSensitive(doc, "scenes");
     const cJSON *scene = NULL;
     if (scenes != NULL && !cJSON_IsObject(scenes)) {
@@ -251,20 +264,14 @@ bool br_game_config_load(br_engine *e, const char *path, br_game_config *config)
     (void)e; /* the file is always relative to the executable dir, engine or not */
     br_game_config_defaults(config);
     char full[1024];
-    const char *base = SDL_GetBasePath();
-    if (br_path_is_absolute(path)) {
-        br_str_copy(full, sizeof(full), path);
-    } else {
-        br_path_join(full, sizeof(full), base != NULL ? base : "", path);
-    }
     size_t size = 0;
-    void *bytes = SDL_LoadFile(full, &size);
-    if (bytes == NULL) {
-        br_log_error("%s: cannot read game config: %s", full, SDL_GetError());
+    void *bytes = NULL;
+    if (!br_file_resolve_exe(path, full, sizeof(full)) || !br_file_read_all(NULL, full, &bytes, &size)) {
+        br_log_error("%s: cannot read game config", path);
         return false;
     }
     bool ok = br_game_config_parse(bytes, size, path, config);
-    SDL_free(bytes);
+    br_free(bytes);
     return ok;
 }
 
@@ -353,8 +360,32 @@ static void br_config_apply_audio(br_engine *e, const cJSON *audio)
     }
 }
 
+/* "packs": [".brpack paths, relative to the executable"], mounted in order (the first wins).
+ * A missing pack is a warning: a development folder has the loose files instead. */
+static void br_config_mount_packs(br_engine *e, const cJSON *packs)
+{
+    const cJSON *pack = NULL;
+    int index = 0;
+    const cJSON *pack_list = cJSON_IsArray(packs) ? packs : NULL;
+    cJSON_ArrayForEach(pack, pack_list)
+    {
+        char full[1024];
+        if (cJSON_IsString(pack) && pack->valuestring[0] != '\0' &&
+            br_file_resolve_exe(pack->valuestring, full, sizeof(full))) {
+            if (!br_file_exists(e, full)) {
+                br_log_info("game.json: packs[%d]: '%s' not found; using loose files", index, full);
+            } else {
+                br_file_mount_pack(e, full); /* a hostile pack is logged and skipped */
+            }
+        }
+        index++;
+    }
+}
+
 void br_game_config_apply_settings(br_engine *e, br_game_config *config)
 {
+    /* packs first: everything below may read files */
+    br_config_mount_packs(e, cJSON_GetObjectItemCaseSensitive(config->json, "packs"));
     SDL_Window *window = br_engine_window(e);
     br_gpu *gpu = br_engine_gpu(e);
     if (window != NULL) {

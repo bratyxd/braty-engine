@@ -85,7 +85,15 @@ br_app_desc br_main(int argc, char **argv)
 out.png` (last frame as PNG), `--gpu-driver vulkan|direct3d12|metal`, `--headless` (no window or
 GPU), `--assets DIR` / `BRATY_ASSETS` (asset root, working-directory relative), `--vsync
 off|on|adaptive|mailbox`, `--max-fps N`, `--deterministic [--seed N]`, `--playtest FILE`,
-`--playtest-stdin`, `--record FILE` (docs/PLAYTESTING.md). The command line overrides game.json.
+`--playtest-stdin`, `--record FILE` (docs/PLAYTESTING.md), `--pack FILE` (mount a `.brpack`,
+working-directory relative, repeatable, before game.json `"packs"`). The command line overrides
+game.json. Path bases for all of these: the table in `br_core.h` ("files").
+
+**Start-up errors.** When `br_app_init` fails (game.json, window, GPU, `init`, the start scene)
+in an interactive run, the player gets an SDL message box with the last error logged (and, in
+release builds, where `log.txt` is). Never with `--headless`, `--frames`, `--deterministic` or a
+play-test, so CTest and scripts never block on a dialog. Release builds also mirror the log into
+`log.txt` in user storage for interactive runs (`br_save_set_log_file`).
 
 Measured FPS cap accuracy (RTX 3060 Ti, D3D12, `hello_quad --vsync off --max-fps N --frames
 250`, first 10 frames excluded): 30 -> 33.333 ms average (max 33.97), 60 -> 16.667 ms (max
@@ -95,6 +103,10 @@ average error at 60 / 144.
 ## Gotchas
 
 - Include `braty_main.h` in exactly one `.c` file; it defines the SDL main callbacks.
+- Shipping: `braty_install_game(<target> <data dir>)` in the game's CMakeLists, then `cmake
+  --install <build> --prefix <folder>` gives `<folder>/<target>/` with the exe, game.json (with
+  `"packs": ["assets.brpack"]` added when it lists none), `assets.brpack` and the SDL runtime
+  if SDL is shared. Both samples call it.
 - No globals: hang state off the `user` pointer, free it in a `br_engine_on_shutdown` callback
   (or `desc.shutdown`). Exit order: every 3D and 2D node is destroyed first (their destroy
   listeners still see your state), then `desc.shutdown`, then shutdown callbacks in reverse order
