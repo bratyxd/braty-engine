@@ -73,7 +73,8 @@ static void cr_player_input_system(br_engine *e, float dt, void *user)
 
 /* ---- movement and collision */
 
-/* Indices of the colliders near the player (frame-arena scratch: gone next frame). */
+/* Indices of the colliders near the player (frame-arena scratch: gone next frame).
+ * ponytail: a linear scan of every box (11-20 per level); a uniform grid if levels grow to hundreds. */
 static uint32_t *cr_candidates(br_engine *e, cr_game *g, br_vec3 at, float reach, uint32_t *count)
 {
     uint32_t *list = br_frame_alloc(e, sizeof(uint32_t) * (g->collider_count > 0 ? g->collider_count : 1));
@@ -97,6 +98,8 @@ static void cr_closest_xz(const br_aabb *b, float x, float z, float *cx, float *
     *cz = SDL_clamp(z, b->min.z, b->max.z);
 }
 
+/* ponytail: axis-aligned boxes only, X/Z then Y, no slopes or steps; sloped kit pieces would need
+ * a height query (ray down against the meshes) and a step-up rule. */
 static void cr_resolve_xz(cr_game *g, const cr_tuning *t, cr_player *p, const uint32_t *list, uint32_t n)
 {
     for (uint32_t k = 0; k < n; k++) {

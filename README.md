@@ -13,29 +13,36 @@ prefabs, manifests, spritesheets) plus plain C structs and the systems that iter
 
 ## Status
 
-Phase 1 (Tasks 1-12 of `docs/plans/2026-11-19-braty-engine.md`, glTF included) is implemented,
-and Phase 2 (`docs/plans/2026-11-19-braty-engine-phase2.md`) Tasks 14-17 and 18b: memory
-arenas, frame pacing, `--deterministic`, play-testing and golden images (14); input, math audit,
-component queries (14c); cameras and 2D in 3D (15); scenes and asset groups (16); animation and
-tweens (17); the profiler (18b). Task 18 (glTF as scene content) is in progress; Tasks 19-20 (a
-second sample game, integration review) are open.
+Phase 1 (Tasks 1-12 of `docs/plans/2026-11-19-braty-engine.md`) and Phase 2 Tasks 14-19
+(`docs/plans/2026-11-19-braty-engine-phase2.md`) are implemented: memory arenas, frame pacing,
+`--deterministic`, play-testing and golden images (14); input, math audit, component queries
+(14c); cameras and 2D in 3D (15); scenes and asset groups (16); animation and tweens (17); the
+profiler (18b); glTF as scene content (18); the second sample game, Crate Rush (19). Task 20
+(integration review) is open.
 
-`ctest` runs 30 headless test programs, Star Courier's play-test script and 21 golden images;
-20 examples and one sample game run on **Windows 11 + MinGW-w64 GCC with Direct3D 12 and
-Vulkan** - the only tested platform. Linux, macOS, iOS and Android presets exist but have never
-been built; Metal shaders are generated but have never run. Details: `docs/PLATFORMS.md`.
+`ctest` runs 31 headless test programs, the two sample games' play-test scripts (headless) and
+24 golden images; 21 examples and two sample games run on **Windows 11 + MinGW-w64 GCC with
+Direct3D 12 and Vulkan** (RTX 3060 Ti) - the only tested platform. Linux, macOS, iOS, Android and
+MSVC presets exist but have never been built; Metal shaders are generated but have never run.
+Details: `docs/PLATFORMS.md`.
 
-| Area | Modules | Status |
-|---|---|---|
-| Core, app loop, pacing | core, arena, math, app | Done (Task 1, Phase 2 Tasks 14, 14c) |
-| 2D rendering | gpu, scene, render, graphics, text, sprites, mesh, particles, filters | Done (Tasks 1-8) |
-| Input, events, audio | events (input), audio | Done (Task 7, Phase 2 Task 14c) |
-| 3D | three_d, gltf, canvas3d | Done (Tasks 9, 11, Phase 2 Task 15); glTF scene content: Task 18, in progress |
-| Cameras | camera | Done (Phase 2 Task 15) |
-| Data, scenes, assets | data, scenes, assets | Done (Tasks 2, 5, 10, Phase 2 Task 16) |
-| Animation | animation | Done (Phase 2 Task 17) |
-| Tools | debug, playtest, profiler | Done (Task 10, Phase 2 Tasks 14, 18b) |
-| Platforms | presets for Linux, macOS, iOS, Android, MSVC | Configured, untested |
+| Area | What | Modules | Status |
+|---|---|---|---|
+| Core, app loop | handles + dense tables, systems in phases, vsync modes, FPS cap, fixed timestep with render interpolation, `--deterministic` | core, app, math | Done |
+| Memory | linear / stack / pool / scratch arenas, per-frame arena, arenas listed in the profiler | arena | Done |
+| 2D | sprites, nine-slice, tiling, graphics, text (TTF, bitmap, SDF, rich), meshes, particles, filters, masks, blend modes | gpu, scene, render, graphics, text, sprites, mesh, particles, filters | Done |
+| 3D | View3D, PBR / Phong / flat / toon materials, cascaded shadows, HDR + bloom + tone mapping, picking, instancing, skinning, morph targets | three_d | Done |
+| glTF-first | a `.glb` is a scene, a prefab, a scene-file node or a kit (`kit.glb#Node`); node extras become components; collider / trigger / no-render name conventions; automatic batching | gltf, data | Done |
+| 2D in 3D | canvas3d: sprites, nine-slice, SDF text and buttons in the world, billboards | canvas3d | Done |
+| Cameras | Unity-style 2D / 3D cameras (vertical extent fixed), fit policies, safe-area anchors, follow / shake / orbit, several cameras with layers | camera | Done |
+| Scenes, assets | single / additive / async scenes, fade transitions with a loading scene, persistent nodes, asset groups with reference counts, manifests and bundles | scenes, assets, data | Done |
+| Animation | one clip format for 2D and 3D, animators with layers, blend trees, `*.animgraph.json` state machines, events, root motion; tweens with named easings and sequences | animation | Done |
+| Input | actions and composites in data, contexts, rebinding with conflict checks, gamepads (Xbox / PlayStation / Switch families, virtual pads), button glyphs and `{action}` prompts | events | Done |
+| Audio | wav / ogg, streaming, buses, sound sprites | audio | Done |
+| Play-testing | scripts, interactive stdin, record / replay, `expect` / `wait_until`, state queries, `profile` | playtest | Done |
+| Profiler | CPU scopes, GPU estimate, counters, bottleneck verdict, F2 panel, HUD, Chrome trace | profiler | Done |
+| Tests | 31 unit test programs, play-test scripts, 24 golden images (`docs/TESTING.md`) | tests, tools | Done |
+| Platforms | presets for Linux, macOS, iOS, Android, MSVC | - | Configured, untested |
 
 ## Quick start
 
@@ -47,8 +54,9 @@ cmake --preset windows-gcc            # or: linux, macos (untested)
 cmake --build --preset windows-gcc    # engine, tests, examples, sample game
 ctest --preset windows-gcc            # unit tests, play-test script, golden images (docs/TESTING.md)
 
-build/windows-gcc/sample_projects/star_courier/star_courier.exe          # play
-build/windows-gcc/sample_projects/star_courier/star_courier.exe --playtest sample_projects/star_courier/playtest/round.json
+build/windows-gcc/sample_projects/crate_rush/crate_rush.exe              # play the 3D sample
+build/windows-gcc/sample_projects/star_courier/star_courier.exe          # play the 2D sample
+build/windows-gcc/sample_projects/crate_rush/crate_rush.exe --playtest sample_projects/crate_rush/playtest/round.json
 build/windows-gcc/hello_quad.exe --frames 3 --screenshot out.png --gpu-driver vulkan
 ```
 
@@ -66,10 +74,11 @@ and game state, and `expect` values (`docs/PLAYTESTING.md`, module `br_playtest`
 
 ```sh
 python tools/playtest.py build/windows-gcc/sample_projects/star_courier/star_courier.exe "step 60" "action start" "step 30" "screenshot build/playtest_shot.png" "get ship:position" quit
+python tools/playtest.py build/windows-gcc/sample_projects/crate_rush/crate_rush.exe "step 30" "action confirm" "step 120" "key W down" "step 20" "key W up" "screenshot build/crate_shot.png" "get */player:position" "get game:crates" quit
 ```
 
 prints one JSON reply per command (`{"ok": true, "frame": 90, "value": [400, 400]}` for the last
-`get`). `--playtest script.json` runs a script and exits 1 if an `expect` fails;
+`get`; 3D nodes are `view/label`, `*` = any view). `--playtest script.json` runs a script and exits 1 if an `expect` fails;
 `--playtest-stdin` is the interactive protocol `tools/playtest.py` speaks; `--record
 session.json` turns a played session into a script that replays exactly under
 `--deterministic` - add `expect` lines and it is a regression test.
@@ -84,13 +93,57 @@ GPU, vsync or the FPS cap). `--profile build/trace.json` writes a Chrome trace (
 
 ```sh
 build/windows-gcc/sample_projects/star_courier/star_courier.exe --vsync off --frames 600 --profile build/trace.json
+build/windows-gcc/sample_projects/crate_rush/crate_rush.exe --level level3 --vsync off --profiler-hud --frames 600 --screenshot build/hud.png
 ```
+
+Crate Rush, Release build, vsync off, level 3 (RTX 3060 Ti, D3D12): ~2,000 FPS, CPU 0.18 ms,
+GPU 0.43 ms (estimated), "GPU bound", top scope `render.submit`. The GPU number is an estimate
+from fence polling, not a timer query (`docs/PROFILING.md`).
 
 Play-tests read the same numbers: `{"cmd": "profile", "frames": 300}` and `expect` on
 `profile:frame_ms_p95`. game.json can open the HUD or panel (`"profiler": {"hud": true}`).
 Everything the numbers mean: `docs/PROFILING.md`.
 
-## The sample game: Star Courier
+## Sample games
+
+Both build from the root project or on their own (`cmake -S sample_projects/<name> -B
+build/<name> -G Ninja -DCMAKE_PREFIX_PATH=<SDL3>`), copy their `data/` next to the executable,
+and ship a `playtest/round.json` that CTest runs headless. What writing them taught us about the
+API: `docs/API_REVIEW.md` (Star Courier: items 1-22, Crate Rush: 23-41).
+
+### Crate Rush (3D)
+
+`sample_projects/crate_rush/`: a worker in a hard hat runs around three small islands (Meadow
+Isle, Frost Ridge, Sawmill Bay) collecting every crate before the clock runs out; spikes and saws
+cost time and knock you back, falling in the water costs more. Menu with a 3D diorama, level
+select with best scores, loading screen, pause, settings (vsync, FPS cap, volume, profiler HUD,
+jump rebinding; saved), results with stars. Keyboard, mouse, Xbox and PlayStation pads (prompts
+follow the device). It is the Phase 2 showcase:
+
+- levels are `.glb` files loaded directly as scenes; their nodes carry `spawn_point`, `crate`,
+  `hazard` and `sign` components in extras, `-colonly` collider boxes, a camera, a sun, and level
+  settings in the scene extras. `tools/build_assets.py` composes them from Kenney kit pieces the
+  way a Blender export would; the menu diorama uses kit parts as `models/kit/kit.glb#crate`;
+- a skinned character driven by `animation/character.animgraph.json` (idle, walk / sprint blend,
+  jump, fall), footstep sounds from animation events, movement and box collision on a 60 Hz
+  fixed timestep with render interpolation (level arena + frame arena);
+- a `br_camera` with follow and shake over the level, a second (2D) camera for every screen and
+  the HUD anchored to the safe area; canvas3d name plates that react to the player and "+10"
+  popups; tweens with named easings for pops, counters and menus;
+- scenes and asset groups: shared assets in a persistent group, per-level assets owned by the
+  level scene; `playtest/soak.json` checks node / 3D node / asset / animator / tween / sound counts
+  return to baseline over nine level runs and profiles against a frame budget.
+
+```sh
+build/windows-gcc/sample_projects/crate_rush/crate_rush.exe                      # menu
+build/windows-gcc/sample_projects/crate_rush/crate_rush.exe --level level2        # straight into a level
+build/windows-gcc/sample_projects/crate_rush/crate_rush.exe --playtest sample_projects/crate_rush/playtest/soak.json --vsync off
+```
+
+Art, UI, fonts, prompts and sounds are Kenney CC0 packs, fetched by
+`tools/fetch_assets.py` (URLs and checksums in `tools/assets.lock.json`).
+
+### Star Courier (2D)
 
 `sample_projects/star_courier/`: steer a courier ship, pick up cargo crates, deliver them to a
 station that moves after every delivery, dodge debris that gets faster and denser every three
@@ -99,10 +152,8 @@ gamepad, mouse and touch. Everything is data: `game.json` (window, input actions
 a manifest bundle (atlas, starfield, music), three scenes, nine prefabs, and `tuning.json` with
 every gameplay number. C is ten component structs with field lists and eight systems. All art and
 sound are generated by `tools/make_assets.py` (stdlib Python). It builds from the root project
-or on its own (`cmake -S sample_projects/star_courier -B build/sc -DCMAKE_PREFIX_PATH=<SDL3>`).
-`playtest/round.json` plays a round and checks score, lives and state (CTest runs it headless);
+or on its own. `playtest/round.json` plays a round and checks score, lives and state;
 `playtest/soak.json` is the 60-second soak.
-What writing it taught us about the API: `docs/API_REVIEW.md`.
 
 ## PixiJS feature map
 
@@ -131,7 +182,7 @@ Done = implemented and shown in an example. Differs = same capability, different
 | Masks (scissor, stencil, alpha, colour), cacheAsTexture | `br_node_set_mask`, `br_node_set_cache_as_texture` | Done |
 | Extract, GenerateTexture | `br_extract_pixels`, `br_extract_image_png`, `br_generate_texture` | Done |
 | @pixi/3d: View3D, Mesh3D, geometries, PBR/Phong/Flat/Toon materials, lights, cascaded shadows, HDR + tone mapping, post, picking, instancing, skin/morph slots | `br_view3d`, `br_mesh3d`, `br_material3d`, `br_light3d`, `br_camera3d`, `br_post3d` | Done (Task 9). Missing: environment maps / IBL, point-light shadows. |
-| @pixi/3d: glTF, skinning playback, animation | `br_gltf`, `br_anim3d` | Done (Task 11). Deferred: Draco / meshopt compression. |
+| @pixi/3d: glTF, skinning playback, animation | `br_gltf`, `br_anim3d`; a `.glb` as scene / prefab / kit (`kit.glb#Node`), extras -> components | Done (Tasks 11, 18). Deferred: Draco / meshopt compression. |
 | Extensions | node-type, asset-loader, component and system registries | Done |
 | (no Pixi equivalent) | scene files, prefabs, game.json, hot reload (`br_scene_file`, `br_prefab`, `br_game_config`) | Done (view3d content is load-and-save-as-loaded). |
 | (dev tools) | `br_debug`: microui overlay (stats incl. heap and arenas, systems, scene tree, inspector, log), F1 | Done |
@@ -142,8 +193,23 @@ Done = implemented and shown in an example. Differs = same capability, different
 **Web-only, not ported:** AccessibilitySystem, DOMContainer, HTMLSource, the Canvas2D renderer,
 DOMAdapter / WebWorkerAdapter, crossOrigin, WorkerManager.
 
-**Deferred** (not started): video textures (SDL has no codec), KTX2/Basis, Draco/meshopt glTF
-compression, SVG file import beyond path data, GPU compute culling.
+**Deferred** (not started): video textures (SDL has no codec), KTX2 / Basis transcoding,
+Draco / meshopt glTF compression (no C decoders; compressed files fail with the extension's name),
+point-light shadows, environment reflections (IBL), shadows from canvas3d content, a web target,
+SVG file import beyond path data, GPU compute culling.
+
+## Limits
+
+- **Platforms:** tested only on Windows 11 with MinGW-w64 GCC, D3D12 and Vulkan, one GPU (RTX
+  3060 Ti). Linux, macOS, iOS, Android and MSVC have presets and CI files that have never run.
+- **GPU time is an estimate:** SDL_GPU has no timer queries; the profiler polls fences (~0.5 ms
+  resolution on Windows) and with vsync on the number includes display waits.
+- **Real controllers untested:** gamepad families, glyphs and rebinding are verified with SDL
+  virtual pads only; rumble, LEDs and touchpads on real hardware are not (`docs/agents/input.md`).
+- **Runtime window resizing** is handled by the cameras (verified by starting at 16:9, 21:9 and
+  9:16), but no automated test resizes a live window (API_REVIEW 38).
+- **Physics:** none in the engine. Crate Rush does box collision itself (`src/player.c`).
+- Open API rough edges and their proposed fixes: `docs/API_REVIEW.md`.
 
 ## Deliberate shortcuts (`ponytail:` comments)
 
@@ -154,7 +220,7 @@ Each is a known ceiling with its upgrade path written next to it in the code
 |---|---|
 | app | Sleeps a fixed 16 ms while minimised instead of waiting for the restore event. |
 | assets | A spritesheet's image loads synchronously inside the sheet load (also for async loads); texture loaders are assumed to return `br_texture *`. |
-| core | Save data busy-waits until SDL storage is ready (instant on desktop; consoles may want a callback); heap statistics are process-wide counters under one spinlock. |
+| core | Save data busy-waits until SDL storage is ready (instant on desktop; consoles may want a callback); heap statistics are process-wide counters under one spinlock; no double-free check in `br_free`. |
 | animation | 2D blend trees use inverse-distance weights; a step of more than ~8 loop passes skips the extra markers; root motion reports nothing on the frame a loop wraps. |
 | audio | A deterministic run with a device plays on the wall clock (without one, sounds advance by game time). |
 | canvas3d | Only SDF text is re-shaded for 3D (other custom 2D shaders need texture mode); canvas hit tests ignore z-index, render layers and masks. |
@@ -170,7 +236,9 @@ Each is a known ceiling with its upgrade path written next to it in the code
 | profiler | A single frame longer than 4.29 s is clamped; the GPU estimate polls fences every 0.1 ms. |
 | sprites | Nine-slice tile fill falls back to stretching beyond 256 tiles per axis. |
 | text | Kerning pairs only for sets up to 256 glyphs; a full 4096 atlas stops caching new glyphs (no eviction); diagonal gradients sampled at glyph corners. |
-| three_d | Skinned bounds = bind pose grown 2x; batched meshes culled as one box; one depth bias per light (from the first cascade). |
+| three_d / gltf | Skinned bounds = bind pose grown 2x; batched meshes culled as one box; batching only inside one instance (kit parts placed separately stay separate draws); one depth bias per light; per-triangle tangents (not MikkTSpace); smooth generated normals; points / lines skipped; one sampler filter / wrap mode; transmission as alpha; light units unscaled; infinite far planes become 1000 units. |
+| data (glTF) | Every collider is a box from the mesh bounds; extras are parsed per instance; a view using a glTF camera reloads through its scene. |
+| crate_rush | Box-only collision, no slopes or steps; a linear scan of the level's colliders; the level's own View3D is hidden instead of adopted by the follow camera. |
 
 ## Repository layout
 
@@ -181,9 +249,10 @@ engine/shaders/         HLSL + compiled/ headers (committed; tools/compile_shade
 engine/assets/fonts/    the embedded default font (Noto Sans) + licence
 third_party/            stb, cgltf, cJSON, microui (vendored, with licences)
 examples/               one program per module (+ generated demo data)
-sample_projects/        star_courier: the sample game (builds standalone too)
+sample_projects/        star_courier (2D) and crate_rush (3D) sample games (build standalone too)
 tests/                  headless CTest programs (tests/test_<module>.c), golden/ (reference images)
-tools/                  compile_shaders.py, playtest.py (drive a game), golden.py (image tests)
+tools/                  compile_shaders.py, playtest.py (drive a game), golden.py (image tests),
+                        check_getting_started.py (builds every step of the guide)
 docs/                   BUILDING, GETTING_STARTED, TESTING, PLAYTESTING, PLATFORMS, DATA_FORMATS, API_REVIEW,
                         agents/<module>.md (module guides), plans/
 .github/workflows/      CI (Windows, Linux, macOS; not yet run)
@@ -199,6 +268,13 @@ docs/                   BUILDING, GETTING_STARTED, TESTING, PLAYTESTING, PLATFOR
 - Fonts: Noto Sans Regular, SIL Open Font License 1.1 (`engine/assets/fonts/OFL.txt`), embedded
   as the default font.
 - Example data: generated by scripts in `examples/`, except `examples/audio/gong.ogg` (CC0,
-  `examples/audio/LICENSE-gong.txt`).
+  `examples/audio/LICENSE-gong.txt`) and the glTF test models in `examples/models/`: unmodified
+  Khronos glTF-Sample-Assets, CC0 1.0 or CC-BY 4.0 with attribution per model in
+  `examples/models/LICENSES.md` (the Fox: model CC0, rigging and animation CC-BY 4.0).
 - Star Courier: all art and sound are original, generated by
   `sample_projects/star_courier/tools/make_assets.py`.
+- Crate Rush: Kenney (www.kenney.nl) packs Mini Characters, Platformer Kit, UI Pack (incl. the
+  Kenney Future fonts and UI sounds), Input Prompts, Impact Sounds, Interface Sounds and Music
+  Jingles, all **CC0 1.0**; each pack's `License.txt` sits next to its files (and next to the
+  atlases and level files built from them). The levels, atlases and kit file are derived by
+  `sample_projects/crate_rush/tools/build_assets.py`.

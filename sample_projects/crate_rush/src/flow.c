@@ -289,6 +289,7 @@ static void cr_level_setup(br_engine *e, cr_game *g)
         post->bloom_threshold = t->bloom_threshold;
         post->bloom_intensity = t->bloom_intensity;
     }
+    // ponytail: the .glb's own view is hidden and its environment copied by hand (API_REVIEW 23, 24); an engine call that adopts the view as a br_camera would remove both.
     br_node_set_visible(e, g->level_view, false);
     cJSON_Delete(extras);
 
@@ -557,6 +558,7 @@ static void cr_menu_fill(br_engine *e, cr_game *g)
     }
     br_node_set_visible(e, cr_find(e, s, "levels_panel"), false);
     cr_log_stats(e, g, "menu");
+    br_assets_report(e); /* every live asset with refs and owners: per-level assets must be gone */
 }
 
 static bool cr_active_is(br_engine *e, const char *name)
