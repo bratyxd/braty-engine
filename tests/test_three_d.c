@@ -312,6 +312,19 @@ static void test_geometry(br_engine *e)
     desc.indices = bad_indices;
     desc.index_count = 3;
     BR_CHECK(br_geometry3d_create(e, &desc).generation == 0); /* out-of-range index rejected */
+    /* R6 S2: byte sizes that wrap a uint32 GPU buffer size are rejected before any allocation
+     * or copy (desc.vertices points at 4 vertices only) */
+    desc.indices = NULL;
+    desc.vertex_count = 0x02AAAAABu; /* * 96 bytes > 4 GiB */
+    BR_CHECK(br_geometry3d_create(e, &desc).generation == 0);
+    br_vec3 deltas[4];
+    SDL_zero(deltas);
+    desc.vertex_count = 4;
+    desc.morph_positions = deltas;
+    desc.morph_target_count = 0x08000000u; /* 4 vertices * 32 bytes each: 2^34 */
+    BR_CHECK(br_geometry3d_create(e, &desc).generation == 0);
+    desc.morph_positions = NULL;
+    desc.morph_target_count = 0;
     br_geometry3d_destroy(e, plane);
     BR_CHECK(!br_geometry3d_valid(e, plane));
 }
