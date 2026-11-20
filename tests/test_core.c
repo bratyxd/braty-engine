@@ -244,7 +244,11 @@ static void test_systems(void)
     br_system_add(e, "b1", BR_PHASE_UPDATE, 5, sys_b, &log);
     br_system_add(e, "render", BR_PHASE_RENDER, 0, sys_r, &log);
     br_system_add(e, "adder", BR_PHASE_INPUT, 0, sys_adder, &log);
-    br_system_add(e, "a", BR_PHASE_UPDATE, 0, sys_a, &log); /* duplicate name: refused */
+    BR_CHECK(!br_system_add(e, "a", BR_PHASE_UPDATE, 0, sys_a, &log)); /* duplicate name: refused */
+    BR_CHECK(!br_system_add(e, "nofn", BR_PHASE_UPDATE, 0, NULL, &log));
+    BR_CHECK(!br_system_add(e, "badphase", BR_PHASE_COUNT, 0, sys_a, &log));
+    BR_CHECK(br_system_add(e, "ok", BR_PHASE_UPDATE, 0, sys_a, &log));
+    br_system_remove(e, "ok");
     BR_CHECK(br_system_count(e) == builtin + 6);
 
     /* headless: RENDER phase does not run, so no "R" */
@@ -289,6 +293,40 @@ static void test_ticker(void)
     BR_CHECK(br_nearly_equal(br_ticker_compute_delta(5.0f, 0.0f, 1.0f), 5.0f, 1e-6f));    /* no clamp */
     BR_CHECK(br_nearly_equal(br_ticker_compute_delta(0.02f, 10.0f, 0.5f), 0.01f, 1e-6f)); /* slow-mo */
     BR_CHECK(br_ticker_compute_delta(-1.0f, 10.0f, 1.0f) == 0.0f);
+    /* R1: negative or NaN speed gave negative / NaN dt */
+    float nan = SDL_sqrtf(-1.0f);
+    BR_CHECK(br_ticker_compute_delta(0.016f, 10.0f, -1.0f) == 0.0f);
+    BR_CHECK(br_ticker_compute_delta(0.016f, 10.0f, nan) == 0.0f);
+    BR_CHECK(br_ticker_compute_delta(nan, 10.0f, 1.0f) == 0.0f);
+    br_engine *e = br_engine_create("braty-test", NULL);
+    br_ticker_set_speed(e, -1.0f);
+    br_engine_step(e, br_ticker_compute_delta(0.016f, 10.0f, -1.0f));
+    BR_CHECK(br_ticker_delta(e) == 0.0f && br_ticker_elapsed(e) == 0.0);
+    br_ticker_set_speed(e, nan);
+    br_ticker_set_min_fps(e, nan);
+    br_engine_step(e, 0.0f);
+    BR_CHECK(br_ticker_delta(e) == 0.0f);
+    br_engine_destroy(e);
+}
+
+/* R1: retired system names were scanned linearly on every add (O(n^2) churn). */
+static void test_system_churn(void)
+{
+    br_engine *e = br_engine_create("braty-test", NULL);
+    order_log log = { { 0 } };
+    char name[32];
+    uint64_t start = SDL_GetTicksNS();
+    for (int i = 0; i < 20000; i++) {
+        SDL_snprintf(name, sizeof(name), "churn%d", i);
+        br_system_add(e, name, BR_PHASE_UPDATE, 0, sys_a, &log);
+        br_system_remove(e, name);
+    }
+    br_system_add(e, "churn7", BR_PHASE_UPDATE, 0, sys_a, &log); /* a retired name comes back */
+    double ms = (double)(SDL_GetTicksNS() - start) / 1e6;
+    BR_CHECK(ms < 500.0);
+    br_engine_step(e, 0.016f);
+    BR_CHECK(br_str_equal(log.text, "a"));
+    br_engine_destroy(e);
 }
 
 int main(int argc, char **argv)
@@ -302,5 +340,6 @@ int main(int argc, char **argv)
     test_strings();
     test_systems();
     test_ticker();
+    test_system_churn();
     return br_test_finish();
 }

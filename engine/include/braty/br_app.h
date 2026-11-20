@@ -7,7 +7,8 @@
  *   4. calls desc.shutdown(e) and destroys everything.
  *
  * Systems run in phase order, then by ascending priority, then in the order they were added:
- *   BR_PHASE_INPUT, UPDATE, LATE_UPDATE, PRE_RENDER   always run (also headless, also minimised)
+ *   BR_PHASE_INPUT, FIXED_UPDATE, UPDATE, LATE_UPDATE, PRE_RENDER
+ *                                                     always run (also headless, also minimised)
  *   BR_PHASE_RENDER, POST_RENDER                      only when a frame target was acquired
  *
  * Command line (parsed by the engine, also visible to br_main):
@@ -76,11 +77,13 @@ typedef enum br_phase {
     BR_PHASE_COUNT
 } br_phase;
 
-/* A system: called once per frame with the frame's scaled delta time. */
+/* A system: called once per frame with the frame's scaled delta time (FIXED_UPDATE systems:
+ * 0..N times per frame with the fixed step). */
 typedef void (*br_system_fn)(br_engine *e, float dt_seconds, void *user);
 
-/* Adds a system. Lower priority runs first within a phase. Names must be unique (copied). */
-void br_system_add(br_engine *e, const char *name, br_phase phase, int priority, br_system_fn fn, void *user);
+/* Adds a system. Lower priority runs first within a phase. Names must be unique (copied).
+ * False (logged) for a duplicate name, a NULL fn or name, or a bad phase. */
+bool br_system_add(br_engine *e, const char *name, br_phase phase, int priority, br_system_fn fn, void *user);
 /* Removes a system by name. Inside a frame it stops running at once and leaves the list after
  * the frame, so a system may remove itself or others; the name can be added again right away. */
 void br_system_remove(br_engine *e, const char *name);
@@ -176,7 +179,7 @@ double br_ticker_elapsed(br_engine *e);
 uint64_t br_ticker_frame(br_engine *e);
 /* Measured frames per second (smoothed, unscaled). */
 float br_ticker_fps(br_engine *e);
-/* Time scale: 0.5 = slow motion, 0 = paused. Default 1. */
+/* Time scale: 0.5 = slow motion, 0 = paused. Default 1. Negative or NaN is clamped to 0. */
 void br_ticker_set_speed(br_engine *e, float speed);
 /* Same as br_app_set_max_fps (kept for existing code). */
 void br_ticker_set_max_fps(br_engine *e, float max_fps);

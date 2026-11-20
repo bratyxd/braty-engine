@@ -68,7 +68,7 @@ struct br_engine {
 
     br_array systems;               /* br_system_entry, sorted by phase then priority */
     br_array pending_systems;       /* added while stepping; merged after the step */
-    br_array retired_system_names;  /* char *, names of removed systems (see br_system_remove) */
+    br_map   retired_system_names;  /* name -> char *, names of removed systems (see br_system_name_copy) */
     bool     stepping;
     br_array disabled_groups;       /* char *, system groups switched off */
     br_array event_handlers;       /* br_event_handler_entry */

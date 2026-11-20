@@ -36,7 +36,7 @@ next frame.
 | `br_app_set_fixed_timestep(e, hz)`, `br_app_fixed_alpha(e)` | Fixed-rate `FIXED_UPDATE`; alpha interpolates rendering between steps. |
 | `br_app_deterministic(e)`, `br_engine_random(e)` | Reproducible runs; the seeded engine RNG. |
 | `br_engine_screenshot(e, path)` | Last rendered frame as PNG. |
-| `br_system_add(e, name, phase, priority, fn, user)` | Register behaviour. |
+| `br_system_add(e, name, phase, priority, fn, user)` | Register behaviour; false (logged) for a duplicate name, NULL fn or bad phase. |
 | `br_system_set_enabled(e, name, on)` | Pause a system. |
 | `br_system_remove(e, name)` | Remove a system (safe inside a frame: it stops at once, leaves the list after the frame). |
 | `br_engine_on_shutdown(e, fn, user)` | Free your state (runs before the GPU is destroyed). |
@@ -97,7 +97,8 @@ average error at 60 / 144.
   per module (`e->scene`, `e->render`, ...). A module defines its own `struct br_<module>_state`
   in its `_internal.h`, allocates it in `br_<module>_register(e)` (called from `br_builtin.c`)
   and frees it in an on-shutdown callback.
-- `min_fps` (default 10) clamps `dt` so a stall does not produce one giant step; `speed` scales it.
+- `min_fps` (default 10) clamps `dt` so a stall does not produce one giant step; `speed` scales it
+  (negative or NaN speed is clamped to 0 = paused).
 - Vsync (default on) and the FPS cap are independent. With vsync on and a cap below the refresh
   rate the cap wins; above it the display does. The cap schedules deadlines, so a late frame is
   not followed by a rushed one; more than a whole frame late restarts the schedule.

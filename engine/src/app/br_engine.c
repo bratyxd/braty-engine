@@ -45,7 +45,7 @@ br_engine *br_engine_create(const char *title, const char *asset_root)
     }
     br_array_init(&e->systems, sizeof(br_system_entry));
     br_array_init(&e->pending_systems, sizeof(br_system_entry));
-    br_array_init(&e->retired_system_names, sizeof(char *));
+    br_map_init(&e->retired_system_names, sizeof(char *));
     br_array_init(&e->disabled_groups, sizeof(char *));
     br_array_init(&e->event_handlers, sizeof(br_event_handler_entry));
     br_array_init(&e->shutdown_handlers, sizeof(br_shutdown_entry));
@@ -79,10 +79,12 @@ void br_engine_destroy(br_engine *e)
     br_array_free(&e->shutdown_handlers);
     br_free_system_names(&e->systems);
     br_free_system_names(&e->pending_systems);
-    for (uint32_t i = 0; i < e->retired_system_names.count; i++) {
-        br_free(*(char **)br_array_at(&e->retired_system_names, i));
+    uint32_t slot = 0;
+    void *retired = NULL;
+    while (br_map_next(&e->retired_system_names, &slot, NULL, &retired)) {
+        br_free(*(char **)retired);
     }
-    br_array_free(&e->retired_system_names);
+    br_map_free(&e->retired_system_names);
     for (uint32_t i = 0; i < e->disabled_groups.count; i++) {
         br_free(*(char **)br_array_at(&e->disabled_groups, i));
     }
@@ -241,12 +243,11 @@ static br_system_entry *br_system_find(br_array *systems, const char *name)
  * address a different system's name reused would be timed under the old name. */
 static char *br_system_name_copy(br_engine *e, const char *name)
 {
-    for (uint32_t i = 0; i < e->retired_system_names.count; i++) {
-        char *old = *(char **)br_array_at(&e->retired_system_names, i);
-        if (SDL_strcmp(old, name) == 0) {
-            br_array_remove_swap(&e->retired_system_names, i);
-            return old;
-        }
+    char **old = br_map_get(&e->retired_system_names, name);
+    if (old != NULL) {
+        char *copy = *old;
+        br_map_remove(&e->retired_system_names, name);
+        return copy;
     }
     return br_strdup(name);
 }
@@ -255,7 +256,10 @@ static char *br_system_name_copy(br_engine *e, const char *name)
 static void br_system_drop(br_engine *e, br_array *systems, uint32_t i)
 {
     br_system_entry *s = br_array_at(systems, i);
-    br_array_push(&e->retired_system_names, &s->name);
+    // ponytail: unique names removed and never re-added stay here until destroy; key profiler scopes by content if that grows.
+    if (br_map_set(&e->retired_system_names, s->name, &s->name) == NULL) {
+        br_free(s->name);
+    }
     br_free(s->group);
     br_array_remove_ordered(systems, i);
 }
@@ -286,7 +290,7 @@ void br_system_remove(br_engine *e, const char *name)
 }
 
 /* Inserts after every entry that sorts before or equal, so equal keys keep adding order. */
-static void br_system_insert_sorted(br_array *systems, const br_system_entry *entry)
+static bool br_system_insert_sorted(br_array *systems, const br_system_entry *entry)
 {
     uint32_t index = 0;
     while (index < systems->count) {
@@ -297,21 +301,24 @@ static void br_system_insert_sorted(br_array *systems, const br_system_entry *en
         }
         index++;
     }
-    br_array_insert(systems, index, entry);
+    return br_array_insert(systems, index, entry) != NULL;
 }
 
-void br_system_add(br_engine *e, const char *name, br_phase phase, int priority, br_system_fn fn, void *user)
+bool br_system_add(br_engine *e, const char *name, br_phase phase, int priority, br_system_fn fn, void *user)
 {
     if (name == NULL || fn == NULL || phase < 0 || phase >= BR_PHASE_COUNT) {
         br_log_error("br_system_add: invalid arguments");
-        return;
+        return false;
     }
     if (br_system_find(&e->systems, name) != NULL || br_system_find(&e->pending_systems, name) != NULL) {
         br_log_error("system '%s' already exists", name);
-        return;
+        return false;
     }
     br_system_entry entry;
     entry.name = br_system_name_copy(e, name);
+    if (entry.name == NULL) {
+        return false;
+    }
     entry.phase = phase;
     entry.priority = priority;
     entry.fn = fn;
@@ -321,12 +328,17 @@ void br_system_add(br_engine *e, const char *name, br_phase phase, int priority,
     entry.group_enabled = true;
     entry.last_time_ns = 0;
     entry.removed = false;
+    bool ok;
     if (e->stepping) {
         /* the system list must not shift under the running loop; merged after the frame */
-        br_array_push(&e->pending_systems, &entry);
+        ok = br_array_push(&e->pending_systems, &entry) != NULL;
     } else {
-        br_system_insert_sorted(&e->systems, &entry);
+        ok = br_system_insert_sorted(&e->systems, &entry);
     }
+    if (!ok) {
+        br_free(entry.name);
+    }
+    return ok;
 }
 
 void br_system_set_enabled(br_engine *e, const char *name, bool enabled)
@@ -518,8 +530,9 @@ float br_ticker_delta(br_engine *e) { return e->ticker.delta; }
 double br_ticker_elapsed(br_engine *e) { return e->ticker.elapsed; }
 uint64_t br_ticker_frame(br_engine *e) { return e->ticker.frame; }
 float br_ticker_fps(br_engine *e) { return e->ticker.fps; }
-void br_ticker_set_speed(br_engine *e, float speed) { e->ticker.speed = speed; }
-void br_ticker_set_min_fps(br_engine *e, float min_fps) { e->ticker.min_fps = min_fps; }
+/* negative or NaN speed would run time backwards (or poison every dt): clamp to 0 = paused */
+void br_ticker_set_speed(br_engine *e, float speed) { e->ticker.speed = speed > 0.0f ? speed : 0.0f; }
+void br_ticker_set_min_fps(br_engine *e, float min_fps) { e->ticker.min_fps = min_fps > 0.0f ? min_fps : 0.0f; }
 
 float br_ticker_compute_delta(float raw_seconds, float min_fps, float speed)
 {
@@ -527,5 +540,5 @@ float br_ticker_compute_delta(float raw_seconds, float min_fps, float speed)
     if (min_fps > 0.0f && dt > 1.0f / min_fps) {
         dt = 1.0f / min_fps;
     }
-    return dt * speed;
+    return speed > 0.0f ? dt * speed : 0.0f;
 }
