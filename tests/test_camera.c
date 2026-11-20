@@ -14,6 +14,11 @@ static bool vec3_eq(br_vec3 a, br_vec3 b)
     return near_eq(a.x, b.x) && near_eq(a.y, b.y) && near_eq(a.z, b.z);
 }
 
+static bool same3d(br_node3d a, br_node3d b)
+{
+    return a.index == b.index && a.generation == b.generation;
+}
+
 static const br_vec2 SCREENS[3] = { { 1280.0f, 720.0f }, { 2520.0f, 1080.0f }, { 720.0f, 1280.0f } }; /* 16:9 21:9 9:16 */
 
 static void test_extents_2d(void)
@@ -313,6 +318,77 @@ static void test_engine_3d(void)
     br_engine_destroy(e);
 }
 
+/* an existing View3D (a .glb scene's) becomes a br_camera: same view, settings and framing,
+ * taken out of the stage so it is drawn once, through the camera */
+static void test_adopt_view(void)
+{
+    br_engine *e = br_engine_create("test_camera_adopt", NULL);
+    br_camera_set_headless_screen(e, 1280.0f, 720.0f);
+    br_node holder = br_node_create_container(e);
+    br_node_add_child(e, br_stage_root(e), holder);
+    br_node before = br_node_create_container(e);
+    br_node_add_child(e, holder, before);
+    br_node view = br_view3d_create(e, 1280.0f, 720.0f);
+    br_node_add_child(e, holder, view);
+    br_node after = br_node_create_container(e);
+    br_node_add_child(e, holder, after);
+    br_view3d_set_auto_resize(e, view, true);
+    br_view3d_set_msaa(e, view, 4);
+    br_view3d_set_background(e, view, br_color_make(0.25f, 0.5f, 0.75f, 1.0f));
+    br_view3d_set_culling_mask(e, view, 0x3u);
+    br_node3d file_cam = br_view3d_camera(e, view);
+    br_camera3d *fc = br_camera3d_get(e, file_cam);
+    fc->fov_y = 0.8f;
+    fc->near_z = 0.5f;
+    fc->far_z = 300.0f;
+    br_node3d_set_position(e, file_cam, br_vec3_make(0.0f, 5.0f, 10.0f));
+    br_node3d_look_at(e, file_cam, br_vec3_make(0.0f, 0.0f, 0.0f), br_vec3_make(0.0f, 1.0f, 0.0f));
+    br_vec3 fwd_before = br_mat4_transform_dir(br_node3d_world_transform(e, file_cam), br_vec3_make(0.0f, 0.0f, -1.0f));
+
+    br_node cam = br_camera_adopt_view3d(e, view, NULL);
+    BR_CHECK(br_node_valid(e, cam) && br_camera_is_3d(e, cam));
+    BR_CHECK(br_node_equal(br_camera_view3d(e, cam), view));
+    /* the camera takes the view's place; the view leaves the stage (no second draw) */
+    BR_CHECK(br_node_equal(br_node_parent(e, cam), holder) && br_node_child_index(e, holder, cam) == 1);
+    BR_CHECK(!br_node_valid(e, br_node_parent(e, view)) && br_node_child_count(e, holder) == 3);
+    BR_CHECK(br_view3d_msaa(e, view) == 4 && !br_view3d_auto_resize(e, view));
+    br_camera *c = br_camera_get(e, cam);
+    BR_CHECK(c != NULL && c->enabled && c->projection == BR_CAMERA_PERSPECTIVE && near_eq(c->field_of_view, 0.8f));
+    BR_CHECK(near_eq(c->near_z, 0.5f) && near_eq(c->far_z, 300.0f) && c->culling_mask == 0x3u);
+    br_color bg = br_color_to_linear(c->background_color);
+    BR_CHECK(near_eq(bg.r, 0.25f) && near_eq(bg.b, 0.75f) && c->clear_flags == BR_CAMERA_CLEAR_COLOR);
+    br_node3d rig = br_camera_node3d(e, cam);
+    BR_CHECK(same3d(br_node3d_parent(e, rig), br_view3d_root(e, view)));
+    BR_CHECK(vec3_eq(br_node3d_world_position(e, rig), br_vec3_make(0.0f, 5.0f, 10.0f)));
+
+    br_engine_step(e, 1.0f / 60.0f);
+    /* the view now draws through the camera's camera3d, posed like the file's */
+    br_node3d cam3 = br_view3d_camera(e, view);
+    BR_CHECK(!same3d(cam3, file_cam));
+    BR_CHECK(vec3_eq(br_node3d_world_position(e, cam3), br_vec3_make(0.0f, 5.0f, 10.0f)));
+    br_vec3 fwd = br_mat4_transform_dir(br_node3d_world_transform(e, cam3), br_vec3_make(0.0f, 0.0f, -1.0f));
+    BR_CHECK(vec3_eq(fwd, fwd_before));
+    BR_CHECK(near_eq(br_camera3d_get(e, cam3)->fov_y, 0.8f));
+    /* it follows like any 3D camera */
+    br_node3d target = br_node3d_create_container(e);
+    br_node3d_add_child(e, br_view3d_root(e, view), target);
+    br_node3d_set_position(e, target, br_vec3_make(20.0f, 0.0f, 0.0f));
+    br_camera_follow *f = br_component_add(e, cam, br_camera_follow_component(e));
+    f->target3d = target;
+    f->offset3d = br_vec3_make(0.0f, 5.0f, 10.0f);
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(vec3_eq(br_node3d_world_position(e, rig), br_vec3_make(20.0f, 5.0f, 10.0f)));
+
+    /* adopting twice, or a non-view, fails */
+    BR_CHECK(!br_node_valid(e, br_camera_adopt_view3d(e, view, NULL)));
+    BR_CHECK(!br_node_valid(e, br_camera_adopt_view3d(e, before, NULL)));
+    /* the camera owns the view */
+    br_node_destroy(e, cam);
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(!br_node_valid(e, view));
+    br_engine_destroy(e);
+}
+
 /* ---- pointer events through a zoomed, offset 2D camera reach the node drawn under the pointer */
 
 static int s_target_clicks;
@@ -375,6 +451,7 @@ int main(void)
     test_helpers();
     test_engine();
     test_engine_3d();
+    test_adopt_view();
     test_pointer_events();
     return br_test_finish();
 }

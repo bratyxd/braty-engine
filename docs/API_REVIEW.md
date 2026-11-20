@@ -249,12 +249,19 @@ the game (the workaround is named) and left here with a proposed fix.
     desc)` turning an existing View3D (with its environment, post and MSAA) into a `br_camera`
     whose rig starts at the view's current camera; and `br_gltf_options.camera_as_br_camera` so a
     scene load does it, labelling the camera node after the glTF camera.
+    **Resolved (Phase 3 Task B5):** `br_camera_adopt_view3d(e, view, desc)` and
+    `br_gltf_options.camera_as_br_camera`; the view leaves the stage, so the level renders once.
+    Crate Rush uses it (no hidden view). Tests: `test_camera` `test_adopt_view`, `test_gltf_scene`
+    `test_as_scene`.
 24. **gap - View3D settings are write-only** (`br_view3d.h`: `br_view3d_set_environment`,
     `_set_background`, `_set_msaa` have no getters). Because of 23 the camera's view needs the
     level's sky / ground / ambient / background, which only the scene extras have, so the game
     parses `model->scene_extras` again (`cr_extras_color`). **Fix:** `br_view3d_environment(e,
     view, &sky, &ground, &intensity)`, `br_view3d_background`, `br_view3d_msaa`, and a
     `br_view3d_copy_settings(e, from, to)`.
+    **Resolved (Phase 3 Task B5):** a getter for every setter (`br_view3d_msaa`, `_background`,
+    `_get_environment` (out-copy rule), `_auto_resize`, `_resolution`, `_culling_mask`,
+    `_shadow_resolution`) and `br_view3d_copy_settings`. Test: `test_three_d` `test_view_settings`.
 25. **gap - scene extras cannot carry components** (`engine/src/data/br_gltf_extras.c`,
     `br_data_gltf_apply_extras` reads node extras only). Level settings (title, time limit,
     footstep sounds, kill height) are a `"level"` object in the scene extras; the game reaches

@@ -127,6 +127,20 @@ br_node br_data_load_model_owned(br_engine *e, const char *path, br_node parent,
     br_data_end_file(e, &saved);
     e->data->owner_group = saved_owner;
     cJSON_Delete(json);
+    const br_gltf_state *g = e->gltf;
+    if (br_node_valid(e, n) && g != NULL && g->load_camera_as_br_camera) {
+        /* the file's camera3d sits under the glTF node named like it; a framing camera is the root's */
+        br_node3d file_cam = br_view3d_camera(e, n);
+        br_node3d cam_parent = br_node3d_parent(e, file_cam);
+        const char *label = cam_parent.index != br_view3d_root(e, n).index ? br_node3d_label(e, cam_parent) : NULL;
+        char name[BR_DATA_NAME_SIZE];
+        br_str_copy(name, sizeof(name), label != NULL && label[0] != '\0' ? label : "camera");
+        br_node cam = br_camera_adopt_view3d(e, n, NULL);
+        if (br_node_valid(e, cam)) {
+            br_node_set_label(e, cam, name);
+            n = cam;
+        }
+    }
     if (br_node_valid(e, n)) {
         br_log_info("scene file: loaded glTF '%s'", path);
     }

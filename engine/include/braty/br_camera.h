@@ -119,6 +119,13 @@ br_node br_camera_create(br_engine *e, const br_camera *desc);
 /* A 3D camera showing scene_root's subtree (e.g. br_view3d_root of a view you built the scene
  * in). Returns its camera node (desc NULL = br_camera_default_3d). */
 br_node br_camera_create_3d(br_engine *e, br_node3d scene_root, const br_camera *desc);
+/* Turns an existing View3D (e.g. a .glb scene's, with its environment, post and MSAA) into a 3D
+ * camera that draws through it: the camera node takes the view's place in the stage (the view
+ * leaves the stage, so it is drawn once, through the camera; the camera owns and destroys it)
+ * and its rig starts at the view's camera pose. desc NULL = projection, FOV / size, near / far
+ * from the view's camera3d and background / culling mask from the view; afterwards the camera
+ * drives those every frame. Zero handle (logged) if view is not a view3d or already a camera's. */
+br_node br_camera_adopt_view3d(br_engine *e, br_node view, const br_camera *desc);
 /* A letterboxed 2D camera showing the stage rect (0, 0, width, height) on any window: a fixed
  * logical resolution (API_REVIEW item 17). Added under the stage. */
 br_node br_camera_create_logical(br_engine *e, float width, float height);

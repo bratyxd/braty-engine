@@ -341,11 +341,16 @@ static cJSON *br_pt_with_element(br_engine *e, const char *path, const char *ele
 
 /* ---- 3D nodes inside a view3d: "view_label/node_label:property" ("*" = any view) */
 
-/* Every view3d node under n, depth-first. */
+/* Every view3d node under n, depth-first (and the views 3D cameras draw through: those are out
+ * of the stage). */
 static void br_pt_collect_views(br_engine *e, br_node n, br_array *views)
 {
     if (br_node_type_of(e, n) == br_view3d_type(e)) {
         br_array_push(views, &n);
+    }
+    if (br_camera_is_3d(e, n)) {
+        br_node v = br_camera_view3d(e, n);
+        br_array_push(views, &v);
     }
     uint32_t count = br_node_child_count(e, n);
     for (uint32_t i = 0; i < count; i++) {

@@ -606,11 +606,15 @@ br_node br_scene_root_2d(br_engine *e, br_scene scene)
     return rec != NULL ? rec->root : none;
 }
 
-/* The first view3d node in a subtree, depth-first. */
+/* The first view3d node in a subtree, depth-first (a 3D camera stands for the view it draws
+ * through: an adopted .glb view is out of the stage). */
 static br_node br_scenes_find_view(br_engine *e, br_node n, uint32_t view_type)
 {
     if (br_node_type_of(e, n) == view_type) {
         return n;
+    }
+    if (br_camera_is_3d(e, n)) {
+        return br_camera_view3d(e, n);
     }
     uint32_t count = br_node_child_count(e, n);
     for (uint32_t i = 0; i < count; i++) {

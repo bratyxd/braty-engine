@@ -513,6 +513,7 @@ void br_gltf_set_load_options(br_engine *e, const br_gltf_options *options)
     s->load_autoplay[0] = '\0';
     s->load_autoplay_set = false;
     s->load_no_batching = false;
+    s->load_camera_as_br_camera = false;
     if (options == NULL) {
         return;
     }
@@ -520,6 +521,7 @@ void br_gltf_set_load_options(br_engine *e, const br_gltf_options *options)
     br_str_copy(s->load_autoplay, sizeof(s->load_autoplay), options->autoplay != NULL ? options->autoplay : "");
     s->load_autoplay_set = options->autoplay != NULL;
     s->load_no_batching = options->no_batching;
+    s->load_camera_as_br_camera = options->camera_as_br_camera;
 }
 
 br_node3d br_model3d_camera(br_engine *e, br_node3d n, const char *name)

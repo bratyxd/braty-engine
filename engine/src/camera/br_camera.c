@@ -333,6 +333,82 @@ br_node br_camera_create_3d(br_engine *e, br_node3d scene_root, const br_camera 
     return n;
 }
 
+/* True if a live camera already draws through view. */
+static bool br_camera_owns_view(br_engine *e, br_node view)
+{
+    br_camera_state *s = e->camera;
+    for (uint32_t i = 0; i < s->cameras.count; i++) {
+        br_camera_data *d = br_camera_data_get(e, *(br_node *)br_array_at(&s->cameras, i));
+        if (d != NULL && d->is_3d && br_node_equal(d->view3d, view)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+br_node br_camera_adopt_view3d(br_engine *e, br_node view, const br_camera *desc)
+{
+    br_node none = { 0, 0 };
+    if (e->camera == NULL || br_node_type_of(e, view) != br_view3d_type(e) || !br_node_valid(e, view) ||
+        br_camera_owns_view(e, view)) {
+        br_log_error("br_camera_adopt_view3d: not a view3d, or a camera already draws it");
+        return none;
+    }
+    br_node3d root = br_view3d_root(e, view);
+    br_node3d old_cam = br_view3d_camera(e, view);
+    br_camera c = br_camera_default_3d();
+    if (desc != NULL) {
+        c = *desc;
+    } else {
+        const br_camera3d *oc = br_camera3d_get(e, old_cam);
+        if (oc != NULL) {
+            c.projection = oc->projection == BR_PROJECTION_ORTHOGRAPHIC ? BR_CAMERA_ORTHOGRAPHIC : BR_CAMERA_PERSPECTIVE;
+            c.field_of_view = oc->fov_y;
+            c.orthographic_size = oc->ortho_size;
+            c.near_z = oc->near_z;
+            c.far_z = oc->far_z;
+        }
+        /* the camera re-sends these to the view every frame, so start from the view's values */
+        c.background_color = br_color_to_srgb(br_view3d_background(e, view));
+        c.clear_flags = BR_CAMERA_CLEAR_COLOR;
+        c.culling_mask = br_view3d_culling_mask(e, view);
+    }
+    br_node n = br_node_create(e, br_camera_type(e));
+    br_camera_data *d = br_camera_data_get(e, n);
+    if (d == NULL) {
+        return none;
+    }
+    d->camera = c;
+    d->is_3d = true;
+    d->view3d = view;
+    d->rig = br_node3d_create_container(e);
+    d->node3d = br_camera3d_create(e, NULL);
+    br_node3d_set_label(e, d->rig, "camera_rig");
+    br_node3d_add_child(e, d->rig, d->node3d);
+    br_node3d_add_child(e, root, d->rig);
+    /* the rig starts where the view's camera is (relative to the root it is under) */
+    bool ok = false;
+    br_mat4 local = br_mat4_mul(br_mat4_invert_affine(br_node3d_world_transform(e, root), &ok),
+                                br_node3d_world_transform(e, old_cam));
+    br_vec3 t;
+    br_quat r;
+    br_vec3 scale;
+    if (ok && br_mat4_decompose(local, &t, &r, &scale)) {
+        br_node3d_set_position(e, d->rig, t);
+        br_node3d_set_rotation(e, d->rig, r);
+    }
+    br_view3d_set_camera(e, view, d->node3d);
+    br_view3d_set_auto_resize(e, view, false); /* the camera sizes it to its viewport */
+    /* the camera takes the view's place in the stage; the view is drawn only through the camera */
+    br_node parent = br_node_parent(e, view);
+    if (br_node_valid(e, parent)) {
+        int index = br_node_child_index(e, parent, view);
+        br_node_remove_from_parent(e, view);
+        br_node_add_child_at(e, parent, n, index >= 0 ? (uint32_t)index : 0);
+    }
+    return n;
+}
+
 br_node br_camera_create_logical(br_engine *e, float width, float height)
 {
     br_camera c = br_camera_default_2d();

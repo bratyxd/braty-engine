@@ -376,6 +376,25 @@ static void test_as_scene(br_engine *e)
     br_engine_step(e, 1.0f / 60.0f);
     br_engine_step(e, 1.0f / 60.0f);
     BR_CHECK(same_counts(base, take_counts(e)));
+
+    /* camera_as_br_camera: the view becomes a br_camera labelled after the glTF camera node */
+    SDL_zero(options);
+    options.camera_as_br_camera = true;
+    br_gltf_set_load_options(e, &options);
+    s = br_scene_load(e, "level.gltf", BR_SCENE_SINGLE);
+    br_gltf_set_load_options(e, NULL);
+    br_node cam_node = br_node_find_by_label(e, br_scene_root_2d(e, s), "MainCam", true);
+    BR_CHECK(br_camera_is_3d(e, cam_node));
+    BR_CHECK(br_node_find_by_label(e, br_scene_root_2d(e, s), "level", true).index == 0); /* no view in the stage */
+    view = br_camera_view3d(e, cam_node);
+    BR_CHECK(br_view3d_root(e, view).index == br_scene_root_3d(e, s).index); /* found through the camera */
+    br_camera *bc = br_camera_get(e, cam_node);
+    BR_CHECK(bc != NULL && near_eq(bc->field_of_view, 0.75f));
+    br_engine_step(e, 1.0f / 60.0f);
+    br_scene_unload(e, s);
+    br_engine_step(e, 1.0f / 60.0f);
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(same_counts(base, take_counts(e)));
 }
 
 static void test_as_prefab(br_engine *e)
