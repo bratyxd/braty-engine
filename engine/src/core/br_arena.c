@@ -250,6 +250,8 @@ bool br_arena_stack_create(br_arena_stack *s, const char *name, size_t capacity)
 {
     s->depth = 0;
     s->order_errors = 0;
+    s->top_serial = 0;
+    s->next_serial = 0;
     return br_arena_linear_create(&s->linear, name, capacity, false);
 }
 
@@ -257,6 +259,8 @@ bool br_arena_stack_create_in(br_arena_stack *s, const char *name, void *buffer,
 {
     s->depth = 0;
     s->order_errors = 0;
+    s->top_serial = 0;
+    s->next_serial = 0;
     return br_arena_linear_create_in(&s->linear, name, buffer, size);
 }
 
@@ -264,6 +268,7 @@ void br_arena_stack_destroy(br_arena_stack *s)
 {
     br_arena_linear_destroy(&s->linear);
     s->depth = 0;
+    s->top_serial = 0;
 }
 
 void *br_arena_stack_alloc(br_arena_stack *s, size_t size, size_t alignment)
@@ -277,12 +282,20 @@ br_arena_marker br_arena_stack_push_marker(br_arena_stack *s)
     s->depth += 1;
     m.offset = s->linear.offset;
     m.depth = s->depth;
+    s->next_serial += 1;
+    if (s->next_serial == 0) {
+        s->next_serial = 1; /* 0 means "no marker" */
+    }
+    m.serial = s->next_serial;
+    m.prev_serial = s->top_serial;
+    s->top_serial = m.serial;
     return m;
 }
 
 bool br_arena_stack_pop_to_marker(br_arena_stack *s, br_arena_marker m)
 {
-    if (m.depth == 0 || m.depth > s->depth || m.offset > s->linear.offset) {
+    bool stale = m.depth == s->depth && m.serial != s->top_serial; /* popped, then another pushed */
+    if (m.depth == 0 || m.depth > s->depth || m.offset > s->linear.offset || stale) {
         br_log_error("stack arena '%s': marker %u is not live (depth %u)", s->linear.stats.name, m.depth, s->depth);
         return false;
     }
@@ -298,6 +311,7 @@ bool br_arena_stack_pop_to_marker(br_arena_stack *s, br_arena_marker m)
     s->linear.offset = m.offset;
     s->linear.stats.used = m.offset;
     s->depth = m.depth - 1;
+    s->top_serial = m.prev_serial;
     return true;
 }
 
@@ -337,12 +351,21 @@ static void br_arena_pool_view_free(void *user, void *ptr)
     br_arena_pool_free(user, ptr);
 }
 
-/* Shared part of create/create_in: `memory` must hold `count` blocks of p->block_size. */
+/* Bytes of the free-bit array for `count` blocks. */
+static size_t br_arena_pool_bits_size(size_t count)
+{
+    return (count + 7) / 8;
+}
+
+/* Shared part of create/create_in: `memory` must hold `count` blocks of p->block_size followed
+ * by br_arena_pool_bits_size(count) bytes for the free bits. */
 static void br_arena_pool_build(br_arena_pool *p, uint8_t *memory, uint32_t count)
 {
     p->memory = memory;
     p->block_count = count;
     p->free_list = NULL;
+    p->free_bits = memory + (size_t)count * p->block_size;
+    SDL_memset(p->free_bits, 0xFF, br_arena_pool_bits_size(count));
     for (uint32_t i = count; i > 0; i--) {
         void **block = (void **)(memory + (size_t)(i - 1) * p->block_size);
         *block = p->free_list;
@@ -383,11 +406,12 @@ bool br_arena_pool_create(br_arena_pool *p, const char *name, size_t block_size,
     if (!br_arena_pool_init(p, name, block_size, &alignment)) {
         return false;
     }
-    if (block_count == 0 || p->block_size > (SIZE_MAX - alignment) / block_count) {
+    size_t bits = br_arena_pool_bits_size(block_count);
+    if (block_count == 0 || p->block_size > (SIZE_MAX - alignment - bits) / block_count) {
         br_log_error("pool arena '%s': bad block count %u", p->stats.name, block_count);
         return false;
     }
-    p->heap = br_alloc(p->block_size * block_count + alignment);
+    p->heap = br_alloc(p->block_size * block_count + bits + alignment);
     if (p->heap == NULL) {
         return false;
     }
@@ -403,7 +427,11 @@ bool br_arena_pool_create_in(br_arena_pool *p, const char *name, size_t block_si
         return false;
     }
     size_t pad = buffer != NULL ? br_arena_padding(buffer, 0, alignment) : 0;
-    size_t count = buffer != NULL && size > pad ? (size - pad) / p->block_size : 0;
+    size_t room = buffer != NULL && size > pad ? size - pad : 0;
+    size_t count = room / p->block_size;
+    while (count > 0 && count * p->block_size + br_arena_pool_bits_size(count) > room) {
+        count--; /* the free bits live after the last block */
+    }
     if (count == 0) {
         br_log_error("pool arena '%s': caller memory holds no block", p->stats.name);
         return false;
@@ -418,6 +446,7 @@ void br_arena_pool_destroy(br_arena_pool *p)
     p->heap = NULL;
     p->memory = NULL;
     p->free_list = NULL;
+    p->free_bits = NULL;
     p->block_count = 0;
     p->stats.used = 0;
     p->stats.capacity = 0;
@@ -431,6 +460,8 @@ void *br_arena_pool_alloc(br_arena_pool *p)
     }
     void **block = p->free_list;
     p->free_list = *block;
+    size_t index = (size_t)((uint8_t *)block - p->memory) / p->block_size;
+    p->free_bits[index / 8] &= (uint8_t)~(1u << (index % 8));
     SDL_memset(block, 0, p->block_size);
     br_arena_stats_add(&p->stats, p->block_size);
     return block;
@@ -447,7 +478,13 @@ void br_arena_pool_free(br_arena_pool *p, void *block)
         br_log_error("pool arena '%s': %p is not one of its blocks", p->stats.name, block);
         return;
     }
-    // ponytail: no double-free check; a per-block "free" bit array would catch it.
+    size_t index = (size_t)(b - first) / p->block_size;
+    uint8_t bit = (uint8_t)(1u << (index % 8));
+    if ((p->free_bits[index / 8] & bit) != 0) {
+        br_log_error("pool arena '%s': double free of block %zu", p->stats.name, index);
+        return;
+    }
+    p->free_bits[index / 8] |= bit;
     *(void **)block = p->free_list;
     p->free_list = block;
     p->stats.used -= p->block_size;

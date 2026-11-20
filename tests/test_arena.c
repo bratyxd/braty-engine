@@ -102,6 +102,17 @@ static void test_stack(void)
     BR_CHECK(br_arena_stack_pop_to_marker(&s, m1));
     BR_CHECK(s.linear.stats.used == 10);
     BR_CHECK(!br_arena_stack_pop_to_marker(&s, m1)); /* already popped */
+    /* R1: a stale marker at the newest depth used to be accepted (popping live allocations) */
+    br_arena_marker a = br_arena_stack_push_marker(&s);
+    BR_CHECK(br_arena_stack_alloc(&s, 16, 8) != NULL);
+    BR_CHECK(br_arena_stack_pop_to_marker(&s, a));
+    BR_CHECK(br_arena_stack_alloc(&s, 32, 8) != NULL); /* live, allocated after a was popped */
+    br_arena_marker b = br_arena_stack_push_marker(&s);
+    BR_CHECK(br_arena_stack_alloc(&s, 16, 8) != NULL);
+    size_t live = s.linear.stats.used;
+    BR_CHECK(!br_arena_stack_pop_to_marker(&s, a));
+    BR_CHECK(s.linear.stats.used == live);
+    BR_CHECK(br_arena_stack_pop_to_marker(&s, b));
     BR_CHECK(br_arena_stack_alloc(&s, 2000, 8) == NULL); /* overflow */
     BR_CHECK(s.linear.stats.peak >= used);
     br_arena_stack_destroy(&s);
@@ -125,6 +136,13 @@ static void test_pool(void)
     int outside = 0;
     br_arena_pool_free(&p, &outside); /* not ours: logged, ignored */
     BR_CHECK(p.stats.used == 256 && p.stats.peak == 256);
+    /* R1: a double free used to hand the same block out twice */
+    br_arena_pool_free(&p, blocks[1]);
+    br_arena_pool_free(&p, blocks[1]); /* logged, ignored */
+    BR_CHECK(p.stats.used == 192);
+    void *x = br_arena_pool_alloc(&p);
+    void *y = br_arena_pool_alloc(&p);
+    BR_CHECK(x == blocks[1] && y == NULL);
     br_arena_pool_destroy(&p);
     br_arena_pool bad;
     BR_CHECK(!br_arena_pool_create(&bad, "bad", 24, 12, 4)); /* alignment not a power of two */

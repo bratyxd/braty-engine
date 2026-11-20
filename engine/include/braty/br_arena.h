@@ -67,13 +67,17 @@ const br_allocator *br_arena_linear_allocator(br_arena_linear *a);
 
 typedef struct br_arena_marker {
     size_t   offset;
-    uint32_t depth;   /* 1 for the first marker pushed */
+    uint32_t depth;        /* 1 for the first marker pushed */
+    uint32_t serial;       /* unique per push: tells a stale marker from a live one at its depth */
+    uint32_t prev_serial;  /* serial of the marker that was newest when this one was pushed */
 } br_arena_marker;
 
 typedef struct br_arena_stack {
     br_arena_linear linear;       /* fixed capacity, never grows */
     uint32_t        depth;        /* markers currently pushed */
     uint32_t        order_errors; /* out-of-order pops caught (debug builds) */
+    uint32_t        top_serial;   /* serial of the newest live marker, 0 = none */
+    uint32_t        next_serial;  /* last serial handed out */
 } br_arena_stack;
 
 /* Creates a heap-backed stack arena of `capacity` bytes (fixed). */
@@ -86,7 +90,9 @@ void br_arena_stack_destroy(br_arena_stack *s);
 void *br_arena_stack_alloc(br_arena_stack *s, size_t size, size_t alignment);
 /* Remembers the current top; pop_to_marker frees everything allocated after it. */
 br_arena_marker br_arena_stack_push_marker(br_arena_stack *s);
-/* Frees back to `m`. Debug builds reject a marker that is not the newest (logs, returns false). */
+/* Frees back to `m`. A stale marker (already popped) at the newest depth is rejected; debug
+ * builds reject any marker that is not the newest (logs, returns false). Release builds pop an
+ * older live marker together with the newer ones. */
 bool br_arena_stack_pop_to_marker(br_arena_stack *s, br_arena_marker m);
 /* Returns a br_allocator over the stack (free is a no-op). */
 const br_allocator *br_arena_stack_allocator(br_arena_stack *s);
@@ -98,6 +104,7 @@ typedef struct br_arena_pool {
     uint8_t       *memory;       /* first block (aligned) */
     void          *heap;         /* br_alloc block when heap-backed, else NULL */
     void          *free_list;    /* next free block; each free block stores the next pointer */
+    uint8_t       *free_bits;    /* one bit per block, 1 = free: catches double frees */
     size_t         block_size;   /* rounded up to the alignment */
     uint32_t       block_count;
     br_allocator   allocator;    /* view: alloc takes a block (size <= block_size), free returns it */
@@ -106,14 +113,16 @@ typedef struct br_arena_pool {
 /* Creates a heap-backed pool of `block_count` blocks of `block_size` bytes aligned to `alignment`. */
 bool br_arena_pool_create(br_arena_pool *p, const char *name, size_t block_size, size_t alignment,
                           uint32_t block_count);
-/* Creates a pool over caller memory: as many blocks as fit in `size` bytes. */
+/* Creates a pool over caller memory: as many blocks as fit in `size` bytes (with one free bit
+ * per block kept at the end of the buffer). */
 bool br_arena_pool_create_in(br_arena_pool *p, const char *name, size_t block_size, size_t alignment,
                              void *buffer, size_t size);
 /* Frees the pool's heap memory. */
 void br_arena_pool_destroy(br_arena_pool *p);
 /* Takes one zeroed block, NULL (and logs) when every block is in use. */
 void *br_arena_pool_alloc(br_arena_pool *p);
-/* Returns a block to the pool. Pointers that are not a block of this pool are logged and ignored. */
+/* Returns a block to the pool. Pointers that are not a block of this pool, and blocks that are
+ * already free (double free), are logged and ignored. */
 void br_arena_pool_free(br_arena_pool *p, void *block);
 /* Returns a br_allocator over the pool (requests larger than block_size fail). */
 const br_allocator *br_arena_pool_allocator(br_arena_pool *p);

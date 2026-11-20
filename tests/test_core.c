@@ -39,6 +39,31 @@ static void test_array(void)
     BR_CHECK(a.data == NULL);
 }
 
+/* R1: sizes past 2^31 used to wrap (push_n overflowed the heap, reserve looped forever). */
+static void test_array_overflow(void)
+{
+    br_array a;
+    br_array_init(&a, sizeof(int));
+    int one = 1;
+    br_array_push(&a, &one);
+    BR_CHECK(br_array_push_n(&a, NULL, UINT32_MAX) == NULL);
+    BR_CHECK(a.count == 1 && *(int *)br_array_at(&a, 0) == 1);
+    br_array_free(&a);
+
+    br_array big;
+    br_array_init(&big, 1u << 20);
+    BR_CHECK(!br_array_reserve(&big, 0x80000001u)); /* returns (false) instead of spinning */
+    BR_CHECK(big.capacity == 0);
+    br_array_free(&big);
+
+    uint32_t u = 0;
+    BR_CHECK(br_u32_mul_ok(65535, 65537, &u) && u == 0xFFFFFFFFu);
+    BR_CHECK(!br_u32_mul_ok(65536, 65536, &u));
+    size_t z = 0;
+    BR_CHECK(br_size_mul_ok(0, SIZE_MAX, &z) && z == 0);
+    BR_CHECK(!br_size_mul_ok(SIZE_MAX / 2 + 1, 2, &z));
+}
+
 static void test_pool(void)
 {
     br_pool p;
@@ -174,6 +199,50 @@ static void test_files(br_engine *e)
     BR_CHECK(!br_save_read(e, "slot1.json", &bytes, &size));
 }
 
+/* R1: the save folder was the raw window title (':' or '?' made every save fail); R8: writes
+ * were not atomic (a crash mid-write left a truncated save). */
+static void test_save_identity(void)
+{
+    br_engine *e = br_engine_create("R1 Review: Save Test?", NULL);
+    const char *save = "{\"slot\":1}";
+    BR_CHECK(br_save_write(e, "slot.json", save, SDL_strlen(save)));
+    void *bytes = NULL;
+    size_t size = 0;
+    BR_CHECK(br_save_read(e, "slot.json", &bytes, &size));
+    BR_CHECK(bytes != NULL && br_str_equal(bytes, save));
+    br_free(bytes);
+    BR_CHECK(br_save_remove(e, "slot.json"));
+    br_engine_destroy(e);
+
+    /* an explicit identity: two titles, one save folder */
+    br_engine *a = br_engine_create("Title A", NULL);
+    br_engine *b = br_engine_create("Title B", NULL);
+    br_engine_set_save_name(a, "braty-tests", "shared/app");
+    br_engine_set_save_name(b, "braty-tests", "shared/app");
+    BR_CHECK(br_save_write(a, "shared.json", "42", 2));
+    BR_CHECK(br_save_read(b, "shared.json", &bytes, &size) && size == 2);
+    br_free(bytes);
+
+    /* atomic: the new bytes go to a temp file first, so a failed write keeps the old save */
+    BR_CHECK(br_save_write(a, "shared.json", "old", 3));
+    char *pref = SDL_GetPrefPath("braty-tests", "shared_app");
+    char tmp[1024];
+    SDL_snprintf(tmp, sizeof(tmp), "%sshared.json.tmp", pref != NULL ? pref : "");
+    BR_CHECK(pref != NULL && SDL_CreateDirectory(tmp)); /* the temp name cannot be written now */
+    BR_CHECK(!br_save_write(a, "shared.json", "new", 3));
+    BR_CHECK(br_save_read(a, "shared.json", &bytes, &size) && size == 3 && SDL_memcmp(bytes, "old", 3) == 0);
+    br_free(bytes);
+    BR_CHECK(SDL_RemovePath(tmp));
+    BR_CHECK(br_save_write(a, "shared.json", "newer", 5));  /* replaces the existing file */
+    BR_CHECK(br_save_read(b, "shared.json", &bytes, &size) && size == 5 && SDL_memcmp(bytes, "newer", 5) == 0);
+    br_free(bytes);
+    BR_CHECK(!SDL_GetPathInfo(tmp, NULL)); /* no temp file left behind */
+    BR_CHECK(br_save_remove(a, "shared.json"));
+    SDL_free(pref);
+    br_engine_destroy(a);
+    br_engine_destroy(b);
+}
+
 /* ---- systems: order by phase, then priority, then adding order */
 
 typedef struct order_log {
@@ -219,7 +288,11 @@ static void test_systems(void)
     br_system_add(e, "b1", BR_PHASE_UPDATE, 5, sys_b, &log);
     br_system_add(e, "render", BR_PHASE_RENDER, 0, sys_r, &log);
     br_system_add(e, "adder", BR_PHASE_INPUT, 0, sys_adder, &log);
-    br_system_add(e, "a", BR_PHASE_UPDATE, 0, sys_a, &log); /* duplicate name: refused */
+    BR_CHECK(!br_system_add(e, "a", BR_PHASE_UPDATE, 0, sys_a, &log)); /* duplicate name: refused */
+    BR_CHECK(!br_system_add(e, "nofn", BR_PHASE_UPDATE, 0, NULL, &log));
+    BR_CHECK(!br_system_add(e, "badphase", BR_PHASE_COUNT, 0, sys_a, &log));
+    BR_CHECK(br_system_add(e, "ok", BR_PHASE_UPDATE, 0, sys_a, &log));
+    br_system_remove(e, "ok");
     BR_CHECK(br_system_count(e) == builtin + 6);
 
     /* headless: RENDER phase does not run, so no "R" */
@@ -264,6 +337,40 @@ static void test_ticker(void)
     BR_CHECK(br_nearly_equal(br_ticker_compute_delta(5.0f, 0.0f, 1.0f), 5.0f, 1e-6f));    /* no clamp */
     BR_CHECK(br_nearly_equal(br_ticker_compute_delta(0.02f, 10.0f, 0.5f), 0.01f, 1e-6f)); /* slow-mo */
     BR_CHECK(br_ticker_compute_delta(-1.0f, 10.0f, 1.0f) == 0.0f);
+    /* R1: negative or NaN speed gave negative / NaN dt */
+    float nan = SDL_sqrtf(-1.0f);
+    BR_CHECK(br_ticker_compute_delta(0.016f, 10.0f, -1.0f) == 0.0f);
+    BR_CHECK(br_ticker_compute_delta(0.016f, 10.0f, nan) == 0.0f);
+    BR_CHECK(br_ticker_compute_delta(nan, 10.0f, 1.0f) == 0.0f);
+    br_engine *e = br_engine_create("braty-test", NULL);
+    br_ticker_set_speed(e, -1.0f);
+    br_engine_step(e, br_ticker_compute_delta(0.016f, 10.0f, -1.0f));
+    BR_CHECK(br_ticker_delta(e) == 0.0f && br_ticker_elapsed(e) == 0.0);
+    br_ticker_set_speed(e, nan);
+    br_ticker_set_min_fps(e, nan);
+    br_engine_step(e, 0.0f);
+    BR_CHECK(br_ticker_delta(e) == 0.0f);
+    br_engine_destroy(e);
+}
+
+/* R1: retired system names were scanned linearly on every add (O(n^2) churn). */
+static void test_system_churn(void)
+{
+    br_engine *e = br_engine_create("braty-test", NULL);
+    order_log log = { { 0 } };
+    char name[32];
+    uint64_t start = SDL_GetTicksNS();
+    for (int i = 0; i < 20000; i++) {
+        SDL_snprintf(name, sizeof(name), "churn%d", i);
+        br_system_add(e, name, BR_PHASE_UPDATE, 0, sys_a, &log);
+        br_system_remove(e, name);
+    }
+    br_system_add(e, "churn7", BR_PHASE_UPDATE, 0, sys_a, &log); /* a retired name comes back */
+    double ms = (double)(SDL_GetTicksNS() - start) / 1e6;
+    BR_CHECK(ms < 500.0);
+    br_engine_step(e, 0.016f);
+    BR_CHECK(br_str_equal(log.text, "a"));
+    br_engine_destroy(e);
 }
 
 int main(int argc, char **argv)
@@ -271,10 +378,13 @@ int main(int argc, char **argv)
     (void)argc;
     (void)argv;
     test_array();
+    test_array_overflow();
     test_pool();
     test_map();
     test_strings();
     test_systems();
     test_ticker();
+    test_save_identity();
+    test_system_churn();
     return br_test_finish();
 }

@@ -125,6 +125,11 @@ br_rect br_rounded_rect_bounds(br_rounded_rect r)
 
 bool br_triangle_contains(br_triangle t, float x, float y)
 {
+    /* a zero-area triangle has all cross products 0 and would "contain" its whole line */
+    float area2 = (t.x2 - t.x1) * (t.y3 - t.y1) - (t.x3 - t.x1) * (t.y2 - t.y1);
+    if (area2 == 0.0f) {
+        return false;
+    }
     /* same sign of all three edge cross products = inside, for either winding */
     float d1 = (x - t.x2) * (t.y1 - t.y2) - (t.x1 - t.x2) * (y - t.y2);
     float d2 = (x - t.x3) * (t.y2 - t.y3) - (t.x2 - t.x3) * (y - t.y3);

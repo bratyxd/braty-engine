@@ -4,10 +4,11 @@
  *   1. creates the br_engine and the window + GPU, registers built-in modules,
  *   2. calls desc.init(e), where the game registers components and systems,
  *   3. every frame: computes dt (ticker), runs all systems in phase order, presents,
- *   4. calls desc.shutdown(e) and destroys everything.
+ *   4. destroys every node, calls desc.shutdown(e), then destroys everything else.
  *
  * Systems run in phase order, then by ascending priority, then in the order they were added:
- *   BR_PHASE_INPUT, UPDATE, LATE_UPDATE, PRE_RENDER   always run (also headless, also minimised)
+ *   BR_PHASE_INPUT, FIXED_UPDATE, UPDATE, LATE_UPDATE, PRE_RENDER
+ *                                                     always run (also headless, also minimised)
  *   BR_PHASE_RENDER, POST_RENDER                      only when a frame target was acquired
  *
  * Command line (parsed by the engine, also visible to br_main):
@@ -53,6 +54,10 @@ typedef struct br_app_desc {
     bool (*init)(br_engine *e);           /* register components, systems, load first scene */
     void (*shutdown)(br_engine *e);
     void *user;                           /* for the game: br_engine_app_user(e) in init and later */
+    const char *save_org;                 /* save identity (br_engine_set_save_name); NULL = "braty" */
+    const char *save_app;                 /* NULL = the title */
+    bool run_when_inactive;               /* false: pause while unfocused / minimised / in the
+                                             background (br_app_set_pause_when_inactive) */
     /* Set by br_game_config_main, owned by the engine: applied before init (window, input,
      * audio, manifest, ...), its start scene loaded after init, then freed. */
     struct br_game_config *config;
@@ -76,11 +81,13 @@ typedef enum br_phase {
     BR_PHASE_COUNT
 } br_phase;
 
-/* A system: called once per frame with the frame's scaled delta time. */
+/* A system: called once per frame with the frame's scaled delta time (FIXED_UPDATE systems:
+ * 0..N times per frame with the fixed step). */
 typedef void (*br_system_fn)(br_engine *e, float dt_seconds, void *user);
 
-/* Adds a system. Lower priority runs first within a phase. Names must be unique (copied). */
-void br_system_add(br_engine *e, const char *name, br_phase phase, int priority, br_system_fn fn, void *user);
+/* Adds a system. Lower priority runs first within a phase. Names must be unique (copied).
+ * False (logged) for a duplicate name, a NULL fn or name, or a bad phase. */
+bool br_system_add(br_engine *e, const char *name, br_phase phase, int priority, br_system_fn fn, void *user);
 /* Removes a system by name. Inside a frame it stops running at once and leaves the list after
  * the frame, so a system may remove itself or others; the name can be added again right away. */
 void br_system_remove(br_engine *e, const char *name);
@@ -109,9 +116,11 @@ bool br_system_get_info(br_engine *e, uint32_t index, br_system_info *out);
 /* ---- engine */
 
 /* Creates a headless engine (no window, no GPU): enough for tests and tools.
- * title names the save-data folder; asset_root as in br_app_desc (NULL = executable dir). */
+ * title also names the save-data folder (br_engine_set_save_name); asset_root as in br_app_desc
+ * (NULL = executable dir). */
 br_engine *br_engine_create(const char *title, const char *asset_root);
-/* Runs shutdown callbacks (reverse order), destroys GPU and window, frees the engine. */
+/* Destroys every 3D and 2D node (destroy listeners run), then runs shutdown callbacks (reverse
+ * order), destroys GPU and window, frees the engine. */
 void br_engine_destroy(br_engine *e);
 /* Opens a resizable window and the GPU device. gpu_driver may be NULL. */
 bool br_engine_open_window(br_engine *e, int width, int height, const char *gpu_driver);
@@ -163,20 +172,24 @@ void br_engine_add_event_handler(br_engine *e, br_event_fn fn, void *user);
 
 /* Callback run by br_engine_destroy (modules free their state here). */
 typedef void (*br_shutdown_fn)(br_engine *e, void *user);
-/* Adds a shutdown callback. They run in reverse order of adding, before the GPU is destroyed. */
+/* Adds a shutdown callback. They run in reverse order of adding, after every node was destroyed
+ * and before the GPU is destroyed. */
 void br_engine_on_shutdown(br_engine *e, br_shutdown_fn fn, void *user);
 
 /* ---- ticker (PixiJS Ticker) */
 
-/* Scaled, clamped delta of the current frame in seconds. */
+/* Scaled, clamped delta of the current frame in seconds (what systems get as dt). */
 float br_ticker_delta(br_engine *e);
+/* Clamped delta NOT scaled by the ticker speed: pause menus and UI animate with it while
+ * br_ticker_set_speed(e, 0) freezes the game. 0 while the app is paused for being inactive. */
+float br_ticker_unscaled_delta(br_engine *e);
 /* Sum of all deltas so far, in seconds. */
 double br_ticker_elapsed(br_engine *e);
 /* Number of frames stepped so far. */
 uint64_t br_ticker_frame(br_engine *e);
 /* Measured frames per second (smoothed, unscaled). */
 float br_ticker_fps(br_engine *e);
-/* Time scale: 0.5 = slow motion, 0 = paused. Default 1. */
+/* Time scale: 0.5 = slow motion, 0 = paused. Default 1. Negative or NaN is clamped to 0. */
 void br_ticker_set_speed(br_engine *e, float speed);
 /* Same as br_app_set_max_fps (kept for existing code). */
 void br_ticker_set_max_fps(br_engine *e, float max_fps);
@@ -222,6 +235,32 @@ uint32_t br_app_fixed_steps(br_engine *e);
 /* The frame time the pacing aims for, in ms: the FPS cap, or the display refresh with vsync on
  * (whichever is slower); 1000/60 when neither is known. The debug frame graph colours by it. */
 float br_app_frame_budget_ms(br_engine *e);
+
+/* ---- app lifecycle: focus, minimise, background (mobile), low memory, terminating
+ *
+ * The app is active while its window has focus, is not minimised and the OS has not sent it to
+ * the background. While inactive, by default (br_app_set_pause_when_inactive, game.json
+ * window.pause_when_inactive, br_app_desc.run_when_inactive) every system still runs but with
+ * dt 0 (FIXED_UPDATE does not step, ticker elapsed stops) and audio output is paused. Never in
+ * --deterministic, --frames or headless runs: those must not depend on the window manager. */
+
+typedef enum br_app_lifecycle {
+    BR_APP_LIFECYCLE_DEACTIVATED,  /* lost focus, minimised or sent to the background */
+    BR_APP_LIFECYCLE_ACTIVATED,    /* active again */
+    BR_APP_LIFECYCLE_LOW_MEMORY,   /* the OS asks the app to free what it can (drop caches) */
+    BR_APP_LIFECYCLE_TERMINATING   /* the OS is ending the app (mobile): save now */
+} br_app_lifecycle;
+
+/* Lifecycle callback (show a pause menu on DEACTIVATED, save on TERMINATING). */
+typedef void (*br_app_lifecycle_fn)(br_engine *e, br_app_lifecycle event, void *user);
+/* Adds a lifecycle callback, called in the order added, from the event that caused it. */
+void br_app_on_lifecycle(br_engine *e, br_app_lifecycle_fn fn, void *user);
+/* True while focused, not minimised and in the foreground (true until told otherwise). */
+bool br_app_is_active(br_engine *e);
+/* True while time and audio are paused because the app is inactive. */
+bool br_app_is_paused(br_engine *e);
+/* Pause time and audio while inactive (default true). */
+void br_app_set_pause_when_inactive(br_engine *e, bool on);
 
 /* ---- SDL main-callback glue (called by braty_main.h, not by games) */
 

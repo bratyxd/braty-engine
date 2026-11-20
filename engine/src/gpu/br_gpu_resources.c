@@ -83,8 +83,16 @@ void br_gpu_buffer_destroy(br_gpu *g, SDL_GPUBuffer *buffer)
 
 /* ---- transient streaming */
 
-static void *br_transient_alloc(br_transient_stream *s, uint32_t size, uint32_t *offset)
+static void *br_transient_alloc(br_gpu *g, br_transient_stream *s, uint32_t size, uint32_t *offset)
 {
+    if (g->transient_uploaded) {
+        /* the bytes would never reach the GPU: the draw would read stale data */
+        if (!g->transient_late_logged) {
+            br_log_error("br_gpu_transient_alloc_*: called after this frame's upload (allocate in PRE_RENDER)");
+            g->transient_late_logged = true;
+        }
+        return NULL;
+    }
     uint32_t start = (s->cpu.count + 15u) & ~15u;
     if (!br_array_resize(&s->cpu, start + size)) {
         return NULL;
@@ -95,12 +103,12 @@ static void *br_transient_alloc(br_transient_stream *s, uint32_t size, uint32_t 
 
 void *br_gpu_transient_alloc_vertices(br_gpu *g, uint32_t size, uint32_t *offset)
 {
-    return br_transient_alloc(&g->vertices, size, offset);
+    return br_transient_alloc(g, &g->vertices, size, offset);
 }
 
 void *br_gpu_transient_alloc_indices(br_gpu *g, uint32_t size, uint32_t *offset)
 {
-    return br_transient_alloc(&g->indices, size, offset);
+    return br_transient_alloc(g, &g->indices, size, offset);
 }
 
 /* Grows the GPU and transfer buffers to hold `needed` bytes. */
@@ -109,10 +117,12 @@ static bool br_transient_reserve(br_gpu *g, br_transient_stream *s, uint32_t nee
     if (needed <= s->capacity) {
         return true;
     }
-    uint32_t capacity = s->capacity > 0 ? s->capacity : 64 * 1024;
-    while (capacity < needed) {
-        capacity *= 2;
+    /* uint64: doubling past 2^31 must not wrap (it would loop forever) */
+    uint64_t grown = s->capacity > 0 ? s->capacity : 64 * 1024;
+    while (grown < needed) {
+        grown *= 2;
     }
+    uint32_t capacity = grown > UINT32_MAX ? UINT32_MAX : (uint32_t)grown;
     if (s->buffer != NULL) {
         SDL_ReleaseGPUBuffer(g->device, s->buffer);
     }
@@ -188,6 +198,7 @@ SDL_GPUBuffer *br_gpu_transient_index_buffer(br_gpu *g)
 void br_gpu_transient_reset(br_gpu *g)
 {
     g->transient_uploaded = false;
+    g->transient_late_logged = false;
     br_array_clear(&g->vertices.cpu);
     br_array_clear(&g->indices.cpu);
 }
@@ -289,6 +300,13 @@ br_gpu_texture *br_gpu_texture_create_rgba8(br_gpu *g, uint32_t width, uint32_t 
 bool br_gpu_texture_upload(br_gpu *g, br_gpu_texture *t, uint32_t x, uint32_t y, uint32_t width,
                            uint32_t height, const void *texels)
 {
+    /* SDL only validates regions in debug mode; out of range is undefined behaviour on the GPU */
+    if (width == 0 || height == 0 || x >= t->width || width > t->width - x || y >= t->height ||
+        height > t->height - y) {
+        br_log_error("texture upload: region %u,%u %ux%u is outside the %ux%u texture", x, y, width, height,
+                     t->width, t->height);
+        return false;
+    }
     uint32_t size = SDL_CalculateGPUTextureFormatSize(t->format, width, height, 1);
     SDL_GPUTransferBuffer *transfer = br_gpu_staging_create(g, SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, size, texels);
     if (transfer == NULL) {
@@ -329,6 +347,9 @@ bool br_gpu_texture_upload(br_gpu *g, br_gpu_texture *t, uint32_t x, uint32_t y,
 bool br_gpu_texture_read(br_gpu *g, br_gpu_texture *t, uint8_t **rgba)
 {
     *rgba = NULL;
+    if (g->cmd != NULL) {
+        br_log_warn("texture readback inside a frame: this frame's draws are not submitted yet, so they are not in it");
+    }
     bool swizzle;
     if (t->format == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM || t->format == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB) {
         swizzle = false;

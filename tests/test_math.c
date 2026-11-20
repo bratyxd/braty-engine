@@ -344,6 +344,36 @@ static void test_vec_extras(void)
     BR_CHECK(br_vec4_nearly_equal(br_vec4_normalize(br_vec4_make(0, 0, 0, 0)), br_vec4_make(0, 0, 0, 0), 0));
 }
 
+/* R1: degenerate triangles contained points far away; zero-extent projections gave inf/NaN. */
+static bool mat4_finite(br_mat4 m)
+{
+    for (int i = 0; i < 16; i++) {
+        if (!(m.m[i] - m.m[i] == 0.0f)) {
+            return false; /* inf - inf and NaN - NaN are NaN */
+        }
+    }
+    return true;
+}
+
+static void test_degenerate(void)
+{
+    br_triangle point = { 5, 5, 5, 5, 5, 5 };
+    BR_CHECK(!br_triangle_contains(point, 1000, -1000));
+    BR_CHECK(!br_triangle_contains(point, 5, 5));
+    br_triangle line = { 0, 0, 1, 1, 2, 2 };
+    BR_CHECK(!br_triangle_contains(line, 100, 100));
+    br_triangle real = { 0, 0, 10, 0, 0, 10 };
+    BR_CHECK(br_triangle_contains(real, 2, 2) && !br_triangle_contains(real, 9, 9));
+
+    BR_CHECK(mat4_finite(br_mat4_ortho(0, 0, 0, 0, -1, 1)));
+    BR_CHECK(mat4_finite(br_mat4_ortho(0, 10, 10, 0, 1, 1)));
+    BR_CHECK(mat4_finite(br_mat4_perspective(1.0f, 0.0f, 0.1f, 100.0f)));
+    BR_CHECK(mat4_finite(br_mat4_perspective(0.0f, 1.0f, 0.1f, 100.0f)));
+    BR_CHECK(mat4_finite(br_mat4_perspective(1.0f, 1.0f, 1.0f, 1.0f)));
+    BR_CHECK(mat4_finite(br_mat4_frustum(1, 1, -1, 1, 0.1f, 10.0f)));
+    BR_CHECK(mat4_finite(br_mat4_perspective_infinite(1.0f, 0.0f, 0.1f)));
+}
+
 static void test_mat4_extras(void)
 {
     br_quat r = br_quat_from_euler(0.3f, -0.7f, 1.1f);
@@ -981,6 +1011,7 @@ static void test_engine_random(void)
 
 int main(int argc, char **argv)
 {
+    test_degenerate();
     (void)argc;
     (void)argv;
     test_vec();

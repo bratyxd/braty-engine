@@ -34,6 +34,7 @@ typedef struct br_game_config {
     bool     fullscreen;                           /* false */
     br_vsync vsync;                                /* BR_VSYNC_ON; JSON true/false or "off"/"on"/"adaptive"/"mailbox" */
     bool     resizable;                            /* true */
+    bool     pause_when_inactive;                  /* true: time and audio stop while unfocused / minimised */
     float    logical_width, logical_height;        /* window.logical_size [w, h]: a letterbox camera; 0 = none */
     char     asset_root[BR_GAME_CONFIG_PATH_SIZE]; /* relative to the executable dir; "" = exe dir */
     char     manifest[BR_GAME_CONFIG_PATH_SIZE];   /* asset manifest added at apply; "" = none */
@@ -49,6 +50,8 @@ typedef struct br_game_config {
     bool     hot_reload;                           /* scene hot reload (debug builds: true) */
     bool     profiler_hud;                         /* profiler.hud: corner readout at start (false) */
     bool     profiler_panel;                       /* profiler.panel: profiler panel open at start (false) */
+    char     save_org[64];                         /* save.org: save identity, "" = "braty" */
+    char     save_app[128];                        /* save.app: "" = the window title */
     cJSON   *json;                                 /* the whole document (owned) */
 } br_game_config;
 

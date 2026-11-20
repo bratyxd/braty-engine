@@ -69,12 +69,49 @@ bool br_file_exists(br_engine *e, const char *path)
     return SDL_GetPathInfo(full, NULL);
 }
 
+/* A copy of name usable as a folder name on every desktop OS: characters Windows refuses
+ * (<>:"/\|?* and control characters) become '_', trailing dots and spaces go, empty -> "braty".
+ * Titles that were valid folder names come out unchanged, so their saves stay where they were. */
+char *br_save_name_sanitize(const char *name)
+{
+    char out[128];
+    size_t len = 0;
+    for (const char *c = name != NULL ? name : ""; *c != 0 && len + 1 < sizeof(out); c++) {
+        bool bad = (unsigned char)*c < 32 || SDL_strchr("<>:\"/\\|?*", *c) != NULL;
+        out[len++] = bad ? '_' : *c;
+    }
+    while (len > 0 && (out[len - 1] == '.' || out[len - 1] == ' ')) {
+        len--;
+    }
+    out[len] = 0;
+    return br_strdup(len > 0 ? out : "braty");
+}
+
+void br_engine_set_save_name(br_engine *e, const char *org, const char *app)
+{
+    if (org != NULL && org[0] != 0) {
+        br_free(e->save_org);
+        e->save_org = br_save_name_sanitize(org);
+    }
+    if (app != NULL && app[0] != 0) {
+        br_free(e->save_app);
+        e->save_app = br_save_name_sanitize(app);
+    }
+    if (e->save_storage != NULL) {
+        SDL_CloseStorage(e->save_storage); /* reopened under the new name on the next access */
+        e->save_storage = NULL;
+    }
+}
+
 static SDL_Storage *br_save_storage(br_engine *e)
 {
     if (e->save_storage == NULL) {
-        e->save_storage = SDL_OpenUserStorage("braty", e->title, 0);
+        if (e->save_org == NULL || e->save_app == NULL) {
+            return NULL; /* out of memory at create */
+        }
+        e->save_storage = SDL_OpenUserStorage(e->save_org, e->save_app, 0);
         if (e->save_storage == NULL) {
-            br_log_error("cannot open save storage: %s", SDL_GetError());
+            br_log_error("cannot open save storage '%s/%s': %s", e->save_org, e->save_app, SDL_GetError());
             return NULL;
         }
     }
@@ -118,8 +155,19 @@ bool br_save_write(br_engine *e, const char *path, const void *bytes, size_t siz
     if (storage == NULL) {
         return false;
     }
-    if (!SDL_WriteStorageFile(storage, path, bytes, size)) {
-        br_log_error("cannot write save '%s': %s", path, SDL_GetError());
+    /* write a temp file, then rename it over the save: a crash mid-write leaves the old save */
+    char tmp[1024];
+    if (SDL_snprintf(tmp, sizeof(tmp), "%s.tmp", path) >= (int)sizeof(tmp)) {
+        br_log_error("save path too long: '%s'", path);
+        return false;
+    }
+    if (!SDL_WriteStorageFile(storage, tmp, bytes, size)) {
+        br_log_error("cannot write save '%s': %s", tmp, SDL_GetError());
+        return false;
+    }
+    if (!SDL_RenameStoragePath(storage, tmp, path)) {
+        br_log_error("cannot replace save '%s': %s", path, SDL_GetError());
+        SDL_RemoveStoragePath(storage, tmp);
         return false;
     }
     return true;

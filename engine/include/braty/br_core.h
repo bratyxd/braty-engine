@@ -91,13 +91,14 @@ void br_array_init(br_array *a, uint32_t elem_size);
 void br_array_init_with_allocator(br_array *a, uint32_t elem_size, const br_allocator *allocator);
 /* Frees the storage and resets the array to empty (elem_size and allocator are kept). */
 void br_array_free(br_array *a);
-/* Makes room for at least `capacity` elements. */
+/* Makes room for at least `capacity` elements. False (logged) when the bytes do not fit. */
 bool br_array_reserve(br_array *a, uint32_t capacity);
 /* Sets count, growing if needed; new elements are zeroed. */
 bool br_array_resize(br_array *a, uint32_t count);
 /* Appends one element (copied from `elem`, or zeroed when elem is NULL). Returns it, NULL on failure. */
 void *br_array_push(br_array *a, const void *elem);
-/* Appends `n` elements (copied from `elems`, or zeroed when NULL). Returns the first, NULL on failure. */
+/* Appends `n` elements (copied from `elems`, or zeroed when NULL). Returns the first, NULL on failure
+ * (also when count + n would pass UINT32_MAX). */
 void *br_array_push_n(br_array *a, const void *elems, uint32_t n);
 /* Inserts one element at `index` (shifting later ones up). Returns it, NULL on failure. */
 void *br_array_insert(br_array *a, uint32_t index, const void *elem);
@@ -111,6 +112,12 @@ void br_array_remove_swap(br_array *a, uint32_t index);
 void br_array_remove_ordered(br_array *a, uint32_t index);
 /* Sets count to 0, keeps the storage. */
 void br_array_clear(br_array *a);
+
+/* Checked products for counts and sizes from data files: *out = a * b, false if it overflowed.
+ * The containers reject wrapping counts themselves, but cannot see a product that already wrapped. */
+bool br_u32_mul_ok(uint32_t a, uint32_t b, uint32_t *out);
+/* Same for size_t (byte sizes). */
+bool br_size_mul_ok(size_t a, size_t b, size_t *out);
 
 /* ---- br_pool: slots addressed by (index, generation) handles
  *
@@ -180,7 +187,9 @@ void *br_map_get(const br_map *m, const char *key);
 bool br_map_remove(br_map *m, const char *key);
 /* Removes everything, keeps the storage. */
 void br_map_clear(br_map *m);
-/* Iteration: call with *slot = 0, repeat while it returns true. Fills key and value. */
+/* Iteration: call with *slot = 0, repeat while it returns true. Fills key and value.
+ * Do not br_map_remove (or br_map_set a new key) while iterating: removal shifts later entries
+ * back past the cursor, so some are skipped. Collect the keys first, or restart at *slot = 0. */
 bool br_map_next(const br_map *m, uint32_t *slot, const char **key, void **value);
 
 /* ---- strings */
@@ -215,11 +224,18 @@ bool br_file_exists(br_engine *e, const char *path);
 /* Resolves `path` against the asset root into `out`. Absolute paths are copied unchanged. */
 bool br_file_resolve(br_engine *e, const char *path, char *out, size_t out_size);
 
-/* ---- save data (SDL_Storage user storage, per org "braty" + the game title) */
+/* ---- save data (SDL_Storage user storage: one folder per org + app)
+ *
+ * The identity defaults to org "braty" and the window title; br_app_desc.save_org / save_app or
+ * game.json "save": { "org", "app" } set it. Names are sanitised (characters a folder name cannot
+ * hold become '_'), so any title works and a title that worked before keeps its saves. */
 
+/* Sets the save identity; NULL or "" keeps that part. Sanitised. Later save calls use it. */
+void br_engine_set_save_name(br_engine *e, const char *org, const char *app);
 /* Reads a save file. *bytes is NUL-terminated; free with br_free. False if missing. */
 bool br_save_read(br_engine *e, const char *path, void **bytes, size_t *size);
-/* Writes a save file, replacing it. */
+/* Writes a save file, replacing it atomically: the bytes go to "<path>.tmp", which is then
+ * renamed over the save, so a crash mid-write leaves the previous save intact. */
 bool br_save_write(br_engine *e, const char *path, const void *bytes, size_t size);
 /* Deletes a save file. */
 bool br_save_remove(br_engine *e, const char *path);

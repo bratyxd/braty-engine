@@ -19,7 +19,9 @@ same functions.
 - For 2D drawing in window units: `br_mat4_ortho(0, width, height, 0, -1, 1)`.
 - `br_quat_from_euler(x, y, z)` applies X, then Y, then Z; `br_quat_to_euler` is its inverse.
 - Degenerate input never produces NaN: zero vectors normalise to zero, degenerate triangles
-  miss, parallel rays miss, singular matrices invert to identity with `ok = false`.
+  miss (`br_triangle_contains` of a zero-area triangle is false), parallel rays miss, singular
+  matrices invert to identity with `ok = false`, projections with a zero extent (a 0x0 headless
+  window, zero aspect, near == far) are the identity.
 
 ## Functions you actually need
 

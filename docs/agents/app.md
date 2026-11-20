@@ -36,12 +36,15 @@ next frame.
 | `br_app_set_fixed_timestep(e, hz)`, `br_app_fixed_alpha(e)` | Fixed-rate `FIXED_UPDATE`; alpha interpolates rendering between steps. |
 | `br_app_deterministic(e)`, `br_engine_random(e)` | Reproducible runs; the seeded engine RNG. |
 | `br_engine_screenshot(e, path)` | Last rendered frame as PNG. |
-| `br_system_add(e, name, phase, priority, fn, user)` | Register behaviour. |
+| `br_system_add(e, name, phase, priority, fn, user)` | Register behaviour; false (logged) for a duplicate name, NULL fn or bad phase. |
 | `br_system_set_enabled(e, name, on)` | Pause a system. |
 | `br_system_remove(e, name)` | Remove a system (safe inside a frame: it stops at once, leaves the list after the frame). |
-| `br_engine_on_shutdown(e, fn, user)` | Free your state (runs before the GPU is destroyed). |
+| `br_engine_on_shutdown(e, fn, user)` | Free your state (runs after every node was destroyed, before the GPU is destroyed). |
 | `br_engine_add_event_handler(e, fn, user)` | Raw SDL events (input modules). |
 | `br_ticker_delta/elapsed/fps`, `br_ticker_set_speed/max_fps/min_fps` | Time. |
+| `br_ticker_unscaled_delta(e)` | The frame's dt without the ticker speed: pause menus and UI animate with it while `br_ticker_set_speed(e, 0)` freezes the game. |
+| `br_app_on_lifecycle(e, fn, user)`, `br_app_is_active(e)`, `br_app_is_paused(e)` | Focus / minimise / background: show a pause menu on `DEACTIVATED`, save on `TERMINATING`, drop caches on `LOW_MEMORY`. |
+| `br_app_set_pause_when_inactive(e, on)` | Default on: while inactive, dt is 0 and audio output is paused (game.json `window.pause_when_inactive`, `br_app_desc.run_when_inactive`). |
 | `br_engine_window_size`, `br_engine_pixel_size`, `br_engine_pixel_density` | Layout vs pixels. |
 | `br_engine_create(title, asset_root)` + `br_engine_step(e, dt)` | Headless engine for tests. |
 
@@ -92,12 +95,27 @@ average error at 60 / 144.
 ## Gotchas
 
 - Include `braty_main.h` in exactly one `.c` file; it defines the SDL main callbacks.
-- No globals: hang state off the `user` pointer, free it in a `br_engine_on_shutdown` callback.
+- No globals: hang state off the `user` pointer, free it in a `br_engine_on_shutdown` callback
+  (or `desc.shutdown`). Exit order: every 3D and 2D node is destroyed first (their destroy
+  listeners still see your state), then `desc.shutdown`, then shutdown callbacks in reverse order
+  of adding, then the GPU and window.
 - Module state lives in `struct br_engine` (`engine/src/app/br_engine_internal.h`): one pointer
   per module (`e->scene`, `e->render`, ...). A module defines its own `struct br_<module>_state`
   in its `_internal.h`, allocates it in `br_<module>_register(e)` (called from `br_builtin.c`)
   and frees it in an on-shutdown callback.
-- `min_fps` (default 10) clamps `dt` so a stall does not produce one giant step; `speed` scales it.
+- `min_fps` (default 10) clamps `dt` so a stall does not produce one giant step; `speed` scales it
+  (negative or NaN speed is clamped to 0 = paused).
+- Pause menus: switch the gameplay group off (`br_system_group_set_enabled`) or set the ticker
+  speed to 0, and animate the menu with `br_ticker_unscaled_delta(e)` instead of the system's
+  `dt` (which is scaled). Tweens, animators and particles are engine systems that use the scaled
+  dt, so speed 0 freezes them too.
+- Lifecycle: the app is active while its window is focused, not minimised and not in the
+  background (SDL focus / minimise / restore and will/did-enter-background / foreground events,
+  handled in `br_app_event`). Going inactive calls the lifecycle callbacks with `DEACTIVATED`;
+  with `pause_when_inactive` (default) every system keeps running with dt 0 (FIXED_UPDATE does
+  not step, elapsed stops, the loop naps 16 ms per frame) and the audio device is paused; coming
+  back resumes without one giant dt. Never in `--deterministic`, `--frames` or headless runs.
+  `LOW_MEMORY` and `TERMINATING` are passed to the callbacks as they come.
 - Vsync (default on) and the FPS cap are independent. With vsync on and a cap below the refresh
   rate the cap wins; above it the display does. The cap schedules deadlines, so a late frame is
   not followed by a rushed one; more than a whole frame late restarts the schedule.

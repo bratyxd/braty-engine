@@ -85,6 +85,10 @@ download (see `examples/audio/LICENSE-gong.txt`).
 
 ## Gotchas
 
+- `br_audio_set_device_paused(e, on)` pauses the whole output device; the app calls it while the
+  window is inactive (`br_app_set_pause_when_inactive`, docs/agents/app.md). Instance and bus
+  pause flags are untouched.
+
 - Limits: 64 instances, 15 buses, 16 sprites per sound (`BR_AUDIO_MAX_*`). Play returns a zero
   handle when all instances are busy.
 - `br_sound_destroy` is only for `br_sound_create_pcm` sounds; asset-loaded sounds are freed by

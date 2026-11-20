@@ -38,7 +38,8 @@ Every key is optional; the values below are the defaults unless noted.
 ```json
 {
   "window": { "title": "My Game", "width": 1280, "height": 720,
-              "fullscreen": false, "vsync": true, "resizable": true, "logical_size": [1280, 720] },
+              "fullscreen": false, "vsync": true, "resizable": true, "logical_size": [1280, 720],
+              "pause_when_inactive": true },
   "asset_root": "assets",
   "manifest": "manifest.json",
   "start_scene": "title",
@@ -57,6 +58,7 @@ Every key is optional; the values below are the defaults unless noted.
   },
   "debug": { "overlay": false, "toggle_key": "F1", "hot_reload": true },
   "profiler": { "hud": false, "panel": false },
+  "save": { "org": "my-studio", "app": "My Game" },
   "game": { "lives": 3 }
 }
 ```
@@ -70,6 +72,7 @@ overlay closed, F1, hot reload on in debug builds, no logical size (the example'
 |---|---|
 | `window.*` | Window title and size (in `br_app_desc`), fullscreen / resizable (applied). |
 | `window.logical_size` | `[width, height]`: a fixed design resolution. Applied as `br_camera_create_logical(e, w, h)`, a letterbox 2D camera under the stage: the stage is always w x h units, scaled to fit the window with bars, and pointer events map through it (`docs/agents/camera.md`). Absent = no camera, the stage is the window. |
+| `window.pause_when_inactive` | Default `true`: while the window is unfocused, minimised or in the background, game time stops (dt 0) and audio output pauses (`br_app_set_pause_when_inactive`; never in `--deterministic` / `--frames` / headless runs). |
 | `window.vsync` | `true` / `false`, or `"on"`, `"off"`, `"mailbox"`, `"adaptive"` (`br_app_set_vsync`; unsupported modes fall back with a log line; SDL GPU has no adaptive mode, it becomes on). |
 | `asset_root` | Directory of all other paths, relative to the executable directory. |
 | `manifest` | Added with `br_assets_load_manifest` (aliases and bundles). |
@@ -83,6 +86,7 @@ overlay closed, F1, hot reload on in debug builds, no logical size (the example'
 | `debug.toggle_key` | SDL key name toggling the overlay (`"F1"`, `"F12"`, `"Grave"`). |
 | `debug.hot_reload` | Poll loaded scene files and reload them when they change (default: on in debug builds, off with `NDEBUG`). |
 | `profiler.hud` / `profiler.panel` | Profiler corner readout / panel (F2) shown at start (`br_profiler_set_hud`, `br_profiler_set_open`). `false` leaves the command line (`--profiler-hud`, `--profiler`) in charge. |
+| `save.org` / `save.app` | Save-data folder (`br_engine_set_save_name`): default org `"braty"` and the window title. Sanitised (characters a folder name cannot hold become `_`), so renaming or localising the title does not move saves once `save.app` is set. |
 | `game` | Anything the game wants: `br_game_config_json(e)` returns the whole document. Other unknown keys log a warning. |
 
 Command line (`br_game_config_args`): `--debug` opens the overlay, `--scene path` replaces

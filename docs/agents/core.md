@@ -18,7 +18,9 @@ Plain C over SDL. No window or GPU needed. Arenas (linear, stack, pool, scratch,
 | `br_pool_alloc/get/release` | Slots addressed by (index, generation); stale handles return NULL. |
 | `br_map_init/set/get/remove/next` | String key -> fixed-size value. |
 | `br_file_read_all(e, path, &bytes, &size)` | Whole file, relative to the asset root, NUL-terminated. |
-| `br_save_read/write(e, path, ...)` | Save data in per-user storage (SDL_Storage). |
+| `br_save_read/write(e, path, ...)` | Save data in per-user storage (SDL_Storage). Writes are atomic (temp file + rename). |
+| `br_engine_set_save_name(e, org, app)` | Save folder identity (default `"braty"` + window title, sanitised); also `br_app_desc.save_org/save_app`, game.json `"save"`. |
+| `br_u32_mul_ok(a, b, &out)`, `br_size_mul_ok` | `count * stride` from data files without wrapping (containers reject wrapping counts themselves). |
 | `br_path_join`, `br_path_extension`, `br_str_*` | Small string helpers. |
 
 ## Snippet (from tests/test_core.c)
@@ -56,6 +58,12 @@ if (br_file_read_all(e, "data/level1.json", &bytes, &size)) {
 - Relative paths resolve against the asset root (`br_engine_asset_root`); absolute paths pass
   through. Never use `fopen`: files go through SDL so consoles work.
 - `br_save_*` blocks until the storage is ready (instant on desktop; see the `ponytail:` note).
+- `br_save_write` writes `<path>.tmp` and renames it over the save, so a crash mid-write keeps the
+  old save; a stray `.tmp` after a crash is overwritten by the next write.
+- Do not `br_map_remove` while walking a map with `br_map_next` (entries shift back past the
+  cursor and are skipped): collect the keys first, or restart from slot 0 after each removal.
+- `br_array` counts are uint32: `push_n` / `insert` past UINT32_MAX and reserves whose bytes do
+  not fit return NULL / false (logged) instead of wrapping.
 - `BR_ARRAY_COUNT(a)` is the only helper macro.
 - `br_alloc` blocks carry a size header (for the stats): pair `br_alloc`/`br_realloc`/`br_strdup`/
   `br_file_read_all`/`br_save_read` with `br_free` only, and SDL/third-party memory with its own free.

@@ -52,6 +52,7 @@ struct br_gpu {
     br_transient_stream vertices;
     br_transient_stream indices;
     bool                transient_uploaded;  /* this frame's data is on the GPU (later calls no-op) */
+    bool                transient_late_logged; /* an alloc after the upload was logged this frame */
 
     /* current frame */
     SDL_GPUCommandBuffer *cmd;            /* non-NULL only between frame_begin and frame_end */

@@ -36,9 +36,6 @@ void br_builtin_register(br_engine *e)
     br_animation_register(e);
     br_profiler_register(e);
     br_playtest_register(e);
-    /* registered last so they run first at shutdown: every node's on_destroy and every destroy
-     * listener (animation, canvas3d, data...) still sees its module. 3D nodes go first: a
-     * canvas3d's on_destroy destroys its 2D root. */
-    br_engine_on_shutdown(e, br_scene_shutdown_nodes, NULL);
-    br_engine_on_shutdown(e, br_three_d_shutdown_nodes, NULL);
+    /* nodes are destroyed by br_engine_destroy before any shutdown callback runs, so every
+     * on_destroy and destroy listener (animation, canvas3d, data, the game...) sees its state */
 }

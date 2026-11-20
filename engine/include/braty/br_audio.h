@@ -124,5 +124,9 @@ void br_audio_mix(br_engine *e, float *out, uint32_t frames);
 void br_audio_set_stream_threshold(br_engine *e, float seconds);
 /* True once the playback device is open. */
 bool br_audio_device_open(br_engine *e);
+/* Pauses or resumes the whole output device (the app does this while inactive). */
+void br_audio_set_device_paused(br_engine *e, bool paused);
+/* True while the output device is paused by br_audio_set_device_paused. */
+bool br_audio_device_paused(br_engine *e);
 
 #endif

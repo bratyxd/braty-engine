@@ -88,23 +88,6 @@ SDL_GPUTextureFormat br_gpu_depth_stencil_format(br_gpu *g)
     return g->depth_stencil_format;
 }
 
-bool br_gpu_set_vsync(br_gpu *g, bool vsync)
-{
-    SDL_GPUPresentMode mode = SDL_GPU_PRESENTMODE_VSYNC;
-    if (!vsync) {
-        if (SDL_WindowSupportsGPUPresentMode(g->device, g->window, SDL_GPU_PRESENTMODE_MAILBOX)) {
-            mode = SDL_GPU_PRESENTMODE_MAILBOX;
-        } else if (SDL_WindowSupportsGPUPresentMode(g->device, g->window, SDL_GPU_PRESENTMODE_IMMEDIATE)) {
-            mode = SDL_GPU_PRESENTMODE_IMMEDIATE;
-        }
-    }
-    if (!SDL_SetGPUSwapchainParameters(g->device, g->window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode)) {
-        br_log_error("cannot set present mode: %s", SDL_GetError());
-        return false;
-    }
-    return true;
-}
-
 bool br_gpu_set_present_mode(br_gpu *g, SDL_GPUPresentMode mode)
 {
     if (!SDL_WindowSupportsGPUPresentMode(g->device, g->window, mode)) {

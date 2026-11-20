@@ -415,6 +415,9 @@ br_vec3 br_mat4_transform_dir(br_mat4 m, br_vec3 d)
 br_mat4 br_mat4_ortho(float left, float right, float bottom, float top, float near_z, float far_z)
 {
     br_mat4 r = br_mat4_identity();
+    if (right == left || top == bottom || far_z == near_z) {
+        return r; /* zero extent (a 0x0 headless window): identity instead of inf/NaN */
+    }
     r.m[0] = 2.0f / (right - left);
     r.m[5] = 2.0f / (top - bottom);
     r.m[10] = -1.0f / (far_z - near_z);
@@ -426,7 +429,11 @@ br_mat4 br_mat4_ortho(float left, float right, float bottom, float top, float ne
 
 br_mat4 br_mat4_perspective(float fov_y, float aspect, float near_z, float far_z)
 {
-    float f = 1.0f / SDL_tanf(fov_y * 0.5f);
+    float tan_half = SDL_tanf(fov_y * 0.5f);
+    if (tan_half == 0.0f || aspect == 0.0f || far_z == near_z) {
+        return br_mat4_identity(); /* degenerate: identity instead of inf/NaN */
+    }
+    float f = 1.0f / tan_half;
     br_mat4 r;
     for (int i = 0; i < 16; i++) {
         r.m[i] = 0.0f;
@@ -1049,6 +1056,9 @@ br_mat4 br_mat4_look_to(br_vec3 eye, br_vec3 direction, br_vec3 up)
 
 br_mat4 br_mat4_frustum(float left, float right, float bottom, float top, float near_z, float far_z)
 {
+    if (right == left || top == bottom || far_z == near_z) {
+        return br_mat4_identity(); /* degenerate: identity instead of inf/NaN */
+    }
     br_mat4 r;
     for (int i = 0; i < 16; i++) {
         r.m[i] = 0.0f;

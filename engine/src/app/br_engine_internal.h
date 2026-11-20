@@ -35,8 +35,14 @@ typedef struct br_shutdown_entry {
     void          *user;
 } br_shutdown_entry;
 
+typedef struct br_lifecycle_entry {
+    br_app_lifecycle_fn fn;
+    void               *user;
+} br_lifecycle_entry;
+
 typedef struct br_ticker_state {
     float    delta;        /* scaled, clamped seconds of the current frame */
+    float    unscaled_delta; /* clamped, not scaled by speed (pause menus); 0 while paused inactive */
     double   elapsed;      /* sum of delta */
     uint64_t frame;        /* frames stepped so far */
     float    fps;          /* smoothed frames per second (unscaled) */
@@ -68,11 +74,19 @@ struct br_engine {
 
     br_array systems;               /* br_system_entry, sorted by phase then priority */
     br_array pending_systems;       /* added while stepping; merged after the step */
-    br_array retired_system_names;  /* char *, names of removed systems (see br_system_remove) */
+    br_map   retired_system_names;  /* name -> char *, names of removed systems (see br_system_name_copy) */
     bool     stepping;
     br_array disabled_groups;       /* char *, system groups switched off */
     br_array event_handlers;       /* br_event_handler_entry */
     br_array shutdown_handlers;     /* br_shutdown_entry, run in reverse order */
+    br_array lifecycle_handlers;    /* br_lifecycle_entry, called in the order added */
+
+    /* app lifecycle (br_app.c): active = focused, not minimised, not in the background */
+    bool focus_lost;
+    bool minimized;
+    bool in_background;
+    bool pause_when_inactive;       /* default true; br_app_set_pause_when_inactive */
+    bool paused_inactive;           /* the pause is applied now (time stopped, audio paused) */
 
     br_ticker_state ticker;
     br_vsync vsync;                 /* present mode in effect (or requested, while headless) */
@@ -84,6 +98,8 @@ struct br_engine {
     uint64_t skipped_frames;        /* frames where no swapchain texture was available */
 
     SDL_Storage *save_storage;      /* opened on first save access */
+    char        *save_org;          /* save identity (sanitised): "braty" and the title by default */
+    char        *save_app;
 
     /* --frames / --screenshot (0 / NULL when not given) */
     uint64_t frame_limit;
@@ -119,11 +135,21 @@ struct br_engine {
     struct br_profiler_state    *profiler;
 };
 
+/* A br_strdup of name made safe as a save folder name (br_file.c). */
+char *br_save_name_sanitize(const char *name);
+
+/* br_engine_step with the unscaled delta given separately (br_engine_step passes dt for both). */
+bool br_engine_step_frame(br_engine *e, float dt_seconds, float unscaled_seconds);
+
 /* FPS cap: waits until the next frame's deadline (br_pacing.c). No-op when uncapped. */
 void br_app_pace_frame(br_engine *e);
 
 /* br_engine_screenshot, averaging n x n pixel blocks first (golden images stay small). */
 bool br_engine_screenshot_downsampled(br_engine *e, const char *path, uint32_t downsample);
+
+/* Destroys every 3D and 2D node (their on_destroy and destroy listeners run). Called by
+ * br_app_quit before desc.shutdown and by br_engine_destroy before any shutdown callback. */
+void br_engine_destroy_nodes(br_engine *e);
 
 /* Registers every built-in module. Defined in br_builtin.c (owned by Task 2). */
 void br_builtin_register(br_engine *e);

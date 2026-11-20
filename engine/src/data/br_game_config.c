@@ -10,6 +10,7 @@ void br_game_config_defaults(br_game_config *config)
     config->height = 720;
     config->vsync = BR_VSYNC_ON;
     config->resizable = true;
+    config->pause_when_inactive = true;
     config->min_fps = 10.0f;
     config->speed = 1.0f;
     br_str_copy(config->debug_key, sizeof(config->debug_key), "F1");
@@ -124,10 +125,10 @@ static void br_config_warn_keys(const char *source, const char *section, const c
 static void br_config_check_keys(const char *source, const cJSON *doc)
 {
     br_config_warn_keys(source, "", doc,
-                        " window asset_root manifest start_scene scenes clear_color ticker input audio debug profiler game ");
-    const char *sections[] = { "window", "ticker", "debug", "audio", "profiler" };
-    const char *keys[] = { " title width height fullscreen vsync resizable logical_size ", " max_fps min_fps speed fixed_hz ",
-                           " overlay toggle_key hot_reload ", " master_volume muted buses sprites ", " hud panel " };
+                        " window asset_root manifest start_scene scenes clear_color ticker input audio debug profiler save game ");
+    const char *sections[] = { "window", "ticker", "debug", "audio", "profiler", "save" };
+    const char *keys[] = { " title width height fullscreen vsync resizable logical_size pause_when_inactive ", " max_fps min_fps speed fixed_hz ",
+                           " overlay toggle_key hot_reload ", " master_volume muted buses sprites ", " hud panel ", " org app " };
     for (uint32_t i = 0; i < BR_ARRAY_COUNT(sections); i++) {
         const cJSON *section = cJSON_GetObjectItemCaseSensitive(doc, sections[i]);
         if (cJSON_IsObject(section)) {
@@ -184,6 +185,7 @@ bool br_game_config_parse(const char *json, size_t size, const char *source_name
         br_config_error(&r, "vsync", "expected true, false, \"off\", \"on\", \"adaptive\" or \"mailbox\"");
     }
     br_config_bool(&r, window, "resizable", &config->resizable);
+    br_config_bool(&r, window, "pause_when_inactive", &config->pause_when_inactive);
     const cJSON *logical = cJSON_GetObjectItemCaseSensitive(window, "logical_size");
     if (logical != NULL) {
         const cJSON *lw = cJSON_GetArrayItem(logical, 0);
@@ -211,6 +213,10 @@ bool br_game_config_parse(const char *json, size_t size, const char *source_name
     const cJSON *profiler = br_config_section(&r, doc, "profiler");
     br_config_bool(&r, profiler, "hud", &config->profiler_hud);
     br_config_bool(&r, profiler, "panel", &config->profiler_panel);
+
+    const cJSON *save = br_config_section(&r, doc, "save");
+    br_config_string(&r, save, "org", config->save_org, sizeof(config->save_org));
+    br_config_string(&r, save, "app", config->save_app, sizeof(config->save_app));
 
     r.section = "";
     const cJSON *input = cJSON_GetObjectItemCaseSensitive(doc, "input");
@@ -277,6 +283,9 @@ br_app_desc br_game_config_app_desc(const br_game_config *config)
     desc.width = config->width;
     desc.height = config->height;
     desc.asset_root = config->asset_root[0] != '\0' ? config->asset_root : NULL;
+    desc.save_org = config->save_org[0] != '\0' ? config->save_org : NULL;
+    desc.save_app = config->save_app[0] != '\0' ? config->save_app : NULL;
+    desc.run_when_inactive = !config->pause_when_inactive;
     return desc;
 }
 

@@ -232,7 +232,7 @@ static bool demo_init(br_engine *e)
     }
     br_engine_on_shutdown(e, demo_shutdown, s);
     if (g_no_vsync) {
-        br_gpu_set_vsync(br_engine_gpu(e), false);
+        br_app_set_vsync(e, BR_VSYNC_OFF);
     }
     setup_main_view(e, s);
     setup_2d(e, s);

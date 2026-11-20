@@ -2,6 +2,7 @@
 #include "app/br_engine_internal.h"
 #include "data/br_data_internal.h"
 #include "playtest/br_playtest_internal.h"
+#include "braty/br_audio.h"
 #include "braty/br_profiler.h"
 
 #include "stb/stb_image_write.h"
@@ -219,6 +220,8 @@ SDL_AppResult br_app_init(void **appstate, const br_app_desc *desc, int argc, ch
         e->app_user = desc->user;
         e->argc = argc;
         e->argv = argv;
+        br_engine_set_save_name(e, desc->save_org, desc->save_app);
+        e->pause_when_inactive = !desc->run_when_inactive;
         if (args.deterministic) {
             br_app_set_deterministic(e, true, args.seed); /* before init: the game may draw numbers there */
         }
@@ -257,14 +260,19 @@ SDL_AppResult br_app_iterate(void *appstate)
     e->ticker.last_ns = now;
     e->ticker.fps = e->ticker.fps == 0.0f ? 1.0f / raw : e->ticker.fps * 0.9f + (1.0f / raw) * 0.1f;
 
-    float dt = br_ticker_compute_delta(raw, e->ticker.min_fps, e->ticker.speed);
     if (e->frame_limit > 0 || e->deterministic) {
         /* scripted runs (--frames, --deterministic) use a fixed step so screenshots are reproducible */
-        dt = br_ticker_compute_delta(1.0f / 60.0f, e->ticker.min_fps, e->ticker.speed);
+        raw = 1.0f / 60.0f;
     }
-    bool presented = br_engine_step(e, dt);
-    if (!presented && e->window != NULL) {
-        // ponytail: fixed 16 ms nap while minimised so we do not spin a core; wake on SDL_EVENT_WINDOW_RESTORED if latency matters.
+    float dt = br_ticker_compute_delta(raw, e->ticker.min_fps, e->ticker.speed);
+    float unscaled = br_ticker_compute_delta(raw, e->ticker.min_fps, 1.0f);
+    if (e->paused_inactive) {
+        dt = 0.0f; /* inactive: systems still run (a pause screen can draw) but no time passes */
+        unscaled = 0.0f;
+    }
+    bool presented = br_engine_step_frame(e, dt, unscaled);
+    if ((!presented || e->paused_inactive) && e->window != NULL) {
+        // ponytail: fixed 16 ms nap while minimised or paused so we do not spin a core; wake on SDL_EVENT_WINDOW_RESTORED if latency matters.
         SDL_Delay(16);
     }
 
@@ -292,12 +300,103 @@ SDL_AppResult br_app_iterate(void *appstate)
     return SDL_APP_CONTINUE;
 }
 
+/* ---- lifecycle */
+
+void br_app_on_lifecycle(br_engine *e, br_app_lifecycle_fn fn, void *user)
+{
+    br_lifecycle_entry entry = { fn, user };
+    br_array_push(&e->lifecycle_handlers, &entry);
+}
+
+bool br_app_is_active(br_engine *e)
+{
+    return !e->focus_lost && !e->minimized && !e->in_background;
+}
+
+bool br_app_is_paused(br_engine *e)
+{
+    return e->paused_inactive;
+}
+
+static void br_app_notify_lifecycle(br_engine *e, br_app_lifecycle event)
+{
+    for (uint32_t i = 0; i < e->lifecycle_handlers.count; i++) {
+        br_lifecycle_entry *h = br_array_at(&e->lifecycle_handlers, i);
+        h->fn(e, event, h->user);
+    }
+}
+
+/* Applies or lifts the inactive pause. Never in scripted runs (--deterministic, --frames) or
+ * headless: those must give the same frames whatever the window manager does. */
+static void br_app_update_pause(br_engine *e)
+{
+    bool pause = e->pause_when_inactive && !br_app_is_active(e) && !e->deterministic && e->frame_limit == 0 &&
+                 e->window != NULL;
+    if (pause == e->paused_inactive) {
+        return;
+    }
+    e->paused_inactive = pause;
+    br_audio_set_device_paused(e, pause);
+    br_log_info(pause ? "app inactive: paused" : "app active: resumed");
+}
+
+void br_app_set_pause_when_inactive(br_engine *e, bool on)
+{
+    e->pause_when_inactive = on;
+    br_app_update_pause(e);
+}
+
+/* Window focus / minimise and OS background / memory / terminate events. */
+static void br_app_lifecycle_event(br_engine *e, const SDL_Event *event)
+{
+    bool was_active = br_app_is_active(e);
+    switch (event->type) {
+    case SDL_EVENT_WINDOW_FOCUS_LOST:
+        e->focus_lost = true;
+        break;
+    case SDL_EVENT_WINDOW_FOCUS_GAINED:
+        e->focus_lost = false;
+        break;
+    case SDL_EVENT_WINDOW_MINIMIZED:
+        e->minimized = true;
+        break;
+    case SDL_EVENT_WINDOW_RESTORED:
+    case SDL_EVENT_WINDOW_MAXIMIZED:
+        e->minimized = false;
+        break;
+    case SDL_EVENT_WILL_ENTER_BACKGROUND:
+    case SDL_EVENT_DID_ENTER_BACKGROUND:
+        e->in_background = true;
+        break;
+    case SDL_EVENT_DID_ENTER_FOREGROUND:
+        e->in_background = false;
+        break;
+    case SDL_EVENT_LOW_MEMORY:
+        br_app_notify_lifecycle(e, BR_APP_LIFECYCLE_LOW_MEMORY);
+        return;
+    case SDL_EVENT_TERMINATING:
+        br_app_notify_lifecycle(e, BR_APP_LIFECYCLE_TERMINATING);
+        return;
+    default:
+        return;
+    }
+    bool active = br_app_is_active(e);
+    if (active != was_active) {
+        if (active) {
+            e->ticker.last_ns = 0; /* the time spent inactive is not one giant frame */
+        }
+        br_app_update_pause(e);
+        br_app_notify_lifecycle(e, active ? BR_APP_LIFECYCLE_ACTIVATED : BR_APP_LIFECYCLE_DEACTIVATED);
+    }
+}
+
 SDL_AppResult br_app_event(void *appstate, SDL_Event *event)
 {
     br_engine *e = appstate;
     if (event->type == SDL_EVENT_QUIT) {
         return SDL_APP_SUCCESS;
     }
+    br_app_lifecycle_event(e, event);
     for (uint32_t i = 0; i < e->event_handlers.count; i++) {
         br_event_handler_entry *h = br_array_at(&e->event_handlers, i);
         h->fn(e, event, h->user);
@@ -339,6 +438,7 @@ void br_app_quit(void *appstate, SDL_AppResult result)
         return;
     }
     if (e->game_shutdown != NULL) {
+        br_engine_destroy_nodes(e); /* desc.shutdown may free state that node listeners use */
         e->game_shutdown(e);
     }
     br_engine_destroy(e);
