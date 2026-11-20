@@ -156,16 +156,25 @@ window coordinates, same push functions. Overlays added later draw on top.
 
 ## Masks, layers, groups (built in)
 
-- `BR_MASK_SCISSOR`: the mask node's world AABB clips (nested masks intersect).
-- `BR_MASK_STENCIL`: the mask node's geometry (quads/triangles it pushes; sprite = its rectangle,
-  alpha ignored) clips; nested and `inverse` supported (up to 255 levels).
+- `BR_MASK_SCISSOR`: the mask node's world AABB clips (nested masks intersect). Mapped to target
+  pixels by `br_render_rect_to_pixels` (render internal), which includes the view's viewport
+  offset and zoom, so split-screen views clip right; a rotated view clips to the bounding box.
+- `BR_MASK_STENCIL`: the mask node's geometry (quads/triangles it pushes; sprite = its rectangle)
+  clips; its alpha and tint are ignored (a mask with alpha 0 still clips: `br_render_node_color`
+  returns opaque white while stencil is written). Nested and `inverse` supported (up to 255 levels).
+- Masks met while a mask's geometry is drawn are ignored (a node inside its own mask would draw
+  the mask forever); `br_node_set_mask` already rejects that relation, the guard covers trees
+  rearranged afterwards.
+- The walk recurses once per level and stops at `BR_RENDER_MAX_DEPTH` (2048) levels, logging
+  once: deeper nodes are not drawn (the scene's other walks have no limit).
 - Render layer: `br_node_layer_attach(e, layer, n)` draws n where `layer` is in the order.
 - Render group: children drawn with the group matrix on the GPU.
 - Views (the camera hook): `br_render_set_views(e, views, count)` replaces the default "stage in
   window coordinates" with a list of `br_render_view` (root, target texture, projection, visible
   area, viewport, culling mask, clear). The camera module calls it every frame from
-  `camera.views`; nodes are skipped with their subtree when `br_node_set_layer_bits` & the view's
-  `culling_mask` is 0. Count 0 goes back to the default.
+  `camera.views`; a node whose layer bits (`br_node_set_layer_bits`, inherited) & the view's
+  `culling_mask` is 0 is not drawn, but its children are still visited (they may have other
+  bits). Count 0 goes back to the default.
 
 ## Gotchas
 

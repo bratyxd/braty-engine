@@ -31,6 +31,9 @@ static void br_sprite_render(br_engine *e, br_node n, const void *data, br_rende
     const br_sprite *sp = data;
     /* the walk only calls render for live nodes: read the tables directly */
     uint32_t color = br_scene_record_at(e->scene, n.index)->world_color;
+    if (rc->stencil == BR_STENCIL_INCR || rc->stencil == BR_STENCIL_DECR) {
+        color = 0xFFFFFFFFu; /* stencil mask geometry (br_render_node_color): alpha 0 still clips */
+    }
     if (color == 0) {
         return; /* premultiplied and fully transparent: all four bytes are zero */
     }

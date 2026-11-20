@@ -7,6 +7,7 @@
  * result back into the current target. Commands replay in order, so the callback runs after the
  * subtree render and before the quad. */
 #include "filters/br_filters_internal.h"
+#include "render/br_render_internal.h"
 
 #include "filter.vert.h"
 #include "filter_blend.frag.h"
@@ -520,10 +521,9 @@ static void br_fx_run_job(br_engine *e, const br_render_callback_info *info, voi
 
 /* ---- drawing results back */
 
-/* Quad over world rect r showing uv 0..u, 0..v of t, in world space. */
-static void br_fx_quad(br_vertex2d v[4], const br_vec2 corners[4], float u, float vv)
+/* Quad over world rect r showing uv 0..u, 0..v of t, in world space, with a packed colour. */
+static void br_fx_quad(br_vertex2d v[4], const br_vec2 corners[4], float u, float vv, uint32_t color)
 {
-    uint32_t white = br_render_pack_color(br_color_make(1.0f, 1.0f, 1.0f, 1.0f), 1.0f);
     const float us[4] = { 0.0f, u, u, 0.0f };
     const float vs[4] = { 0.0f, 0.0f, vv, vv };
     for (int i = 0; i < 4; i++) {
@@ -531,7 +531,7 @@ static void br_fx_quad(br_vertex2d v[4], const br_vec2 corners[4], float u, floa
         v[i].y = corners[i].y;
         v[i].u = us[i];
         v[i].v = vs[i];
-        v[i].color = white;
+        v[i].color = color;
     }
 }
 
@@ -588,7 +588,8 @@ static bool br_fx_cache_texture(br_engine *e, br_fx_record *rec, uint32_t width,
     return br_render_texture_resize(e, rec->cache, (float)width, (float)height);
 }
 
-/* cache_as_texture without other effects: render once, then draw with the current transform. */
+/* cache_as_texture without other effects: render once without the node's colour, then draw
+ * with the current transform and colour (fades and tints need no re-render, like Pixi). */
 static bool br_fx_draw_cached(br_engine *e, br_node n, br_fx_record *rec, br_render_ctx *rc)
 {
     float scale = br_render_pixel_ratio(rc);
@@ -612,7 +613,7 @@ static bool br_fx_draw_cached(br_engine *e, br_node n, br_fx_record *rec, br_ren
         }
         b = br_rect_make(x0 / scale, y0 / scale, (float)tw / scale, (float)th / scale);
         br_rect area = br_rect_make(b.x, b.y, (float)w / scale, (float)h / scale);
-        br_render_subtree_to_texture(rc, n, rec->cache, area, true, br_fx_transparent());
+        br_render_subtree_to_texture_ex(rc, n, rec->cache, area, true, br_fx_transparent(), false);
         rec->cache_area = b;
         rec->cache_world = world;
         rec->cache_scale = scale;
@@ -628,7 +629,7 @@ static bool br_fx_draw_cached(br_engine *e, br_node n, br_fx_record *rec, br_ren
         corners[i] = br_mat3_apply(delta, corners[i]);
     }
     br_vertex2d v[4];
-    br_fx_quad(v, corners, rec->cache_u, rec->cache_v);
+    br_fx_quad(v, corners, rec->cache_u, rec->cache_v, br_render_node_color(rc, n));
     br_mat3 old = br_render_set_space(rc, br_mat3_identity());
     br_render_push_quad(rc, rec->cache, v);
     br_render_set_space(rc, old);
@@ -706,7 +707,7 @@ static bool br_fx_hook(br_engine *e, br_node n, br_render_ctx *rc, void *user)
     /* 1. content: the subtree (or its cache) */
     br_texture content;
     if (cached) {
-        // ponytail: a cached node that also has filters/masks/advanced blend caches only its content and re-renders it when its bounds change; caching the filtered result is the upgrade.
+        // ponytail: a cached node that also has filters/masks/advanced blend caches only its content (with its colour baked in) and re-renders it when its bounds change; caching the filtered result and applying the colour at draw time is the upgrade.
         bool same = rec->cache_valid && rec->cache_area.x == b.x && rec->cache_area.y == b.y &&
                     rec->cache_area.width == b.width && rec->cache_area.height == b.height &&
                     rec->cache_scale == scale;
@@ -785,10 +786,13 @@ static bool br_fx_hook(br_engine *e, br_node n, br_render_ctx *rc, void *user)
         if (p != NULL) {
             p->kind = BR_FX_PASS_COPY;
             p->output = backdrop;
-            p->copy_src.x = (int)x0;
-            p->copy_src.y = (int)y0;
-            p->copy_src.w = (int)(x1 - x0);
-            p->copy_src.h = (int)(y1 - y0);
+            /* target pixels under b, viewport offset and view zoom included */
+            // ponytail: a rotated view copies the bounding box, which does not line up with the rotated quad; sample the backdrop in screen space if rotated cameras need advanced blends.
+            br_rect px = br_render_rect_to_pixels(rc, b);
+            p->copy_src.x = (int)px.x;
+            p->copy_src.y = (int)px.y;
+            p->copy_src.w = (int)px.width;
+            p->copy_src.h = (int)px.height;
             p->copy_w = tw;
             p->copy_h = th;
             job->count += 1;
@@ -802,7 +806,7 @@ static bool br_fx_hook(br_engine *e, br_node n, br_render_ctx *rc, void *user)
     br_vec2 corners[4];
     br_fx_rect_corners(b, corners);
     br_vertex2d v[4];
-    br_fx_quad(v, corners, (float)tw / (float)w, (float)th / (float)h);
+    br_fx_quad(v, corners, (float)tw / (float)w, (float)th / (float)h, 0xFFFFFFFFu);
     br_mat3 old = br_render_set_space(rc, br_mat3_identity()); /* b is in world coordinates */
     if (advanced && backdrop.generation != 0) {
         br_fx_draw_blended(rc, chain.current, backdrop, blend, v);

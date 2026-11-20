@@ -105,10 +105,16 @@ Blending is off: you write the final pixel. The vertex shader is the engine's (`
 - Mask order: filters first, then the mask, then the blend mode.
 - The mask node is not drawn as content; it may live outside the stage. The render module was
   changed so `br_render_subtree_to_texture` draws a mask node when it is the top node.
-- `cache_as_texture` alone redraws the cached texture with the node's current transform (moving
-  is free; content changes need `br_cache_update_texture`). Combined with filters/masks/blend it
-  only caches the content and re-renders it when the bounds move.
+- `cache_as_texture` alone caches the content without the node's (and its ancestors') alpha and
+  tint and redraws it with the node's current transform and colour: moving, fading and tinting
+  are free; content changes need `br_cache_update_texture`. Combined with filters/masks/blend it
+  only caches the content (colour baked in: a fade needs `br_cache_update_texture`) and
+  re-renders it when the bounds move.
+- Advanced blend backdrops are copied from the target pixels under the node, viewport offset and
+  view zoom included (`br_render_rect_to_pixels`); a rotated view copies the bounding box,
+  which does not line up (`ponytail:` in br_filters.c).
 - Advanced blend modes copy the target under the node every frame: one extra blit + texture each.
 - The effects hook is one per engine; an app that calls `br_render_set_effects_hook` itself
-  (examples/sprites.c does) turns this module's filters off.
+  turns this module's filters off unless its hook chains the previous one (examples/sprites.c
+  does, see render.md).
 - `br_extract_*` block on the GPU; call them one frame after the content was drawn. Headless: false.
