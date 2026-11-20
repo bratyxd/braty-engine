@@ -2,3 +2,4 @@ build/
 .deps/
 .claude/
 *.png.tmp
+__pycache__/
