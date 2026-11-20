@@ -25,6 +25,8 @@
 #define BR_TEXT_MAX_LENGTH 1.0e6f       /* spacing, leading, padding, wrap width, shadow distance */
 #define BR_TEXT_MAX_RASTER 1024         /* em size coverage glyphs rasterise at; bigger text is scaled */
 #define BR_TEXT_MAX_EFFECT_PX 64.0f     /* stroke / shadow growth and blur in raster pixels */
+/* Fonts a span tries per glyph: its font, the font's fallbacks, then its family's fallbacks. */
+#define BR_TEXT_MAX_CHAIN (1 + 2 * BR_FONT_MAX_FALLBACKS)
 
 /* What a cached TTF glyph image holds. */
 typedef enum br_glyph_effect {
@@ -91,7 +93,16 @@ struct br_font {
 typedef struct br_font_family {
     char     name[BR_TEXT_FAMILY_SIZE];
     br_font *faces[4];                /* [bold + 2 * italic] */
+    br_font *fallbacks[BR_FONT_MAX_FALLBACKS];
+    uint32_t fallback_count;
 } br_font_family;
+
+/* The fallback list of one font (br_font_set_fallbacks). */
+typedef struct br_font_fallbacks {
+    br_font *font;
+    br_font *fallbacks[BR_FONT_MAX_FALLBACKS];
+    uint32_t fallback_count;
+} br_font_fallbacks;
 
 typedef struct br_installed_font {
     char     name[BR_TEXT_FAMILY_SIZE];
@@ -104,6 +115,8 @@ br_font *br_bitmap_font_installed(br_engine *e, const char *name);
 /* Resolved style of a run of characters. */
 typedef struct br_text_span {
     br_font *font;
+    br_font *chain[BR_TEXT_MAX_CHAIN]; /* chain[0] = font, then the fallbacks to try per glyph */
+    uint32_t chain_count;
     float    size;
     br_color color;
     bool     use_gradient;
@@ -121,6 +134,7 @@ typedef struct br_layout_char {
 
 /* Layout output: one placed character (spaces included). */
 typedef struct br_layout_glyph {
+    br_font *font;       /* the first font of the span's chain that has the glyph (else the span's) */
     uint32_t cp;
     uint32_t src;
     uint16_t span;
@@ -157,11 +171,26 @@ typedef struct br_text_node {
     float              resolution;   /* 0 = window pixel density */
     bool               rich;
     bool               dirty;
+    uint32_t           layout_generation; /* br_text_state.layout_generation it was laid out at */
     br_rich_tag_entry *tags;
     uint32_t           tag_count;
     char              *plain;        /* rich: text without tags */
     br_text_layout     layout;
     br_array           spans;        /* br_text_span */
+    /* Quad cache (br_text.c): local vertices and draws, rebuilt only when the layout, the anchor,
+     * the resolution or a font atlas changes; world vertices redone only when the matrix, tint
+     * or alpha changes. */
+    bool               cache_valid;
+    float              cache_resolution;
+    uint32_t           cache_atlas_generation;
+    uint32_t           cache_builds;
+    br_array           cache_local;  /* br_text_cache_vertex */
+    br_array           cache_draws;  /* br_text_cache_draw */
+    br_array           cache_world;  /* br_vertex2d for world_m / world_tint / world_alpha */
+    bool               world_valid;
+    br_mat3            world_m;
+    br_color           world_tint;
+    float              world_alpha;
 } br_text_node;
 
 typedef struct br_text_state {
@@ -171,10 +200,12 @@ typedef struct br_text_state {
     br_font *default_font;
     br_array fonts;        /* br_font *: every live TTF font (atlas flush) */
     br_array families;     /* br_font_family */
+    br_array fallbacks;    /* br_font_fallbacks */
+    uint32_t layout_generation; /* bumped when families or fallback chains change: every node lays out again */
     br_array installed;    /* br_installed_font */
     br_array retired;      /* br_texture: old atlas textures, destroyed next frame */
-    br_array vertices;     /* br_vertex2d scratch for SDF draws */
-    br_array indices;      /* uint32_t scratch */
+    br_array quad_indices; /* uint32_t 0,1,2,0,2,3, 4,5,6,... for SDF custom draws */
+    uint32_t atlas_generation; /* bumped when any TTF atlas is recreated (texture and UVs change) */
     bool     effect_clamp_logged;   /* a stroke / shadow was clamped to BR_TEXT_MAX_EFFECT_PX */
 } br_text_state;
 
@@ -198,6 +229,8 @@ const br_bitmap_char *br_font_bitmap_char(br_font *font, uint32_t codepoint);
 void br_font_flush(br_engine *e, br_font *font);
 /* Adds a font to the live list (TTF) so its atlas is flushed. */
 void br_font_track(br_engine *e, br_font *font);
+/* The fonts to try per glyph: font, its fallbacks, then the fallbacks of `family` ("" = "default"). */
+void br_font_chain(br_engine *e, br_font *font, const char *family, br_font **chain, uint32_t *count);
 
 /* ---- br_bitmap_font.c */
 void br_bitmap_font_module_init(br_engine *e);

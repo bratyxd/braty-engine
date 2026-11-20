@@ -315,6 +315,20 @@ static void test_malformed_files(br_engine *e)
     br_game_config_apply(e, &c); /* takes the JSON; logs, does not crash */
     BR_CHECK(g_log_errors > before);
     BR_CHECK(br_audio_bus_find(e, "") <= 0);
+
+    /* "fonts": wrong types, missing files and a too-long fallback list log, never crash */
+    const char *fonts = "{ \"fonts\": { \"a\": 5, \"b\": { \"regular\": 7, \"bold\": \"no/such.ttf\", \"fallbacks\": 3 },"
+                        "  \"c\": { \"fallbacks\": [1, \"no/such.ttf\", \"x.fnt\", \"\", \"\", \"\", \"\", \"\", \"\", \"\"] } } }";
+    BR_CHECK(br_game_config_parse(fonts, strlen(fonts), "game.json", &c));
+    before = g_log_errors;
+    br_game_config_apply(e, &c);
+    BR_CHECK(g_log_errors >= before + 6);
+    BR_CHECK(br_text_measure(e, "abc", NULL).width > 0.0f);
+    const char *not_object = "{ \"fonts\": [\"x.ttf\"] }";
+    BR_CHECK(br_game_config_parse(not_object, strlen(not_object), "game.json", &c));
+    before = g_log_errors;
+    br_game_config_apply(e, &c);
+    BR_CHECK(g_log_errors > before);
 }
 
 int main(int argc, char **argv)

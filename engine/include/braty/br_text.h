@@ -1,8 +1,9 @@
 /* br_text.h - the text node and text styles (PixiJS Text, TextStyle).
  *
  * A text node lays out UTF-8 text with a br_text_style (wrap, align, spacing) and draws glyph
- * quads from its font: drop shadow, then stroke, then fill (colour or gradient). Layout is
- * cached and redone only when the text or style changes. The node's local origin is the
+ * quads from its font: drop shadow, then stroke, then fill (colour or gradient). Layout and
+ * quads are cached and redone only when the text, style or a font changes; an unchanged node
+ * costs one batch push per quad per frame. The node's local origin is the
  * top-left of the text box, moved by the anchor (0.5, 0.5 = centred).
  *
  * The same layout and drawing serve bitmap text (br_bitmap_font.h) and rich text
@@ -139,9 +140,12 @@ bool br_text_get_line(br_engine *e, br_node n, uint32_t i, br_text_line_info *ou
 uint32_t br_text_char_count(br_engine *e, br_node n);
 /* Local box of character i (before the anchor): x at its pen position, full line height. */
 bool br_text_get_char_box(br_engine *e, br_node n, uint32_t i, br_rect *out);
-/* Lays the node out and rasterises the glyphs its next draw needs (at the window's pixel
- * density unless br_text_set_resolution), so the first frame showing it does not stall. */
+/* Lays the node out, rasterises the glyphs its next draw needs and builds its quads (at the
+ * window's pixel density unless br_text_set_resolution), so the first frame showing it does not stall. */
 void br_text_prepare(br_engine *e, br_node n);
+/* How many times the node's glyph quads were built. They are cached and rebuilt only when the
+ * text, style, anchor, resolution, a font, a fallback chain or a font atlas changes (diagnostics). */
+uint32_t br_text_quad_builds(br_engine *e, br_node n);
 
 /* ---- measuring without a node */
 

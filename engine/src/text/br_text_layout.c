@@ -158,6 +158,7 @@ br_text_span br_text_span_from_style(br_engine *e, const br_text_style *style)
     } else {
         s.font = br_font_find(e, style->font_family, style->bold, style->italic, &s.synth_bold, &s.synth_italic);
     }
+    br_font_chain(e, s.font, style->font_family, s.chain, &s.chain_count);
     s.size = style->font_size;
     if (!(s.size > 0.0f)) { /* NaN too */
         s.size = s.font != NULL && s.font->is_bitmap ? s.font->native_size : 26.0f;
@@ -208,12 +209,27 @@ static void br_text_finish_line(br_text_layout *l, uint32_t first, uint32_t end,
     br_array_push(&l->lines, &line);
 }
 
-static float br_text_char_advance(const br_text_span *span, uint32_t cp)
+/* The first font of the span's chain with a glyph for cp; the span's own font when none has it
+ * (it draws its missing glyph) or for white space. */
+static br_font *br_text_glyph_font(const br_text_span *span, uint32_t cp)
+{
+    if (span->chain_count <= 1 || cp <= ' ') {
+        return span->font;
+    }
+    for (uint32_t i = 0; i < span->chain_count; i++) {
+        if (br_font_has_glyph(span->chain[i], cp)) {
+            return span->chain[i];
+        }
+    }
+    return span->font;
+}
+
+static float br_text_char_advance(const br_text_span *span, br_font *font, uint32_t cp)
 {
     if (cp == '\t') {
         return 4.0f * br_font_advance(span->font, ' ', span->size);
     }
-    return br_font_advance(span->font, cp, span->size);
+    return br_font_advance(font, cp, span->size);
 }
 
 void br_text_layout_build(br_text_layout *out, const br_array *chars, const br_text_span *spans,
@@ -227,6 +243,7 @@ void br_text_layout_build(br_text_layout *out, const br_array *chars, const br_t
     int64_t last_break = -1; /* glyph index of the last space on the current line */
     uint32_t prev_cp = 0;
     uint32_t prev_span = 0;
+    br_font *prev_font = NULL;
 
     for (uint32_t i = 0; i < chars->count; i++) {
         const br_layout_char *c = br_array_at(chars, i);
@@ -239,10 +256,11 @@ void br_text_layout_build(br_text_layout *out, const br_array *chars, const br_t
             continue;
         }
         const br_text_span *span = &spans[c->span];
-        float advance = br_text_char_advance(span, c->cp);
+        br_font *font = br_text_glyph_font(span, c->cp);
+        float advance = br_text_char_advance(span, font, c->cp);
         float kern = 0.0f;
-        if (prev_cp != 0 && prev_span == c->span) {
-            kern = br_font_kerning(span->font, prev_cp, c->cp, span->size);
+        if (prev_cp != 0 && prev_span == c->span && prev_font == font) {
+            kern = br_font_kerning(font, prev_cp, c->cp, span->size);
         }
         bool space = br_text_is_space(c->cp);
         uint32_t count = out->glyphs.count;
@@ -270,6 +288,7 @@ void br_text_layout_build(br_text_layout *out, const br_array *chars, const br_t
             }
         }
         br_layout_glyph g;
+        g.font = font;
         g.cp = c->cp;
         g.src = c->src;
         g.span = c->span;
@@ -284,10 +303,12 @@ void br_text_layout_build(br_text_layout *out, const br_array *chars, const br_t
         }
         prev_cp = c->cp;
         prev_span = c->span;
+        prev_font = font;
     }
     br_text_finish_line(out, line_first, out->glyphs.count, false);
 
-    /* vertical: line boxes from the tallest span on each line */
+    /* vertical: line boxes from the tallest span on each line
+     * ponytail: from each span's own font; a taller fallback glyph may overhang the line box */
     float top = 0.0f;
     float width = 0.0f;
     for (uint32_t li = 0; li < out->lines.count; li++) {

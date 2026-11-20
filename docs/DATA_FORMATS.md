@@ -92,6 +92,21 @@ overlay closed, F1, hot reload on in debug builds, no logical size (the example'
 | `profiler.hud` / `profiler.panel` | Profiler corner readout / panel (F2) shown at start (`br_profiler_set_hud`, `br_profiler_set_visible`). `false` leaves the command line (`--profiler-hud`, `--profiler`) in charge. |
 | `save.org` / `save.app` | Save-data folder (`br_engine_set_save_name`): default org `"braty"` and the window title. Sanitised (characters a folder name cannot hold become `_`), so renaming or localising the title does not move saves once `save.app` is set. |
 | `game` | Anything the game wants: `br_game_config_json(e)` returns the whole document. Other unknown keys log a warning. |
+| `fonts` | Font families by name (`"default"` = the family of text without `font_family`): `regular` / `bold` / `italic` / `bold_italic` face paths (`br_font_add_family`) and `fallbacks`, up to 8 font paths (`.ttf`, `.otf`, `.fnt`) tried in order for characters the face lacks (`br_font_family_set_fallbacks`; example below). Paths are assets; a font that does not load is logged and skipped. |
+
+Fonts and fallback chains (`docs/agents/text.md`, "Fallback chains"): a CJK font behind every
+text of the game, and a title family with its own faces:
+
+<!-- check: game -->
+```json
+{
+  "fonts": {
+    "default": { "fallbacks": ["fonts/NotoSansJP-Regular.ttf"] },
+    "Title": { "regular": "fonts/Title.ttf", "bold": "fonts/Title-Bold.ttf",
+               "fallbacks": ["fonts/pixel.fnt"] }
+  }
+}
+```
 
 Command line (`br_game_config_args`): `--debug` opens the overlay, `--scene path` replaces
 `start_scene`. The engine's own flags override game.json: `--vsync MODE`, `--max-fps N`,
