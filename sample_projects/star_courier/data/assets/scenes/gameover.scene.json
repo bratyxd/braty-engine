@@ -9,7 +9,7 @@
     { "prefab": "prefabs/debris_medium.prefab.json", "position": [1000, 200],
       "components": { "body": { "velocity": [-20, 10], "spin": -0.5, "wrap": true } } },
 
-    { "type": "text", "label": "headline", "text": "GAME OVER", "position": [640, 190], "anchor": [0.5, 0.5],
+    { "type": "text", "label": "headline", "text_key": "gameover.headline", "position": [640, 190], "anchor": [0.5, 0.5],
       "components": { "pulse": { "wave": 0.03, "speed": 2 } },
       "style": { "font_size": 96, "bold": true, "letter_spacing": 4,
                  "gradient": { "stops": [[0, "#ffe0e6"], [0.5, "#ff4060"], [1, "#8a1030"]] },
@@ -17,17 +17,17 @@
                  "drop_shadow": { "color": "#00000099", "distance": 6, "angle": 1.2, "blur": 4 } } },
 
     { "prefab": "prefabs/panel.prefab.json", "position": [640, 380], "width": 520, "height": 170 },
-    { "type": "text", "label": "final_score", "text": "SCORE 0", "position": [640, 350], "anchor": [0.5, 0.5],
+    { "type": "text", "label": "final_score", "text": "", "position": [640, 350], "anchor": [0.5, 0.5],
       "components": { "pulse": { "kick": 0.3, "decay": 3 } },
       "style": { "font_size": 44, "bold": true, "fill": "#ffb547", "stroke": { "width": 3, "color": "#3a1d05" } } },
     { "type": "text", "label": "best_text", "text": "", "position": [640, 412], "anchor": [0.5, 0.5],
       "style": { "font_size": 22, "fill": "#7dd3c8" } },
 
-    { "type": "text", "label": "press_start", "text": "PRESS ENTER, START OR CLICK TO FLY AGAIN",
+    { "type": "text", "label": "press_start", "text_key": "gameover.press_start",
       "position": [640, 560], "anchor": [0.5, 0.5],
       "components": { "blink": { "period": 1.2, "min_alpha": 0.25 } },
       "style": { "font_size": 28, "bold": true, "fill": "#ffb547", "stroke": { "width": 3, "color": "#4a2608" } } },
-    { "type": "text", "text": "Esc: back to the title", "position": [640, 610], "anchor": [0.5, 0.5],
+    { "type": "text", "text_key": "gameover.back", "position": [640, 610], "anchor": [0.5, 0.5],
       "style": { "font_size": 18, "fill": "#9ca3af" } }
   ]
 }

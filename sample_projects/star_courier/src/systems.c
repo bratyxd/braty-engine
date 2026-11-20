@@ -235,16 +235,19 @@ void sc_enter_state(br_engine *e, sc_game *g, sc_state state)
             g->best = g->score;
             sc_save_best(e, g);
         }
-        SDL_snprintf(text, sizeof(text), "SCORE %d", (int)g->score);
-        br_text_set_text(e, g->final_score, text);
+        SDL_snprintf(text, sizeof(text), "%d", (int)g->score);
+        br_loc_arg score = { "score", text };
+        br_text_set_text(e, g->final_score, br_loc_format(e, "gameover.score", &score, 1));
         sc_kick(e, g, g->final_score);
-        SDL_snprintf(text, sizeof(text), record && g->score > 0 ? "NEW BEST!" : "BEST %d", (int)g->best);
-        br_text_set_text(e, g->best_text, text);
+        SDL_snprintf(text, sizeof(text), "%d", (int)g->best);
+        br_text_set_text(e, g->best_text, record && g->score > 0 ? br_loc_get(e, "gameover.new_best")
+                                                                 : br_loc_format(e, "gameover.best", &score, 1));
         br_log_info("star_courier: round %u over, score %d, level %d", g->round, (int)g->score, (int)g->level);
     }
     if (state == SC_STATE_TITLE && g->best > 0) {
-        SDL_snprintf(text, sizeof(text), "BEST %d", (int)g->best);
-        br_text_set_text(e, g->best_text, text);
+        SDL_snprintf(text, sizeof(text), "%d", (int)g->best);
+        br_loc_arg score = { "score", text };
+        br_text_set_text(e, g->best_text, br_loc_format(e, "title.best", &score, 1));
     }
 }
 
@@ -258,7 +261,9 @@ static void sc_state_system(br_engine *e, float dt, void *user)
     switch (g->state) {
     case SC_STATE_TITLE:
         if (g->assets_ready) {
-            br_text_set_text(e, g->press_start, "PRESS ENTER, START OR CLICK");
+            if (SDL_strcmp(br_loc_text_key(e, g->press_start), "title.press_start") != 0) {
+                br_loc_bind_text(e, g->press_start, "title.press_start"); /* was "title.loading" */
+            }
             if (br_input_action_pressed(e, "start")) {
                 sc_enter_state(e, g, SC_STATE_PLAY);
             }
@@ -603,7 +608,7 @@ static void sc_rules_system(br_engine *e, float dt, void *user)
             br_node_destroy(e, ev->other);
             sc_play_sfx(e, g, "pickup");
             sc_burst(e, g, ev->position, t->pickup_burst, br_color_from_hex(0xffb547, 1.0f));
-            br_text_set_text(e, g->hint, "Deliver it to the station");
+            br_loc_bind_text(e, g->hint, "hud.hint_deliver");
             sc_kick(e, g, g->hint);
         } else if (ev->kind == SC_EVENT_DELIVER) {
             pilot->carrying = false;
@@ -613,7 +618,7 @@ static void sc_rules_system(br_engine *e, float dt, void *user)
             sc_play_sfx(e, g, "deliver");
             sc_burst(e, g, ev->position, t->deliver_burst, br_color_from_hex(0xa78bfa, 1.0f));
             sc_move_station(e, g, t);
-            br_text_set_text(e, g->hint, "Pick up a crate");
+            br_loc_bind_text(e, g->hint, "hud.hint_pickup");
             sc_kick(e, g, g->hint);
             if (t->deliveries_per_level > 0 && g->deliveries % t->deliveries_per_level == 0) {
                 g->level++;
@@ -723,10 +728,13 @@ static void sc_hud_system(br_engine *e, float dt, void *user)
     sc_game *g = user;
     char text[64];
     if (g->state == SC_STATE_PLAY || g->state == SC_STATE_DYING) {
-        SDL_snprintf(text, sizeof(text), "SCORE %d", (int)g->score);
-        br_text_set_text(e, g->score_text, text);
-        SDL_snprintf(text, sizeof(text), "LEVEL %d", (int)g->level);
-        br_text_set_text(e, g->level_text, text);
+        SDL_snprintf(text, sizeof(text), "%d", (int)g->score);
+        br_loc_arg score = { "score", text };
+        br_text_set_text(e, g->score_text, br_loc_format(e, "hud.score", &score, 1));
+        SDL_snprintf(text, sizeof(text), "%d", (int)g->level);
+        br_loc_arg level = { "level", text };
+        br_text_set_text(e, g->level_text, br_loc_format(e, "hud.level", &level, 1));
+
         for (int i = 0; i < SC_MAX_LIFE_ICONS; i++) {
             br_node_set_visible(e, g->life_icons[i], i < g->lives);
         }

@@ -1,0 +1,20 @@
+{
+  "title.logo": "STAR COURIER",
+  "title.tagline": "deliver the cargo, dodge the junk",
+  "title.help": "<b>Steer</b>  arrows / WASD / left stick / hold mouse or touch\nPick up <cargo>cargo</cargo> and bring it to the <station>station</station>\nDodge the <junk>debris</junk>.  <b>P</b> or <b>Esc</b> pauses",
+  "title.loading": "LOADING...",
+  "title.press_start": "PRESS ENTER, START OR CLICK",
+  "title.best": "BEST {score}",
+  "hud.score": "SCORE {score}",
+  "hud.level": "LEVEL {level}",
+  "hud.hint_pickup": "Pick up a crate",
+  "hud.hint_deliver": "Deliver it to the station",
+  "pause.title": "PAUSED",
+  "pause.resume": "P / Esc / Start to resume",
+  "gameover.headline": "GAME OVER",
+  "gameover.score": "SCORE {score}",
+  "gameover.new_best": "NEW BEST!",
+  "gameover.best": "BEST {score}",
+  "gameover.press_start": "PRESS ENTER, START OR CLICK TO FLY AGAIN",
+  "gameover.back": "Esc: back to the title"
+}

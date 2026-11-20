@@ -28,10 +28,10 @@
 
     { "type": "container", "label": "hud", "children": [
       { "prefab": "prefabs/panel.prefab.json", "position": [640, 40], "width": 1248, "height": 60 },
-      { "type": "text", "label": "score_text", "text": "SCORE 0", "position": [44, 40], "anchor": [0, 0.5],
+      { "type": "text", "label": "score_text", "text": "", "position": [44, 40], "anchor": [0, 0.5],
         "components": { "pulse": { "kick": 0.25, "decay": 6 } },
         "style": { "font_size": 28, "bold": true, "fill": "#ffb547", "stroke": { "width": 3, "color": "#3a1d05" } } },
-      { "type": "text", "label": "level_text", "text": "LEVEL 1", "position": [640, 40], "anchor": [0.5, 0.5],
+      { "type": "text", "label": "level_text", "text": "", "position": [640, 40], "anchor": [0.5, 0.5],
         "components": { "pulse": { "kick": 0.5, "decay": 3 } },
         "style": { "font_size": 26, "bold": true, "fill": "#a78bfa", "stroke": { "width": 3, "color": "#1f1446" } } },
       { "type": "container", "label": "lives", "position": [1140, 40], "children": [
@@ -40,15 +40,15 @@
         { "type": "sprite", "label": "life_3", "texture": "sprites/atlas.json#life.png", "position": [64, 0], "scale": 1.2 },
         { "type": "sprite", "label": "life_4", "texture": "sprites/atlas.json#life.png", "position": [96, 0], "scale": 1.2 }
       ] },
-      { "type": "text", "label": "hint", "text": "Pick up a crate", "position": [640, 696], "anchor": [0.5, 0.5],
+      { "type": "text", "label": "hint", "text_key": "hud.hint_pickup", "position": [640, 696], "anchor": [0.5, 0.5],
         "components": { "pulse": { "kick": 0.15, "decay": 5 } },
         "style": { "font_size": 20, "fill": "#e8fbff", "drop_shadow": { "color": "#000000aa", "distance": 2 } } },
 
       { "type": "container", "label": "pause_panel", "visible": false, "position": [640, 360], "children": [
         { "prefab": "prefabs/panel.prefab.json", "width": 420, "height": 170 },
-        { "type": "text", "text": "PAUSED", "position": [0, -22], "anchor": [0.5, 0.5],
+        { "type": "text", "text_key": "pause.title", "position": [0, -22], "anchor": [0.5, 0.5],
           "style": { "font_size": 54, "bold": true, "fill": "#e8fbff", "stroke": { "width": 4, "color": "#0e3b46" } } },
-        { "type": "text", "text": "P / Esc / Start to resume", "position": [0, 40], "anchor": [0.5, 0.5],
+        { "type": "text", "text_key": "pause.resume", "position": [0, 40], "anchor": [0.5, 0.5],
           "style": { "font_size": 20, "fill": "#7dd3c8" } }
       ] }
     ] }

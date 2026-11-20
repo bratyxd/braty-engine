@@ -1,6 +1,7 @@
 {
   "window": { "title": "Star Courier", "width": 1280, "height": 720, "vsync": true, "resizable": false },
   "asset_root": "assets",
+  "packs": ["assets.brpack"],
   "manifest": "manifest.json",
   "clear_color": "#0b1026",
   "scenes": { "title": "scenes/title.scene.json", "play": "scenes/play.scene.json",
@@ -25,6 +26,7 @@
       }
     }
   },
+  "locale": { "default": "en", "dir": "strings" },
   "debug": { "overlay": false, "toggle_key": "F1", "hot_reload": true },
   "game": {
     "tuning": "tuning.json",
