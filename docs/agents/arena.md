@@ -58,6 +58,9 @@ uint8_t *p = br_frame_alloc(e, 4096);  /* valid until the next br_engine_step */
   allocation grows in place). Reset or end the scratch scope to get it back.
 - Stack markers must be popped newest first. Debug builds (`NDEBUG` not defined) reject an
   out-of-order pop: log, return false, `order_errors` += 1. Release builds pop the newer markers too.
+  A stale marker (popped, then another pushed at the same depth) is rejected in every build.
+- A pool keeps one free bit per block (after the blocks, also in `_create_in` memory): a double
+  free is logged and ignored instead of handing the block out twice.
 - A pool's allocator view only serves requests up to `block_size`; containers that grow do not fit.
 - Frame memory dies when the next frame starts (the reset is the first INPUT-phase system), so
   never keep a frame pointer in a component or across `br_engine_step`.
