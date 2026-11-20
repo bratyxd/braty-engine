@@ -335,6 +335,154 @@ static void test_gamepad(void)
     br_engine_destroy(e);
 }
 
+/* ---- hardening (R5 review): long view labels, unknown arguments, phantom pads, injected pads
+ * with a family, components with a dot, the window command, out-of-range ints */
+
+typedef struct dotted {
+    br_vec2 offset;
+} dotted;
+
+static void test_hardening(void)
+{
+    br_engine *e = make_game();
+    /* a "view/node" label longer than the buffer used to write a NUL past it on the stack */
+    static char cmd[6000];
+    char label[5001];
+    SDL_memset(label, 'A', sizeof(label) - 1);
+    label[sizeof(label) - 1] = '\0';
+    SDL_snprintf(cmd, sizeof(cmd), "{\"cmd\":\"click\",\"label\":\"%s/x\"}", label);
+    BR_CHECK(reply_has(e, cmd, "too long"));
+    SDL_snprintf(cmd, sizeof(cmd), "{\"cmd\":\"find\",\"label\":\"%s/x\"}", label);
+    BR_CHECK(reply_has(e, cmd, "\"ok\""));
+
+    /* a typo in an argument name fails instead of falling back to the default */
+    BR_CHECK(reply_has(e, "{\"cmd\":\"key\",\"key\":\"Right\",\"frame\":30}", "key: unknown argument 'frame'"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"wait_until\",\"path\":\"game:score\",\"value\":0,\"timeout_frame\":5}",
+                       "unknown argument 'timeout_frame'"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"quit\",\"now\":true}", "takes: nothing"));
+    write_file(at_exe("pt_bad_arg.json"), "[ { \"cmd\": \"step\", \"frame\": 2 } ]");
+    BR_CHECK(!br_playtest_load_script(e, at_exe("pt_bad_arg.json")));
+    BR_CHECK(SDL_strstr(br_playtest_last_error(e), "step 1: step: unknown argument 'frame'") != NULL);
+
+    /* a tap released after "disconnect" does not bring the pad back */
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\",\"action\":\"tap\",\"button\":\"a\",\"slot\":1}", "\"ok\":true"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\",\"action\":\"disconnect\",\"slot\":1}", "\"ok\":true"));
+    br_playtest_step(e, 3);
+    BR_CHECK(!br_input_gamepad_connected(e, 1) && br_input_gamepad_count(e) == 0);
+
+    /* an injected pad (no SDL device) of a family */
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\",\"action\":\"connect\",\"type\":\"ps4\",\"injected\":true,\"slot\":2}",
+                       "\"slot\":2"));
+    br_gamepad_info info;
+    BR_CHECK(br_input_gamepad_info(e, 2, &info) && info.injected && info.type == BR_GAMEPAD_TYPE_PS4);
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\",\"action\":\"connect\",\"type\":\"xbox\",\"injected\":true,\"slot\":2}",
+                       "slot 2 is taken"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"gamepad\",\"action\":\"disconnect\",\"slot\":2}", "\"ok\":true"));
+
+    /* components whose name has a dot (engine ones: camera.follow, gltf.collider) */
+    static const br_field_desc fields[] = { { "offset", BR_FIELD_VEC2, offsetof(dotted, offset) } };
+    br_component_desc desc = { "pt.follow", sizeof(dotted), fields, BR_ARRAY_COUNT(fields) };
+    uint32_t id = br_component_register(e, &desc);
+    br_node hero = br_node_find_by_label(e, br_scene_root(e), "hero", true);
+    dotted *d = br_component_add(e, hero, id);
+    BR_CHECK(d != NULL);
+    BR_CHECK(reply_has(e, "{\"cmd\":\"set\",\"path\":\"hero:pt.follow.offset\",\"value\":[3,4]}", "\"ok\":true"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"set\",\"path\":\"hero:pt.follow.offset.y\",\"value\":9}", "\"ok\":true"));
+    BR_CHECK(d != NULL && d->offset.x == 3.0f && d->offset.y == 9.0f);
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"hero:pt.follow.offset.x\"}", "\"value\":3"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"hero:pt.follow\"}", "name a field of 'pt.follow'"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"hero:walker.jumps\"}", "\"value\":0")); /* plain names still work */
+
+    /* int fields clamp out-of-range numbers instead of an undefined cast */
+    BR_CHECK(reply_has(e, "{\"cmd\":\"set\",\"path\":\"game:score\",\"value\":1e20}", "\"ok\":true"));
+    BR_CHECK(s_game.score == INT32_MAX);
+    s_game.score = 0;
+
+    /* window: headless, the screen size every camera sees */
+    br_camera c = br_camera_default_2d();
+    br_node cam = br_camera_create(e, &c);
+    br_node_add_child(e, br_scene_root(e), cam);
+    BR_CHECK(reply_has(e, "{\"cmd\":\"window\",\"width\":720,\"height\":1280}", "\"ok\":true"));
+    br_playtest_step(e, 1);
+    br_camera_view v = br_camera_get_view(e, cam);
+    BR_CHECK(v.screen_size.x == 720.0f && v.screen_size.y == 1280.0f);
+    BR_CHECK(reply_has(e, "{\"cmd\":\"window\",\"width\":2520,\"height\":1080}", "\"ok\":true"));
+    v = br_camera_get_view(e, cam);
+    BR_CHECK(v.screen_size.x == 2520.0f && v.screen_size.y == 1080.0f);
+    BR_CHECK(reply_has(e, "{\"cmd\":\"window\",\"width\":0,\"height\":1080}", "16..16384"));
+    br_engine_destroy(e);
+}
+
+/* Log lines from other threads (asset workers) while the main thread reads the ring. */
+static int SDLCALL log_spammer(void *data)
+{
+    (void)data;
+    for (int i = 0; i < 2000; i++) {
+        br_log_info("spam line %d from a worker thread", i);
+    }
+    return 0;
+}
+
+static void test_log_threads(void)
+{
+    br_engine *e = make_game();
+    BR_CHECK(reply_has(e, "{\"cmd\":\"logs\",\"count\":1}", "\"ok\":true")); /* hooks the log */
+    SDL_Thread *threads[4];
+    for (int i = 0; i < 4; i++) {
+        threads[i] = SDL_CreateThread(log_spammer, "spam", NULL);
+    }
+    int found = 0;
+    for (int i = 0; i < 200; i++) {
+        char *reply = br_playtest_command(e, "{\"cmd\":\"expect\",\"log\":\"from a worker thread\"}");
+        found += reply != NULL && SDL_strstr(reply, "\"ok\":true") != NULL ? 1 : 0;
+        br_free(reply);
+    }
+    for (int i = 0; i < 4; i++) {
+        SDL_WaitThread(threads[i], NULL);
+    }
+    BR_CHECK(reply_has(e, "{\"cmd\":\"expect\",\"log\":\"spam line 1999 from a worker thread\"}", "\"ok\":true"));
+    BR_CHECK(found >= 0);
+    br_engine_destroy(e);
+}
+
+/* The recorder drops SDL's mouse copies of touch / pen input and keeps relative deltas. */
+static void test_record_synthetic_mouse(void)
+{
+    br_engine *a = make_game();
+    BR_CHECK(br_playtest_record_start(a, at_exe("pt_recorded_mouse.json")));
+    br_playtest_step(a, 1);
+    SDL_Event ev;
+    SDL_zero(ev);
+    ev.type = SDL_EVENT_MOUSE_MOTION;
+    ev.motion.which = SDL_TOUCH_MOUSEID;
+    ev.motion.x = 10.0f;
+    ev.motion.y = 20.0f;
+    br_app_event(a, &ev);
+    ev.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+    ev.button.which = SDL_PEN_MOUSEID;
+    ev.button.button = SDL_BUTTON_LEFT;
+    ev.button.down = true;
+    br_app_event(a, &ev);
+    br_playtest_step(a, 1);
+    br_input_inject_pointer_motion(a, 50.0f, 50.0f, 7.0f, -3.0f); /* relative mode: pinned, but moving */
+    br_playtest_step(a, 1);
+    BR_CHECK(br_playtest_record_stop(a));
+    br_engine_destroy(a);
+    char *script = SDL_LoadFile(at_exe("pt_recorded_mouse.json"), NULL);
+    BR_CHECK(script != NULL && SDL_strstr(script, "\"x\":10") == NULL && SDL_strstr(script, "\"down\"") == NULL);
+    BR_CHECK(script != NULL && SDL_strstr(script, "\"x\":50,\"y\":50,\"dx\":7,\"dy\":-3") != NULL);
+    SDL_free(script);
+    br_engine *b = make_game();
+    BR_CHECK(br_playtest_load_script(b, at_exe("pt_recorded_mouse.json")));
+    bool saw_delta = false;
+    for (int i = 0; i < 10 && br_playtest_running(b); i++) {
+        br_playtest_step(b, 1);
+        saw_delta = saw_delta || (br_input_mouse_delta(b).x == 7.0f && br_input_mouse_delta(b).y == -3.0f);
+    }
+    BR_CHECK(saw_delta && !br_input_mouse_down(b, SDL_BUTTON_LEFT));
+    br_engine_destroy(b);
+}
+
 /* ---- 3D nodes inside a view3d: "view/node:property" for get, set, expect, find, click, dump */
 
 static int s_cube_clicks;
@@ -587,6 +735,9 @@ int main(void)
     test_stdin_session();
     test_action();
     test_gamepad();
+    test_hardening();
+    test_log_threads();
+    test_record_synthetic_mouse();
     test_3d_paths();
     test_click_with_camera();
     test_profile_and_scene();

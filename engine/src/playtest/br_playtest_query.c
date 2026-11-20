@@ -128,7 +128,8 @@ static bool br_pt_write_field(br_engine *e, const br_field_desc *field, void *ba
         break;
     case BR_FIELD_INT:
         if (cJSON_IsNumber(value)) {
-            int32_t i = (int32_t)value->valuedouble;
+            double d = value->valuedouble; /* clamped first: the cast is undefined outside int32 */
+            int32_t i = d >= 2147483647.0 ? INT32_MAX : (d <= -2147483648.0 ? INT32_MIN : (int32_t)d);
             SDL_memcpy(p, &i, sizeof(i));
             return true;
         }
@@ -219,7 +220,21 @@ static bool br_pt_resolve_field(br_engine *e, const br_pt_path *p, const char *p
         *is_field = true;
         return true;
     }
-    uint32_t id = br_component_find(e, p->parts[0]);
+    /* the component is the longest run of parts that names one, so engine components with a dot
+     * ("camera.follow", "gltf.collider") work: "cam:camera.follow.offset.x" */
+    uint32_t id = 0;
+    uint32_t used = 0;
+    for (uint32_t k = p->part_count; k >= 1 && id == 0; k--) {
+        char name[BR_PT_MAX_PARTS * BR_PLAYTEST_NAME_SIZE] = "";
+        for (uint32_t i = 0; i < k; i++) {
+            if (i > 0) {
+                SDL_strlcat(name, ".", sizeof(name));
+            }
+            SDL_strlcat(name, p->parts[i], sizeof(name));
+        }
+        id = br_component_find(e, name);
+        used = k;
+    }
     if (id == 0) {
         return true; /* not a component: a node property */
     }
@@ -229,17 +244,18 @@ static bool br_pt_resolve_field(br_engine *e, const br_pt_path *p, const char *p
         return br_playtest_fail(e, "path '%s': no node labelled '%s'", path, p->target);
     }
     if (*base == NULL) {
-        return br_playtest_fail(e, "path '%s': node '%s' has no component '%s'", path, p->target, p->parts[0]);
+        return br_playtest_fail(e, "path '%s': node '%s' has no component '%s'", path, p->target,
+                                br_component_get_desc(e, id)->name);
     }
     const br_component_desc *desc = br_component_get_desc(e, id);
-    if (p->part_count < 2) {
-        return br_playtest_fail(e, "path '%s': name a field of '%s'", path, p->parts[0]);
+    if (p->part_count <= used) {
+        return br_playtest_fail(e, "path '%s': name a field of '%s'", path, desc->name);
     }
-    *field = br_pt_find_field(desc->fields, desc->field_count, p->parts[1]);
+    *field = br_pt_find_field(desc->fields, desc->field_count, p->parts[used]);
     if (*field == NULL) {
-        return br_playtest_fail(e, "path '%s': component '%s' has no field '%s'", path, p->parts[0], p->parts[1]);
+        return br_playtest_fail(e, "path '%s': component '%s' has no field '%s'", path, desc->name, p->parts[used]);
     }
-    *next_part = 2;
+    *next_part = used + 1;
     *is_field = true;
     return true;
 }
@@ -340,16 +356,34 @@ static void br_pt_collect_views(br_engine *e, br_node n, br_array *views)
     }
 }
 
-/* Splits "view/node" and finds the 3D node. False (+ error when `report`) if the view or the
- * node is missing. */
+/* Splits "view/node" into a bounded view label and the node label (a pointer into target). The
+ * one place that splits: get, set, find and click all come here. False + error if too long. */
+static bool br_pt_split_view(br_engine *e, const char *target, const char *path, char *view_label, size_t size,
+                             const char **label)
+{
+    const char *slash = SDL_strchr(target, '/');
+    size_t len = slash != NULL ? (size_t)(slash - target) : 0;
+    if (slash == NULL || len >= size || SDL_strlen(slash + 1) >= BR_PLAYTEST_NAME_SIZE) {
+        return br_playtest_fail(e, "path '%.80s': expected \"view/node\" with labels of at most %d characters (label "
+                                   "too long)",
+                                path, BR_PLAYTEST_NAME_SIZE - 1);
+    }
+    SDL_memcpy(view_label, target, len);
+    view_label[len] = '\0';
+    *label = slash + 1;
+    return true;
+}
+
+/* Splits "view/node" and finds the 3D node. False (+ error when `report`, or on a label that is
+ * too long) if the view or the node is missing. */
 static bool br_pt_find_node3d(br_engine *e, const char *target, const char *path, bool report, br_node *view,
                               br_node3d *node)
 {
-    const char *slash = SDL_strchr(target, '/');
     char view_label[BR_PLAYTEST_NAME_SIZE];
-    br_str_copy(view_label, sizeof(view_label), target);
-    view_label[slash - target] = '\0';
-    const char *label = slash + 1;
+    const char *label = NULL;
+    if (!br_pt_split_view(e, target, path, view_label, sizeof(view_label), &label)) {
+        return false;
+    }
     br_array views;
     br_array_init(&views, sizeof(br_node));
     br_pt_collect_views(e, br_scene_root(e), &views);
@@ -828,12 +862,8 @@ bool br_playtest_query_condition(br_engine *e, const cJSON *cmd, bool *ok, char 
     const cJSON *log = cJSON_GetObjectItemCaseSensitive(cmd, "log");
     if (cJSON_IsString(log)) {
         br_playtest_hook_log(e);
-        br_playtest_state *s = e->playtest;
-        uint32_t have = s->log_count < BR_PLAYTEST_LOG_LINES ? s->log_count : BR_PLAYTEST_LOG_LINES;
-        *ok = false;
-        for (uint32_t i = s->log_count - have; i < s->log_count && !*ok; i++) {
-            *ok = SDL_strstr(s->log_lines[i % BR_PLAYTEST_LOG_LINES], log->valuestring) != NULL;
-        }
+        uint32_t have = 0;
+        *ok = br_playtest_log_contains(e, log->valuestring, &have);
         SDL_snprintf(detail, detail_size, "no log line contains '%s' (last %u lines kept)", log->valuestring, have);
         return true;
     }

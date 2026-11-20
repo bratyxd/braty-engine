@@ -69,11 +69,27 @@ static uint64_t br_pt_input_frame(br_engine *e)
 static void SDLCALL br_pt_log_output(void *user, int category, SDL_LogPriority priority, const char *message)
 {
     br_playtest_state *s = user;
+    SDL_LockMutex(s->log_lock);
     br_str_copy(s->log_lines[s->log_count % BR_PLAYTEST_LOG_LINES], BR_PLAYTEST_LOG_SIZE, message);
     s->log_count++;
+    SDL_UnlockMutex(s->log_lock);
     if (s->log_prev != NULL) {
         s->log_prev(s->log_prev_user, category, priority, message);
     }
+}
+
+bool br_playtest_log_contains(br_engine *e, const char *text, uint32_t *kept)
+{
+    br_playtest_state *s = e->playtest;
+    bool found = false;
+    SDL_LockMutex(s->log_lock);
+    uint32_t have = s->log_count < BR_PLAYTEST_LOG_LINES ? s->log_count : BR_PLAYTEST_LOG_LINES;
+    for (uint32_t i = s->log_count - have; i < s->log_count && !found; i++) {
+        found = SDL_strstr(s->log_lines[i % BR_PLAYTEST_LOG_LINES], text) != NULL;
+    }
+    SDL_UnlockMutex(s->log_lock);
+    *kept = have;
+    return found;
 }
 
 void br_playtest_hook_log(br_engine *e)
@@ -210,8 +226,12 @@ static bool br_pt_cmd_mouse(br_engine *e, const cJSON *cmd)
     float y = (float)br_pt_number(cmd, "y", at.y);
     int button = (int)br_pt_clamped(cmd, "button", SDL_BUTTON_LEFT, 1.0, 8.0);
     if (action == NULL || SDL_strcmp(action, "move") == 0) {
+        /* recordings carry the relative movement (mouse-look in relative mode moves while the
+         * position stays pinned); without dx/dy it is the difference of positions */
+        float dx = (float)br_pt_number(cmd, "dx", x - at.x);
+        float dy = (float)br_pt_number(cmd, "dy", y - at.y);
         e->playtest->injecting = true;
-        br_input_inject_pointer_move(e, x, y);
+        br_input_inject_pointer_motion(e, x, y, dx, dy);
         e->playtest->injecting = false;
     } else if (SDL_strcmp(action, "down") == 0 || SDL_strcmp(action, "up") == 0) {
         br_pt_button(e, x, y, button, action[0] == 'd');
@@ -249,15 +269,30 @@ static bool br_pt_cmd_touch(br_engine *e, const cJSON *cmd)
 /* Typed text arrives as one SDL_EVENT_TEXT_INPUT, like an IME commit. */
 static void br_pt_cmd_text(br_engine *e, const char *text)
 {
-    SDL_Event ev;
-    SDL_zero(ev);
-    ev.type = SDL_EVENT_TEXT_INPUT;
-    ev.text.timestamp = SDL_GetTicksNS();
-    ev.text.windowID = e->window != NULL ? SDL_GetWindowID(e->window) : 0;
-    ev.text.text = text;
     e->playtest->injecting = true;
-    br_app_event(e, &ev);
+    br_input_inject_text(e, text);
     e->playtest->injecting = false;
+}
+
+/* Resizes the window (SDL_SetWindowSize; the next frame renders at the new size). Headless, it
+ * sets the screen size the cameras see (br_camera_set_headless_screen), so aspect ratios and
+ * letterboxing can be checked in one run. */
+static bool br_pt_cmd_window(br_engine *e, const cJSON *cmd)
+{
+    int w = (int)br_pt_clamped(cmd, "width", 0.0, 0.0, 16384.0);
+    int h = (int)br_pt_clamped(cmd, "height", 0.0, 0.0, 16384.0);
+    if (w < 16 || h < 16) {
+        return br_playtest_fail(e, "window: width and height must be 16..16384");
+    }
+    if (e->window == NULL) {
+        br_camera_set_headless_screen(e, (float)w, (float)h);
+        return true;
+    }
+    if (!SDL_SetWindowSize(e->window, w, h)) {
+        return br_playtest_fail(e, "window: %s", SDL_GetError());
+    }
+    SDL_SyncWindow(e->window);
+    return true;
 }
 
 static bool br_pt_cmd_click(br_engine *e, const cJSON *cmd)
@@ -315,6 +350,20 @@ static bool br_pt_gamepad_connect(br_engine *e, const cJSON *cmd, cJSON *reply)
         return br_playtest_fail(e, "gamepad: unknown type '%s' (xbox, playstation, switch, generic, xbox360, xboxone, "
                                    "ps3, ps4, ps5, switchpro, joyconleft, joyconright, joyconpair, gamecube, steam)",
                                 name);
+    }
+    if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(cmd, "injected"))) {
+        /* no SDL device: works where virtual joysticks do not, carries the family for prompts */
+        int at = (int)br_pt_clamped(cmd, "slot", 0.0, 0.0, BR_INPUT_MAX_GAMEPADS - 1);
+        e->playtest->injecting = true;
+        bool ok = br_input_inject_gamepad_connect(e, at, (br_gamepad_type)type);
+        e->playtest->injecting = false;
+        if (!ok) {
+            return br_playtest_fail(e, "gamepad: slot %d is taken", at);
+        }
+        if (reply != NULL) {
+            cJSON_AddNumberToObject(reply, "slot", at);
+        }
+        return true;
     }
     e->playtest->injecting = true;
     int slot = br_input_gamepad_attach_virtual(e, (br_gamepad_type)type);
@@ -410,8 +459,12 @@ static const br_pt_command_info br_pt_commands[] = {
     { "touch", "action:string finger?:number x?:number y?:number", "action down, move or up" },
     { "text", "text:string", "type text" },
     { "click", "label:string button?:number", "click a node by label (\"view/node\" for a 3D node)" },
-    { "gamepad", "action:string type?:string slot?:number button?:string axis?:string value?:number frames?:number",
-      "action connect (type: xbox, playstation, switch, ps5...), disconnect, tap, down, up (button), axis (axis, value)" },
+    { "gamepad",
+      "action:string type?:string slot?:number button?:string axis?:string value?:number frames?:number injected?:bool",
+      "action connect (type: xbox, playstation, switch, ps5...; injected: no SDL device), disconnect, tap, down, up "
+      "(button), axis (axis, value)" },
+    { "window", "width:number height:number",
+      "resize the window (headless: the screen size cameras see) to test aspect ratios" },
     { "screenshot", "file:string downsample?:number", "write the last rendered frame as PNG" },
     { "dump", "file?:string", "scene tree, components, exposed state, 3D views" },
     { "find", "label:string", "type, position, bounds... of a node" },
@@ -440,6 +493,23 @@ static bool br_pt_has_type(const cJSON *v, const char *type)
         return cJSON_IsBool(v);
     }
     return true; /* any */
+}
+
+/* True if `args` ("name:type name?:type ...") declares an argument called `key`. */
+static bool br_pt_declares(const char *args, const char *key)
+{
+    size_t len = SDL_strlen(key);
+    for (const char *p = args; *p != '\0';) {
+        if (SDL_strncmp(p, key, len) == 0 && (p[len] == ':' || p[len] == '?')) {
+            return true;
+        }
+        const char *space = SDL_strchr(p, ' ');
+        if (space == NULL) {
+            break;
+        }
+        p = space + 1;
+    }
+    return false;
 }
 
 /* Checks one command before anything runs. False with the reason in why. */
@@ -479,6 +549,16 @@ static bool br_pt_validate(const cJSON *cmd, char *why, size_t why_size)
         }
         if (v != NULL && !br_pt_has_type(v, type)) {
             SDL_snprintf(why, why_size, "%s: \"%s\" must be a %s", name, arg, type);
+            return false;
+        }
+    }
+    /* a typo ("frame" for "frames") would silently fall back to the default: reject it */
+    const cJSON *item = NULL;
+    cJSON_ArrayForEach(item, cmd)
+    {
+        if (SDL_strcmp(item->string, "cmd") != 0 && !br_pt_declares(info->args, item->string)) {
+            SDL_snprintf(why, why_size, "%s: unknown argument '%s' (takes: %s)", name, item->string,
+                         info->args[0] != '\0' ? info->args : "nothing");
             return false;
         }
     }
@@ -646,12 +726,14 @@ static br_pt_result br_pt_exec_logs(br_engine *e, const cJSON *cmd, cJSON *reply
 {
     br_playtest_state *s = e->playtest;
     uint32_t want = (uint32_t)br_pt_clamped(cmd, "count", 20.0, 0.0, BR_PLAYTEST_LOG_LINES);
+    cJSON *lines = cJSON_CreateArray();
+    SDL_LockMutex(s->log_lock);
     uint32_t have = s->log_count < BR_PLAYTEST_LOG_LINES ? s->log_count : BR_PLAYTEST_LOG_LINES;
     uint32_t n = want < have ? want : have;
-    cJSON *lines = cJSON_CreateArray();
     for (uint32_t i = s->log_count - n; i < s->log_count; i++) {
         cJSON_AddItemToArray(lines, cJSON_CreateString(s->log_lines[i % BR_PLAYTEST_LOG_LINES]));
     }
+    SDL_UnlockMutex(s->log_lock);
     br_pt_reply_add(reply, "lines", lines);
     return BR_PT_DONE;
 }
@@ -717,6 +799,9 @@ static br_pt_result br_pt_exec(br_engine *e, const cJSON *cmd, cJSON *reply)
     }
     if (SDL_strcmp(name, "gamepad") == 0) {
         return br_pt_ok(br_pt_cmd_gamepad(e, cmd, reply));
+    }
+    if (SDL_strcmp(name, "window") == 0) {
+        return br_pt_ok(br_pt_cmd_window(e, cmd));
     }
     if (SDL_strcmp(name, "screenshot") == 0) {
         const char *file = br_pt_string(cmd, "file");
@@ -1040,10 +1125,28 @@ static cJSON *br_pt_new_cmd(const char *name, const char *action)
     return cmd;
 }
 
+/* True for SDL's mouse events synthesised from touch or pen: the touch / pen itself is recorded,
+ * a replayed copy would arrive as a real mouse and click twice. */
+static bool br_pt_synthetic_mouse(const SDL_Event *ev)
+{
+    SDL_MouseID which = 0;
+    if (ev->type == SDL_EVENT_MOUSE_MOTION) {
+        which = ev->motion.which;
+    } else if (ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev->type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        which = ev->button.which;
+    } else if (ev->type == SDL_EVENT_MOUSE_WHEEL) {
+        which = ev->wheel.which;
+    }
+    return which == SDL_TOUCH_MOUSEID || which == SDL_PEN_MOUSEID;
+}
+
 /* A real input event as a command, NULL for events that are not recorded. */
 static cJSON *br_pt_event_cmd(br_engine *e, const SDL_Event *ev)
 {
     cJSON *cmd = NULL;
+    if (br_pt_synthetic_mouse(ev)) {
+        return NULL;
+    }
     switch (ev->type) {
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP:
@@ -1058,6 +1161,8 @@ static cJSON *br_pt_event_cmd(br_engine *e, const SDL_Event *ev)
         cmd = br_pt_new_cmd("mouse", "move");
         cJSON_AddNumberToObject(cmd, "x", ev->motion.x);
         cJSON_AddNumberToObject(cmd, "y", ev->motion.y);
+        cJSON_AddNumberToObject(cmd, "dx", ev->motion.xrel); /* relative mode moves with x/y pinned */
+        cJSON_AddNumberToObject(cmd, "dy", ev->motion.yrel);
         return cmd;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
     case SDL_EVENT_MOUSE_BUTTON_UP:
@@ -1235,6 +1340,7 @@ static void br_pt_shutdown(br_engine *e, void *user)
     if (s->log_hooked) {
         SDL_SetLogOutputFunction(s->log_prev, s->log_prev_user);
     }
+    SDL_DestroyMutex(s->log_lock);
     cJSON_Delete(s->script);
     br_array_free(&s->releases);
     br_array_free(&s->exposed);
@@ -1247,6 +1353,12 @@ void br_playtest_register(br_engine *e)
 {
     br_playtest_state *s = br_alloc(sizeof(br_playtest_state));
     if (s == NULL) {
+        return;
+    }
+    s->log_lock = SDL_CreateMutex();
+    if (s->log_lock == NULL) {
+        br_log_error("playtest: cannot create mutex: %s", SDL_GetError());
+        br_free(s);
         return;
     }
     e->playtest = s;

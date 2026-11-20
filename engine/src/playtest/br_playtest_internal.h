@@ -62,7 +62,9 @@ typedef struct br_playtest_state {
     br_array exposed;           /* br_playtest_exposed */
     char     error[BR_PLAYTEST_ERROR_SIZE];
 
-    /* log capture (installed on first use, restored at shutdown) */
+    /* log capture (installed on first use, restored at shutdown). Any thread logs (asset
+     * workers), so the ring is behind log_lock; never log while holding it. */
+    SDL_Mutex         *log_lock;
     bool               log_hooked;
     SDL_LogOutputFunction log_prev;
     void              *log_prev_user;
@@ -87,6 +89,9 @@ bool br_playtest_fail(br_engine *e, const char *fmt, ...);
 void br_playtest_hook_log(br_engine *e);
 /* Seconds of one deterministic play-test frame. */
 float br_playtest_frame_dt(br_engine *e);
+/* True if some captured log line (of the last BR_PLAYTEST_LOG_LINES) contains `text`; *kept =
+ * how many lines are kept. Thread-safe. */
+bool br_playtest_log_contains(br_engine *e, const char *text, uint32_t *kept);
 
 /* ---- br_playtest_query.c */
 
