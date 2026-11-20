@@ -13,6 +13,7 @@ void br_game_config_defaults(br_game_config *config)
     config->min_fps = 10.0f;
     config->speed = 1.0f;
     br_str_copy(config->debug_key, sizeof(config->debug_key), "F1");
+    config->debug_keys = true;
 #ifndef NDEBUG
     config->hot_reload = true;
 #endif
@@ -127,7 +128,7 @@ static void br_config_check_keys(const char *source, const cJSON *doc)
                         " window asset_root manifest start_scene scenes clear_color ticker input audio debug profiler game ");
     const char *sections[] = { "window", "ticker", "debug", "audio", "profiler" };
     const char *keys[] = { " title width height fullscreen vsync resizable logical_size ", " max_fps min_fps speed fixed_hz ",
-                           " overlay toggle_key hot_reload ", " master_volume muted buses sprites ", " hud panel " };
+                           " overlay toggle_key keys hot_reload ", " master_volume muted buses sprites ", " hud panel " };
     for (uint32_t i = 0; i < BR_ARRAY_COUNT(sections); i++) {
         const cJSON *section = cJSON_GetObjectItemCaseSensitive(doc, sections[i]);
         if (cJSON_IsObject(section)) {
@@ -206,6 +207,7 @@ bool br_game_config_parse(const char *json, size_t size, const char *source_name
     const cJSON *debug = br_config_section(&r, doc, "debug");
     br_config_bool(&r, debug, "overlay", &config->debug_overlay);
     br_config_string(&r, debug, "toggle_key", config->debug_key, sizeof(config->debug_key));
+    br_config_bool(&r, debug, "keys", &config->debug_keys);
     br_config_bool(&r, debug, "hot_reload", &config->hot_reload);
 
     const cJSON *profiler = br_config_section(&r, doc, "profiler");
@@ -348,11 +350,14 @@ void br_game_config_apply_settings(br_engine *e, br_game_config *config)
     br_scene_file_set_hot_reload(e, config->hot_reload, 0);
 
     SDL_Scancode key = SDL_GetScancodeFromName(config->debug_key);
-    if (key == SDL_SCANCODE_UNKNOWN) {
+    if (SDL_strcmp(config->debug_key, "none") == 0) {
+        br_debug_set_toggle_key(e, SDL_SCANCODE_UNKNOWN);
+    } else if (key == SDL_SCANCODE_UNKNOWN) {
         br_log_error("game.json: debug.toggle_key: unknown key '%s'", config->debug_key);
     } else {
         br_debug_set_toggle_key(e, key);
     }
+    br_debug_set_keys_enabled(e, config->debug_keys);
     br_debug_set_open(e, config->debug_overlay);
     /* only switched on: false is the default, and must not undo --profiler / --profiler-hud */
     if (config->profiler_hud) {

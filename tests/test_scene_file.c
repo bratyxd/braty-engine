@@ -430,7 +430,26 @@ static void test_game_config_apply(br_engine *e)
     br_input_inject_key(e, SDL_SCANCODE_F1, true); /* toggles the overlay */
     br_engine_step(e, 1.0f / 60.0f);
     BR_CHECK(!br_debug_is_open(e));
+    br_input_inject_key(e, SDL_SCANCODE_F1, false);
     br_ticker_set_speed(e, 1.0f);
+
+    /* a shipped game: "keys": false, F1 does nothing; then keys on but toggle_key "none" */
+    const char *ship = "{ \"debug\": { \"keys\": false } }";
+    BR_CHECK(br_game_config_parse(ship, strlen(ship), "game.json", &c) && !c.debug_keys);
+    br_game_config_apply(e, &c);
+    br_input_inject_key(e, SDL_SCANCODE_F1, true);
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(!br_debug_is_open(e));
+    br_input_inject_key(e, SDL_SCANCODE_F1, false);
+    const char *nokey = "{ \"debug\": { \"toggle_key\": \"none\" } }";
+    BR_CHECK(br_game_config_parse(nokey, strlen(nokey), "game.json", &c) && c.debug_keys);
+    br_game_config_apply(e, &c);
+    br_input_inject_key(e, SDL_SCANCODE_F1, true);
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(!br_debug_is_open(e));
+    br_input_inject_key(e, SDL_SCANCODE_F1, false);
+    br_debug_set_toggle_key(e, SDL_SCANCODE_F1);
+    br_engine_step(e, 1.0f / 60.0f);
 }
 
 /* ---- unknown keys: warned with file and JSON path, not errors, the rest still loads */
@@ -440,7 +459,9 @@ static uint32_t log_count_since(br_engine *e, uint32_t first, const char *text)
 {
     uint32_t found = 0;
     for (uint32_t i = first; i < br_debug_log_count(e); i++) {
-        found += strstr(br_debug_log_line(e, i), text) != NULL ? 1 : 0;
+        char line[256];
+        br_debug_log_line(e, i, line, sizeof(line));
+        found += strstr(line, text) != NULL ? 1 : 0;
     }
     return found;
 }
@@ -496,7 +517,10 @@ static void test_debug(br_engine *e)
     uint32_t before = br_debug_log_count(e);
     br_log_info("debug console line %d", 42);
     BR_CHECK(br_debug_log_count(e) == (before < BR_DEBUG_LOG_LINES ? before + 1 : BR_DEBUG_LOG_LINES));
-    BR_CHECK(strstr(br_debug_log_line(e, br_debug_log_count(e) - 1), "debug console line 42") != NULL);
+    char line[256];
+    BR_CHECK(br_debug_log_line(e, br_debug_log_count(e) - 1, line, sizeof(line)) &&
+             strstr(line, "debug console line 42") != NULL);
+    BR_CHECK(!br_debug_log_line(e, BR_DEBUG_LOG_LINES, line, sizeof(line)) && line[0] == '\0');
     br_node n = br_node_create_container(e);
     br_debug_select(e, n);
     BR_CHECK(br_node_equal(br_debug_selected(e), n));

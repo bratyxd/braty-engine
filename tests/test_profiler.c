@@ -492,6 +492,80 @@ static void test_overlay_input(void)
     br_engine_destroy(e);
 }
 
+/* Shift-click a number in the Inspector, then: key presses go to the field, key releases still
+ * reach the game (a key held before the edit used to stay down forever). */
+static void test_overlay_key_release(void)
+{
+    br_engine *e = br_engine_create("test_profiler_keys", NULL);
+    br_node n = br_node_create_container(e);
+    br_node_add_child(e, br_scene_root(e), n);
+    br_debug_set_open(e, true);
+    br_debug_select(e, n);
+    br_input_inject_key(e, SDL_SCANCODE_W, true); /* walking */
+    br_engine_step(e, 1.0f / 60.0f);
+    /* the position x field: Inspector at (690, 10), title 24, padding 5, a label row, then
+     * "position" (70 wide) and the number (95 wide); headless text is 0 high, rows 10 */
+    br_input_inject_pointer_move(e, 810.0f, 66.0f);
+    br_engine_step(e, 1.0f / 60.0f);
+    br_input_inject_key(e, SDL_SCANCODE_LSHIFT, true);
+    br_engine_step(e, 1.0f / 60.0f);
+    br_input_inject_pointer_down(e, 810.0f, 66.0f, SDL_BUTTON_LEFT);
+    br_engine_step(e, 1.0f / 60.0f);
+    br_input_inject_pointer_up(e, 810.0f, 66.0f, SDL_BUTTON_LEFT);
+    br_input_inject_key(e, SDL_SCANCODE_LSHIFT, false);
+    br_engine_step(e, 1.0f / 60.0f);
+    SDL_Event key;
+    SDL_zero(key);
+    key.type = SDL_EVENT_KEY_DOWN;
+    key.key.scancode = SDL_SCANCODE_1;
+    BR_CHECK(br_debug_wants_event(e, &key)); /* the field is being edited: typing goes there */
+    key.type = SDL_EVENT_KEY_UP;
+    key.key.scancode = SDL_SCANCODE_W;
+    BR_CHECK(!br_debug_wants_event(e, &key)); /* but W's release reaches the game */
+
+    /* shipped games switch the keys off; code can still open things */
+    br_debug_set_open(e, false);
+    br_debug_set_keys_enabled(e, false);
+    br_input_inject_key(e, SDL_SCANCODE_F1, true);
+    br_input_inject_key(e, SDL_SCANCODE_F2, true);
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(!br_debug_is_open(e) && !br_profiler_is_open(e));
+    br_input_inject_key(e, SDL_SCANCODE_F1, false);
+    br_input_inject_key(e, SDL_SCANCODE_F2, false);
+    br_debug_set_keys_enabled(e, true);
+    br_debug_set_profiler_key(e, SDL_SCANCODE_UNKNOWN);
+    br_input_inject_key(e, SDL_SCANCODE_F1, true);
+    br_input_inject_key(e, SDL_SCANCODE_F2, true);
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(br_debug_is_open(e) && !br_profiler_is_open(e));
+    br_engine_destroy(e);
+}
+
+/* The GPU estimate (fence thread + a fence per frame) runs only while something uses it. Needs a
+ * window and a GPU: skipped where none can be opened. */
+static void test_fence_thread_on_demand(void)
+{
+    br_engine *e = br_engine_create("test_profiler_fences", NULL);
+    if (!br_engine_open_window(e, 64, 64, NULL)) {
+        printf("skipped the fence-thread test: no window / GPU\n");
+        br_engine_destroy(e);
+        return;
+    }
+    br_engine_step(e, 1.0f / 60.0f);
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(!br_profiler_gpu_estimating(e)); /* nobody looks: no thread, no fences */
+    br_profiler_set_hud(e, true);
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(br_profiler_gpu_estimating(e));
+    br_profiler_set_hud(e, false);
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(!br_profiler_gpu_estimating(e));
+    br_profiler_set_open(e, true);
+    br_engine_step(e, 1.0f / 60.0f);
+    BR_CHECK(br_profiler_gpu_estimating(e)); /* started again */
+    br_engine_destroy(e);
+}
+
 /* Counters the animation module feeds: animators and tweens alive this frame. */
 static void test_animation_counters(void)
 {
@@ -526,6 +600,10 @@ int main(void)
     test_animation_counters();
 #endif
     test_overlay_input();
+    test_overlay_key_release();
+#ifndef BRATY_PROFILER_OFF
+    test_fence_thread_on_demand();
+#endif
     SDL_Quit();
     return br_test_finish();
 }

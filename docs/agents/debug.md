@@ -13,7 +13,7 @@ font:
 
 | Window | Shows |
 |---|---|
-| Stats | FPS, frame-time graph (red = over 17 ms), draw calls / batches / passes / vertices / nodes drawn (`br_render_get_stats`), node / texture / asset counts, render-target pool, heap (`br_memory_get_stats`: live KB, blocks, peak), Arenas header (every tracked arena: used / capacity / peak, see `docs/agents/arena.md`), asset cache list (`br_assets_list`) |
+| Stats | FPS, frame-time graph (red = over the pacing frame budget + 10%), draw calls / batches / passes / vertices / nodes drawn (`br_render_get_stats`), node / texture / asset counts, render-target pool, heap (`br_memory_get_stats`: live KB, blocks, peak), Arenas header (every tracked arena: used / capacity / peak, see `docs/agents/arena.md`), asset cache list (`br_assets_list`) |
 | Systems | every system (`br_system_get_info`): enable checkbox, phase, last run time |
 | Scene | node tree under the stage; `+`/`-` opens a node, clicking a name selects it |
 | Inspector | live position, scale, rotation, alpha (slider), visible of the selected node, editable |
@@ -24,27 +24,37 @@ F2 toggles the **profiler panel** and `--profiler-hud` shows its corner readout
 
 Input comes from the input module (mouse, wheel, Shift/Ctrl/Alt/Backspace/Return, text). The
 overlay installs an SDL event filter: a click or wheel on one of its windows (and the release of
-such a click), and typing into a field being edited, are fed to microui and **never reach the
-game** (input module, pointer events, systems). The profiler corner readout lets clicks through.
+such a click), and key presses / text while a field is edited, are fed to microui and **never
+reach the game** (input module, pointer events, systems). Key releases always reach the game, so
+a key held when an edit starts (W to walk) does not stay down. The profiler corner readout lets
+clicks through.
 
 ## Functions you actually need
 
 | Function | What for |
 |---|---|
 | `br_debug_set_open(e, true)`, `br_debug_is_open` | Open/close from code. |
-| `br_debug_set_toggle_key(e, SDL_SCANCODE_F12)` | Another toggle key (game.json `debug.toggle_key`). |
+| `br_debug_set_toggle_key(e, SDL_SCANCODE_F12)` | Another toggle key (game.json `debug.toggle_key`; `SDL_SCANCODE_UNKNOWN` / `"none"` = no key). |
+| `br_debug_set_profiler_key(e, key)` | Another profiler key (default F2; `SDL_SCANCODE_UNKNOWN` = none). |
+| `br_debug_set_keys_enabled(e, false)` | Shipping: F1 / F2 do nothing (game.json `"debug": { "keys": false }`); code can still open both. |
 | `br_debug_wants_event(e, &ev)` | Would the overlay take this event (it then never reaches the game)? |
 | `br_debug_select(e, n)`, `br_debug_selected` | Point the inspector at a node. |
-| `br_debug_log_count`, `br_debug_log_line` | Read the captured log. |
+| `br_debug_log_count`, `br_debug_log_line(e, i, buf, size)` | Read the captured log (copied under the lock; any thread may log). |
 
 ## Snippet
 
 The overlay needs no code: it is registered for every engine. Open it at start from game.json
-(`"debug": { "overlay": true }`) or with `--debug` when br_main calls `br_game_config_args`
-(from examples/data_demo.c):
+(`"debug": { "overlay": true }`) or with `--debug` (read by `br_game_config_main`, which calls
+`br_game_config_args`; examples/data_demo.c):
 
 ```c
-br_game_config_args(&config, argc, argv);                             /* --debug, --scene */
+br_app_desc desc = br_game_config_main(BRATY_EXAMPLES_DIR "/data/game.json", argc, argv, demo_init);
+```
+
+A shipped game turns the keys off in game.json:
+
+```json
+"debug": { "keys": false, "hot_reload": false }
 ```
 
 ## Gotchas
