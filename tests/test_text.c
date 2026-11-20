@@ -284,6 +284,26 @@ static void test_split(br_engine *e, br_font *f)
     br_node_destroy(e, chars);
     br_node_destroy(e, words);
     br_node_destroy(e, lines);
+
+    /* pieces of any length (a long line or URL was dropped from 1024 bytes on) */
+    char *long_line = SDL_malloc(2001);
+    for (int i = 0; i < 2000; i++) {
+        long_line[i] = i % 7 == 6 ? ' ' : 'a';
+    }
+    long_line[1999] = 'b';
+    long_line[2000] = 0;
+    lines = br_split_text_create(e, long_line, &st, BR_SPLIT_LINES);
+    BR_CHECK(br_node_child_count(e, lines) == 1);
+    BR_CHECK(SDL_strcmp(br_text_get_text(e, br_node_child_at(e, lines, 0)), long_line) == 0);
+    for (int i = 0; i < 2000; i++) {
+        long_line[i] = 'c';
+    }
+    words = br_split_text_create(e, long_line, &st, BR_SPLIT_WORDS);
+    BR_CHECK(br_node_child_count(e, words) == 1);
+    BR_CHECK(SDL_strlen(br_text_get_text(e, br_node_child_at(e, words, 0))) == 2000);
+    br_node_destroy(e, lines);
+    br_node_destroy(e, words);
+    SDL_free(long_line);
 }
 
 static uint32_t be16(const uint8_t *p)

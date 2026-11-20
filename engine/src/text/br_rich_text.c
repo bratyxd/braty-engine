@@ -317,14 +317,15 @@ bool br_rich_text_char_style(br_engine *e, br_node n, uint32_t i, br_rich_char_s
 static void br_split_add_piece(br_engine *e, br_node container, const char *text, uint32_t start, uint32_t end,
                                const br_text_style *style, float x, float y, float w, float h)
 {
-    char buf[1024];
     uint32_t len = end - start;
-    if (len == 0 || len >= sizeof(buf)) {
+    char *buf = len > 0 ? br_alloc((size_t)len + 1) : NULL;
+    if (buf == NULL) {
         return;
     }
     SDL_memcpy(buf, text + start, len);
     buf[len] = 0;
     br_node piece = br_text_create(e, buf, style);
+    br_free(buf);
     br_text_set_anchor(e, piece, 0.5f, 0.5f);
     br_node_set_position(e, piece, x + w * 0.5f, y + h * 0.5f);
     br_node_add_child(e, container, piece);
