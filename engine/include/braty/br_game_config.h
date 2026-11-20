@@ -74,8 +74,8 @@ void br_game_config_args(br_game_config *config, int argc, char **argv);
 /* A br_app_desc with title, size and asset root pointing into config (keep config alive). */
 br_app_desc br_game_config_app_desc(const br_game_config *config);
 /* Applies everything else to a running engine: vsync, fullscreen, resizable, logical size
- * (br_camera_create_logical), ticker, clear colour, input actions, audio, manifest, debug
- * overlay, profiler HUD / panel, hot reload; then loads the start scene
+ * (br_camera_create_logical), ticker, clear colour, input actions, audio, manifest, locale
+ * (br_loc_setup), debug overlay, profiler HUD / panel, hot reload; then loads the start scene
  * under the stage and returns its root (zero handle if none or it failed). The engine takes
  * over config->json (it is set to NULL). */
 br_node br_game_config_apply(br_engine *e, br_game_config *config);

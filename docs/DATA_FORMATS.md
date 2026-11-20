@@ -11,6 +11,7 @@ Everything a designer tweaks is JSON. This file documents every format the engin
 6. [Animation clips](#6-animation-clips-animjson) (`*.anim.json`)
 7. [Animation state machines](#7-animation-state-machines-animgraphjson) (`*.animgraph.json`)
 8. [Asset packs](#8-asset-packs-brpack) (`*.brpack`) - the asset root's files in one file
+9. [String tables](#9-string-tables-stringslocalejson) (`strings.<locale>.json`) - localisation
 
 Every JSON example below is loaded by `tests/test_data_formats.c` (the `<!-- check: ... -->`
 line before each one says how), so they stay valid.
@@ -61,6 +62,7 @@ Every key is optional; the values below are the defaults unless noted.
   "debug": { "overlay": false, "toggle_key": "F1", "keys": true, "hot_reload": true },
   "profiler": { "hud": false, "panel": false },
   "save": { "org": "my-studio", "app": "My Game" },
+  "locale": { "default": "en", "fallback": ["en"], "dir": "strings" },
   "game": { "lives": 3 }
 }
 ```
@@ -91,6 +93,7 @@ overlay closed, F1, hot reload on in debug builds, no logical size (the example'
 | `debug.hot_reload` | Poll loaded scene files and reload them when they change (default: on in debug builds, off with `NDEBUG`). |
 | `profiler.hud` / `profiler.panel` | Profiler corner readout / panel (F2) shown at start (`br_profiler_set_hud`, `br_profiler_set_visible`). `false` leaves the command line (`--profiler-hud`, `--profiler`) in charge. |
 | `save.org` / `save.app` | Save-data folder (`br_engine_set_save_name`): default org `"braty"` and the window title. Sanitised (characters a folder name cannot hold become `_`), so renaming or localising the title does not move saves once `save.app` is set. |
+| `locale` | `br_loc_setup` before the start scene loads: `default` locale (`"en"`), `fallback` locales tried for a missing key (at most 8), `dir` of the `strings.<locale>.json` tables (section 9). The current locale is the system's first preferred one with a table, else the default; `--deterministic`, `--frames` and headless runs always use the default. |
 | `game` | Anything the game wants: `br_game_config_json(e)` returns the whole document. Other unknown keys log a warning. |
 | `fonts` | Font families by name (`"default"` = the family of text without `font_family`): `regular` / `bold` / `italic` / `bold_italic` face paths (`br_font_add_family`) and `fallbacks`, up to 8 font paths (`.ttf`, `.otf`, `.fnt`) tried in order for characters the face lacks (`br_font_family_set_fallbacks`; example below). Paths are assets; a font that does not load is logged and skipped. |
 
@@ -316,6 +319,9 @@ Groups: `vertex position rotation uvs color`.
   "tag_styles": { "warn": { "font_family": "", "font_size": 0, "color": "red", "bold": true,
                             "italic": false, "underline": false, "strike": false } } }
 ```
+All three also take `"text_key": "menu.play"`: the text of that key in the current string table
+(section 9), set again whenever the locale changes (`br_loc_bind_text`); it wins over `"text"`
+and is saved with the node.
 `font` loads a file: `.fnt`/`.xml` = bitmap font, others = TTF/OTF. `align`: `left center right
 justify`; `white_space`: `pre normal pre_line`; `baseline`: `top alphabetic middle bottom`.
 
@@ -420,12 +426,26 @@ from code.
 | `BR_FIELD_STRING` | string, at most 63 bytes |
 | `BR_FIELD_ASSET` | asset path (a sound, a texture, a scene...), at most 63 bytes; not loaded automatically |
 | `BR_FIELD_NODE` | label of another node, or `null` |
+| `BR_FIELD_TEXT` | string of any length, or `null` (heap; freed with the component) |
+| `BR_FIELD_ENUM` | one of the names given to `br_component_set_enum`, or its index |
+| `BR_FIELD_VEC4` | `[x, y, z, w]` |
+| `BR_FIELD_QUAT` | `[x, y, z, w]` (a quaternion, not normalised for you) |
+| `BR_FIELD_NODE3D` | label of a 3D node in a view3d (2D components), or `null` |
+| `BR_FIELD_ARRAY` | `[ element, ... ]`, at most the capacity given to `br_component_set_array`; elements as above |
 
 <!-- check: fields -->
 ```json
 "components": {
   "enemy": { "alive": true, "hp": 3, "speed": 120.5, "home": [400, 300], "axis": [0, 1, 0],
              "flash": "#ff0000", "name": "grunt", "hit_sound": "sounds/hit.wav", "target": "hero" }
+}
+```
+<!-- check: fields -->
+```json
+"components": {
+  "patrol": { "line": "A sentence longer than sixty-three bytes is fine in a text field, in any language.",
+              "mode": "chase", "glow": [1, 0.5, 0, 1], "facing": [0, 0.7071, 0, 0.7071],
+              "points": [[0, 0], [120, 0], [120, 80]], "moods": ["idle", "chase"] }
 }
 ```
 Components must be registered before the file is loaded. Fields left out keep their value
@@ -611,7 +631,8 @@ the animator's node: `"body/arm_r:rotation"`, `":alpha"` (the node itself), `"#3
 (glTF node 3 of a `model3d`), `"hp.value"` (component field). Properties: `position` `x` `y`
 `scale` `rotation` `skew` `pivot` `alpha` `tint` `visible` `z_index` `sprite.texture`
 `sprite.frame` (2D); `position` `rotation` `scale` `visible` `material.*` `morph_weights` (3D);
-any float / int / bool / vec2 / vec3 / colour component field; more from
+any float / int / bool / enum / vec2 / vec3 / vec4 / quat / colour component field, or one element of
+an array field (`"patrol.weights.2"`); more from
 `br_anim_property_register` (`docs/agents/animation.md`).
 
 <!-- check: anim animation/hero.anim.json -->
@@ -714,3 +735,39 @@ Lookups normalise the requested path the same way (`br_file_normalize`: `\` beco
 `a/../b` is `b`, nothing climbs above the asset root) and are case-sensitive. Loose files win over
 packs in debug builds and packs win in release builds (`br_file_set_loose_first`). Paths that
 differ only in case are refused by the tool (they collide on Windows and macOS).
+## 9. String tables (`strings.<locale>.json`)
+
+Read by the `"strings"` asset loader (`engine/src/loc/br_loc.c`, `br_loc.h`). One file per locale
+in the `locale.dir` of game.json: `strings/strings.en.json`, `strings/strings.de.json`,
+`strings/strings.pt-BR.json`. A flat object; a value is a text or a plural entry.
+
+<!-- check: strings strings/strings.en.json -->
+```json
+{ "menu.play": "Play",
+  "menu.title": "<b>Crate</b> Rush",
+  "hud.greeting": "Hello, {name}!",
+  "hud.crates": { "zero": "No crates left", "one": "{count} crate left", "other": "{count} crates left" } }
+```
+
+- `{name}` placeholders are filled by `br_loc_format(e, key, args, n)`; a placeholder without an
+  argument stays as written. Texts may hold rich-text tags for `rich_text` nodes.
+- Plural entries: `other` (or `one`) is required; `br_loc_format` picks `zero` for a `count`
+  argument of 0 (if present), `one` for 1, else `other`. `br_loc_get` gives `other`.
+- Lookup order: the current locale (`de-AT`), its language (`de`), `locale.fallback` in order,
+  then `locale.default`. A key in none of them shows as the key and is logged once per locale.
+- A locale name is letters, digits, `-` and `_`, at most 31 bytes (it becomes part of a path).
+- Bad entries (a number, an unknown plural form) are logged with the file and key and skipped;
+  a file that is not an object fails to load and `br_loc_set_locale` keeps the old locale.
+- Texts have no length limit (text nodes and `BR_FIELD_TEXT` fields hold any length).
+- Limits: plural forms are `zero` / `one` / `other` only (no ICU rules; languages with "few" /
+  "many" forms use `other`), no bidirectional text, no shaping (text is laid out left to right
+  by code point).
+
+Text nodes bound to keys follow `br_loc_set_locale` (and play-test `set engine:locale "de"`):
+
+<!-- check: scene -->
+```json
+{ "type": "container", "children": [
+  { "type": "text", "text_key": "menu.play", "style": { "font_size": 32 } },
+  { "type": "rich_text", "text_key": "menu.title" } ] }
+```

@@ -1,6 +1,7 @@
 /* br_anim_property: the property registry, the built-in rows (2D nodes, sprites, 3D nodes,
  * materials, morph weights), component fields, and "<node path>:<property>" resolution. */
 #include "animation/br_animation_internal.h"
+#include "scene/br_scene_internal.h" /* br_component_field_extra */
 
 /* ---- targets */
 
@@ -221,24 +222,46 @@ static bool br_anim_resolve_field(br_engine *e, const char *name, br_anim_prop_r
     if (desc == NULL) {
         return false;
     }
+    /* "field" or, for an array field, "field.N" (element N, below its capacity) */
+    const char *field_name = dot + 1;
+    const char *element = SDL_strchr(field_name, '.');
+    size_t name_len = element != NULL ? (size_t)(element - field_name) : SDL_strlen(field_name);
     for (uint32_t i = 0; i < desc->field_count; i++) {
         const br_field_desc *f = &desc->fields[i];
-        if (SDL_strcmp(f->name, dot + 1) != 0) {
+        if (SDL_strlen(f->name) != name_len || SDL_strncmp(f->name, field_name, name_len) != 0) {
             continue;
         }
+        br_field_type field_type = f->type;
+        size_t offset = f->offset;
+        if ((element != NULL) != (f->type == BR_FIELD_ARRAY)) {
+            return false; /* an element of a non-array, or a whole array */
+        }
+        if (element != NULL) {
+            char *end = NULL;
+            long index = SDL_strtol(element + 1, &end, 10);
+            const br_field_extra *x = br_component_field_extra(e, f);
+            if (x == NULL || end == element + 1 || *end != '\0' || index < 0 || (unsigned long)index >= x->capacity) {
+                return false;
+            }
+            field_type = x->element_type;
+            offset += (size_t)index * br_field_type_size(field_type);
+        }
         br_anim_value_type type;
-        switch (f->type) {
+        switch (field_type) {
         case BR_FIELD_FLOAT: type = BR_ANIM_FLOAT; break;
         case BR_FIELD_INT: type = BR_ANIM_INT; break;
+        case BR_FIELD_ENUM: type = BR_ANIM_INT; break;
         case BR_FIELD_BOOL: type = BR_ANIM_BOOL; break;
         case BR_FIELD_VEC2: type = BR_ANIM_VEC2; break;
         case BR_FIELD_VEC3: type = BR_ANIM_VEC3; break;
         case BR_FIELD_COLOR: type = BR_ANIM_COLOR; break;
-        default: return false; /* strings, assets, node references are not animatable */
+        case BR_FIELD_VEC4: type = BR_ANIM_COLOR; break; /* 4 floats, blended per component like a colour */
+        case BR_FIELD_QUAT: type = BR_ANIM_QUAT; break;
+        default: return false; /* strings, text, assets, node references are not animatable */
         }
         out->property = BR_ANIM_NONE;
         out->component = id;
-        out->offset = (uint32_t)f->offset;
+        out->offset = (uint32_t)offset;
         out->type = type;
         return true;
     }

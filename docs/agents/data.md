@@ -124,7 +124,12 @@ silently, wrong types log `file: children[3].my_key: expected a number`.
   "preload" | "lazy" }`; `lazy` ones are listed in a br_scene's group but not loaded by the file.
 - Component pointers (`br_component_get/at`) die when any component of that kind is added (a
   prefab instantiated, a scene loaded): re-fetch after anything that may create nodes.
-- `BR_FIELD_STRING`/`BR_FIELD_ASSET` hold 63 bytes; asset fields are not loaded for you.
+- `BR_FIELD_STRING`/`BR_FIELD_ASSET` hold 63 bytes (longer is an error naming `BR_FIELD_TEXT`, a
+  heap string of any length); asset fields are not loaded for you (arrays of assets are listed
+  by `br_scene_file_collect_assets` like single ones).
+- One reader for every field type (`br_data_read_field`, `br_scene_file.c`) serves scene files,
+  prefabs, glTF extras / view3d JSON (only bools differ: extras also take 1 / 0) and play-test
+  `set`; node labels are resolved by a callback per caller.
 - Saving: graphics commands, filters, masks, hit areas and handlers are written as loaded (the
   engine cannot read them back from a node); edit them in code and they are not saved
   (`ponytail:` in br_node_json_container.c).

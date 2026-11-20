@@ -407,7 +407,14 @@ ones from the earlier lists. Summary of the whole review: `docs/REVIEW_2026-11-2
     hand from cJSON, the opposite of "data + systems". **Fix:** `BR_FIELD_TEXT` (a heap or interned
     string freed with the row), `BR_FIELD_ENUM` with a name table, `BR_FIELD_VEC4` / `_QUAT`, a
     `BR_FIELD_NODE3D`, and a fixed-capacity array field (count + inline elements of one type).
-    Rank 2: blocks localisation and every list-shaped design.
+    Rank 2: blocks localisation and every list-shaped design. **Resolved (Phase 3 Task B1):**
+    `BR_FIELD_TEXT` (heap, freed with the row, `br_component_set_text`), `BR_FIELD_ENUM`
+    (`br_component_set_enum`), `BR_FIELD_VEC4`, `BR_FIELD_QUAT`, `BR_FIELD_NODE3D` and
+    `BR_FIELD_ARRAY` (`br_component_set_array`: element type, capacity, count offset), read by
+    scene files, prefabs, glTF extras, play-test get / set, tweens / clips (numeric types, array
+    elements as `comp.field.N`) and hot reload. `br_field_desc` keeps its three members so every
+    existing initialiser compiles warning-free; no uint type (an int or an enum covers it). Test:
+    `tests/test_field_types.c`.
 44. **friction - 2D and 3D node APIs disagree** (position types, child iteration, find-by-label
     rules, layer-bit names, counts and destroy hooks; 3D lacked add-child-at, reparent keeping
     the world transform, to_local and an Euler getter; 3D components were declared in

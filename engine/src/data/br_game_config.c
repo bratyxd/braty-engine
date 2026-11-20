@@ -128,10 +128,11 @@ static void br_config_warn_keys(const char *source, const char *section, const c
 static void br_config_check_keys(const char *source, const cJSON *doc)
 {
     br_config_warn_keys(source, "", doc,
-                        " window asset_root manifest start_scene scenes clear_color ticker input audio debug profiler save game packs fonts ");
-    const char *sections[] = { "window", "ticker", "debug", "audio", "profiler", "save" };
+                        " window asset_root manifest start_scene scenes clear_color ticker input audio debug profiler save locale game packs fonts ");
+    const char *sections[] = { "window", "ticker", "debug", "audio", "profiler", "save", "locale" };
     const char *keys[] = { " title width height fullscreen vsync resizable logical_size pause_when_inactive ", " max_fps min_fps speed fixed_hz ",
-                           " overlay toggle_key keys hot_reload ", " master_volume muted buses sprites ", " hud panel ", " org app " };
+                           " overlay toggle_key keys hot_reload ", " master_volume muted buses sprites ", " hud panel ", " org app ",
+                           " default fallback dir " };
     for (uint32_t i = 0; i < BR_ARRAY_COUNT(sections); i++) {
         const cJSON *section = cJSON_GetObjectItemCaseSensitive(doc, sections[i]);
         if (cJSON_IsObject(section)) {
@@ -445,6 +446,33 @@ static void br_config_apply_fonts(br_engine *e, const cJSON *fonts)
     }
 }
 
+/* "locale": { "default": "en", "fallback": ["en"], "dir": "strings" } -> br_loc_setup. */
+static void br_config_apply_locale(br_engine *e, const cJSON *locale)
+{
+    br_config_reader r = { "game.json", "locale", true };
+    char default_locale[BR_LOC_NAME_SIZE] = "en";
+    char dir[BR_GAME_CONFIG_PATH_SIZE] = "";
+    br_config_string(&r, locale, "default", default_locale, sizeof(default_locale));
+    br_config_string(&r, locale, "dir", dir, sizeof(dir));
+    const char *fallbacks[BR_LOC_MAX_FALLBACKS];
+    uint32_t count = 0;
+    const cJSON *list = cJSON_GetObjectItemCaseSensitive(locale, "fallback");
+    const cJSON *item = NULL;
+    if (list != NULL && !cJSON_IsArray(list)) {
+        br_config_error(&r, "fallback", "expected an array of locale names");
+        list = NULL;
+    }
+    cJSON_ArrayForEach(item, list)
+    {
+        if (!cJSON_IsString(item) || count == BR_LOC_MAX_FALLBACKS) {
+            br_config_error(&r, "fallback", "expected at most 8 locale names (strings)");
+            break;
+        }
+        fallbacks[count++] = item->valuestring;
+    }
+    br_loc_setup(e, dir, default_locale, fallbacks, count);
+}
+
 void br_game_config_apply_settings(br_engine *e, br_game_config *config)
 {
     /* packs first: everything below may read files */
@@ -506,6 +534,12 @@ void br_game_config_apply_settings(br_engine *e, br_game_config *config)
         br_config_apply_fonts(e, fonts);
     } else if (fonts != NULL) {
         br_log_error("game.json: fonts: expected an object { \"family\": { ... } }");
+    }
+    const cJSON *locale = cJSON_GetObjectItemCaseSensitive(config->json, "locale");
+    if (cJSON_IsObject(locale)) {
+        br_config_apply_locale(e, locale); /* before the start scene: its "text_key"s resolve */
+    } else if (locale != NULL) {
+        br_log_error("game.json: locale: expected an object { \"default\", \"fallback\", \"dir\" }");
     }
 
     cJSON_Delete(e->data->game_json);

@@ -4,6 +4,7 @@
  *     "style": { "font_size": 32, "fill": "white", "stroke": { "width": 3, "color": "black" },
  *                "drop_shadow": { "color": "#00000080", "distance": 4 }, "align": "center" } }
  *   { "type": "bitmap_text", "text": "SCORE 0", "font": "fonts/pixel.fnt", "size": 24 }
+ *   { "type": "text", "text_key": "menu.play" }   (br_loc: the table text, re-set on locale change)
  *   { "type": "rich_text", "text": "<b>Bold</b> and <warn>red</warn>",
  *     "tag_styles": { "warn": { "color": "red", "bold": true } } }
  */
@@ -195,6 +196,12 @@ static bool br_data_text_from_json(br_engine *e, br_node n, void *data, const cJ
         br_text_set_text(e, n, text->valuestring);
     } else if (text != NULL) {
         br_data_error(e, "text", "expected a string");
+    }
+    const cJSON *text_key = cJSON_GetObjectItemCaseSensitive(json, "text_key");
+    if (cJSON_IsString(text_key)) {
+        br_loc_bind_text(e, n, text_key->valuestring); /* wins over "text"; follows locale changes */
+    } else if (text_key != NULL) {
+        br_data_error(e, "text_key", "expected a string table key");
     }
     br_text_style style;
     br_text_get_style(e, n, &style);

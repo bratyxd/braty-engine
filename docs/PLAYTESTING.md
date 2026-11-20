@@ -152,12 +152,14 @@ bring the pad back. A pad of a recorded session comes back as
 |---|---|
 | `ship:position` | Node labelled `ship` (searched in the whole stage), built-in property. Built-ins: `position`, `x`, `y`, `scale`, `rotation` (radians), `alpha`, `visible`, `tint`, `z_index`, `label`, `type`, `children` (count), `world_position`, `bounds` ([x, y, w, h], stage coordinates: window coordinates unless a 2D camera moves the stage), `exists`. |
 | `final_score:text` | Any other key of the node's scene-file form (`text`, `texture`, `style`, ...). |
-| `ship:pilot.carrying` | Component `pilot` of node `ship`, field `carrying` (fields listed in the game's `br_field_desc`). |
+| `ship:pilot.carrying` | Component `pilot` of node `ship`, field `carrying` (fields listed in the game's `br_field_desc`). Enums read and write by name, text fields take strings of any length, arrays are lists (`ship:pilot.cargo.2` is one element). |
 | `level_camera:camera.follow.offset3d.x` | A component whose name has a dot: after the colon the longest run of parts that names a registered component is the component (`camera.follow`), the next part its field, then an optional element. Names without a dot read as before. |
 | `ship:position.x` | One element: `.x .y .z .w` (or `.0 .1 ...`). Works for `get` and `set`. |
 | `game:score` | A struct the game exposed with `br_playtest_expose(e, "game", fields, count, &state)`. |
 | `profile:frame_ms_p95` | A key of the last `profile` command's summary (any key listed above; `profile:*` = all). Use it in `expect`: `{"cmd": "expect", "path": "profile:frame_ms_p95", "op": "<", "value": 16.7}`, `{"cmd": "expect", "path": "profile:verdict", "op": "contains", "value": "vsync"}`. Before any `profile` it covers every frame kept. |
 | `engine:scene` | Name of the active scene (`br_scene_active_name`, `""` when none): `{"cmd": "wait_until", "path": "engine:scene", "value": "play"}`. |
+| `engine:locale` | The current locale (`br_loc_locale`). `set engine:locale "de"` switches it (`br_loc_set_locale`: bound text nodes change); an unknown locale fails the command. |
+| `loc:menu.play` | The text of a string-table key in the current locale (the key itself if missing); the key is everything after `loc:`, dots included. |
 | `json_view/json_fox:position` | 3D node `json_fox` inside the `view3d` labelled `json_view` (`*/json_fox` = any view; an unlabelled view is `/json_fox`). Properties: `position`, `scale`, `rotation` (quaternion [x, y, z, w]), `euler` (radians, X then Y then Z), `visible`, `world_position`, `screen_position` (stage coordinates, `null` behind the camera), `label`, `type`, `children`, `exists`; `.x` elements as above. |
 
 `type`, `children`, `world_position`, `bounds`, `screen_position` and `exists` are read-only.

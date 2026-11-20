@@ -134,6 +134,7 @@ struct br_engine {
     struct br_animation_state   *animation;
     struct br_profiler_state    *profiler;
     struct br_storage_state     *storage;   /* mounted packs, log file (Phase 3 Task B3) */
+    struct br_loc_state         *loc;       /* string tables, locale, bound text nodes (Phase 3 B1) */
 };
 
 /* A br_strdup of name made safe as a save folder name (br_file.c). */

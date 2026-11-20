@@ -374,9 +374,28 @@ typedef enum br_field_type {
     BR_FIELD_COLOR,    /* br_color */
     BR_FIELD_STRING,   /* char[BR_FIELD_STRING_SIZE] */
     BR_FIELD_ASSET,    /* char[BR_FIELD_STRING_SIZE], an asset path */
-    BR_FIELD_NODE      /* br_node (scene files resolve it by label) */
+    BR_FIELD_NODE,     /* br_node (scene files resolve it by label) */
+    BR_FIELD_TEXT,     /* char *: heap UTF-8 of any length, NULL = ""; freed with the row. Assign
+                        * only through br_component_set_text (the row frees it with br_free) */
+    BR_FIELD_ENUM,     /* int32_t, read and written by name (br_component_set_enum) */
+    BR_FIELD_VEC4,     /* br_vec4 */
+    BR_FIELD_QUAT,     /* br_quat (x y z w) */
+    BR_FIELD_NODE3D,   /* br_node3d (2D components: a 3D node label in any view3d) */
+    BR_FIELD_ARRAY     /* elements at offset, a uint32_t count elsewhere (br_component_set_array) */
 } br_field_type;
 
+/* { "speed", BR_FIELD_FLOAT, offsetof(mover, speed) }. Enum and array fields need one more call
+ * after br_component_register (the three members stay the whole description, so existing
+ * initialisers compile unchanged):
+ *
+ *   typedef struct guard { int32_t mode; uint32_t point_count; br_vec2 points[8]; } guard;
+ *   static const char *const modes[] = { "idle", "patrol", "chase" };
+ *   { "mode", BR_FIELD_ENUM, offsetof(guard, mode) }, { "points", BR_FIELD_ARRAY, offsetof(guard, points) }
+ *   br_component_set_enum(e, id, "mode", modes, 3);
+ *   br_component_set_array(e, id, "points", BR_FIELD_VEC2, 8, offsetof(guard, point_count));
+ *
+ * In JSON an enum is one of its names (or its index) and an array a list of at most capacity
+ * elements (count = its length). */
 typedef struct br_field_desc { const char *name; br_field_type type; size_t offset; } br_field_desc;
 
 typedef struct br_component_desc {
@@ -386,6 +405,19 @@ typedef struct br_component_desc {
 /* Registers a component (desc, name and field list are copied). Returns its id, 0 on failure
  * (logged): duplicate name, size 0, or a field without a name, of unknown type or not inside size. */
 uint32_t br_component_register(br_engine *e, const br_component_desc *desc);
+/* Names the values of an enum field, or of an array field's enum elements (copied; value i =
+ * names[i]). False (logged) for an unknown component / field, a field of another type or no names. */
+bool br_component_set_enum(br_engine *e, uint32_t component_id, const char *field, const char *const *names,
+                           uint32_t count);
+/* Describes a BR_FIELD_ARRAY field: up to capacity elements of element_type (any type but TEXT
+ * and ARRAY) at its offset, the uint32_t element count at count_offset. False (logged) if they
+ * do not fit the struct or the field is unknown. An array field without it fails to read. */
+bool br_component_set_array(br_engine *e, uint32_t component_id, const char *field, br_field_type element_type,
+                            uint32_t capacity, size_t count_offset);
+/* Bytes one value of a field type takes in a struct (0 for BR_FIELD_ARRAY and unknown types). */
+size_t br_field_type_size(br_field_type type);
+/* Replaces a BR_FIELD_TEXT value (frees the old one, copies text; NULL clears). False if out of memory. */
+bool br_component_set_text(char **field, const char *text);
 /* Finds a component id by name, 0 if unknown. */
 uint32_t br_component_find(br_engine *e, const char *name);
 /* The registered descriptor, NULL if unknown. */
@@ -394,7 +426,8 @@ const br_component_desc *br_component_desc_get(br_engine *e, uint32_t component_
 void *br_component_add(br_engine *e, br_node n, uint32_t component_id);
 /* The component data of n, NULL if absent. Pointers die when the component array grows or shrinks. */
 void *br_component_get(br_engine *e, br_node n, uint32_t component_id);
-/* Removes the component from n (swap-remove: the last element moves into its slot). */
+/* Removes the component from n (swap-remove: the last element moves into its slot). Frees its
+ * BR_FIELD_TEXT values (as does destroying the node). */
 void br_component_remove(br_engine *e, br_node n, uint32_t component_id);
 /* Number of instances (for iteration with br_component_at / br_component_owner_at). */
 uint32_t br_component_count(br_engine *e, uint32_t component_id);

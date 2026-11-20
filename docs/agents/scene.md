@@ -87,7 +87,26 @@ _destroy` (applied by `br_query_end`); direct changes to the walked array stop t
 error.
 
 Field descriptions (`br_field_desc { name, BR_FIELD_*, offsetof(...) }`) let scene files fill a
-component; strings/asset paths are inline `char[BR_FIELD_STRING_SIZE]`.
+component; strings/asset paths are inline `char[BR_FIELD_STRING_SIZE]`. Types: bool, int, float,
+vec2, vec3, vec4, quat, color, string, asset, node, node3d, text, enum, array:
+
+- `BR_FIELD_TEXT` is a `char *` of any length (NULL reads as ""), owned by the row: freed when the
+  component is removed or the node destroyed. Change it only with `br_component_set_text(&c->line,
+  "...")` (it frees with `br_free`); a `br_query_defer_add` initial value hands its pointer over.
+- `BR_FIELD_ENUM` is an `int32_t` written by name: `br_component_set_enum(e, id, "mode", names, n)`
+  after registering (names copied). Unknown names are errors listing the valid ones.
+- `BR_FIELD_ARRAY`: elements at the field offset, a `uint32_t` count elsewhere in the struct,
+  described by `br_component_set_array(e, id, "points", BR_FIELD_VEC2, capacity,
+  offsetof(T, point_count))` (any element type but text and array; an array of enums also takes
+  `br_component_set_enum`). More elements than the capacity is an error, never a silent cut.
+- `BR_FIELD_NODE3D` holds a `br_node3d`: in a 2D component the label of a 3D node in any view3d
+  (searched under the loaded file, then the stage). In a 3D component `BR_FIELD_NODE` already
+  holds a `br_node3d`; both name a node of the same instance / view.
+
+`br_field_desc` stays three members (so `{ "x", BR_FIELD_FLOAT, offsetof(T, x) }` initialisers
+compile without `-Wmissing-field-initializers`); enum names and array layouts live in the
+registry (`br_component_set_enum` / `_set_array`). Enums and arrays in structs exposed to
+play-tests have no names / layout: enums read as numbers there, arrays cannot be read.
 
 ## Engine systems (all registered by `br_scene_register`)
 

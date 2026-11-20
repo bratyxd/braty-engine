@@ -1,6 +1,7 @@
 /* br_scene_file: build node trees from scene JSON, component fields, label references, save,
  * asset collection, named event handlers. */
 #include "data/br_data_internal.h"
+#include "scene/br_scene_internal.h" /* br_field_extra */
 
 static br_node br_data_zero_node(void)
 {
@@ -67,6 +68,18 @@ void br_data_resolve_refs(br_engine *e, br_node root)
         if (!br_node_valid(e, ref->node)) {
             continue;
         }
+        if (ref->kind == BR_DATA_REF_FIELD3D) {
+            br_node3d target3d = br_data_find_node3d(e, root, ref->label);
+            uint8_t *data = br_component_get(e, ref->node, ref->component_id);
+            if (!br_node3d_valid(e, target3d)) {
+                br_str_copy(s->path, sizeof(s->path), ref->path);
+                s->path_len = SDL_strlen(s->path);
+                br_data_errorf(e, "no 3D node labelled '%s'", ref->label);
+            } else if (data != NULL) {
+                SDL_memcpy(data + ref->offset, &target3d, sizeof(target3d));
+            }
+            continue;
+        }
         br_node target = br_data_find_label(e, root, ref->label);
         if (!br_node_valid(e, target)) {
             br_str_copy(s->path, sizeof(s->path), ref->path);
@@ -92,37 +105,61 @@ void br_data_resolve_refs(br_engine *e, br_node root)
 
 /* ---- component fields */
 
-static bool br_data_value_vec3(br_engine *e, const cJSON *v, br_vec3 *out)
+/* n numbers from a JSON array of exactly n (errors with `expected`). */
+static bool br_data_value_floats(br_engine *e, const cJSON *v, float *out, int n, const char *expected)
 {
-    if (cJSON_IsArray(v) && cJSON_GetArraySize(v) == 3) {
-        float f[3] = { 0.0f, 0.0f, 0.0f };
-        bool numbers = true;
-        for (int i = 0; i < 3; i++) {
-            numbers = numbers && cJSON_IsNumber(cJSON_GetArrayItem(v, i));
+    if (!cJSON_IsArray(v) || cJSON_GetArraySize(v) != n) {
+        br_data_errorf(e, "expected %s", expected);
+        return false;
+    }
+    for (int i = 0; i < n; i++) {
+        const cJSON *item = cJSON_GetArrayItem(v, i);
+        if (!cJSON_IsNumber(item)) {
+            br_data_errorf(e, "expected %s", expected);
+            return false;
         }
-        if (numbers) {
-            bool ok = true;
-            for (int i = 0; i < 3 && ok; i++) {
-                ok = br_data_value_float(e, cJSON_GetArrayItem(v, i), &f[i]);
-            }
-            if (ok) {
-                *out = br_vec3_make(f[0], f[1], f[2]);
-            }
-            return ok;
+        if (!br_data_value_float(e, item, &out[i])) {
+            return false;
         }
     }
-    br_data_errorf(e, "expected [x, y, z]");
+    return true;
+}
+
+/* An enum value: one of the field's names, or its index (any int32 when it has no names: an
+ * enum in a struct exposed to play-tests). */
+static bool br_data_value_enum(br_engine *e, const br_field_extra *x, const cJSON *v, int32_t *out)
+{
+    uint32_t count = x != NULL ? x->enum_count : 0;
+    if (cJSON_IsString(v)) {
+        for (uint32_t i = 0; i < count; i++) {
+            if (SDL_strcmp(x->enum_names[i], v->valuestring) == 0) {
+                *out = (int32_t)i;
+                return true;
+            }
+        }
+    } else if (cJSON_IsNumber(v)) {
+        int i = 0;
+        if (!br_data_value_int(e, v, count > 0 ? 0 : INT32_MIN, count > 0 ? (int)count - 1 : INT32_MAX, &i)) {
+            return false;
+        }
+        *out = (int32_t)i;
+        return true;
+    }
+    char names[256] = "";
+    for (uint32_t i = 0; i < count; i++) {
+        SDL_strlcat(names, i > 0 ? ", " : "", sizeof(names));
+        SDL_strlcat(names, x->enum_names[i], sizeof(names));
+    }
+    br_data_errorf(e, count > 0 ? "expected one of: %s" : "expected a whole number (enum without names)%s", names);
     return false;
 }
 
-bool br_scene_file_read_field(br_engine *e, br_node owner, uint32_t component_id, const br_field_desc *field,
-                              const cJSON *value)
+/* br_data_read_field with the field's extra description (NULL if it has none). */
+static bool br_data_read_value(br_engine *e, const br_field_desc *field, const br_field_extra *x, uint8_t *base,
+                               const cJSON *value, br_data_node_field_fn node_fn, void *user)
 {
-    uint8_t *base = br_component_get(e, owner, component_id);
-    if (base == NULL || field == NULL || value == NULL) {
-        return false;
-    }
     void *p = base + field->offset;
+    float f[4];
     switch (field->type) {
     case BR_FIELD_BOOL:
         if (!cJSON_IsBool(value)) {
@@ -140,14 +177,12 @@ bool br_scene_file_read_field(br_engine *e, br_node owner, uint32_t component_id
         SDL_memcpy(p, &i32, sizeof(i32));
         return true;
     }
-    case BR_FIELD_FLOAT: {
-        float f;
-        if (!br_data_value_float(e, value, &f)) {
+    case BR_FIELD_FLOAT:
+        if (!br_data_value_float(e, value, &f[0])) {
             return false;
         }
-        SDL_memcpy(p, &f, sizeof(f));
+        SDL_memcpy(p, &f[0], sizeof(float));
         return true;
-    }
     case BR_FIELD_VEC2: {
         br_vec2 v;
         if (!br_data_value_vec2(e, value, &v)) {
@@ -157,13 +192,20 @@ bool br_scene_file_read_field(br_engine *e, br_node owner, uint32_t component_id
         return true;
     }
     case BR_FIELD_VEC3: {
-        br_vec3 v;
-        if (!br_data_value_vec3(e, value, &v)) {
+        if (!br_data_value_floats(e, value, f, 3, "[x, y, z]")) {
             return false;
         }
+        br_vec3 v = br_vec3_make(f[0], f[1], f[2]);
         SDL_memcpy(p, &v, sizeof(v));
         return true;
     }
+    case BR_FIELD_VEC4:
+    case BR_FIELD_QUAT:
+        if (!br_data_value_floats(e, value, f, 4, "[x, y, z, w]")) {
+            return false;
+        }
+        SDL_memcpy(p, f, sizeof(float) * 4); /* br_vec4 and br_quat are both x y z w */
+        return true;
     case BR_FIELD_COLOR: {
         br_color c;
         if (!br_data_value_color(e, value, &c)) {
@@ -179,13 +221,36 @@ bool br_scene_file_read_field(br_engine *e, br_node owner, uint32_t component_id
             return false;
         }
         if (!br_str_copy(p, BR_FIELD_STRING_SIZE, value->valuestring)) {
-            br_data_errorf(e, "string longer than %d bytes", BR_FIELD_STRING_SIZE - 1);
+            br_data_errorf(e, "string longer than %d bytes (BR_FIELD_TEXT holds any length)", BR_FIELD_STRING_SIZE - 1);
             return false;
         }
         return true;
-    case BR_FIELD_NODE: {
+    case BR_FIELD_TEXT: {
+        if (!cJSON_IsString(value) && !cJSON_IsNull(value)) {
+            br_data_errorf(e, "expected a string or null");
+            return false;
+        }
+        char *text = NULL;
+        SDL_memcpy(&text, p, sizeof(text));
+        bool ok = br_component_set_text(&text, cJSON_IsString(value) ? value->valuestring : NULL);
+        SDL_memcpy(p, &text, sizeof(text));
+        if (!ok) {
+            br_data_errorf(e, "out of memory");
+        }
+        return ok;
+    }
+    case BR_FIELD_ENUM: {
+        int32_t i = 0;
+        if (!br_data_value_enum(e, x, value, &i)) {
+            return false;
+        }
+        SDL_memcpy(p, &i, sizeof(i));
+        return true;
+    }
+    case BR_FIELD_NODE:
+    case BR_FIELD_NODE3D:
         if (cJSON_IsNull(value)) {
-            br_node zero = br_data_zero_node();
+            br_node zero = br_data_zero_node(); /* br_node3d has the same layout */
             SDL_memcpy(p, &zero, sizeof(zero));
             return true;
         }
@@ -193,34 +258,125 @@ bool br_scene_file_read_field(br_engine *e, br_node owner, uint32_t component_id
             br_data_errorf(e, "expected a node label (string) or null");
             return false;
         }
-        if (e->data->load_depth > 0) {
-            br_data_ref ref;
-            SDL_zero(ref);
-            ref.kind = BR_DATA_REF_FIELD;
-            ref.node = owner;
-            ref.component_id = component_id;
-            ref.offset = field->offset;
-            br_str_copy(ref.label, sizeof(ref.label), value->valuestring);
-            br_str_copy(ref.path, sizeof(ref.path), e->data->path);
-            br_data_add_ref(e, &ref);
-            return true;
-        }
-        br_node target = br_node_find_by_label(e, br_stage_root(e), value->valuestring, true);
-        if (!br_node_valid(e, target)) {
-            br_data_errorf(e, "no node labelled '%s'", value->valuestring);
+        return node_fn(e, field, base, value->valuestring, user);
+    case BR_FIELD_ARRAY: {
+        if (x == NULL || x->capacity == 0) {
+            br_data_errorf(e, "array field '%s' has no element type (br_component_set_array)", field->name);
             return false;
         }
-        SDL_memcpy(p, &target, sizeof(target));
-        return true;
+        int n = cJSON_IsArray(value) ? cJSON_GetArraySize(value) : -1;
+        if (n < 0) {
+            br_data_errorf(e, "expected an array");
+            return false;
+        }
+        if ((uint32_t)n > x->capacity) {
+            br_data_errorf(e, "%d elements, the field holds at most %u", n, (unsigned)x->capacity);
+            return false;
+        }
+        br_field_desc element = *field;
+        element.type = x->element_type;
+        size_t size = br_field_type_size(x->element_type);
+        bool ok = true;
+        for (int i = 0; i < n; i++) {
+            element.offset = field->offset + (size_t)i * size;
+            size_t mark = br_data_path_push_index(e, i);
+            ok = br_data_read_value(e, &element, x, base, cJSON_GetArrayItem(value, i), node_fn, user) && ok;
+            br_data_path_pop(e, mark);
+        }
+        uint32_t count = (uint32_t)n;
+        SDL_memcpy(base + x->count_offset, &count, sizeof(count));
+        return ok;
     }
     }
     br_data_errorf(e, "unknown field type %d", (int)field->type);
     return false;
 }
 
-cJSON *br_scene_file_write_field(br_engine *e, const br_field_desc *field, const void *component)
+bool br_data_read_field(br_engine *e, const br_field_desc *field, uint8_t *base, const cJSON *value,
+                        br_data_node_field_fn node_fn, void *user)
+{
+    return br_data_read_value(e, field, br_component_field_extra(e, field), base, value, node_fn, user);
+}
+
+/* The 3D node labelled `label` in a view3d at or below `root` (depth first), zero if none. */
+static br_node3d br_data_find_node3d_in(br_engine *e, br_node root, const char *label)
+{
+    if (br_node_type_of(e, root) == br_view3d_type(e)) {
+        br_node3d found = br_node3d_find_by_label(e, br_view3d_root(e, root), label, true);
+        if (br_node3d_valid(e, found)) {
+            return found;
+        }
+    }
+    for (uint32_t i = 0; i < br_node_child_count(e, root); i++) {
+        br_node3d found = br_data_find_node3d_in(e, br_node_child_at(e, root, i), label);
+        if (br_node3d_valid(e, found)) {
+            return found;
+        }
+    }
+    br_node3d none = { 0, 0 };
+    return none;
+}
+
+br_node3d br_data_find_node3d(br_engine *e, br_node root, const char *label)
+{
+    br_node3d found = { 0, 0 };
+    if (br_node_valid(e, root)) {
+        found = br_data_find_node3d_in(e, root, label);
+    }
+    return br_node3d_valid(e, found) ? found : br_data_find_node3d_in(e, br_stage_root(e), label);
+}
+
+/* Node fields of 2D components: labels resolve at the end of a file load (targets may come later
+ * in the file), or right away outside a load. `user` is a br_data_ref with node and component. */
+bool br_data_label_node_field(br_engine *e, const br_field_desc *field, uint8_t *base, const char *label,
+                                     void *user)
+{
+    if (e->data->load_depth > 0) {
+        br_data_ref ref = *(const br_data_ref *)user;
+        ref.kind = field->type == BR_FIELD_NODE3D ? BR_DATA_REF_FIELD3D : BR_DATA_REF_FIELD;
+        ref.offset = field->offset;
+        br_str_copy(ref.label, sizeof(ref.label), label);
+        br_str_copy(ref.path, sizeof(ref.path), e->data->path);
+        br_data_add_ref(e, &ref);
+        return true;
+    }
+    if (field->type == BR_FIELD_NODE3D) {
+        br_node3d target = br_data_find_node3d(e, br_stage_root(e), label);
+        if (!br_node3d_valid(e, target)) {
+            br_data_errorf(e, "no 3D node labelled '%s'", label);
+            return false;
+        }
+        SDL_memcpy(base + field->offset, &target, sizeof(target));
+        return true;
+    }
+    br_node target = br_node_find_by_label(e, br_stage_root(e), label, true);
+    if (!br_node_valid(e, target)) {
+        br_data_errorf(e, "no node labelled '%s'", label);
+        return false;
+    }
+    SDL_memcpy(base + field->offset, &target, sizeof(target));
+    return true;
+}
+
+bool br_scene_file_read_field(br_engine *e, br_node owner, uint32_t component_id, const br_field_desc *field,
+                              const cJSON *value)
+{
+    uint8_t *base = br_component_get(e, owner, component_id);
+    if (base == NULL || field == NULL || value == NULL) {
+        return false;
+    }
+    br_data_ref ref;
+    SDL_zero(ref);
+    ref.node = owner;
+    ref.component_id = component_id;
+    return br_data_read_field(e, field, base, value, br_data_label_node_field, &ref);
+}
+
+static cJSON *br_data_write_value(br_engine *e, const br_field_desc *field, const br_field_extra *x,
+                                  const void *component)
 {
     const uint8_t *p = (const uint8_t *)component + field->offset;
+    float f[4];
     switch (field->type) {
     case BR_FIELD_BOOL: {
         bool b;
@@ -232,23 +388,23 @@ cJSON *br_scene_file_write_field(br_engine *e, const br_field_desc *field, const
         SDL_memcpy(&i, p, sizeof(i));
         return cJSON_CreateNumber(i);
     }
-    case BR_FIELD_FLOAT: {
-        float f;
-        SDL_memcpy(&f, p, sizeof(f));
-        return br_data_number(f);
-    }
+    case BR_FIELD_FLOAT:
+        SDL_memcpy(f, p, sizeof(float));
+        return br_data_number(f[0]);
     case BR_FIELD_VEC2: {
         br_vec2 v;
         SDL_memcpy(&v, p, sizeof(v));
         return br_data_vec2_json(v);
     }
-    case BR_FIELD_VEC3: {
-        br_vec3 v;
-        SDL_memcpy(&v, p, sizeof(v));
+    case BR_FIELD_VEC3:
+    case BR_FIELD_VEC4:
+    case BR_FIELD_QUAT: {
+        int n = field->type == BR_FIELD_VEC3 ? 3 : 4;
+        SDL_memcpy(f, p, sizeof(float) * (size_t)n);
         cJSON *a = cJSON_CreateArray();
-        cJSON_AddItemToArray(a, br_data_number(v.x));
-        cJSON_AddItemToArray(a, br_data_number(v.y));
-        cJSON_AddItemToArray(a, br_data_number(v.z));
+        for (int i = 0; i < n; i++) {
+            cJSON_AddItemToArray(a, br_data_number(f[i]));
+        }
         return a;
     }
     case BR_FIELD_COLOR: {
@@ -263,6 +419,19 @@ cJSON *br_scene_file_write_field(br_engine *e, const br_field_desc *field, const
         text[BR_FIELD_STRING_SIZE - 1] = '\0';
         return cJSON_CreateString(text);
     }
+    case BR_FIELD_TEXT: {
+        const char *text = NULL;
+        SDL_memcpy(&text, p, sizeof(text));
+        return cJSON_CreateString(text != NULL ? text : "");
+    }
+    case BR_FIELD_ENUM: {
+        int32_t i;
+        SDL_memcpy(&i, p, sizeof(i));
+        if (x != NULL && i >= 0 && (uint32_t)i < x->enum_count) {
+            return cJSON_CreateString(x->enum_names[i]);
+        }
+        return cJSON_CreateNumber(i); /* set from code to a value without a name */
+    }
     case BR_FIELD_NODE: {
         br_node n;
         SDL_memcpy(&n, p, sizeof(n));
@@ -272,8 +441,38 @@ cJSON *br_scene_file_write_field(br_engine *e, const br_field_desc *field, const
         }
         return cJSON_CreateString(label);
     }
+    case BR_FIELD_NODE3D: {
+        br_node3d n;
+        SDL_memcpy(&n, p, sizeof(n));
+        if (!br_node3d_valid(e, n) || br_node3d_label(e, n)[0] == '\0') {
+            return cJSON_CreateNull();
+        }
+        return cJSON_CreateString(br_node3d_label(e, n));
+    }
+    case BR_FIELD_ARRAY: {
+        if (x == NULL || x->capacity == 0) {
+            return cJSON_CreateArray(); /* not described: nothing can be read either */
+        }
+        uint32_t count;
+        SDL_memcpy(&count, (const uint8_t *)component + x->count_offset, sizeof(count));
+        count = count < x->capacity ? count : x->capacity; /* the count is game memory */
+        br_field_desc element = *field;
+        element.type = x->element_type;
+        size_t size = br_field_type_size(x->element_type);
+        cJSON *a = cJSON_CreateArray();
+        for (uint32_t i = 0; i < count; i++) {
+            element.offset = field->offset + (size_t)i * size;
+            cJSON_AddItemToArray(a, br_data_write_value(e, &element, x, component));
+        }
+        return a;
+    }
     }
     return NULL;
+}
+
+cJSON *br_scene_file_write_field(br_engine *e, const br_field_desc *field, const void *component)
+{
+    return br_data_write_value(e, field, br_component_field_extra(e, field), component);
 }
 
 bool br_scene_file_apply_component(br_engine *e, br_node n, const char *name, const cJSON *fields)
@@ -417,9 +616,9 @@ static const br_data_known_keys br_data_type_keys[] = {
     { "perspective_mesh", " texture positions uvs colors indices plane perspective rope " },
     { "mesh_rope", " texture positions uvs colors indices plane perspective rope " },
     { "particle_container", " texture dynamic particles " },
-    { "text", " text font size style anchor resolution " },
-    { "bitmap_text", " text font size style anchor resolution " },
-    { "rich_text", " text font size style anchor resolution tag_styles " },
+    { "text", " text text_key font size style anchor resolution " },
+    { "bitmap_text", " text text_key font size style anchor resolution " },
+    { "rich_text", " text text_key font size style anchor resolution tag_styles " },
 };
 
 static const char *br_data_text_style_keys =
@@ -970,6 +1169,16 @@ static void br_data_collect(br_engine *e, const cJSON *json, br_data_collector *
                     const cJSON *v = cJSON_GetObjectItemCaseSensitive(component, desc->fields[f].name);
                     if (desc->fields[f].type == BR_FIELD_ASSET && cJSON_IsString(v)) {
                         fn(v->valuestring, user);
+                    }
+                    const br_field_extra *x = br_component_field_extra(e, &desc->fields[f]);
+                    if (desc->fields[f].type == BR_FIELD_ARRAY && x != NULL && x->element_type == BR_FIELD_ASSET) {
+                        const cJSON *path = NULL;
+                        cJSON_ArrayForEach(path, v)
+                        {
+                            if (cJSON_IsString(path)) {
+                                fn(path->valuestring, user);
+                            }
+                        }
                     }
                 }
             }
