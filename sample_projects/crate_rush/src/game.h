@@ -118,10 +118,12 @@ typedef struct cr_tuning {
     float   coyote_time, jump_buffer;
     float   radius, height;
     float   turn_rate;
+    float   run_anim_speed;                    /* run clip playback rate at full speed (feet keep up) */
+    float   bloom_threshold, bloom_intensity;  /* the level camera's post settings */
     float   hit_penalty, fall_penalty;         /* seconds taken off the clock */
     float   knockback, invulnerable_time;
     float   pickup_radius;
-    float   camera_damping, shake_hit, shake_fall, shake_pickup;
+    float   camera_damping, camera_distance, shake_hit, shake_fall, shake_pickup;
     char    pickup_ease[BR_FIELD_STRING_SIZE];  /* easing names (br_ease_from_name) */
     char    popup_ease[BR_FIELD_STRING_SIZE];
     char    counter_ease[BR_FIELD_STRING_SIZE];
@@ -181,6 +183,7 @@ typedef struct cr_game {
     br_node3d player;               /* the character instance (model3d) */
     br_node3d camera_target;        /* child of the player the camera looks at */
     br_animator animator;
+    char      anim_state[BR_FIELD_STRING_SIZE]; /* the state machine's state, for play-tests */
     br_vec3   spawn;
     float     spawn_yaw;
     float     time_left;
@@ -229,6 +232,8 @@ typedef struct cr_game {
     br_node   tuning_node;
     uint32_t  rng;
     uint32_t  levels_completed;     /* for the soak log */
+    /* counts at the last cr_log_stats (the soak play-test compares them between menu visits) */
+    int32_t   stat_nodes, stat_nodes3d, stat_assets, stat_animators, stat_tweens, stat_sounds;
 } cr_game;
 
 /* components.c */

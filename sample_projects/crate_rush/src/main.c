@@ -73,6 +73,13 @@ static void cr_expose(br_engine *e, cr_game *g)
         { "candidates_peak", BR_FIELD_INT, offsetof(cr_game, candidates_peak) },
         { "levels_completed", BR_FIELD_INT, offsetof(cr_game, levels_completed) },
         { "focus", BR_FIELD_INT, offsetof(cr_game, focus) },
+        { "anim_state", BR_FIELD_STRING, offsetof(cr_game, anim_state) },
+        { "stat_nodes", BR_FIELD_INT, offsetof(cr_game, stat_nodes) },
+        { "stat_nodes3d", BR_FIELD_INT, offsetof(cr_game, stat_nodes3d) },
+        { "stat_assets", BR_FIELD_INT, offsetof(cr_game, stat_assets) },
+        { "stat_animators", BR_FIELD_INT, offsetof(cr_game, stat_animators) },
+        { "stat_tweens", BR_FIELD_INT, offsetof(cr_game, stat_tweens) },
+        { "stat_sounds", BR_FIELD_INT, offsetof(cr_game, stat_sounds) },
     };
     br_playtest_expose(e, "game", fields, BR_ARRAY_COUNT(fields), g);
 }

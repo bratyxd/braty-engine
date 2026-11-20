@@ -265,6 +265,11 @@ static void cr_player_present_system(br_engine *e, float dt, void *user)
     br_animator_set_float(e, g->animator, "speed", t->run_speed > 0.0f ? flat / t->run_speed : 0.0f);
     br_animator_set_bool(e, g->animator, "grounded", p->grounded);
     br_animator_set_float(e, g->animator, "vy", p->velocity.y);
+    const char *state = br_animator_state(e, g->animator);
+    br_str_copy(g->anim_state, sizeof(g->anim_state), state != NULL ? state : "");
+    /* the run clips are authored for a slower walk: play them faster with speed so feet keep up */
+    float run = SDL_strcmp(g->anim_state, "run") == 0 && t->run_speed > 0.0f ? flat / t->run_speed : 0.0f;
+    br_animator_set_speed(e, g->animator, 1.0f + (t->run_anim_speed - 1.0f) * SDL_min(run, 1.0f));
     if (p->jumped) {
         br_animator_set_trigger(e, g->animator, "jump");
         p->jumped = false;

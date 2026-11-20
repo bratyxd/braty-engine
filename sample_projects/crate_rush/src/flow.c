@@ -76,6 +76,12 @@ void cr_log_stats(br_engine *e, cr_game *g, const char *when)
     uint32_t animators = 0;
     uint32_t tracks = 0;
     br_animation_stats(e, &animators, &tracks);
+    g->stat_nodes = (int32_t)br_scene_node_count(e);
+    g->stat_nodes3d = (int32_t)br_node3d_count(e);
+    g->stat_assets = (int32_t)br_assets_count(e);
+    g->stat_animators = (int32_t)animators;
+    g->stat_tweens = (int32_t)br_tween_count(e);
+    g->stat_sounds = (int32_t)br_audio_instance_count(e);
     br_log_info("crate_rush stats (%s): nodes %u, 3d nodes %u, assets %u, animators %u, tweens %u, sounds %u, "
                 "level arena %llu bytes, heap %llu blocks, levels done %u",
                 when, br_scene_node_count(e), br_node3d_count(e), br_assets_count(e), animators, br_tween_count(e),
@@ -259,6 +265,7 @@ static void cr_level_setup(br_engine *e, cr_game *g)
     }
     c.background_color = cr_extras_color(e, extras, "background", 0x5fa8de);
     g->camera = br_camera_create_3d(e, g->level_root, &c);
+    br_node_set_label(e, g->camera, "level_camera");
     br_node_add_child(e, br_scene_root_2d(e, g->level), g->camera); /* dies with the level */
     br_node cam_view = br_camera_view3d(e, g->camera);
     float ambient = 0.45f;
@@ -269,6 +276,11 @@ static void cr_level_setup(br_engine *e, cr_game *g)
     br_view3d_set_environment(e, cam_view, br_color_to_linear(cr_extras_color(e, extras, "sky", 0xbfe3ff)),
                               br_color_to_linear(cr_extras_color(e, extras, "ground", 0x6f8f5a)), ambient);
     br_view3d_set_msaa(e, cam_view, 4);
+    br_post3d_settings *post = br_view3d_post(e, cam_view);
+    if (post != NULL) {
+        post->bloom_threshold = t->bloom_threshold;
+        post->bloom_intensity = t->bloom_intensity;
+    }
     br_node_set_visible(e, g->level_view, false);
     cJSON_Delete(extras);
 
@@ -302,7 +314,8 @@ static void cr_level_setup(br_engine *e, cr_game *g)
     cr_player_spawn(e, g);
     br_camera_follow *f = br_component_add(e, g->camera, br_camera_follow_component(e));
     f->target3d = g->camera_target;
-    f->offset3d = br_vec3_sub(eye, look);
+    /* camera_distance scales the file camera's offset (1 = as authored) */
+    f->offset3d = br_vec3_scale(br_vec3_sub(eye, look), t->camera_distance > 0.0f ? t->camera_distance : 1.0f);
     f->damping = t->camera_damping;
     br_camera_shake *sh = br_component_add(e, g->camera, br_camera_shake_component(e));
     sh->decay = 1.6f;

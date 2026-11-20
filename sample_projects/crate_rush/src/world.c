@@ -75,9 +75,9 @@ void cr_world_setup(br_engine *e, cr_game *g)
         br_node3d owner = br_component3d_owner_at(e, g->id.sign, i);
         float b[4];
         br_texture panel = cr_ui_frame(e, t->plate_texture, b);
-        br_node3d plate = br_nine_slice3d_create(e, panel, b[0], b[1], b[2], b[3], 400.0f, 100.0f, 300.0f);
+        br_node3d plate = br_nine_slice3d_create(e, panel, b[0], b[1], b[2], b[3], 400.0f, 100.0f, 340.0f);
         br_canvas3d_get(e, plate)->billboard = BR_CANVAS3D_BILLBOARD_Y_AXIS;
-        br_text_style style = cr_world_style(g, 46.0f, 0x3a2a1a);
+        br_text_style style = cr_world_style(g, 34.0f, 0x3a2a1a);
         br_node text = br_text_create(e, s->text, &style);
         br_text_set_anchor(e, text, 0.5f, 0.5f);
         br_node_set_label(e, text, "sign_text");

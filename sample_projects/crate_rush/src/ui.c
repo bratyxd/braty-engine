@@ -300,7 +300,7 @@ static void cr_settings_rows_system(br_engine *e, float dt, void *user)
                 br_str_copy(text, sizeof(text), "UNCAPPED");
             }
         } else if (SDL_strcmp(s->key, "volume") == 0) {
-            SDL_snprintf(text, sizeof(text), "%d%%", (int)g->settings.volume);
+            SDL_snprintf(text, sizeof(text), "%d", (int)g->settings.volume); /* the font has no percent sign */
         } else if (SDL_strcmp(s->key, "profiler") == 0) {
             br_str_copy(text, sizeof(text), g->settings.profiler_hud ? "ON" : "OFF");
         } else if (SDL_strcmp(s->key, "bind_jump") == 0) {

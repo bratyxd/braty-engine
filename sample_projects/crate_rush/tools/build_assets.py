@@ -417,7 +417,7 @@ LEVELS = [
      "scene": {"background": "#3f86c0", "sky": "#bfe3ff", "ground": "#6f8f5a", "ambient": 0.45, "msaa": 4,
                "level": {"title": "Meadow Isle", "time_limit": 60, "next": "level2",
                          "footsteps": "sounds/impact/footstep_grass", "kill_y": 0.0, "index": 1}},
-     "sign": {"sign.text": "MEADOW ISLE", "sign.hint": "{jump} to jump onto the hill", "sign.radius": 2.6},
+     "sign": {"sign.text": "MEADOW ISLE", "sign.hint": "{jump} to jump onto the hill", "sign.radius": 1.7},
      "map": [
          ".. #t #. #f #. #t ..",
          "#r #c #. Tc T. #. #.",
@@ -430,7 +430,7 @@ LEVELS = [
      "scene": {"background": "#5b86ad", "sky": "#dfeeff", "ground": "#7a8698", "ambient": 0.45, "msaa": 4,
                "level": {"title": "Frost Ridge", "time_limit": 75, "next": "level3",
                          "footsteps": "sounds/impact/footstep_snow", "kill_y": 0.0, "index": 2}},
-     "sign": {"sign.text": "FROST RIDGE", "sign.hint": "Mind the spikes!", "sign.radius": 2.6},
+     "sign": {"sign.text": "FROST RIDGE", "sign.hint": "Mind the spikes!", "sign.radius": 1.7},
      "map": [
          "#t #c #. .. T. Tc #t",
          "#. #s #x .. #. #s #.",
@@ -443,7 +443,7 @@ LEVELS = [
      "scene": {"background": "#c9814a", "sky": "#ffd9a8", "ground": "#6a5a48", "ambient": 0.45, "msaa": 4,
                "level": {"title": "Sawmill Bay", "time_limit": 80, "next": "",
                          "footsteps": "sounds/impact/footstep_wood", "kill_y": 0.0, "index": 3}},
-     "sign": {"sign.text": "SAWMILL BAY", "sign.hint": "Saws! Time your run", "sign.radius": 2.6},
+     "sign": {"sign.text": "SAWMILL BAY", "sign.hint": "Saws! Time your run", "sign.radius": 1.7},
      "map": [
          "#t #c pw pc #c #b ..",
          "#. #. p. p. #. #. #t",
@@ -549,7 +549,7 @@ def build_level(spec):
                     roots.append(b.place(piece, name("Decor"), [x + jitter(0.7), y, z + jitter(0.7)],
                                          yaw=jitter(180.0), scale=1.2))
             elif o == "n":
-                roots.append(b.place("sign", name("Sign"), [x - 0.5, y, z + 0.3], yaw=20.0, scale=1.6,
+                roots.append(b.place("sign", name("Sign"), [x - 0.6, y, z + 0.2], yaw=20.0, scale=1.6,
                                      extras=dict(spec["sign"])))
             elif o == "k":
                 roots.append(b.place("flag", name("Flag"), [x, y, z]))

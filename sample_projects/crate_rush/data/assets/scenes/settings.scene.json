@@ -5,8 +5,8 @@
     { "type": "container", "label": "settings_panel", "position": [640, 360],
       "components": { "tween": { "property": "scale", "from": [0.85, 0.85], "mode": "from", "duration": 0.3, "ease": "out_back" } },
       "children": [
-        { "type": "nine_slice", "texture": "ui/ui.json#panel", "width": 640, "height": 560, "anchor": [0.5, 0.5] },
-        { "type": "text", "text": "SETTINGS", "position": [0, -232], "anchor": [0.5, 0.5],
+        { "type": "nine_slice", "texture": "ui/ui.json#panel", "width": 640, "height": 580, "anchor": [0.5, 0.5] },
+        { "type": "text", "text": "SETTINGS", "position": [0, -240], "anchor": [0.5, 0.5],
           "style": { "font": "fonts/kenney_future.ttf", "font_size": 40, "fill": "#2a2a3a" } },
         { "prefab": "prefabs/button.prefab.json", "label": "vsync_row", "position": [0, -160], "width": 560, "height": 60,
           "texture": "ui/ui.json#grey_button",
@@ -33,9 +33,9 @@
           "components": { "button": { "action": "setting", "arg": "bind_jump", "order": 4 }, "setting": { "key": "bind_jump" } },
           "children": [ { "prefab": "prefabs/button_label.prefab.json", "text": "JUMP BUTTON", "anchor": [0, 0.5], "position": [-256, -3] },
                         { "prefab": "prefabs/button_label.prefab.json", "label": "value", "anchor": [1, 0.5], "position": [256, -3] } ] },
-        { "prefab": "prefabs/button.prefab.json", "label": "settings_back", "position": [0, 206],
+        { "prefab": "prefabs/button.prefab.json", "label": "settings_back", "position": [0, 196],
           "components": { "button": { "action": "close_settings", "order": 5 } },
           "children": [ { "prefab": "prefabs/button_label.prefab.json", "text": "DONE" } ] },
-        { "type": "text", "label": "settings_hint", "text": "", "position": [0, 300], "anchor": [0.5, 0.5],
-          "style": { "font": "fonts/kenney_future_narrow.ttf", "font_size": 22, "fill": "#ffffff" },
-          "components": { "prompt": { "text": "{nav_left} {nav_right} change     {confirm} select / rebind     {back} back" } } } ] } ] }
+        { "type": "text", "label": "settings_hint", "text": "", "position": [0, 252], "anchor": [0.5, 0.5],
+          "style": { "font": "fonts/kenney_future_narrow.ttf", "font_size": 17, "fill": "#6b6b80" },
+          "components": { "prompt": { "text": "{nav_left} {nav_right} CHANGE   {confirm} SELECT   {back} BACK" } } } ] } ] }
