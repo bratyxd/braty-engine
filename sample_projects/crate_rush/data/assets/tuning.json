@@ -1,0 +1,18 @@
+{ "type": "container", "label": "tuning",
+  "components": { "tuning": {
+    "run_speed": 5.2, "accel": 14.0, "air_accel": 5.0, "decel": 18.0,
+    "gravity": 24.0, "jump_speed": 8.6, "max_fall": 18.0,
+    "coyote_time": 0.1, "jump_buffer": 0.14,
+    "radius": 0.28, "height": 0.75, "turn_rate": 14.0,
+    "hit_penalty": 3, "fall_penalty": 5, "knockback": 6.0, "invulnerable_time": 1.1,
+    "pickup_radius": 0.7,
+    "camera_damping": 0.14, "shake_hit": 0.65, "shake_fall": 0.8, "shake_pickup": 0.18,
+    "pickup_ease": "out_back", "popup_ease": "out_cubic", "counter_ease": "out_quart", "focus_ease": "out_back",
+    "pickup_time": 0.45, "popup_time": 0.9, "popup_rise": 1.1, "counter_time": 0.6,
+    "footstep_walk": [0.15, 0.48], "footstep_sprint": [0.11, 0.36],
+    "end_delay": 1.6, "time_bonus": 5,
+    "character": "models/character/character-worker.glb",
+    "animgraph": "animation/character.animgraph.json",
+    "sdf_font": "fonts/kenney_future.ttf",
+    "plate_texture": "panel"
+  } } }

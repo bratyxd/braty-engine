@@ -1,0 +1,15 @@
+{ "type": "container", "label": "loading",
+  "assets": ["ui/ui.json", "glyphs/glyphs.json", "fonts/kenney_future.ttf"],
+  "children": [
+    { "type": "graphics", "commands": [["rect", -1400, -1400, 4080, 3520], ["fill", "#163a5c"]] },
+    { "type": "text", "label": "loading_text", "text": "LOADING ISLAND", "position": [640, 300], "anchor": [0.5, 0.5],
+      "style": { "font": "fonts/kenney_future.ttf", "font_size": 48, "fill": "#ffd34a", "stroke": { "width": 6, "color": "#0e2236" } },
+      "components": { "tween": { "property": "alpha", "from": 0.4, "to": 1, "mode": "from_to", "duration": 0.6,
+                                 "repeat": -1, "yoyo": true, "ease": "in_out_sine" } } },
+    { "type": "nine_slice", "label": "bar_back", "texture": "ui/ui.json#grey_button", "position": [360, 380],
+      "width": 560, "height": 40, "anchor": [0, 0.5] },
+    { "type": "nine_slice", "label": "bar_fill", "texture": "ui/ui.json#yellow_button", "position": [360, 380],
+      "width": 34, "height": 40, "anchor": [0, 0.5] },
+    { "type": "text", "label": "tip", "text": "", "position": [640, 470], "anchor": [0.5, 0.5],
+      "style": { "font": "fonts/kenney_future_narrow.ttf", "font_size": 24, "fill": "#cfe6f7" },
+      "components": { "prompt": { "text": "TIP: press {jump} to hop onto hills and over spikes" } } } ] }

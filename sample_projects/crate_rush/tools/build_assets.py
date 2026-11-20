@@ -351,7 +351,7 @@ class GltfBuilder:
             r, g, b = (int(color[i:i + 2], 16) / 255.0 for i in (1, 3, 5))
             lin = [round(((c + 0.055) / 1.055) ** 2.4 if c > 0.04045 else c / 12.92, 4) for c in (r, g, b)]
             self.doc["materials"].append({"name": "flat_" + color[1:], "pbrMetallicRoughness": {
-                "baseColorFactor": lin + [1.0], "metallicFactor": 0.0, "roughnessFactor": 0.35}})
+                "baseColorFactor": lin + [1.0], "metallicFactor": 0.0, "roughnessFactor": 0.8}})
             self.colors[color] = len(self.doc["materials"]) - 1
         h = size * 0.5
         pos = struct.pack("<12f", -h, 0, -h, -h, 0, h, h, 0, h, h, 0, -h)
@@ -414,7 +414,7 @@ THEMES = {
 }
 LEVELS = [
     {"file": "level1", "theme": "grass", "water": "#2c7cc0",
-     "scene": {"background": "#5fa8de", "sky": "#bfe3ff", "ground": "#6f8f5a", "ambient": 0.45, "msaa": 4,
+     "scene": {"background": "#3f86c0", "sky": "#bfe3ff", "ground": "#6f8f5a", "ambient": 0.45, "msaa": 4,
                "level": {"title": "Meadow Isle", "time_limit": 60, "next": "level2",
                          "footsteps": "sounds/impact/footstep_grass", "kill_y": 0.0, "index": 1}},
      "sign": {"sign.text": "MEADOW ISLE", "sign.hint": "{jump} to jump onto the hill", "sign.radius": 2.6},
@@ -427,7 +427,7 @@ LEVELS = [
          ".. #. #n #S #. #c ..",
      ]},
     {"file": "level2", "theme": "snow", "water": "#2a6aa8",
-     "scene": {"background": "#7fa7cc", "sky": "#dfeeff", "ground": "#7a8698", "ambient": 0.45, "msaa": 4,
+     "scene": {"background": "#5b86ad", "sky": "#dfeeff", "ground": "#7a8698", "ambient": 0.45, "msaa": 4,
                "level": {"title": "Frost Ridge", "time_limit": 75, "next": "level3",
                          "footsteps": "sounds/impact/footstep_snow", "kill_y": 0.0, "index": 2}},
      "sign": {"sign.text": "FROST RIDGE", "sign.hint": "Mind the spikes!", "sign.radius": 2.6},
@@ -440,7 +440,7 @@ LEVELS = [
          "#t #. #n #S #. #c #.",
      ]},
     {"file": "level3", "theme": "grass", "water": "#2a78a8",
-     "scene": {"background": "#e7a46a", "sky": "#ffd9a8", "ground": "#6a5a48", "ambient": 0.45, "msaa": 4,
+     "scene": {"background": "#c9814a", "sky": "#ffd9a8", "ground": "#6a5a48", "ambient": 0.45, "msaa": 4,
                "level": {"title": "Sawmill Bay", "time_limit": 80, "next": "",
                          "footsteps": "sounds/impact/footstep_wood", "kill_y": 0.0, "index": 3}},
      "sign": {"sign.text": "SAWMILL BAY", "sign.hint": "Saws! Time your run", "sign.radius": 2.6},
@@ -560,11 +560,11 @@ def build_level(spec):
     roots.append(b.quad("Water", 120.0, spec["water"], [0.0, 0.35, 0.0], extras={"cast_shadows": False}))
     lights = {"KHR_lights_punctual": {"lights": [{"type": "directional", "name": "Sun", "color": [1.0, 0.96, 0.9],
                                                   "intensity": 1.7}]}}
-    sun = b.node("Sun", translation=[6.0, 12.0, 8.0], rotation=quat_look([-0.45, -1.0, -0.55]),
+    sun = b.node("Sun", translation=[-6.0, 12.0, -8.0], rotation=quat_look([0.35, -1.0, 0.5]),
                  extras={"cast_shadows": True})
     b.doc["nodes"][sun]["extensions"] = {"KHR_lights_punctual": {"light": 0}}
     roots.append(sun)
-    eye = [spawn[0], spawn[1] + 6.0, spawn[2] + 7.5]
+    eye = [spawn[0], spawn[1] + 5.2, spawn[2] + 6.4]
     target = [spawn[0], spawn[1] + 0.6, spawn[2]]
     cam = b.node("Camera", translation=eye, rotation=quat_look([target[i] - eye[i] for i in range(3)]))
     b.doc["nodes"][cam]["camera"] = 0

@@ -1,0 +1,22 @@
+{ "type": "container", "label": "pause",
+  "assets": ["ui/ui.json", "fonts/kenney_future.ttf"],
+  "children": [
+    { "type": "graphics", "alpha": 0.55, "commands": [["rect", -1400, -1400, 4080, 3520], ["fill", "#0b1622"]] },
+    { "type": "container", "label": "pause_panel", "position": [640, 360],
+      "components": { "tween": { "property": "scale", "from": [0.85, 0.85], "mode": "from", "duration": 0.3, "ease": "out_back" } },
+      "children": [
+        { "type": "nine_slice", "texture": "ui/ui.json#panel", "width": 420, "height": 420, "anchor": [0.5, 0.5] },
+        { "type": "text", "text": "PAUSED", "position": [0, -160], "anchor": [0.5, 0.5],
+          "style": { "font": "fonts/kenney_future.ttf", "font_size": 42, "fill": "#2a2a3a" } },
+        { "prefab": "prefabs/button.prefab.json", "label": "resume_button", "position": [0, -82],
+          "components": { "button": { "action": "resume", "order": 0 } },
+          "children": [ { "prefab": "prefabs/button_label.prefab.json", "text": "RESUME" } ] },
+        { "prefab": "prefabs/button.prefab.json", "label": "restart_button", "position": [0, -6], "texture": "ui/ui.json#grey_button",
+          "components": { "button": { "action": "restart", "order": 1 } },
+          "children": [ { "prefab": "prefabs/button_label.prefab.json", "text": "RESTART" } ] },
+        { "prefab": "prefabs/button.prefab.json", "label": "pause_settings_button", "position": [0, 70], "texture": "ui/ui.json#grey_button",
+          "components": { "button": { "action": "settings", "order": 2 } },
+          "children": [ { "prefab": "prefabs/button_label.prefab.json", "text": "SETTINGS" } ] },
+        { "prefab": "prefabs/button.prefab.json", "label": "menu_button", "position": [0, 146], "texture": "ui/ui.json#grey_button",
+          "components": { "button": { "action": "menu", "order": 3 } },
+          "children": [ { "prefab": "prefabs/button_label.prefab.json", "text": "QUIT TO MENU" } ] } ] } ] }

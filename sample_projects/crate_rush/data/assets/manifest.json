@@ -1,0 +1,84 @@
+{
+ "bundles": [
+  {
+   "name": "shared",
+   "assets": [
+    {
+     "alias": "models/character/character-worker.glb",
+     "src": "models/character/character-worker.glb"
+    },
+    {
+     "alias": "ui/ui.json",
+     "src": "ui/ui.json",
+     "type": "spritesheet"
+    },
+    {
+     "alias": "glyphs/glyphs.json",
+     "src": "glyphs/glyphs.json",
+     "type": "spritesheet"
+    },
+    {
+     "alias": "fonts/kenney_future.ttf",
+     "src": "fonts/kenney_future.ttf"
+    },
+    {
+     "alias": "fonts/kenney_future_narrow.ttf",
+     "src": "fonts/kenney_future_narrow.ttf"
+    },
+    {
+     "alias": "animation/character.animgraph.json",
+     "src": "animation/character.animgraph.json",
+     "type": "animgraph"
+    },
+    {
+     "alias": "sounds/impact/impactGeneric_light_000.ogg",
+     "src": "sounds/impact/impactGeneric_light_000.ogg"
+    },
+    {
+     "alias": "sounds/impact/impactPunch_medium_000.ogg",
+     "src": "sounds/impact/impactPunch_medium_000.ogg"
+    },
+    {
+     "alias": "sounds/impact/impactSoft_heavy_000.ogg",
+     "src": "sounds/impact/impactSoft_heavy_000.ogg"
+    },
+    {
+     "alias": "sounds/interface/back_002.ogg",
+     "src": "sounds/interface/back_002.ogg"
+    },
+    {
+     "alias": "sounds/interface/drop_003.ogg",
+     "src": "sounds/interface/drop_003.ogg"
+    },
+    {
+     "alias": "sounds/interface/maximize_006.ogg",
+     "src": "sounds/interface/maximize_006.ogg"
+    },
+    {
+     "alias": "sounds/interface/tick_002.ogg",
+     "src": "sounds/interface/tick_002.ogg"
+    },
+    {
+     "alias": "sounds/jingles/jingles_PIZZI01.ogg",
+     "src": "sounds/jingles/jingles_PIZZI01.ogg"
+    },
+    {
+     "alias": "sounds/jingles/jingles_PIZZI09.ogg",
+     "src": "sounds/jingles/jingles_PIZZI09.ogg"
+    },
+    {
+     "alias": "sounds/jingles/jingles_STEEL07.ogg",
+     "src": "sounds/jingles/jingles_STEEL07.ogg"
+    },
+    {
+     "alias": "sounds/ui/click-a.ogg",
+     "src": "sounds/ui/click-a.ogg"
+    },
+    {
+     "alias": "sounds/ui/tap-a.ogg",
+     "src": "sounds/ui/tap-a.ogg"
+    }
+   ]
+  }
+ ]
+}

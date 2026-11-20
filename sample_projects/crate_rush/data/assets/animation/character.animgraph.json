@@ -1,0 +1,18 @@
+{ "parameters": { "speed": 0.0, "grounded": true, "vy": 0.0, "jump": "trigger" },
+  "entry": "idle",
+  "states": [
+    { "name": "idle", "clip": "idle" },
+    { "name": "run", "blend": { "parameter": "speed", "motions": [ { "clip": "walk", "at": 0.3 }, { "clip": "sprint", "at": 1.0 } ] } },
+    { "name": "jump", "clip": "jump", "loop": "once" },
+    { "name": "fall", "clip": "fall" } ],
+  "transitions": [
+    { "from": "*", "to": "jump", "when": [["jump"]], "duration": 0.06 },
+    { "from": "idle", "to": "run", "when": [["speed", ">", 0.08], ["grounded", "==", true]], "duration": 0.15 },
+    { "from": "run", "to": "idle", "when": [["speed", "<", 0.05]], "duration": 0.2 },
+    { "from": "idle", "to": "fall", "when": [["grounded", "==", false], ["vy", "<", -2.5]], "duration": 0.15 },
+    { "from": "run", "to": "fall", "when": [["grounded", "==", false], ["vy", "<", -2.5]], "duration": 0.15 },
+    { "from": "jump", "to": "fall", "when": [["vy", "<", -1.0]], "duration": 0.2 },
+    { "from": "jump", "to": "idle", "when": [["grounded", "==", true], ["speed", "<", 0.08]], "duration": 0.1 },
+    { "from": "jump", "to": "run", "when": [["grounded", "==", true]], "duration": 0.1 },
+    { "from": "fall", "to": "idle", "when": [["grounded", "==", true], ["speed", "<", 0.08]], "duration": 0.1 },
+    { "from": "fall", "to": "run", "when": [["grounded", "==", true]], "duration": 0.1 } ] }

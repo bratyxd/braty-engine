@@ -1,0 +1,48 @@
+{
+  "window": { "title": "Crate Rush", "width": 1280, "height": 720, "vsync": true, "resizable": true },
+  "asset_root": "assets",
+  "manifest": "manifest.json",
+  "clear_color": "#14202e",
+  "scenes": {
+    "menu": "scenes/menu.scene.json", "loading": "scenes/loading.scene.json", "hud": "scenes/hud.scene.json",
+    "pause": "scenes/pause.scene.json", "settings": "scenes/settings.scene.json",
+    "results": "scenes/results.scene.json",
+    "level1": "levels/level1.glb", "level2": "levels/level2.glb", "level3": "levels/level3.glb"
+  },
+  "ticker": { "max_fps": 0, "min_fps": 10, "speed": 1, "fixed_hz": 60 },
+  "input": {
+    "move_left":  { "keys": ["A", "Left"],  "buttons": ["dpleft"],  "axes": ["-leftx"], "context": "gameplay" },
+    "move_right": { "keys": ["D", "Right"], "buttons": ["dpright"], "axes": ["+leftx"], "context": "gameplay" },
+    "move_up":    { "keys": ["W", "Up"],    "buttons": ["dpup"],    "axes": ["-lefty"], "context": "gameplay" },
+    "move_down":  { "keys": ["S", "Down"],  "buttons": ["dpdown"],  "axes": ["+lefty"], "context": "gameplay" },
+    "jump":       { "keys": ["Space"], "buttons": ["a"], "context": "gameplay" },
+    "pause":      { "keys": ["Escape", "P"], "buttons": ["start"] },
+    "nav_up":     { "keys": ["Up", "W"],    "buttons": ["dpup"],    "axes": ["-lefty"], "threshold": 0.6, "context": "menu" },
+    "nav_down":   { "keys": ["Down", "S"],  "buttons": ["dpdown"],  "axes": ["+lefty"], "threshold": 0.6, "context": "menu" },
+    "nav_left":   { "keys": ["Left", "A"],  "buttons": ["dpleft"],  "axes": ["-leftx"], "threshold": 0.6, "context": "menu" },
+    "nav_right":  { "keys": ["Right", "D"], "buttons": ["dpright"], "axes": ["+leftx"], "threshold": 0.6, "context": "menu" },
+    "confirm":    { "keys": ["Return", "Space"], "buttons": ["a"], "context": "menu" },
+    "back":       { "keys": ["Escape", "Backspace"], "buttons": ["b"], "context": "menu" }
+  },
+  "audio": { "master_volume": 0.8, "buses": { "music": 0.6, "sfx": 0.9 } },
+  "debug": { "overlay": false, "toggle_key": "F1", "hot_reload": true },
+  "game": {
+    "tuning": "tuning.json",
+    "shared_bundle": "shared",
+    "levels": ["level1", "level2", "level3"],
+    "sounds": {
+      "focus": "sounds/ui/tap-a.ogg",
+      "confirm": "sounds/ui/click-a.ogg",
+      "back": "sounds/interface/back_002.ogg",
+      "start": "sounds/jingles/jingles_PIZZI01.ogg",
+      "clear": "sounds/jingles/jingles_STEEL07.ogg",
+      "timeup": "sounds/jingles/jingles_PIZZI09.ogg",
+      "pickup": "sounds/interface/maximize_006.ogg",
+      "hit": "sounds/impact/impactPunch_medium_000.ogg",
+      "fall": "sounds/impact/impactSoft_heavy_000.ogg",
+      "jump": "sounds/interface/drop_003.ogg",
+      "land": "sounds/impact/impactGeneric_light_000.ogg",
+      "tick": "sounds/interface/tick_002.ogg"
+    }
+  }
+}
