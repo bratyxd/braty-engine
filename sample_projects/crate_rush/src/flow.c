@@ -142,7 +142,7 @@ static void cr_settings_load(br_engine *e, cr_game *g)
     g->settings.vsync = (int32_t)br_app_vsync(e);
     g->settings.max_fps = (int32_t)br_app_max_fps(e);
     g->settings.volume = 80;
-    g->settings.profiler_hud = false;
+    g->settings.profiler_hud = br_profiler_hud(e); /* --profiler-hud / game.json "profiler.hud" */
     if (br_app_deterministic(e)) {
         return;
     }

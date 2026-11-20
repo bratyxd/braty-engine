@@ -171,7 +171,7 @@ void cr_world_hit(br_engine *e, cr_game *g, br_vec3 from)
     br_input_gamepad_rumble(e, br_input_last_gamepad(e), 0.6f, 0.9f, 220);
     cr_sound(e, g, "hit");
     char text[16];
-    SDL_snprintf(text, sizeof(text), "-%ds", (int)t->hit_penalty);
+    SDL_snprintf(text, sizeof(text), "-%d SEC", (int)t->hit_penalty);
     cr_popup_text(e, g, br_vec3_add(p->position, br_vec3_make(0.0f, 1.3f, 0.0f)), text, 0xff5a4a);
     br_log_info("crate_rush: hit at frame %llu", (unsigned long long)br_ticker_frame(e));
 }

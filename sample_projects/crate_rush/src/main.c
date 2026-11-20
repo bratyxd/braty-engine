@@ -4,7 +4,8 @@
  *
  * Everything is data (data/game.json + data/assets/); the C code is components (components.c)
  * and systems (flow.c, player.c, world.c, ui.c). Command line: the engine's (--frames N
- * --screenshot out.png --gpu-driver NAME --vsync off --profiler-hud --playtest FILE ...).
+ * --screenshot out.png --gpu-driver NAME --vsync off --profiler-hud --playtest FILE ...) plus
+ *   --level NAME   start in that level ("level1", "level2", "level3") instead of the menu.
  * Play-test scripts are in playtest/ (docs/PLAYTESTING.md).
  */
 #include "braty/braty_main.h"
@@ -143,6 +144,14 @@ static bool cr_init(br_engine *e)
     g->music_bus = br_audio_bus_find(e, "music");
     cr_make_ui_camera(e, g);
     cr_enter_state(e, g, CR_STATE_MENU);
+    /* --level NAME: straight into a level (profiling, screenshots) */
+    int argc = 0;
+    char **argv = br_engine_args(e, &argc);
+    for (int i = 1; i + 1 < argc; i++) {
+        if (SDL_strcmp(argv[i], "--level") == 0) {
+            cr_start_level(e, g, argv[i + 1]);
+        }
+    }
     return true;
 }
 

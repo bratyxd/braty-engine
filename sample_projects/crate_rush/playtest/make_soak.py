@@ -13,7 +13,7 @@ import os
 # counts on the menu, 60 frames after it appears (the first visit included)
 BASELINE = {"stat_nodes": 36, "stat_nodes3d": 47, "stat_assets": 21, "stat_animators": 1,
             "stat_tweens": 0, "stat_sounds": 0}
-FRAME_BUDGET_MS = 16.7   # p95 of gameplay frames, Debug build, vsync off
+FRAME_BUDGET_MS = 8.0    # p95 of gameplay frames, Debug build, vsync off (measured ~1.2 ms on an RTX 3060 Ti)
 CYCLES = 3
 LEVELS = ["level1", "level2", "level3"]
 
