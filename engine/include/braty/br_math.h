@@ -10,8 +10,9 @@
  *   Clip space follows SDL_GPU: x,y in [-1,1] with y UP, depth z in [0,1].
  *   3D helpers are right-handed (camera looks down -Z).
  * - All functions take and return values; nothing allocates except br_polygon users.
- * - Results are never NaN for finite inputs: zero vectors, degenerate triangles and parallel
- *   rays return documented fallbacks instead.
+ * - Results are never NaN for finite inputs: zero vectors, degenerate triangles, parallel rays
+ *   and zero-extent projections return documented fallbacks instead. (Inputs so large that the
+ *   arithmetic overflows float are not covered.)
  * Also: br_ease.h (easing), br_random.h (PCG32), br_noise.h, br_spline.h.
  */
 #ifndef BR_MATH_H
@@ -294,9 +295,11 @@ br_vec3 br_mat4_transform_dir(br_mat4 m, br_vec3 d);
 /* Transforms a vec4. */
 br_vec4 br_mat4_transform_vec4(br_mat4 m, br_vec4 v);
 /* Orthographic projection, depth [near, far] -> [0, 1]. For 2D screen space use
- * br_mat4_ortho(0, width, height, 0, -1, 1) so (0,0) is the top-left pixel. */
+ * br_mat4_ortho(0, width, height, 0, -1, 1) so (0,0) is the top-left pixel. Identity when an
+ * extent is zero. */
 br_mat4 br_mat4_ortho(float left, float right, float bottom, float top, float near_z, float far_z);
-/* Right-handed perspective projection, vertical fov in radians, depth -> [0, 1]. */
+/* Right-handed perspective projection, vertical fov in radians, depth -> [0, 1]. Identity when
+ * fov, aspect or the depth range is zero. */
 br_mat4 br_mat4_perspective(float fov_y, float aspect, float near_z, float far_z);
 /* Right-handed view matrix looking from eye to target. */
 br_mat4 br_mat4_look_at(br_vec3 eye, br_vec3 target, br_vec3 up);
@@ -323,7 +326,7 @@ bool br_mat4_decompose(br_mat4 m, br_vec3 *translation, br_quat *rotation, br_ve
 /* Right-handed view matrix at eye looking along direction. */
 br_mat4 br_mat4_look_to(br_vec3 eye, br_vec3 direction, br_vec3 up);
 /* Off-centre perspective frustum (glFrustum shape, extents on the near plane), right-handed,
- * depth [near, far] -> [0, 1]. */
+ * depth [near, far] -> [0, 1]. Identity when an extent is zero. */
 br_mat4 br_mat4_frustum(float left, float right, float bottom, float top, float near_z, float far_z);
 /* Perspective with the far plane at infinity: depth near -> 0, infinity -> 1. */
 br_mat4 br_mat4_perspective_infinite(float fov_y, float aspect, float near_z);
@@ -425,7 +428,7 @@ br_rect br_ellipse_bounds(br_ellipse e);
 bool br_rounded_rect_contains(br_rounded_rect r, float x, float y);
 /* Bounding rect. */
 br_rect br_rounded_rect_bounds(br_rounded_rect r);
-/* True if (x,y) is inside the triangle (either winding). */
+/* True if (x,y) is inside the triangle (either winding). A zero-area triangle contains nothing. */
 bool br_triangle_contains(br_triangle t, float x, float y);
 /* Bounding rect. */
 br_rect br_triangle_bounds(br_triangle t);
