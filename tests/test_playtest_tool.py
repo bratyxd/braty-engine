@@ -1,5 +1,6 @@
 """test_playtest_tool - tools/playtest.py's short-command parser (no game needed): every command
 parses, and trailing or unknown words are rejected before a game starts (API_REVIEW item 40)."""
+import io
 import os
 import sys
 
@@ -37,6 +38,30 @@ def main():
                 "window 1 2 3", "quit now", "stats 1", "profile 10 20", "gamepad press a",
                 "gamepad connect xbox 1 2", "gamepad axis leftx", "set game:score", "frobnicate", ""):
         assert rejected(bad), bad
+
+    # replies are UTF-8 whatever the console code page is (a German text came back as "Ã¼")
+    seen = {}
+
+    class FakePopen:
+        def __init__(self, argv, **kwargs):
+            seen.update(kwargs)
+            self.stdout = io.StringIO('{"ok": true, "value": "J\\u00fcrgen"}\n')
+            self.stdin = io.StringIO()
+
+        def poll(self):
+            return 0
+
+        def wait(self):
+            return 0
+
+    real = playtest.subprocess.Popen
+    playtest.subprocess.Popen = FakePopen
+    try:
+        game = playtest.Playtest("game.exe")
+        assert seen.get("encoding") == "utf-8", seen
+        assert game.send("get loc:x")["value"] == "Jürgen"
+    finally:
+        playtest.subprocess.Popen = real
     print("test_playtest_tool: ok")
     return 0
 

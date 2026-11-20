@@ -58,6 +58,7 @@ class Playtest:
             stdout=subprocess.PIPE,
             stderr=self._log,  # the engine logs to stderr; stdout carries only replies
             text=True,
+            encoding="utf-8",  # replies carry UTF-8 text whatever the console code page is
             bufsize=1,
         )
         atexit.register(self.kill)  # no orphan game, whatever happens to this script
