@@ -669,7 +669,7 @@ static void br_camera_drive_3d(br_engine *e, br_camera_data *d, const br_camera_
     br_view3d_set_culling_mask(e, d->view3d, d->camera.culling_mask);
     br_color bg = br_color_make(0.0f, 0.0f, 0.0f, 0.0f);
     if (d->camera.clear_flags == BR_CAMERA_CLEAR_COLOR) {
-        bg = br_color_srgb_to_linear(d->camera.background_color);
+        bg = br_color_to_linear(d->camera.background_color);
     }
     br_view3d_set_background(e, d->view3d, bg);
 }

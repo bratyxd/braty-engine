@@ -38,7 +38,7 @@ static bool demo_init(br_engine *e)
 {
     br_node view = br_view3d_create(e, 1280.0f, 720.0f);
     br_view3d_set_auto_resize(e, view, true);
-    br_view3d_set_background(e, view, br_color_srgb_to_linear(br_color_from_hex(0x1D3557, 1.0f)));
+    br_view3d_set_background(e, view, br_color_to_linear(br_color_from_hex(0x1D3557, 1.0f)));
     br_view3d_post(e, view)->bloom = false;
     br_node_add_child(e, br_scene_root(e), view);
     br_node3d root = br_view3d_root(e, view);
@@ -54,7 +54,7 @@ static bool demo_init(br_engine *e)
     br_node3d_add_child(e, root, sun_node);
 
     br_material3d_desc md = br_material3d_default(BR_MATERIAL3D_PBR);
-    md.base_color = br_color_srgb_to_linear(br_color_from_hex(0xA8A296, 1.0f));
+    md.base_color = br_color_to_linear(br_color_from_hex(0xA8A296, 1.0f));
     md.roughness = 0.6f;
     md.double_sided = true;
     br_material3d m = br_material3d_create(e, &md);

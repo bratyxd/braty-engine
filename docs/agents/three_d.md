@@ -36,7 +36,7 @@ Test: `tests/test_three_d.c`. Example: `examples/view3d_demo.c` (`--camera 0|1`,
   orientation in `view3d_demo`).
 - **Cameras are Unity-style:** `fov_y` (vertical) or `ortho_size` (half the visible height) is
   fixed; the horizontal extent follows the view's aspect (`camera.aspect > 0` overrides).
-- **Colours of materials and lights are linear.** Use `br_color_srgb_to_linear` for picker
+- **Colours of materials and lights are linear.** Use `br_color_to_linear` for picker
   colours. Base-colour and emissive textures are sRGB: glTF images feeding them are
   `R8G8B8A8_UNORM_SRGB` textures (decoded by the sampler, filtered in linear), textures you set
   yourself are decoded in the shader (`docs/agents/gltf.md`, "Texture colour spaces"); the tone

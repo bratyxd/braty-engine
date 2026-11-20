@@ -65,7 +65,7 @@ static bool br_json3d_color(br_engine *e, const cJSON *obj, const char *key, br_
     if (!br_data_get_color(e, obj, key, &c)) {
         return false;
     }
-    *out = br_color_srgb_to_linear(c);
+    *out = br_color_to_linear(c);
     return true;
 }
 

@@ -28,7 +28,7 @@ typedef struct demo_state {
 
 static br_color lin(uint32_t rgb)
 {
-    return br_color_srgb_to_linear(br_color_from_hex(rgb, 1.0f));
+    return br_color_to_linear(br_color_from_hex(rgb, 1.0f));
 }
 
 static br_color hex(uint32_t rgb)

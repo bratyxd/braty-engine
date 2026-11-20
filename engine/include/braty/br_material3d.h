@@ -98,7 +98,5 @@ bool br_material3d_valid(br_engine *e, br_material3d m);
 br_material3d_desc *br_material3d_params(br_engine *e, br_material3d m);
 /* Sets a texture slot with default sampling and no transform. */
 void br_material3d_set_texture(br_engine *e, br_material3d m, br_material3d_slot slot, br_texture texture);
-/* sRGB colour (what a colour picker shows) to linear, alpha kept. */
-br_color br_color_srgb_to_linear(br_color c);
 
 #endif

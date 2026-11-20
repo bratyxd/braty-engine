@@ -82,12 +82,3 @@ void br_material3d_set_texture(br_engine *e, br_material3d m, br_material3d_slot
     d->textures[slot].texture = texture;
 }
 
-static float br_srgb_channel(float c)
-{
-    return c <= 0.04045f ? c / 12.92f : SDL_powf((c + 0.055f) / 1.055f, 2.4f);
-}
-
-br_color br_color_srgb_to_linear(br_color c)
-{
-    return br_color_make(br_srgb_channel(c.r), br_srgb_channel(c.g), br_srgb_channel(c.b), c.a);
-}

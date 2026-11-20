@@ -74,7 +74,7 @@ static float frand(demo_state *s)
 
 static br_color lin(uint32_t rgb)
 {
-    return br_color_srgb_to_linear(br_color_from_hex(rgb, 1.0f));
+    return br_color_to_linear(br_color_from_hex(rgb, 1.0f));
 }
 
 /* ---- generated textures */
@@ -463,7 +463,7 @@ static void setup_scene(br_engine *e, demo_state *s)
         br_mat4 m = br_mat4_from_trs(br_vec3_make(SDL_cosf(a) * r, h * 0.5f, SDL_sinf(a) * r), q,
                                      br_vec3_make(1.0f, h / 0.3f, 1.0f));
         br_color c = br_color_from_hsl(frand(s) * 360.0f, 0.6f, 0.55f, 1.0f);
-        br_batched_mesh3d_add(e, field, m, br_color_srgb_to_linear(c));
+        br_batched_mesh3d_add(e, field, m, br_color_to_linear(c));
     }
 
     /* custom node type drawing axis lines (custom draw item) */

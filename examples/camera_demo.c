@@ -207,13 +207,13 @@ static void build_3d(br_engine *e)
 {
     br_node3d root = br_node3d_create_group(e);
     br_material3d_desc md = br_material3d_default(BR_MATERIAL3D_PBR);
-    md.base_color = br_color_srgb_to_linear(hex(0x6E9C55));
+    md.base_color = br_color_to_linear(hex(0x6E9C55));
     br_node3d ground = br_mesh3d_create(e, br_geometry3d_plane(e, 30.0f, 30.0f, 1, 1), br_material3d_create(e, &md));
     br_mesh3d_get(e, ground)->cast_shadows = false;
     br_node3d_add_child(e, root, ground);
     uint32_t colors[3] = { 0xE63946, 0x3A86FF, 0xF4A261 };
     for (int i = 0; i < 9; i++) {
-        md.base_color = br_color_srgb_to_linear(hex(colors[i % 3]));
+        md.base_color = br_color_to_linear(hex(colors[i % 3]));
         br_node3d cube = br_mesh3d_create(e, br_geometry3d_cube(e, br_vec3_make(1.0f, 1.0f + (float)(i % 3), 1.0f)),
                                           br_material3d_create(e, &md));
         br_node3d_set_position(e, cube, br_vec3_make((float)(i % 3) * 3.0f - 3.0f, 0.5f + (float)(i % 3) * 0.5f,
@@ -232,8 +232,8 @@ static void build_3d(br_engine *e)
     main3d.field_of_view = 50.0f * BR_DEG_TO_RAD;
     main3d.background_color = hex(0x8EC5F0);
     br_node cam = br_camera_create_3d(e, root, &main3d);
-    br_view3d_set_environment(e, br_camera_view3d(e, cam), br_color_srgb_to_linear(hex(0xBFD9F2)),
-                              br_color_srgb_to_linear(hex(0x5A4A3A)), 0.4f);
+    br_view3d_set_environment(e, br_camera_view3d(e, cam), br_color_to_linear(hex(0xBFD9F2)),
+                              br_color_to_linear(hex(0x5A4A3A)), 0.4f);
     br_orbit_camera *orbit = br_component_add(e, cam, br_camera_orbit_component(e));
     *orbit = br_orbit_camera_make(br_vec3_make(0.0f, 0.5f, 0.0f), 14.0f, 0.6f, 0.5f);
 

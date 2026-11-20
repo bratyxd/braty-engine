@@ -564,7 +564,7 @@ static void br_anim_color_out(br_color linear, br_anim_value *v)
 static br_color br_anim_color_in(const br_anim_value *v)
 {
     br_color c = { v->f[0], v->f[1], v->f[2], v->f[3] };
-    return br_color_srgb_to_linear(c);
+    return br_color_to_linear(c);
 }
 
 static void get_mat_base_color(br_engine *e, br_anim_target t, br_anim_value *v)

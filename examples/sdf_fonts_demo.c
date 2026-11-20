@@ -60,7 +60,7 @@ static bool demo_init(br_engine *e)
     /* bottom: the same row on a canvas3d facing the camera */
     br_node view = br_view3d_create(e, 1280.0f, 360.0f);
     br_node_set_position(e, view, 0.0f, 360.0f);
-    br_view3d_set_background(e, view, br_color_srgb_to_linear(br_color_from_hex(0x1D3557, 1.0f)));
+    br_view3d_set_background(e, view, br_color_to_linear(br_color_from_hex(0x1D3557, 1.0f)));
     br_view3d_post(e, view)->bloom = false; /* a glow would hide the ring */
     br_node_add_child(e, br_scene_root(e), view);
     br_node3d cam = br_view3d_camera(e, view);

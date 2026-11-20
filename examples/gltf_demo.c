@@ -102,7 +102,7 @@ static void on_fox_loaded(br_engine *e, const char *path, void *asset, void *use
 static br_material3d make_material(br_engine *e, uint32_t srgb, float roughness)
 {
     br_material3d_desc d = br_material3d_default(BR_MATERIAL3D_PBR);
-    d.base_color = br_color_srgb_to_linear(br_color_from_hex(srgb, 1.0f));
+    d.base_color = br_color_to_linear(br_color_from_hex(srgb, 1.0f));
     d.roughness = roughness;
     return br_material3d_create(e, &d);
 }
@@ -112,9 +112,9 @@ static void setup_main_view(br_engine *e, demo_state *s)
     s->view = br_view3d_create(e, 1280.0f, 720.0f);
     br_view3d_set_auto_resize(e, s->view, true);
     br_view3d_set_msaa(e, s->view, 4);
-    br_view3d_set_background(e, s->view, br_color_srgb_to_linear(br_color_from_hex(0x30384A, 1.0f)));
-    br_view3d_set_environment(e, s->view, br_color_srgb_to_linear(br_color_from_hex(0xA8C0E8, 1.0f)),
-                              br_color_srgb_to_linear(br_color_from_hex(0x5A4A3A, 1.0f)), 0.45f);
+    br_view3d_set_background(e, s->view, br_color_to_linear(br_color_from_hex(0x30384A, 1.0f)));
+    br_view3d_set_environment(e, s->view, br_color_to_linear(br_color_from_hex(0xA8C0E8, 1.0f)),
+                              br_color_to_linear(br_color_from_hex(0x5A4A3A, 1.0f)), 0.45f);
     br_node_add_child(e, br_scene_root(e), s->view);
     s->root = br_view3d_root(e, s->view);
     s->camera = br_view3d_camera(e, s->view);
@@ -131,7 +131,7 @@ static void setup_main_view(br_engine *e, demo_state *s)
 
     br_light3d sun = br_light3d_default(BR_LIGHT3D_DIRECTIONAL);
     sun.intensity = 2.2f;
-    sun.color = br_color_srgb_to_linear(br_color_from_hex(0xFFF0DC, 1.0f));
+    sun.color = br_color_to_linear(br_color_from_hex(0xFFF0DC, 1.0f));
     sun.cast_shadows = true;
     sun.cascade_count = 3;
     sun.shadow_distance = 40.0f;

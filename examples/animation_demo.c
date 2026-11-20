@@ -186,7 +186,7 @@ static void setup_panel(br_engine *e, demo_state *s)
 static br_material3d make_material(br_engine *e, uint32_t srgb, float roughness)
 {
     br_material3d_desc d = br_material3d_default(BR_MATERIAL3D_PBR);
-    d.base_color = br_color_srgb_to_linear(br_color_from_hex(srgb, 1.0f));
+    d.base_color = br_color_to_linear(br_color_from_hex(srgb, 1.0f));
     d.roughness = roughness;
     return br_material3d_create(e, &d);
 }
@@ -213,9 +213,9 @@ static void setup_3d(br_engine *e, demo_state *s)
     s->view = br_view3d_create(e, 700.0f, 470.0f);
     br_node_set_position(e, s->view, 540.0f, 200.0f);
     br_view3d_set_msaa(e, s->view, 4);
-    br_view3d_set_background(e, s->view, br_color_srgb_to_linear(br_color_from_hex(0x27303F, 1.0f)));
-    br_view3d_set_environment(e, s->view, br_color_srgb_to_linear(br_color_from_hex(0xA8C0E8, 1.0f)),
-                              br_color_srgb_to_linear(br_color_from_hex(0x5A4A3A, 1.0f)), 0.5f);
+    br_view3d_set_background(e, s->view, br_color_to_linear(br_color_from_hex(0x27303F, 1.0f)));
+    br_view3d_set_environment(e, s->view, br_color_to_linear(br_color_from_hex(0xA8C0E8, 1.0f)),
+                              br_color_to_linear(br_color_from_hex(0x5A4A3A, 1.0f)), 0.5f);
     br_node_add_child(e, br_scene_root(e), s->view);
     br_node3d root = br_view3d_root(e, s->view);
     br_node3d cam = br_view3d_camera(e, s->view);

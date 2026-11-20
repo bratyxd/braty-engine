@@ -359,7 +359,7 @@ static void br_canvas3d_draw_fn(br_engine *e, const br_draw3d_custom_info *info,
     }
     br_canvas3d_uniforms u;
     SDL_zero(u);
-    br_color tint = br_color_srgb_to_linear(desc->tint);
+    br_color tint = br_color_to_linear(desc->tint);
     u.tint[0] = tint.r;
     u.tint[1] = tint.g;
     u.tint[2] = tint.b;
