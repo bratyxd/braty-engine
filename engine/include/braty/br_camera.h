@@ -50,8 +50,8 @@ typedef struct br_camera {
     br_camera_projection projection;
     float           orthographic_size;  /* half the visible vertical extent, world units */
     float           field_of_view;      /* perspective: vertical, radians */
-    float           near_z;             /* 3D */
-    float           far_z;
+    float           near_z;             /* 3D; <= 0 = 0.1 */
+    float           far_z;              /* 3D; <= near_z (e.g. 0 from SDL_zero) = near_z + 1000 */
     br_rect         viewport_rect;      /* normalised (0..1) part of the screen/target, top-left origin */
     float           depth;              /* draw order: lower first */
     uint32_t        culling_mask;       /* layer bits drawn (br_node_set_layer_bits / br_node3d_set_layer) */
@@ -173,7 +173,7 @@ typedef struct br_camera_follow {
 typedef struct br_camera_shake {
     float    trauma;       /* 0..1, add with br_camera_shake_add */
     float    decay;        /* trauma lost per second (default 1) */
-    float    max_offset;   /* world units at trauma 1 (2D: stage units) */
+    float    max_offset;   /* at trauma 1: world units on a 3D camera (default 0.3), stage units in 2D (default 12) */
     float    max_angle;    /* radians at trauma 1 */
     float    frequency;    /* noise samples per second (default 15) */
     uint32_t seed;         /* 0 = drawn from the engine RNG on first use (deterministic) */
