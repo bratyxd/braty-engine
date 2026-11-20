@@ -13,8 +13,11 @@ gh run download -n golden-windows-mingw # golden screenshots and diffs from the 
 ```
 
 Run locally only what you are debugging (one test binary, or `ctest --preset windows-gcc -R
-<name>`). Golden images are informative on CI (software renderers differ from the Direct3D 12
-references by a few pixels): after a visible change, look at the artifact; re-baseline on a real
+<name>`). Golden images are checked on CI too. Its software renderers (WARP, lavapipe) differ from the
+Direct3D 12 references by a few pixels in some cases; those cases have their own references in
+`tests/golden/ci-windows/` and `tests/golden/ci-linux/` (`BRATY_GOLDEN_VARIANT`). After an
+intended visible change the golden step fails: download the artifact, look at the new image and
+the diff, copy the new image into the variant folder, and re-baseline `tests/golden/` on a real
 GPU with `python tools/golden.py update --only <name>`.
 
 Three kinds of tests, one command:

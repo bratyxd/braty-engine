@@ -241,6 +241,13 @@ def main():
     if os.path.exists(cache) and "BRATY_PROFILER:BOOL=OFF" in open(cache).read():
         print("skip  %-20s BRATY_PROFILER is OFF in this build" % "profiler_demo")
         cases = [c for c in cases if c[0] != "profiler_demo"]
+    # CI renders in software (WARP, lavapipe), which differs from the Direct3D 12 references by
+    # a few pixels: BRATY_GOLDEN_VARIANT=<name> makes tests/golden/<name>/<case>.png win over
+    # tests/golden/<case>.png where it exists. BRATY_GOLDEN_SKIP="a b" leaves cases out.
+    variant = os.environ.get("BRATY_GOLDEN_VARIANT", "")
+    for skipped in os.environ.get("BRATY_GOLDEN_SKIP", "").split():
+        print("skip  %-20s BRATY_GOLDEN_SKIP" % skipped)
+        cases = [c for c in cases if c[0] != skipped]
     failures = 0
     for case in cases:
         name = case[0]
@@ -253,6 +260,9 @@ def main():
             failures += 1
             continue
         golden = os.path.join(GOLDEN_DIR, name + ".png")
+        if variant and (args.mode == "update" or os.path.exists(os.path.join(GOLDEN_DIR, variant, name + ".png"))):
+            golden = os.path.join(GOLDEN_DIR, variant, name + ".png")
+            os.makedirs(os.path.dirname(golden), exist_ok=True)
         if args.mode == "update":
             width, height, pixels = read_png(shot)
             write_png(golden, width, height, pixels)

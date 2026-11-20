@@ -553,6 +553,12 @@ way (54, 62); the rest are open.
     informative step on macOS until the cause is found (needs a Mac, or a state-hash dump per
     frame compared between platforms).
 
+64. **open - `view3d_demo` shows a black rectangle on WARP.** On the GitHub Windows runner
+    (Direct3D 12 software renderer) the top-right of `view3d_demo` is a black rectangle that
+    Direct3D 12 on a real GPU, Vulkan and lavapipe do not show. Likely a render target read before
+    it is written (a real GPU happens to hide it) or a WARP limit. The CI golden step skips this
+    one case on Windows (`BRATY_GOLDEN_SKIP`); Linux still checks it.
+
 ## Migration table (Phase 3 Task A)
 
 Every name below was removed without an alias: a game that still uses one gets a compiler

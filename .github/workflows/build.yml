@@ -3,8 +3,11 @@
 # the engine, tests, examples and both samples, and runs ctest.
 #
 # Golden images are Direct3D 12 images from a real GPU; CI runners render in software (WARP on
-# Windows, lavapipe on Linux), so the golden step is informative: it never fails the job, and its
-# screenshots and diffs are uploaded as the "golden-<job>" artifact to look at.
+# Windows, lavapipe on Linux), which differs by a few pixels in some cases. Those cases have their
+# own references in tests/golden/ci-windows and tests/golden/ci-linux (BRATY_GOLDEN_VARIANT), so
+# the golden step fails the job on any visible change. Screenshots and diffs are uploaded as the
+# "golden-<job>" artifact; to accept a change, copy the new image from the artifact into the
+# variant folder (and re-baseline tests/golden/ on a real GPU).
 #
 # SDL 3.4.20 is fetched and built by CMake (FetchContent), a few minutes per job.
 # ponytail: no compiler cache; add ccache if the SDL build time starts to hurt.
@@ -43,8 +46,12 @@ jobs:
         run: cmake --build --preset windows-gcc
       - name: Test
         run: ctest --preset windows-gcc -LE golden
-      - name: Golden images (informative, software renderer)
-        continue-on-error: true
+      # WARP draws a black rectangle in view3d_demo that no other renderer shows
+      # (docs/API_REVIEW.md item 64), so that case is left out here until it is understood.
+      - name: Golden images (WARP; references in tests/golden/ci-windows win)
+        env:
+          BRATY_GOLDEN_VARIANT: ci-windows
+          BRATY_GOLDEN_SKIP: view3d_demo
         run: ctest --preset windows-gcc -L golden
       - name: Getting-started guide builds and runs
         run: python tools/check_getting_started.py
@@ -103,9 +110,9 @@ jobs:
           SDL_VIDEODRIVER: dummy
           SDL_AUDIODRIVER: dummy
         run: ctest --preset linux -LE golden
-      - name: Golden images (informative, lavapipe under Xvfb)
-        continue-on-error: true
+      - name: Golden images (lavapipe under Xvfb; references in tests/golden/ci-linux win)
         env:
+          BRATY_GOLDEN_VARIANT: ci-linux
           SDL_AUDIODRIVER: dummy
         run: xvfb-run -a ctest --preset linux -L golden
       - uses: actions/upload-artifact@v4
