@@ -1,18 +1,23 @@
-# Builds the engine, examples and sample game on Windows (MinGW-w64 GCC), Linux and macOS and
-# runs the headless tests (ctest).
+# The test suite runs here, not on developer machines: push, then `gh run watch --exit-status`
+# (docs/TESTING.md "Tests run on GitHub"). Every job configures with warnings as errors, builds
+# the engine, tests, examples and both samples, and runs ctest.
 #
-# NOT YET RUN: this workflow was written without access to GitHub Actions. Only the Windows/GCC
-# build has ever been run (locally); the MSVC, Linux and macOS jobs are the first time those
-# toolchains / platforms get built at all, so expect fixes. Engine warnings are errors
-# (BRATY_WERROR). The Windows/GCC job also builds and tests the release preset in a build
-# directory of a different depth (tests must not depend on where the build directory is). SDL 3.4.20 is fetched and built by CMake (FetchContent),
-# which takes a few minutes per job. No GPU on CI runners: tests are headless by design; the
-# examples and the game are built, not run.
+# Golden images are Direct3D 12 images from a real GPU; CI runners render in software (WARP on
+# Windows, lavapipe on Linux), so the golden step is informative: it never fails the job, and its
+# screenshots and diffs are uploaded as the "golden-<job>" artifact to look at.
+#
+# SDL 3.4.20 is fetched and built by CMake (FetchContent), a few minutes per job.
+# ponytail: no compiler cache; add ccache if the SDL build time starts to hurt.
 name: build
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   windows-mingw:
@@ -31,17 +36,33 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
       - name: Configure
         run: cmake --preset windows-gcc -DBRATY_WERROR=ON
       - name: Build
         run: cmake --build --preset windows-gcc
       - name: Test
-        run: ctest --preset windows-gcc
+        run: ctest --preset windows-gcc -LE golden
+      - name: Golden images (informative, software renderer)
+        continue-on-error: true
+        run: ctest --preset windows-gcc -L golden
+      - name: Getting-started guide builds and runs
+        run: python tools/check_getting_started.py
+      # A build directory of a different depth: tests must not depend on where it is.
       - name: Release (configure, build, test in build/ci/release)
         run: |
           cmake --preset windows-gcc-release -B build/ci/release -DBRATY_WERROR=ON
           cmake --build build/ci/release
-          ctest --test-dir build/ci/release --output-on-failure
+          ctest --test-dir build/ci/release --output-on-failure -LE golden
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: golden-windows-mingw
+          path: |
+            build/windows-gcc/golden
+            build/windows-gcc/Testing/Temporary/LastTest.log
+            build/ci/release/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
 
   windows-msvc:
     runs-on: windows-latest
@@ -53,28 +74,48 @@ jobs:
       - name: Build
         run: cmake --build --preset windows-msvc
       - name: Test
-        run: ctest --preset windows-msvc
+        run: ctest --preset windows-msvc -LE golden
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: log-windows-msvc
+          path: build/windows-msvc/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
 
   linux:
     runs-on: ubuntu-24.04
-    env:
-      SDL_VIDEODRIVER: dummy
-      SDL_AUDIODRIVER: dummy
     steps:
       - uses: actions/checkout@v4
-      - name: Install build dependencies (compiler, Ninja, SDL3's X11/Wayland/audio headers)
+      - name: Install build dependencies (compiler, Ninja, SDL3's X11/Wayland/audio headers, software Vulkan)
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake ninja-build pkg-config \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
             libxkbcommon-dev libwayland-dev wayland-protocols libegl1-mesa-dev libdrm-dev libgbm-dev \
-            libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev libdbus-1-dev
+            libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev libdbus-1-dev \
+            xvfb mesa-vulkan-drivers libvulkan1
       - name: Configure
         run: cmake --preset linux -DBRATY_WERROR=ON
       - name: Build
         run: cmake --build --preset linux
       - name: Test
-        run: ctest --preset linux
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: ctest --preset linux -LE golden
+      - name: Golden images (informative, lavapipe under Xvfb)
+        continue-on-error: true
+        env:
+          SDL_AUDIODRIVER: dummy
+        run: xvfb-run -a ctest --preset linux -L golden
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: golden-linux
+          path: |
+            build/linux/golden
+            build/linux/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
 
   macos:
     runs-on: macos-14
@@ -90,4 +131,10 @@ jobs:
       - name: Build
         run: cmake --build --preset macos
       - name: Test
-        run: ctest --preset macos
+        run: ctest --preset macos -LE golden
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: log-macos
+          path: build/macos/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore

@@ -14,6 +14,11 @@ Plans and feature maps: `docs/plans/2026-11-19-braty-engine.md` (Phase 1),
 
 ## Build, test, look at it
 
+**Tests run on GitHub Actions, not locally** (a local run takes minutes and opens windows):
+`git push`, then `gh run watch --exit-status`; `gh run view --log-failed` shows failures. Locally,
+build and run only the one test you are debugging (`ctest --preset windows-gcc -R <name>`).
+`docs/TESTING.md` "Tests run on GitHub".
+
 ```sh
 cmake --preset windows-gcc [-DCMAKE_PREFIX_PATH=<SDL3 prefix>]   # default prefix: .deps/sdl3
 cmake --build --preset windows-gcc                                  # engine, tests, examples, both samples

@@ -1,5 +1,22 @@
 # Testing Braty
 
+## Tests run on GitHub
+
+The suite runs in GitHub Actions (`.github/workflows/build.yml`: Windows GCC debug + release,
+MSVC, Linux, macOS), not on your machine: a local run takes minutes and opens windows.
+
+```sh
+git push                                # every push and pull request runs the workflow
+gh run watch --exit-status              # follow it; non-zero exit when a job fails
+gh run view --log-failed                # what failed
+gh run download -n golden-windows-mingw # golden screenshots and diffs from the run
+```
+
+Run locally only what you are debugging (one test binary, or `ctest --preset windows-gcc -R
+<name>`). Golden images are informative on CI (software renderers differ from the Direct3D 12
+references by a few pixels): after a visible change, look at the artifact; re-baseline on a real
+GPU with `python tools/golden.py update --only <name>`.
+
 Three kinds of tests, one command:
 
 ```sh
