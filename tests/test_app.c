@@ -92,6 +92,7 @@ static void test_game_config_main(void)
     BR_CHECK(write_next_to_exe("test_app_game.json",
                                "{ \"window\": { \"title\": \"boot test\" }, \"start_scene\": \"test_app_scene.json\","
                                "  \"save\": { \"org\": \"braty-tests\", \"app\": \"config app\" },"
+                               "  \"memory\": { \"frame_kb\": 2048, \"level_kb\": 512, \"game_kb\": 256 },"
                                "  \"game\": { \"level\": 3 } }"));
     /* the scene uses a component that only exists once init ran */
     BR_CHECK(write_next_to_exe("test_app_scene.json",
@@ -104,6 +105,9 @@ static void test_game_config_main(void)
     BR_CHECK(br_app_init(&state, &desc, 2, argv) == SDL_APP_CONTINUE);
     br_engine *e = state;
     BR_CHECK(s_config.json_seen_in_init);
+    /* game.json "memory" preallocates the three arenas */
+    BR_CHECK(br_frame_arena(e)->stats.capacity == 2048 * 1024);
+    BR_CHECK(br_level_arena(e)->stats.capacity == 512 * 1024 && br_game_arena(e)->stats.capacity == 256 * 1024);
     br_node booted = br_node_find_by_label(e, br_stage_root(e), "booted", true);
     probe_component *p = br_component_get(e, booted, s_config.component_id);
     BR_CHECK(p != NULL && p->value == 7);

@@ -152,7 +152,35 @@ Your own code: `br_profile_begin(e, "name")` / `br_profile_end(e)`. `docs/PROFIL
      render levels, 16 prefab levels, 16 names per `{a,b}` pattern, 8192-point concave fills,
      glTF counts, text sizes) are in README "Limits" and `docs/DATA_FORMATS.md`.
 
-7. **Or skip building the engine:** link the prebuilt SDK from the GitHub releases
+7. **Memory: three arenas, sized up front.** Every game gets three arenas, created with the
+   engine. Put each piece of game data in the one whose lifetime matches, instead of `br_alloc`:
+
+   | Arena | Allocate with | Lives until | Use for |
+   |---|---|---|---|
+   | frame | `br_frame_alloc(e, n)` | the next frame starts (reset by the engine) | scratch: formatted strings, query results, sort buffers, temporary lists |
+   | level | `br_level_alloc(e, n)` | the game calls `br_level_arena_reset(e)` | one level / round / run: the map, spawn tables, path grids, per-level lookup data |
+   | game | `br_game_alloc(e, n)` | shutdown (never reset) | the game-state struct, tuning tables, anything loaded once |
+
+   - **Size them in `game.json` before writing code**, from the game's type and size:
+     `"memory": { "frame_kb": 1024, "level_kb": 4096, "game_kb": 1024 }` (those are the
+     defaults). Add up the big arrays (cells x bytes, entities x struct size) and add half again.
+     Rough starts: arcade / puzzle / card game 256 / 512 / 256; platformer or top-down with tile
+     maps 1024 / 4096 / 1024; voxel, large grids, thousands of entities 2048 / 32768+ / 2048.
+   - **Reset the level arena yourself** at the point the level's data dies: level end, restart,
+     "new game", return to the menu, right after `br_scene_unload` / before loading the next
+     scene. First drop every pointer into it (they dangle after the reset), then allocate the next
+     level's data. Arcade game with one endless round: reset on restart. Game with no levels:
+     the level arena may stay empty.
+   - **Over the size is not an error:** a full arena chains another block and carries on, and
+     logs `arena 'level' outgrew its ... bytes`. Treat that line as a bug in the numbers: raise
+     the size in `game.json` until a full play-test logs none. The debug overlay (F1, Stats ->
+     Arenas) shows used / peak / capacity of all three.
+   - Containers can live in an arena: `br_array_init_with_allocator(&a, size,
+     br_arena_linear_allocator(br_level_arena(e)))`. Nodes, textures, geometry and sounds are
+     engine objects, not arena memory: create them at setup / level load and destroy them with
+     the level. Details: `docs/agents/arena.md`.
+
+8. **Or skip building the engine:** link the prebuilt SDK from the GitHub releases
    (`find_package(braty CONFIG REQUIRED)`, `braty::braty`); `docs/BUILDING.md` "The SDK".
 
 Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
@@ -179,10 +207,12 @@ Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
   (use `br_file_*`). No platform `#ifdef`s.
 - **No heap allocation in the hot path** (anything that runs every frame: systems, collect,
   render, input, audio mixing). Allocate in `br_<module>_register`, on create / load, or when a
-  buffer first grows, then reuse it: `br_array` that keeps its capacity, pools, the frame arena
-  (`br_frame_alloc`, `docs/agents/arena.md`), fixed `char[N]` buffers for formatted text. The
-  same rule holds for games: no `br_alloc`, `br_strdup`, node / geometry / material / texture
-  create or destroy per frame; create at setup, show / hide and reuse after. Check it with
+  buffer first grows, then reuse it: `br_array` that keeps its capacity, pools, fixed `char[N]`
+  buffers for formatted text. Games take their memory from the three preallocated arenas
+  (frame / level / game: "How to make a game" step 7, `docs/agents/arena.md`) and call
+  `br_alloc` only for what must be freed on its own. No `br_alloc`, `br_strdup`, node /
+  geometry / material / texture create or destroy per frame; create at setup, show / hide and
+  reuse after. Check it with
   `br_memory_get_stats`: `total_allocations` must not rise over a run of steady frames.
   Known exceptions (event-driven, not per frame; keep them off the per-frame path):
   `br_text_set_text` with a new string copies it and lays the text out again (free when the text

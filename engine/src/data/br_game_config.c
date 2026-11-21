@@ -94,6 +94,12 @@ static void br_config_string(br_config_reader *r, const cJSON *obj, const char *
 }
 
 /* A section object ("window", "ticker", ...): NULL if absent, NULL + error if not an object. */
+/* KB from game.json "memory" as bytes; 0 (keep the default) when absent or over 2 GB. */
+static size_t br_config_kb(float kb)
+{
+    return kb >= 1.0f && kb <= 2097152.0f ? (size_t)kb * 1024 : 0;
+}
+
 static const cJSON *br_config_section(br_config_reader *r, const cJSON *doc, const char *name)
 {
     const cJSON *v = cJSON_GetObjectItemCaseSensitive(doc, name);
@@ -128,11 +134,11 @@ static void br_config_warn_keys(const char *source, const char *section, const c
 static void br_config_check_keys(const char *source, const cJSON *doc)
 {
     br_config_warn_keys(source, "", doc,
-                        " window asset_root manifest start_scene scenes clear_color ticker input audio debug profiler save locale game packs fonts ");
-    const char *sections[] = { "window", "ticker", "debug", "audio", "profiler", "save", "locale" };
+                        " window asset_root manifest start_scene scenes clear_color ticker memory input audio debug profiler save locale game packs fonts ");
+    const char *sections[] = { "window", "ticker", "debug", "audio", "profiler", "save", "locale", "memory" };
     const char *keys[] = { " title width height fullscreen vsync resizable logical_size pause_when_inactive ", " max_fps min_fps speed fixed_hz ",
                            " overlay toggle_key keys hot_reload ", " master_volume muted buses sprites ", " hud panel ", " org app ",
-                           " default fallback dir " };
+                           " default fallback dir ", " frame_kb level_kb game_kb " };
     for (uint32_t i = 0; i < BR_ARRAY_COUNT(sections); i++) {
         const cJSON *section = cJSON_GetObjectItemCaseSensitive(doc, sections[i]);
         if (cJSON_IsObject(section)) {
@@ -215,6 +221,11 @@ bool br_game_config_parse(const char *json, size_t size, const char *source_name
     br_config_float(&r, ticker, "min_fps", &config->min_fps);
     br_config_float(&r, ticker, "speed", &config->speed);
     br_config_float(&r, ticker, "fixed_hz", &config->fixed_hz);
+
+    const cJSON *memory = br_config_section(&r, doc, "memory");
+    br_config_float(&r, memory, "frame_kb", &config->memory_frame_kb);
+    br_config_float(&r, memory, "level_kb", &config->memory_level_kb);
+    br_config_float(&r, memory, "game_kb", &config->memory_game_kb);
 
     const cJSON *debug = br_config_section(&r, doc, "debug");
     br_config_bool(&r, debug, "overlay", &config->debug_overlay);
@@ -495,6 +506,8 @@ void br_game_config_apply_settings(br_engine *e, br_game_config *config)
     br_ticker_set_min_fps(e, config->min_fps);
     br_ticker_set_speed(e, config->speed);
     br_app_set_fixed_timestep(e, config->fixed_hz);
+    br_arena_preallocate(e, br_config_kb(config->memory_frame_kb), br_config_kb(config->memory_level_kb),
+                         br_config_kb(config->memory_game_kb));
     br_scene_file_set_hot_reload(e, config->hot_reload, 0);
 
     SDL_Scancode key = SDL_GetScancodeFromName(config->debug_key);

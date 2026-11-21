@@ -43,6 +43,7 @@ typedef struct br_game_config {
     float    min_fps;                              /* 10 */
     float    speed;                                /* 1 */
     float    fixed_hz;                             /* ticker.fixed_hz: fixed timestep, 0 = off */
+    float    memory_frame_kb, memory_level_kb, memory_game_kb; /* memory.*: arena sizes, 0 = default */
     bool     has_clear_color;
     br_color clear_color;                          /* window background (when has_clear_color) */
     bool     debug_overlay;                        /* debug overlay open at start (false) */

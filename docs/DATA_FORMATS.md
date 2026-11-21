@@ -49,6 +49,7 @@ Every key is optional; the values below are the defaults unless noted.
   "scenes": { "title": "scenes/title.scene.json", "level1": "scenes/level1.scene.json" },
   "clear_color": "#1b1e2b",
   "ticker": { "max_fps": 0, "min_fps": 10, "speed": 1, "fixed_hz": 0 },
+  "memory": { "frame_kb": 1024, "level_kb": 4096, "game_kb": 1024 },
   "input": {
     "jump": { "keys": ["Space"], "buttons": ["a"], "threshold": 0.5, "context": "gameplay" },
     "left": { "keys": ["Left", "A"], "axes": ["-leftx"] }
@@ -85,6 +86,7 @@ overlay closed, F1, hot reload on in debug builds, no logical size (the example'
 | `scenes` | Names for scene files: `br_scene_load(e, "level1", ...)`, `br_scene_switch(e, "level1", ...)` (`docs/agents/scenes.md`). |
 | `clear_color` | Window clear colour, any colour string (section 4). |
 | `ticker` | `max_fps`: FPS cap, 0 = uncapped, works with vsync off (`br_app_set_max_fps`); `min_fps`: dt clamp; `speed`: time scale; `fixed_hz`: rate of `BR_PHASE_FIXED_UPDATE`, 0 = once per frame (`br_app_set_fixed_timestep`). |
+| `memory` | Preallocated sizes in KB of the frame, level and game arenas (`br_frame_alloc`, `br_level_alloc`, `br_game_alloc`; `docs/agents/arena.md`). Absent or 0 = the default shown; at most 2 GB each. A full arena grows and logs it. |
 | `input` | Named actions, the `br_input_actions_from_json` format (section 5). |
 | `audio` | Master volume/mute, named buses (a number = volume), sound sprites per file (`[start, duration]` seconds). |
 | `debug.overlay` | Debug overlay open at start (`--debug` on the command line does the same). |

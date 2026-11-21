@@ -14,6 +14,14 @@ plain struct with `stats` (name, used, peak, capacity), zeroes what it hands out
 | `br_arena_pool` | Fixed-size blocks with a free list (`alloc` / `free` one block). |
 | `br_arena_scratch` | `begin` / `end` pair over a linear arena: everything allocated in between is dropped. |
 | frame arena | `br_frame_alloc(e, size)`: memory valid until the next frame starts. 1 MB, growable. |
+| level arena | `br_level_alloc(e, size)`: valid until the game calls `br_level_arena_reset(e)` (level end, restart, scene unload). 4 MB, growable. |
+| game arena | `br_game_alloc(e, size)`: valid until shutdown, never reset. 1 MB, growable. |
+
+The last three exist in every engine. Their sizes come from game.json
+`"memory": { "frame_kb", "level_kb", "game_kb" }` (or `br_arena_preallocate` before anything is
+allocated). A full one chains another block and logs `arena '<name>' outgrew its N bytes`; the
+next reset merges the chain into one block of the total size. Size them so a full play-test logs
+no such line.
 
 ## Functions you actually need
 
@@ -26,6 +34,9 @@ plain struct with `stats` (name, used, peak, capacity), zeroes what it hands out
 | `br_arena_pool_create(&p, name, block_size, align, count)`, `_alloc`, `_free` | Many same-sized objects. |
 | `br_arena_scratch_begin(&a)` / `br_arena_scratch_end(s)` | Temporary scope on a linear arena (no thread-locals: pass the arena). |
 | `br_frame_alloc(e, size)`, `br_frame_arena(e)` | Per-frame scratch memory, reset by the first INPUT system. |
+| `br_level_alloc(e, size)`, `br_level_arena(e)`, `br_level_arena_reset(e)` | Per-level memory; the game resets it when the level's data dies. |
+| `br_game_alloc(e, size)`, `br_game_arena(e)` | Memory for the whole run. |
+| `br_arena_preallocate(e, frame, level, game)` | Capacities in bytes (0 = keep); only unused arenas are resized. game.json `"memory"` calls it. |
 | `br_arena_linear_allocator(&a)` + `br_array_init_with_allocator(...)` | Containers on an arena (also `br_pool_`/`br_map_init_with_allocator`). |
 | `br_arena_track(e, &a.stats)` / `br_arena_untrack` | List your arena in the debug overlay (Stats -> Arenas). |
 | `br_memory_get_stats(&s)` | Heap counters: live blocks/bytes, total allocations, peak bytes. |
@@ -64,6 +75,8 @@ uint8_t *p = br_frame_alloc(e, 4096);  /* valid until the next br_engine_step */
 - A pool's allocator view only serves requests up to `block_size`; containers that grow do not fit.
 - Frame memory dies when the next frame starts (the reset is the first INPUT-phase system), so
   never keep a frame pointer in a component or across `br_engine_step`.
+- `br_level_arena_reset` leaves every pointer into the level arena dangling: clear them first.
+  The engine never resets it (not on scene unload either): the game knows when a level ends.
 - `br_arena_untrack` before destroying a tracked arena, or the overlay reads freed memory.
 - Arenas are not thread-safe. Heap stats are (spinlock), and process-wide, not per engine.
 - `br_alloc` blocks carry a size header: never free them with `SDL_free`/`free`, and never

@@ -21,6 +21,9 @@
 #define BR_ARENA_DEFAULT_ALIGNMENT 16
 /* Size of each engine's frame arena (it grows by chained blocks when a frame needs more). */
 #define BR_FRAME_ARENA_SIZE (1024 * 1024)
+/* Default capacities of the level and game arenas (game.json "memory" or br_arena_preallocate). */
+#define BR_LEVEL_ARENA_SIZE (4 * 1024 * 1024)
+#define BR_GAME_ARENA_SIZE (1024 * 1024)
 
 /* Numbers every arena reports; registered arenas are listed by the debug overlay. */
 typedef struct br_arena_stats {
@@ -151,15 +154,33 @@ void br_arena_scratch_end(br_arena_scratch scratch);
 void *br_frame_alloc(br_engine *e, size_t size);
 /* Returns the engine's frame arena (for its allocator or a scratch scope). */
 br_arena_linear *br_frame_arena(br_engine *e);
+/* ---- the three lifetimes: frame (above), level, game. All are created with the engine, grow by
+ * another block when full (logged once per growth: raise the size in game.json "memory"), and
+ * are freed at shutdown. */
+
+/* Returns `size` zeroed bytes valid until br_level_arena_reset (16-byte aligned). */
+void *br_level_alloc(br_engine *e, size_t size);
+/* Returns the level arena: data of one level / round / scene. */
+br_arena_linear *br_level_arena(br_engine *e);
+/* Forgets everything in the level arena. The game calls it when a level ends or is unloaded,
+ * after dropping every pointer into it. */
+void br_level_arena_reset(br_engine *e);
+/* Returns `size` zeroed bytes valid until the engine shuts down (16-byte aligned). */
+void *br_game_alloc(br_engine *e, size_t size);
+/* Returns the game arena: data that lives as long as the game. Never reset. */
+br_arena_linear *br_game_arena(br_engine *e);
+/* Sets the capacities in bytes (0 = keep). Only an arena with nothing allocated is resized, so
+ * call it at start-up (game.json "memory" does). False if an arena was in use or out of memory. */
+bool br_arena_preallocate(br_engine *e, size_t frame_bytes, size_t level_bytes, size_t game_bytes);
 /* Lists an arena's stats in the debug overlay. Untrack it before destroying the arena. */
 bool br_arena_track(br_engine *e, const br_arena_stats *stats);
 /* Removes an arena from the list. */
 void br_arena_untrack(br_engine *e, const br_arena_stats *stats);
-/* Number of tracked arenas (the frame arena is always the first). */
+/* Number of tracked arenas (frame, level and game are always the first three). */
 uint32_t br_arena_count(br_engine *e);
 /* Returns tracked arena `index`, or NULL if out of range. */
 const br_arena_stats *br_arena_at(br_engine *e, uint32_t index);
-/* Creates the frame arena and its reset system. Called by the engine; games never call it. */
+/* Creates the frame, level and game arenas and the frame reset system. Called by the engine; games never call it. */
 void br_arena_register(br_engine *e);
 
 #endif

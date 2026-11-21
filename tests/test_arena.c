@@ -256,7 +256,7 @@ static void test_frame_arena(void)
     }
     br_arena_linear *frame = br_frame_arena(e);
     BR_CHECK(frame != NULL && frame->stats.capacity == BR_FRAME_ARENA_SIZE);
-    BR_CHECK(br_arena_count(e) >= 1 && br_arena_at(e, 0) == &frame->stats);
+    BR_CHECK(br_arena_count(e) == 3 && br_arena_at(e, 0) == &frame->stats);
 
     uint8_t *p = br_frame_alloc(e, 4096);
     BR_CHECK(p != NULL && aligned(p, 16) && frame->stats.used >= 4096);
@@ -269,10 +269,32 @@ static void test_frame_arena(void)
     br_arena_linear mine;
     br_arena_linear_create(&mine, "mine", 1024, false);
     BR_CHECK(br_arena_track(e, &mine.stats));
-    BR_CHECK(br_arena_count(e) == 2 && SDL_strcmp(br_arena_at(e, 1)->name, "mine") == 0);
+    BR_CHECK(br_arena_count(e) == 4 && SDL_strcmp(br_arena_at(e, 3)->name, "mine") == 0);
     br_arena_untrack(e, &mine.stats);
-    BR_CHECK(br_arena_count(e) == 1 && br_arena_at(e, 1) == NULL);
+    BR_CHECK(br_arena_count(e) == 3 && br_arena_at(e, 3) == NULL);
     br_arena_linear_destroy(&mine);
+
+    /* level and game arenas: survive frames; level is reset by the game, both grow when full */
+    br_arena_linear *level = br_level_arena(e);
+    br_arena_linear *game = br_game_arena(e);
+    BR_CHECK(level != NULL && level->stats.capacity == BR_LEVEL_ARENA_SIZE && br_arena_at(e, 1) == &level->stats);
+    BR_CHECK(game != NULL && game->stats.capacity == BR_GAME_ARENA_SIZE && br_arena_at(e, 2) == &game->stats);
+    BR_CHECK(br_arena_preallocate(e, 0, 64 * 1024, 32 * 1024));
+    BR_CHECK(level->stats.capacity == 64 * 1024 && game->stats.capacity == 32 * 1024);
+    BR_CHECK(frame->stats.capacity >= BR_FRAME_ARENA_SIZE); /* 0 = kept */
+    uint8_t *lp = br_level_alloc(e, 1000);
+    uint8_t *gp = br_game_alloc(e, 1000);
+    BR_CHECK(lp != NULL && gp != NULL && aligned(lp, 16) && aligned(gp, 16));
+    lp[999] = 7;
+    gp[999] = 9;
+    br_engine_step(e, 0.016f);
+    BR_CHECK(lp[999] == 7 && gp[999] == 9 && level->stats.used >= 1000 && game->stats.used >= 1000);
+    BR_CHECK(!br_arena_preallocate(e, 0, 128 * 1024, 0)); /* in use: refused, nothing changes */
+    BR_CHECK(level->stats.capacity == 64 * 1024 && lp[999] == 7);
+    BR_CHECK(br_level_alloc(e, 200 * 1024) != NULL); /* over the preallocated size: grows */
+    BR_CHECK(level->stats.capacity > 64 * 1024);
+    br_level_arena_reset(e);
+    BR_CHECK(level->stats.used == 0 && level->blocks->prev == NULL && game->stats.used >= 1000 && gp[999] == 9);
     br_engine_destroy(e);
 }
 

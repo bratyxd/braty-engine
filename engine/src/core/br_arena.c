@@ -7,6 +7,8 @@
 
 typedef struct br_arena_state {
     br_arena_linear frame;
+    br_arena_linear level;    /* reset by the game: br_level_arena_reset */
+    br_arena_linear game;     /* never reset */
     br_array        tracked;  /* const br_arena_stats * */
 } br_arena_state;
 
@@ -176,6 +178,8 @@ void *br_arena_linear_alloc_aligned(br_arena_linear *a, size_t size, size_t alig
         if (!br_arena_linear_add_block(a, need > a->size ? need : a->size)) {
             return NULL;
         }
+        br_log_warn("arena '%s' outgrew its %zu bytes (now %zu): preallocate more", a->stats.name,
+                    a->stats.capacity - a->size, a->stats.capacity);
         pad = br_arena_padding(a->base, a->offset, alignment);
     }
     uint8_t *p = a->base + a->offset + pad;
@@ -508,6 +512,8 @@ static void br_arena_shutdown(br_engine *e, void *user)
 {
     (void)user;
     br_arena_linear_destroy(&e->arena->frame);
+    br_arena_linear_destroy(&e->arena->level);
+    br_arena_linear_destroy(&e->arena->game);
     br_array_free(&e->arena->tracked);
     br_free(e->arena);
     e->arena = NULL;
@@ -520,12 +526,18 @@ void br_arena_register(br_engine *e)
         return;
     }
     br_array_init(&s->tracked, sizeof(const br_arena_stats *));
-    if (!br_arena_linear_create(&s->frame, "frame", BR_FRAME_ARENA_SIZE, true)) {
+    if (!br_arena_linear_create(&s->frame, "frame", BR_FRAME_ARENA_SIZE, true) ||
+        !br_arena_linear_create(&s->level, "level", BR_LEVEL_ARENA_SIZE, true) ||
+        !br_arena_linear_create(&s->game, "game", BR_GAME_ARENA_SIZE, true)) {
+        br_arena_linear_destroy(&s->frame);
+        br_arena_linear_destroy(&s->level);
         br_free(s);
         return;
     }
     e->arena = s;
     br_arena_track(e, &s->frame.stats);
+    br_arena_track(e, &s->level.stats);
+    br_arena_track(e, &s->game.stats);
     /* first system of the frame (POST_RENDER does not run headless) */
     br_system_add(e, "arena.frame_reset", BR_PHASE_INPUT, INT_MIN + 1, br_arena_frame_reset, NULL);
     br_engine_on_shutdown(e, br_arena_shutdown, NULL);
@@ -543,6 +555,64 @@ void *br_frame_alloc(br_engine *e, size_t size)
 br_arena_linear *br_frame_arena(br_engine *e)
 {
     return e != NULL && e->arena != NULL ? &e->arena->frame : NULL;
+}
+
+void *br_level_alloc(br_engine *e, size_t size)
+{
+    return e != NULL && e->arena != NULL ? br_arena_linear_alloc(&e->arena->level, size) : NULL;
+}
+
+br_arena_linear *br_level_arena(br_engine *e)
+{
+    return e != NULL && e->arena != NULL ? &e->arena->level : NULL;
+}
+
+void br_level_arena_reset(br_engine *e)
+{
+    if (e != NULL && e->arena != NULL) {
+        br_arena_linear_reset(&e->arena->level);
+    }
+}
+
+void *br_game_alloc(br_engine *e, size_t size)
+{
+    return e != NULL && e->arena != NULL ? br_arena_linear_alloc(&e->arena->game, size) : NULL;
+}
+
+br_arena_linear *br_game_arena(br_engine *e)
+{
+    return e != NULL && e->arena != NULL ? &e->arena->game : NULL;
+}
+
+/* Recreates an unused arena in place with a new capacity (the struct does not move, so the
+ * tracked stats pointer and allocator views stay valid). */
+static bool br_arena_resize_unused(br_arena_linear *a, const char *name, size_t bytes)
+{
+    if (bytes == 0 || bytes == a->stats.capacity) {
+        return true;
+    }
+    if (a->stats.used != 0) {
+        br_log_error("arena '%s': cannot preallocate, %zu bytes are in use", name, a->stats.used);
+        return false;
+    }
+    size_t old = a->stats.capacity;
+    br_arena_linear_destroy(a);
+    if (br_arena_linear_create(a, name, bytes, true)) {
+        return true;
+    }
+    br_arena_linear_create(a, name, old, true); /* out of memory: back to the old size */
+    return false;
+}
+
+bool br_arena_preallocate(br_engine *e, size_t frame_bytes, size_t level_bytes, size_t game_bytes)
+{
+    if (e == NULL || e->arena == NULL) {
+        return false;
+    }
+    bool ok = br_arena_resize_unused(&e->arena->frame, "frame", frame_bytes);
+    ok = br_arena_resize_unused(&e->arena->level, "level", level_bytes) && ok;
+    ok = br_arena_resize_unused(&e->arena->game, "game", game_bytes) && ok;
+    return ok;
 }
 
 bool br_arena_track(br_engine *e, const br_arena_stats *stats)
