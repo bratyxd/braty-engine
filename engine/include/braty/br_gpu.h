@@ -254,6 +254,24 @@ br_render_target *br_gpu_frame_target(br_gpu *g);
 /* Begins a render pass on the frame target: the first pass of a frame clears it to the clear
  * colour, later passes load it. End with SDL_EndGPURenderPass. NULL outside RENDER phases. */
 SDL_GPURenderPass *br_gpu_frame_begin_pass(br_gpu *g);
+
+/* ---- draw statistics. Every engine draw goes through these three, so the counts cover 2D, 3D,
+ * particles, filters, post-processing and the debug overlay. A game's custom render callback
+ * should use them too, or its draws are not counted. */
+
+/* SDL_BindGPUGraphicsPipeline + counts a set pass when the pipeline differs from the last one
+ * bound in this pass (a shader / blend / depth state change: the costly kind of draw). */
+void br_gpu_bind_pipeline(br_gpu *g, SDL_GPURenderPass *pass, SDL_GPUGraphicsPipeline *pipeline);
+/* SDL_DrawGPUPrimitives + counts a draw call. */
+void br_gpu_draw(br_gpu *g, SDL_GPURenderPass *pass, Uint32 vertex_count, Uint32 instance_count, Uint32 first_vertex,
+                 Uint32 first_instance);
+/* SDL_DrawGPUIndexedPrimitives + counts a draw call. */
+void br_gpu_draw_indexed(br_gpu *g, SDL_GPURenderPass *pass, Uint32 index_count, Uint32 instance_count,
+                         Uint32 first_index, Sint32 vertex_offset, Uint32 first_instance);
+/* Draw calls of the last finished frame (0 when g is NULL: headless). */
+uint32_t br_gpu_frame_draw_calls(const br_gpu *g);
+/* Set passes (pipeline changes) of the last finished frame. */
+uint32_t br_gpu_frame_set_passes(const br_gpu *g);
 /* Colour the frame target is cleared to (default opaque black). NULL `g` (headless) is ignored. */
 void br_gpu_set_clear_color(br_gpu *g, br_color color);
 /* Number of frames presented so far. */

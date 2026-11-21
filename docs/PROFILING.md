@@ -4,7 +4,7 @@ Is the game slow because of the CPU or the GPU, and where? Press **F2** in any B
 profiler panel), or run with `--profiler-hud` for a small corner readout:
 
 ```
-FPS 27.6   CPU 2.80 ms   GPU 36.25 ms
+FPS 27.6   CPU 2.80 ms   GPU 36.25 ms   DRAWS 158   SETPASS 19
 GPU bound   render.collect
 ```
 

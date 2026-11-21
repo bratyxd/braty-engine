@@ -583,8 +583,8 @@ static cJSON *br_pt_dump3d(br_engine *e, br_node3d n)
 }
 
 /* "profile:<key>" (a key of br_profiler_summary_json over the last "profile" command's frames;
- * "profile:*" = the whole object), "engine:scene" (the active scene's name) and "engine:locale"
- * (br_loc_locale). Only used when
+ * "profile:*" = the whole object), "engine:scene" (the active scene's name), "engine:locale"
+ * (br_loc_locale), "engine:draw_calls" and "engine:set_passes" (the last frame; 0 headless). Only used when
  * the game exposes no struct of that name. NULL with *handled false for any other path. */
 static cJSON *br_pt_get_builtin(br_engine *e, const br_pt_path *p, const char *path, bool *handled)
 {
@@ -600,6 +600,14 @@ static cJSON *br_pt_get_builtin(br_engine *e, const br_pt_path *p, const char *p
     if (SDL_strcmp(p->target, "engine") == 0 && SDL_strcmp(p->parts[0], "locale") == 0) {
         *handled = true;
         return cJSON_CreateString(br_loc_locale(e));
+    }
+    if (SDL_strcmp(p->target, "engine") == 0 && SDL_strcmp(p->parts[0], "draw_calls") == 0) {
+        *handled = true;
+        return cJSON_CreateNumber(br_gpu_frame_draw_calls(br_engine_gpu(e)));
+    }
+    if (SDL_strcmp(p->target, "engine") == 0 && SDL_strcmp(p->parts[0], "set_passes") == 0) {
+        *handled = true;
+        return cJSON_CreateNumber(br_gpu_frame_set_passes(br_engine_gpu(e)));
     }
     if (SDL_strcmp(p->target, "profile") != 0) {
         return NULL;

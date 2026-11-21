@@ -507,8 +507,11 @@ void br_debug_profiler_hud(br_engine *e, br_debug_state *s)
         ww = 1280;
         wh = 720;
     }
-    /* one line: frame rate, CPU and GPU time. Everything else is in the panel (F2). */
-    mu_Rect where = mu_rect(ww - 280, wh - 38, 270, 28);
+    /* one line: frame rate, CPU and GPU time, draw calls and set passes (pipeline changes) of
+     * the last frame, this readout included. Everything else is in the panel (F2). */
+    mu_Rect where = mu_rect(ww - 480, wh - 38, 470, 28);
+    unsigned draws = br_gpu_frame_draw_calls(br_engine_gpu(e));
+    unsigned passes = br_gpu_frame_set_passes(br_engine_gpu(e));
     int opt = MU_OPT_NOTITLE | MU_OPT_NORESIZE | MU_OPT_NOSCROLL | MU_OPT_NOCLOSE;
     if (!mu_begin_window_ex(ui, "profiler hud", where, opt)) {
         return;
@@ -517,7 +520,7 @@ void br_debug_profiler_hud(br_engine *e, br_debug_state *s)
     s->hud->rect = where; /* stays in the corner when the window is resized (from next frame) */
     mu_layout_row(ui, 1, br_prof_full_row, 0);
     if (br_app_deterministic(e)) {
-        mu_label(ui, "FPS 60.0   CPU 4.00 ms   GPU 2.00 ms");
+        br_debug_labelf(ui, "FPS 60.0   CPU 4.00 ms   GPU 2.00 ms   DRAWS %u   SETPASS %u", draws, passes);
     } else {
         br_profiler_summary_info sum;
         br_profiler_get_summary(e, &sum);
@@ -527,7 +530,8 @@ void br_debug_profiler_hud(br_engine *e, br_debug_state *s)
         } else {
             SDL_snprintf(gpu, sizeof(gpu), "n/a");
         }
-        br_debug_labelf(ui, "FPS %.1f   CPU %.2f ms   GPU %s", (double)sum.fps, (double)sum.cpu_ms, gpu);
+        br_debug_labelf(ui, "FPS %.1f   CPU %.2f ms   GPU %s   DRAWS %u   SETPASS %u", (double)sum.fps,
+                        (double)sum.cpu_ms, gpu, draws, passes);
     }
     mu_end_window(ui);
 }

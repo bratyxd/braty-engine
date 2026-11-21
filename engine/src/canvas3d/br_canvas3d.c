@@ -265,7 +265,7 @@ static bool br_canvas3d_bind_pipeline(br_engine *e, const br_draw3d_custom_info 
     if (pipeline == NULL) {
         return false;
     }
-    SDL_BindGPUGraphicsPipeline(info->pass, pipeline);
+    br_gpu_bind_pipeline(br_engine_gpu(e), info->pass, pipeline);
     return true;
 }
 
@@ -302,7 +302,7 @@ static void br_canvas3d_draw_batch(br_engine *e, const br_draw3d_custom_info *in
     SDL_GPUBufferBinding ib = { br_gpu_transient_index_buffer(g), index_base };
     SDL_BindGPUIndexBuffer(info->pass, &ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
     SDL_BindGPUFragmentSamplers(info->pass, 0, bindings, BR_RENDER_MAX_TEXTURES);
-    SDL_DrawGPUIndexedPrimitives(info->pass, index_count, 1, first_index, 0, 0);
+    br_gpu_draw_indexed(br_engine_gpu(e), info->pass, index_count, 1, first_index, 0, 0);
 }
 
 /* SDF text (text_sdf.frag custom draws) with the canvas shading; other custom draws are skipped. */
@@ -336,9 +336,9 @@ static void br_canvas3d_draw_custom(br_engine *e, const br_draw3d_custom_info *i
     if (cc->indexed) {
         SDL_GPUBufferBinding ib = { br_gpu_transient_index_buffer(g), cc->index_offset };
         SDL_BindGPUIndexBuffer(info->pass, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-        SDL_DrawGPUIndexedPrimitives(info->pass, cc->index_count, 1, 0, 0, 0);
+        br_gpu_draw_indexed(br_engine_gpu(e), info->pass, cc->index_count, 1, 0, 0, 0);
     } else {
-        SDL_DrawGPUPrimitives(info->pass, cc->vertex_count, 1, 0, 0);
+        br_gpu_draw(br_engine_gpu(e), info->pass, cc->vertex_count, 1, 0, 0);
     }
 }
 

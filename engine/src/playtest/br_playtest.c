@@ -661,6 +661,8 @@ static void br_pt_add_stats(br_engine *e, cJSON *out)
     cJSON_AddNumberToObject(out, "fps", e->ticker.fps);
     cJSON_AddNumberToObject(out, "nodes", br_node_count(e));
     cJSON_AddNumberToObject(out, "draw_calls", rs.draw_calls);
+    cJSON_AddNumberToObject(out, "gpu_draw_calls", br_gpu_frame_draw_calls(br_engine_gpu(e)));
+    cJSON_AddNumberToObject(out, "set_passes", br_gpu_frame_set_passes(br_engine_gpu(e)));
     cJSON_AddNumberToObject(out, "textures", br_texture_count(e));
     cJSON_AddNumberToObject(out, "skipped_frames", (double)e->skipped_frames);
     cJSON_AddNumberToObject(out, "heap_bytes", (double)ms.live_bytes);

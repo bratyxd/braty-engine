@@ -49,6 +49,11 @@ struct br_gpu {
     br_array pipelines;  /* br_pipeline_entry */
     br_array samplers;   /* br_sampler_entry */
 
+    /* draw statistics: counted this frame, and the totals of the last finished frame */
+    uint32_t draw_calls, set_passes, last_draw_calls, last_set_passes;
+    SDL_GPURenderPass       *bound_pass;      /* pass and pipeline of the last bind */
+    SDL_GPUGraphicsPipeline *bound_pipeline;
+
     br_transient_stream vertices;
     br_transient_stream indices;
     bool                transient_uploaded;  /* this frame's data is on the GPU (later calls no-op) */

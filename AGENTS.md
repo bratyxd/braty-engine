@@ -75,8 +75,9 @@ Everything, with the Python class: `docs/PLAYTESTING.md`.
 
 ## Profiling
 
-`--profiler-hud` shows one line in a corner: FPS, CPU ms and GPU ms (the GPU's rendering time
-from fences; the vsync wait is not in it). F2 opens the panel, which adds the verdict (CPU update /
+`--profiler-hud` shows one line in a corner: FPS, CPU ms, GPU ms (the GPU's rendering time
+from fences; the vsync wait is not in it), draw calls and set passes (pipeline changes) of the
+last frame ("How to make a game" step 8). F2 opens the panel, which adds the verdict (CPU update /
 CPU render submit / GPU / vsync / FPS cap), scopes and counters; `--profile
 build/trace.json` writes a Chrome trace + `build/trace.json.txt`. Measure with `--vsync off`,
 outside play-test mode (play-tests are deterministic: the HUD shows placeholder times, but the
@@ -180,7 +181,27 @@ Your own code: `br_profile_begin(e, "name")` / `br_profile_end(e)`. `docs/PROFIL
      engine objects, not arena memory: create them at setup / level load and destroy them with
      the level. Details: `docs/agents/arena.md`.
 
-8. **Or skip building the engine:** link the prebuilt SDK from the GitHub releases
+8. **Draw calls and set passes: keep them low.** The corner readout (`"profiler": { "hud": true }`
+   or `--profiler-hud`) ends with `DRAWS n   SETPASS n`: GPU draw calls of the last frame and
+   how many of them changed the pipeline (shader / blend / depth state: the costly kind). Both
+   count everything (2D, 3D, shadows, post-processing, the readout itself). Look at them after
+   every visible feature and bring them down wherever that does not change what the player sees:
+
+   - **3D:** one material shared by everything that looks the same (a material per object makes
+     a set pass per object); `br_batched_mesh3d` for many copies of one mesh (one draw for N);
+     merge static geometry into few meshes (a voxel chunk is one mesh, not one per block);
+     vertex colours instead of a material per colour; shadows cost every caster again per
+     cascade, so set `cast_shadows = false` on small or distant things and use fewer cascades.
+   - **2D:** sprites from one atlas / spritesheet batch into one draw; a different texture,
+     blend mode, mask, filter or custom shader between two sprites breaks the batch (F2 ->
+     Counters shows why batches broke). Order siblings so the same texture and blend mode are
+     adjacent; one text style and font per HUD; avoid filters and masks on many small nodes.
+   - **Both:** hide what is off screen or covered (`visible = false` draws nothing); every extra
+     camera, view, render target and post pass is at least one more draw and set pass.
+   - Play-tests can hold the line: `{"cmd": "expect", "path": "engine:draw_calls", "op": "<=",
+     "value": 150}` and `engine:set_passes` (windowed runs only; headless reads 0).
+
+9. **Or skip building the engine:** link the prebuilt SDK from the GitHub releases
    (`find_package(braty CONFIG REQUIRED)`, `braty::braty`); `docs/BUILDING.md` "The SDK".
 
 Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.

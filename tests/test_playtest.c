@@ -591,6 +591,9 @@ static void test_profile_and_scene(void)
 {
     br_engine *e = br_engine_create("test_playtest_profile", BRATY_SOURCE_DIR "/tests/data");
     BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"engine:scene\"}", "\"value\":\"\""));
+    /* draw statistics of the last frame: 0 without a GPU */
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"engine:draw_calls\"}", "\"value\":0"));
+    BR_CHECK(reply_has(e, "{\"cmd\":\"get\",\"path\":\"engine:set_passes\"}", "\"value\":0"));
     BR_CHECK(reply_has(e, "{\"cmd\":\"profile\",\"frames\":10}", "\"ok\":true,\"frame\":10,\"profile\":{\"frames\":9"));
     BR_CHECK(reply_has(e, "{\"cmd\":\"profile\"}", "\"frame\":310,\"profile\":{\"frames\":299"));
     BR_CHECK(reply_has(e, "{\"cmd\":\"expect\",\"path\":\"profile:frame_ms_p95\",\"op\":\">=\",\"value\":0}", "\"ok\":true"));

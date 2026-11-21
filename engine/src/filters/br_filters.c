@@ -459,13 +459,13 @@ static void br_fx_run_shader_pass(br_engine *e, SDL_GPUCommandBuffer *cmd, const
     }
     SDL_Rect scissor = { 0, 0, (int)rt->width, (int)rt->height };
     SDL_SetGPUScissor(pass, &scissor);
-    SDL_BindGPUGraphicsPipeline(pass, pipeline);
+    br_gpu_bind_pipeline(br_engine_gpu(e), pass, pipeline);
     if (sampler_count > 0) {
         SDL_BindGPUFragmentSamplers(pass, 0, bindings, sampler_count);
     }
     SDL_PushGPUVertexUniformData(cmd, 0, p->block, sizeof(br_filter_globals));
     SDL_PushGPUFragmentUniformData(cmd, 0, p->block, p->block_size);
-    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+    br_gpu_draw(br_engine_gpu(e), pass, 3, 1, 0, 0);
     SDL_EndGPURenderPass(pass);
 }
 

@@ -673,7 +673,7 @@ static void br_render3d_shadow_pass(br_engine *e, br_view3d_state *v, SDL_GPUCom
             if (pipeline == NULL) {
                 continue;
             }
-            SDL_BindGPUGraphicsPipeline(pass, pipeline);
+            br_gpu_bind_pipeline(br_engine_gpu(e), pass, pipeline);
             br_bind_geometry(e, v, pass, cmd, item, geo);
             bool present = false;
             SDL_GPUTextureSamplerBinding base = br_slot_binding(e, g, &mat->textures[BR_MATERIAL3D_BASE_COLOR], &present);
@@ -686,7 +686,7 @@ static void br_render3d_shadow_pass(br_engine *e, br_view3d_state *v, SDL_GPUCom
             }
             br_slot_uv_rows(&mat->textures[0], mu.uv[0], mu.uv[1]);
             SDL_PushGPUFragmentUniformData(cmd, 0, &mu, sizeof(mu));
-            SDL_DrawGPUIndexedPrimitives(pass, geo->index_count, item->instance_count, 0, 0, 0);
+            br_gpu_draw_indexed(br_engine_gpu(e), pass, geo->index_count, item->instance_count, 0, 0, 0);
             v->stats.draw_calls++;
         }
     }
@@ -726,7 +726,7 @@ static void br_render3d_draw_item(br_engine *e, br_view3d_state *v, SDL_GPURende
     if (pipeline == NULL) {
         return;
     }
-    SDL_BindGPUGraphicsPipeline(pass, pipeline);
+    br_gpu_bind_pipeline(br_engine_gpu(e), pass, pipeline);
     br_bind_geometry(e, v, pass, cmd, item, geo);
     if (custom) {
         /* the desc is editable in place (br_material3d_get): clamp what create checked */
@@ -768,7 +768,7 @@ static void br_render3d_draw_item(br_engine *e, br_view3d_state *v, SDL_GPURende
         br_material_uniforms(mat, bits, &mu);
         SDL_PushGPUFragmentUniformData(cmd, 1, &mu, sizeof(mu));
     }
-    SDL_DrawGPUIndexedPrimitives(pass, geo->index_count, item->instance_count, 0, 0, 0);
+    br_gpu_draw_indexed(br_engine_gpu(e), pass, geo->index_count, item->instance_count, 0, 0, 0);
     v->stats.draw_calls++;
 }
 
@@ -816,7 +816,7 @@ static void br_post_blit(br_engine *e, SDL_GPUCommandBuffer *cmd, br_render_targ
     if (pass == NULL) {
         return;
     }
-    SDL_BindGPUGraphicsPipeline(pass, pipeline);
+    br_gpu_bind_pipeline(br_engine_gpu(e), pass, pipeline);
     SDL_GPUSampler *linear = br_sampler(g, BR_FILTER_LINEAR, BR_ADDRESS_CLAMP);
     SDL_GPUTextureSamplerBinding b[2];
     b[0].texture = src->handle;
@@ -831,7 +831,7 @@ static void br_post_blit(br_engine *e, SDL_GPUCommandBuffer *cmd, br_render_targ
     if (uniform_size > 0) {
         SDL_PushGPUFragmentUniformData(cmd, 0, uniforms, uniform_size);
     }
-    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+    br_gpu_draw(br_engine_gpu(e), pass, 3, 1, 0, 0);
     SDL_EndGPURenderPass(pass);
 }
 

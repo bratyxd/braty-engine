@@ -98,8 +98,11 @@ session.json` turns a played session into a script that replays exactly under
 ## Profiling
 
 Press **F2** in any app for the profiler panel, or run with `--profiler-hud` for a corner
-readout (FPS, CPU ms, GPU ms and what limits the frame rate: CPU update, CPU render submit,
-GPU, vsync or the FPS cap). `--profile build/trace.json` writes a Chrome trace (open it in
+readout (FPS, CPU ms, GPU ms, draw calls and set passes of the last frame; the panel adds what
+limits the frame rate: CPU update, CPU render submit, GPU, vsync or the FPS cap). Games keep the
+draw and set-pass numbers low (shared materials, instancing, atlases: `AGENTS.md` "How to make a
+game" step 8) and take their memory from three preallocated arenas - frame, level, game - sized
+in game.json `"memory"` (step 7, `docs/agents/arena.md`); nothing allocates per frame. `--profile build/trace.json` writes a Chrome trace (open it in
 <https://ui.perfetto.dev>) and `build/trace.json.txt`, a text summary. Measure with
 `--vsync off`:
 

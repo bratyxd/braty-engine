@@ -202,7 +202,7 @@ static void br_particle_draw(br_engine *e, const br_render_callback_info *info, 
     if (pipeline == NULL || binding.texture == NULL || binding.sampler == NULL) {
         return;
     }
-    SDL_BindGPUGraphicsPipeline(info->pass, pipeline);
+    br_gpu_bind_pipeline(br_engine_gpu(e), info->pass, pipeline);
     SDL_SetGPUScissor(info->pass, &info->scissor);
     if (desc.stencil_test) {
         SDL_SetGPUStencilReference(info->pass, info->stencil_ref);
@@ -225,7 +225,7 @@ static void br_particle_draw(br_engine *e, const br_render_callback_info *info, 
     }
     SDL_BindGPUVertexBuffers(info->pass, 0, vbs, vb_count);
     SDL_BindGPUFragmentSamplers(info->pass, 0, &binding, 1);
-    SDL_DrawGPUPrimitives(info->pass, 6, store->draw_count, 0, 0);
+    br_gpu_draw(br_engine_gpu(e), info->pass, 6, store->draw_count, 0, 0);
 }
 
 /* ---- collect (PRE_RENDER) */

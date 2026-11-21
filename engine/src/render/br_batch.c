@@ -494,7 +494,7 @@ static bool br_replay_prepare(br_replay *rp, br_pipeline_desc *desc, const br_dr
         return false;
     }
     if (pipeline != rp->bound) {
-        SDL_BindGPUGraphicsPipeline(rp->pass, pipeline);
+        br_gpu_bind_pipeline(br_engine_gpu(rp->e), rp->pass, pipeline);
         rp->bound = pipeline;
         br_profiler_count(rp->e, BR_PROFILER_PIPELINE_SWITCHES, 1);
     }
@@ -546,7 +546,7 @@ static void br_replay_batch(br_replay *rp, const br_draw_cmd *c)
     SDL_GPUBufferBinding ib = { br_gpu_transient_index_buffer(rp->g), r->index_base };
     SDL_BindGPUIndexBuffer(rp->pass, &ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
     SDL_BindGPUFragmentSamplers(rp->pass, 0, bindings, BR_RENDER_MAX_TEXTURES);
-    SDL_DrawGPUIndexedPrimitives(rp->pass, c->index_count, 1, c->first_index, 0, 0);
+    br_gpu_draw_indexed(br_engine_gpu(rp->e), rp->pass, c->index_count, 1, c->first_index, 0, 0);
 }
 
 static void br_replay_custom(br_replay *rp, const br_draw_cmd *c)
@@ -587,9 +587,9 @@ static void br_replay_custom(br_replay *rp, const br_draw_cmd *c)
     if (cc->indexed) {
         SDL_GPUBufferBinding ib = { br_gpu_transient_index_buffer(rp->g), cc->index_offset };
         SDL_BindGPUIndexBuffer(rp->pass, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-        SDL_DrawGPUIndexedPrimitives(rp->pass, cc->index_count, cc->instance_count, 0, 0, 0);
+        br_gpu_draw_indexed(br_engine_gpu(rp->e), rp->pass, cc->index_count, cc->instance_count, 0, 0, 0);
     } else {
-        SDL_DrawGPUPrimitives(rp->pass, cc->vertex_count, cc->instance_count, 0, 0);
+        br_gpu_draw(br_engine_gpu(rp->e), rp->pass, cc->vertex_count, cc->instance_count, 0, 0);
     }
 }
 

@@ -103,10 +103,58 @@ bool br_gpu_set_present_mode(br_gpu *g, SDL_GPUPresentMode mode)
     return true;
 }
 
+/* ---- draw statistics */
+
+void br_gpu_bind_pipeline(br_gpu *g, SDL_GPURenderPass *pass, SDL_GPUGraphicsPipeline *pipeline)
+{
+    SDL_BindGPUGraphicsPipeline(pass, pipeline);
+    /* ponytail: passes are told apart by pointer; SDL may reuse one for the next pass, which
+     * then misses one count. Reset bound_pass where passes begin if the number must be exact. */
+    if (g != NULL && (pass != g->bound_pass || pipeline != g->bound_pipeline)) {
+        g->bound_pass = pass;
+        g->bound_pipeline = pipeline;
+        g->set_passes++;
+    }
+}
+
+void br_gpu_draw(br_gpu *g, SDL_GPURenderPass *pass, Uint32 vertex_count, Uint32 instance_count, Uint32 first_vertex,
+                 Uint32 first_instance)
+{
+    SDL_DrawGPUPrimitives(pass, vertex_count, instance_count, first_vertex, first_instance);
+    if (g != NULL) {
+        g->draw_calls++;
+    }
+}
+
+void br_gpu_draw_indexed(br_gpu *g, SDL_GPURenderPass *pass, Uint32 index_count, Uint32 instance_count,
+                         Uint32 first_index, Sint32 vertex_offset, Uint32 first_instance)
+{
+    SDL_DrawGPUIndexedPrimitives(pass, index_count, instance_count, first_index, vertex_offset, first_instance);
+    if (g != NULL) {
+        g->draw_calls++;
+    }
+}
+
+uint32_t br_gpu_frame_draw_calls(const br_gpu *g)
+{
+    return g != NULL ? g->last_draw_calls : 0;
+}
+
+uint32_t br_gpu_frame_set_passes(const br_gpu *g)
+{
+    return g != NULL ? g->last_set_passes : 0;
+}
+
 /* ---- frame */
 
 bool br_gpu_frame_begin(br_gpu *g)
 {
+    g->last_draw_calls = g->draw_calls;
+    g->last_set_passes = g->set_passes;
+    g->draw_calls = 0;
+    g->set_passes = 0;
+    g->bound_pass = NULL;
+    g->bound_pipeline = NULL;
     /* Two command buffers per frame: `present` only blits to the swapchain, `g->cmd` does all
      * the rendering. A buffer that touches the swapchain finishes only when the display hands
      * the image over (vsync), so the profiler's fence must be on one that does not. */
