@@ -558,6 +558,8 @@ way (54, 62); the rest are open.
     Direct3D 12 on a real GPU, Vulkan and lavapipe do not show. Likely a render target read before
     it is written (a real GPU happens to hide it) or a WARP limit. The CI golden step skips this
     one case on Windows (`BRATY_GOLDEN_SKIP`); Linux still checks it.
+    Possibly the same as the PBR NaN fixed in v0.1.2 (a cosine a rounding error above 1 gave
+    `pow(negative)` = one NaN pixel, which bloom spread into a black square); not re-checked on WARP.
 
 65. **open - the `sprites` golden is not repeatable on CI.** Two runs of the same commit on the
     GitHub runners (WARP and lavapipe) differ in 3 to 6 pixels (worst channel difference 28 to

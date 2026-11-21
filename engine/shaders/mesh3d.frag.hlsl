@@ -144,7 +144,8 @@ float g_smith(float n_dot_v, float n_dot_l, float roughness)
 
 float3 f_schlick(float cos_theta, float3 f0)
 {
-    return f0 + (1.0 - f0) * pow(1.0 - cos_theta, 5.0);
+    // saturate: a cosine a rounding error above 1 would make pow(negative) = NaN
+    return f0 + (1.0 - f0) * pow(saturate(1.0 - cos_theta), 5.0);
 }
 
 float4 main(Mesh3dVaryings input) : SV_Target0
@@ -198,7 +199,7 @@ float4 main(Mesh3dVaryings input) : SV_Target0
         metallic *= mr.b;
     }
     roughness = clamp(roughness, 0.04, 1.0);
-    float n_dot_v = max(dot(n, v), 1e-4);
+    float n_dot_v = clamp(dot(n, v), 1e-4, 1.0); // <= 1: pow(1 - n_dot_v) below must not see a negative base
     float3 ambient = light3d_ambient(n);
     float3 color = float3(0.0, 0.0, 0.0);
     int count = (int)u_counts.x;
