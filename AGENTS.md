@@ -177,6 +177,17 @@ Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
   `br_log_error(...)` with the reason. Never abort on bad user data.
 - Only SDL3 and C standard math/string functions. No `<windows.h>`, no POSIX, no `fopen`
   (use `br_file_*`). No platform `#ifdef`s.
+- **No heap allocation in the hot path** (anything that runs every frame: systems, collect,
+  render, input, audio mixing). Allocate in `br_<module>_register`, on create / load, or when a
+  buffer first grows, then reuse it: `br_array` that keeps its capacity, pools, the frame arena
+  (`br_frame_alloc`, `docs/agents/arena.md`), fixed `char[N]` buffers for formatted text. The
+  same rule holds for games: no `br_alloc`, `br_strdup`, node / geometry / material / texture
+  create or destroy per frame; create at setup, show / hide and reuse after. Check it with
+  `br_memory_get_stats`: `total_allocations` must not rise over a run of steady frames.
+  Known exceptions (event-driven, not per frame; keep them off the per-frame path):
+  `br_text_set_text` with a new string copies it and lays the text out again (free when the text
+  is unchanged), and geometry has no in-place update, so a changed mesh is `br_geometry3d_destroy` +
+  `br_geometry3d_create` (CPU copy + new GPU buffers; spread rebuilds over frames).
 - Shaders are compiled offline (`tools/compile_shaders.py`); the runtime never compiles source.
 - Comments explain why, briefly. Every public function has a one-line doc comment.
 - Deliberate shortcuts get a `// ponytail:` comment naming the limit and the upgrade path.
