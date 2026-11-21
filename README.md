@@ -238,7 +238,7 @@ SVG file import beyond path data, GPU compute culling.
 - **Golden images are Direct3D 12 images:** Vulkan and other GPUs differ by a few pixels and
   would need goldens of their own (`docs/TESTING.md`).
 - **GPU time is an estimate:** SDL_GPU has no timer queries; the profiler polls fences (~0.5 ms
-  resolution on Windows) and with vsync on the number includes display waits.
+  resolution on Windows). The vsync wait is not counted.
 - **Real controllers untested:** gamepad families, glyphs and rebinding are verified with SDL
   virtual pads only; rumble, LEDs and touchpads on real hardware are not (`docs/agents/input.md`).
 - **Runtime window resizing** is handled by the cameras (verified by starting at 16:9, 21:9 and

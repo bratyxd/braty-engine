@@ -57,8 +57,6 @@ static void br_prof_header(br_engine *e, mu_Context *ui)
     char gpu[64];
     if (sum.gpu_ms <= 0.0f) {
         SDL_snprintf(gpu, sizeof(gpu), "GPU n/a");
-    } else if (sum.gpu_includes_vsync) {
-        SDL_snprintf(gpu, sizeof(gpu), "GPU <= %.2f ms (est., incl. vsync)", (double)sum.gpu_ms);
     } else {
         SDL_snprintf(gpu, sizeof(gpu), "GPU %.2f ms (est.)", (double)sum.gpu_ms);
     }
@@ -509,7 +507,8 @@ void br_debug_profiler_hud(br_engine *e, br_debug_state *s)
         ww = 1280;
         wh = 720;
     }
-    mu_Rect where = mu_rect(ww - 350, wh - 62, 340, 52);
+    /* one line: frame rate, CPU and GPU time. Everything else is in the panel (F2). */
+    mu_Rect where = mu_rect(ww - 280, wh - 38, 270, 28);
     int opt = MU_OPT_NOTITLE | MU_OPT_NORESIZE | MU_OPT_NOSCROLL | MU_OPT_NOCLOSE;
     if (!mu_begin_window_ex(ui, "profiler hud", where, opt)) {
         return;
@@ -519,18 +518,16 @@ void br_debug_profiler_hud(br_engine *e, br_debug_state *s)
     mu_layout_row(ui, 1, br_prof_full_row, 0);
     if (br_app_deterministic(e)) {
         mu_label(ui, "FPS 60.0   CPU 4.00 ms   GPU 2.00 ms");
-        mu_label(ui, "vsync limited");
     } else {
         br_profiler_summary_info sum;
         br_profiler_get_summary(e, &sum);
         char gpu[32];
         if (sum.gpu_ms > 0.0f) {
-            SDL_snprintf(gpu, sizeof(gpu), "%s%.2f ms", sum.gpu_includes_vsync ? "<=" : "", (double)sum.gpu_ms);
+            SDL_snprintf(gpu, sizeof(gpu), "%.2f ms", (double)sum.gpu_ms);
         } else {
             SDL_snprintf(gpu, sizeof(gpu), "n/a");
         }
         br_debug_labelf(ui, "FPS %.1f   CPU %.2f ms   GPU %s", (double)sum.fps, (double)sum.cpu_ms, gpu);
-        br_debug_labelf(ui, "%s   %s", br_profiler_verdict_name(sum.verdict), sum.top[0]);
     }
     mu_end_window(ui);
 }

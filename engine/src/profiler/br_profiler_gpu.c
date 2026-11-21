@@ -1,11 +1,12 @@
-/* br_profiler_gpu: the GPU frame-time estimate. SDL_GPU has no timer queries, so every frame
- * is submitted with a fence and a small thread polls the pending fences (SDL_QueryGPUFence never
- * blocks and takes no SDL lock on D3D12 or Vulkan); the moment a fence is first seen signalled
- * is the frame's GPU completion time. GPU time of frame i =
- *     done(i) - max(submit(i), done(i - 1))
- * i.e. from when the GPU could start it (submitted, and the previous frame finished) to done.
- * Limits (docs/PROFILING.md): poll resolution ~0.1-1 ms, and with vsync on the command buffer
- * may wait for a swapchain image, so the estimate then includes display waits. */
+/* br_profiler_gpu: the GPU frame time. SDL_GPU has no timer queries, so a frame is two command
+ * buffers, each submitted with a fence: the rendering, then the swapchain blit + present
+ * (br_gpu_frame_end). A small thread polls the pending fences (SDL_QueryGPUFence never blocks
+ * and takes no SDL lock on D3D12 or Vulkan); the moment a fence is first seen signalled is that
+ * buffer's completion time. The queue runs buffers in order and a present buffer finishes only
+ * when the display takes the image (the vsync wait), so GPU time of frame i =
+ *     render_done(i) - max(submit(i), present_done(i - 1))
+ * i.e. from when the GPU could start the rendering to when it finished it: no display wait.
+ * Limit (docs/PROFILING.md): poll resolution ~0.1-1 ms. */
 #include "profiler/br_profiler_internal.h"
 #include "gpu/br_gpu_internal.h"
 
@@ -139,20 +140,25 @@ void br_profiler_gpu_frame_end(br_engine *e, br_profiler_frame *f)
     f->submit_ns = g->stats.submit_ns;
     SDL_zero(g->stats);
     SDL_GPUFence *fence = g->frame_fence;
+    SDL_GPUFence *present = g->present_fence;
     g->frame_fence = NULL;
+    g->present_fence = NULL;
     if (p->fence_thread == NULL) {
         if (fence != NULL) {
             SDL_ReleaseGPUFence(br_gpu_device(g), fence);
         }
+        if (present != NULL) {
+            SDL_ReleaseGPUFence(br_gpu_device(g), present);
+        }
         return;
     }
     SDL_LockMutex(p->fence_lock);
-    /* file finished frames in submission order (one queue: they finish in that order) */
+    /* file finished buffers in submission order (one queue: they finish in that order) */
     while (p->fence_count > 0 && p->fences[0].done_ns != 0) {
         br_profiler_fence done = p->fences[0];
         uint64_t start = done.submit_ns > p->last_gpu_done_ns ? done.submit_ns : p->last_gpu_done_ns;
         p->last_gpu_done_ns = done.done_ns;
-        br_profiler_frame *rec = br_profiler_frame_numbered(p, done.frame);
+        br_profiler_frame *rec = done.present ? NULL : br_profiler_frame_numbered(p, done.frame);
         if (rec != NULL) {
             rec->gpu_start_ns = start;
             rec->gpu_ns = done.done_ns > start ? done.done_ns - start : 1; /* 0 means unknown */
@@ -161,16 +167,25 @@ void br_profiler_gpu_frame_end(br_engine *e, br_profiler_frame *f)
         SDL_memmove(&p->fences[0], &p->fences[1], sizeof(p->fences[0]) * (p->fence_count - 1));
         p->fence_count -= 1;
     }
-    if (fence != NULL) {
-        if (p->fence_count < BR_PROFILER_FENCES && f->submit_ns != 0) {
-            br_profiler_fence *slot = &p->fences[p->fence_count++];
-            slot->fence = fence;
-            slot->frame = f->number;
-            slot->submit_ns = f->submit_ns;
-            slot->done_ns = 0;
-            SDL_SignalCondition(p->fence_wake);
-        } else {
-            SDL_ReleaseGPUFence(p->fence_device, fence); /* GPU far behind: skip this frame */
+    /* both or neither: a present without its rendering would end the wrong frame's wait */
+    if (fence != NULL && present != NULL && p->fence_count + 2 <= BR_PROFILER_FENCES && f->submit_ns != 0) {
+        br_profiler_fence *slot = &p->fences[p->fence_count];
+        slot[0].fence = fence;
+        slot[0].frame = f->number;
+        slot[0].present = false;
+        slot[0].submit_ns = f->submit_ns;
+        slot[0].done_ns = 0;
+        slot[1] = slot[0];
+        slot[1].fence = present;
+        slot[1].present = true;
+        p->fence_count += 2;
+        SDL_SignalCondition(p->fence_wake);
+    } else { /* GPU far behind (or a failed submit): skip this frame */
+        if (fence != NULL) {
+            SDL_ReleaseGPUFence(p->fence_device, fence);
+        }
+        if (present != NULL) {
+            SDL_ReleaseGPUFence(p->fence_device, present);
         }
     }
     SDL_UnlockMutex(p->fence_lock);

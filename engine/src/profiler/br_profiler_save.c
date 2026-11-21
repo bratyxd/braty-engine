@@ -156,9 +156,8 @@ bool br_profiler_summary(br_engine *e, uint32_t frames, char *out, size_t out_si
     br_profiler_appendf(out, out_size, "waits ms: acquire %.3f  present %.3f  fps cap %.3f\n", st->acquire_sum / n,
                         st->present_sum / n, st->pace_sum / n);
     if (st->gpu_n > 0) {
-        br_profiler_appendf(out, out_size, "gpu ms:   avg %.3f (estimated from fences over %u frames%s)\n",
-                            st->gpu_sum / st->gpu_n, st->gpu_n,
-                            p->summary.gpu_includes_vsync ? "; vsync on: includes display waits" : "");
+        br_profiler_appendf(out, out_size, "gpu ms:   avg %.3f (estimated from fences over %u frames)\n",
+                            st->gpu_sum / st->gpu_n, st->gpu_n);
     } else {
         br_profiler_appendf(out, out_size, "gpu ms:   unknown (no GPU or no fence finished)\n");
     }

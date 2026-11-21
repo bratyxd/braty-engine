@@ -135,8 +135,7 @@ typedef struct br_profiler_summary_info {
     float    fps;
     float    frame_ms;          /* interval */
     float    cpu_ms;            /* frame time minus waits (acquire, present, cap) */
-    float    gpu_ms;            /* fence estimate, 0 = unknown */
-    bool     gpu_includes_vsync;/* vsync on: the fence also waits for the display, an upper bound */
+    float    gpu_ms;            /* GPU time of the frame's rendering (fences; no display wait), 0 = unknown */
     br_profiler_verdict_input input;
     br_profiler_verdict verdict;/* smoothed: changes after holding for 15 frames */
     char     top[3][48];        /* the three scopes with most self time ("" if fewer) */

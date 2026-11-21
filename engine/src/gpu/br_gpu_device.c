@@ -60,6 +60,9 @@ void br_gpu_destroy(br_gpu *g)
     if (g->frame_fence != NULL) {
         SDL_ReleaseGPUFence(g->device, g->frame_fence);
     }
+    if (g->present_fence != NULL) {
+        SDL_ReleaseGPUFence(g->device, g->present_fence);
+    }
     br_gpu_render_target_destroy(g, g->frame_target);
     br_gpu_release_transient(g);
     br_gpu_release_caches(g);
@@ -104,6 +107,9 @@ bool br_gpu_set_present_mode(br_gpu *g, SDL_GPUPresentMode mode)
 
 bool br_gpu_frame_begin(br_gpu *g)
 {
+    /* Two command buffers per frame: `present` only blits to the swapchain, `g->cmd` does all
+     * the rendering. A buffer that touches the swapchain finishes only when the display hands
+     * the image over (vsync), so the profiler's fence must be on one that does not. */
     SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(g->device);
     if (cmd == NULL) {
         br_log_error("cannot acquire command buffer: %s", SDL_GetError());
@@ -134,7 +140,13 @@ bool br_gpu_frame_begin(br_gpu *g)
         SDL_SubmitGPUCommandBuffer(cmd);
         return false;
     }
-    g->cmd = cmd;
+    g->cmd = SDL_AcquireGPUCommandBuffer(g->device);
+    if (g->cmd == NULL) {
+        br_log_error("cannot acquire command buffer: %s", SDL_GetError());
+        SDL_SubmitGPUCommandBuffer(cmd);
+        return false;
+    }
+    g->present_cmd = cmd;
     g->swapchain = swapchain;
     g->frame_cleared = false;
     return true;
@@ -151,6 +163,22 @@ void br_gpu_frame_end(br_gpu *g)
             SDL_EndGPURenderPass(pass);
         }
     }
+    g->stats.submit_ns = SDL_GetTicksNS();
+    bool submitted;
+    if (g->want_fence) {
+        /* the profiler polls these fences to measure GPU time (nobody else waits on them) */
+        if (g->frame_fence != NULL) {
+            SDL_ReleaseGPUFence(g->device, g->frame_fence);
+        }
+        if (g->present_fence != NULL) {
+            SDL_ReleaseGPUFence(g->device, g->present_fence);
+            g->present_fence = NULL;
+        }
+        g->frame_fence = SDL_SubmitGPUCommandBufferAndAcquireFence(g->cmd);
+        submitted = g->frame_fence != NULL;
+    } else {
+        submitted = SDL_SubmitGPUCommandBuffer(g->cmd);
+    }
     br_render_target *rt = g->frame_target;
     SDL_GPUBlitInfo blit;
     SDL_zero(blit);
@@ -162,23 +190,18 @@ void br_gpu_frame_end(br_gpu *g)
     blit.destination.h = rt->height;
     blit.load_op = SDL_GPU_LOADOP_DONT_CARE;
     blit.filter = SDL_GPU_FILTER_NEAREST;
-    SDL_BlitGPUTexture(g->cmd, &blit);
-    g->stats.submit_ns = SDL_GetTicksNS();
-    bool submitted;
+    SDL_BlitGPUTexture(g->present_cmd, &blit);
     if (g->want_fence) {
-        /* the profiler polls this fence to estimate GPU time (nobody else waits on it) */
-        if (g->frame_fence != NULL) {
-            SDL_ReleaseGPUFence(g->device, g->frame_fence);
-        }
-        g->frame_fence = SDL_SubmitGPUCommandBufferAndAcquireFence(g->cmd);
-        submitted = g->frame_fence != NULL;
+        g->present_fence = SDL_SubmitGPUCommandBufferAndAcquireFence(g->present_cmd);
+        submitted = g->present_fence != NULL && submitted;
     } else {
-        submitted = SDL_SubmitGPUCommandBuffer(g->cmd);
+        submitted = SDL_SubmitGPUCommandBuffer(g->present_cmd) && submitted;
     }
     if (!submitted) {
         br_log_error("cannot submit frame: %s", SDL_GetError());
     }
     g->cmd = NULL;
+    g->present_cmd = NULL;
     g->swapchain = NULL;
     g->frames_presented += 1;
 }

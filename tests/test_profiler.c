@@ -47,8 +47,12 @@ static void test_verdict_rule(void)
     in = input(16.7f, 2.0f, 1.0f); /* vsync at 60 Hz with time to spare */
     in.acquire_ms = 13.0f;
     in.refresh_ms = 16.67f;
-    in.gpu_ms = 16.0f; /* inflated by display waits: ignored under vsync */
+    in.gpu_ms = 3.0f;
     BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_VSYNC);
+    in = input(33.3f, 2.0f, 1.0f); /* vsync, and the GPU misses the refresh: its time counts there too */
+    in.refresh_ms = 16.67f;
+    in.gpu_ms = 25.0f;
+    BR_CHECK(br_profiler_verdict_rule(&in) == BR_PROFILER_VERDICT_GPU);
     in = input(33.3f, 20.0f, 1.0f); /* vsync, but the CPU misses the refresh */
     in.acquire_ms = 12.0f;
     in.refresh_ms = 16.67f;
@@ -569,6 +573,31 @@ static void test_fence_thread_on_demand(void)
     br_engine_destroy(e);
 }
 
+/* With vsync on, an empty frame's GPU time is its rendering, not the wait for the display. */
+static void test_gpu_time_excludes_vsync(void)
+{
+    br_engine *e = br_engine_create("test_profiler_vsync", NULL);
+    br_app_set_vsync(e, BR_VSYNC_ON);
+    if (!br_engine_open_window(e, 64, 64, NULL)) {
+        printf("skipped the vsync GPU-time test: no window / GPU\n");
+        br_engine_destroy(e);
+        return;
+    }
+    br_profiler_set_hud(e, true);
+    for (int i = 0; i < 40; i++) {
+        br_engine_step(e, 1.0f / 60.0f);
+    }
+    br_profiler_summary_info sum;
+    br_profiler_get_summary(e, &sum);
+    printf("vsync on: frame %.2f ms, gpu %.2f ms\n", (double)sum.frame_ms, (double)sum.gpu_ms);
+    if (sum.frame_ms < 8.0f || sum.gpu_ms <= 0.0f) {
+        printf("skipped the vsync GPU-time check: the display does not hold frames here\n");
+    } else {
+        BR_CHECK(sum.gpu_ms < 0.5f * sum.frame_ms);
+    }
+    br_engine_destroy(e);
+}
+
 #endif
 
 #ifndef BRATY_PROFILER_OFF
@@ -610,6 +639,7 @@ int main(void)
     test_overlay_key_release();
 #ifndef BRATY_PROFILER_OFF
     test_fence_thread_on_demand();
+    test_gpu_time_excludes_vsync();
 #endif
     SDL_Quit();
     return br_test_finish();

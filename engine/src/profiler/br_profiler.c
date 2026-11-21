@@ -486,8 +486,7 @@ static void br_profiler_update_summary(br_engine *e, br_profiler_state *p)
     }
     in->gpu_ms = gpu_n > 0 ? (float)(gpu_sum / gpu_n / 1e6) : 0.0f;
     in->cap_ms = e->ticker.max_fps > 0.0f ? 1000.0f / e->ticker.max_fps : 0.0f;
-    out->gpu_includes_vsync = br_profiler_waits_for_display(e);
-    if (out->gpu_includes_vsync) {
+    if (br_profiler_waits_for_display(e)) {
         const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(e->window));
         in->refresh_ms = mode != NULL && mode->refresh_rate > 0.0f ? 1000.0f / mode->refresh_rate : 0.0f;
     }
@@ -592,10 +591,9 @@ br_profiler_verdict br_profiler_verdict_rule(const br_profiler_verdict_input *in
     if (in->refresh_ms > 0.0f && br_profiler_near(in->interval_ms, in->refresh_ms) && cpu < 0.9f * in->refresh_ms) {
         return BR_PROFILER_VERDICT_VSYNC;
     }
-    /* 3. GPU: the fence estimate (only without vsync, where it is not inflated by display waits)
-     * exceeds the CPU's work by more than its resolution, or the CPU spends more time waiting
-     * for the GPU than working */
-    if (in->refresh_ms <= 0.0f && in->gpu_ms > cpu + BR_PROFILER_GPU_RESOLUTION_MS) {
+    /* 3. GPU: the fence estimate exceeds the CPU's work by more than its resolution, or the CPU
+     * spends more time waiting for the GPU than working */
+    if (in->gpu_ms > cpu + BR_PROFILER_GPU_RESOLUTION_MS) {
         return BR_PROFILER_VERDICT_GPU;
     }
     if (waits > cpu) {

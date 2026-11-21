@@ -11,7 +11,7 @@
 #define BR_PROFILER_MAX_PATHS (BR_PROFILER_MAX_NAMES * 2)
 #define BR_PROFILER_NAME_HASH 1024  /* pointer -> name id, open addressing */
 #define BR_PROFILER_PATH_HASH 2048  /* (parent path, name) -> path id */
-#define BR_PROFILER_FENCES 8        /* frames in flight tracked by the fence thread */
+#define BR_PROFILER_FENCES 16       /* fences in flight tracked by the poll thread (two per frame) */
 #define BR_PROFILER_MAX_BUDGETS 16
 
 /* One scope of one frame. Times are ns since the frame's start. */
@@ -37,8 +37,8 @@ typedef struct br_profiler_frame {
     uint64_t end_ns;
     uint64_t interval_ns;  /* to the next frame's start, 0 until known */
     uint64_t submit_ns;    /* when the frame's command buffer was submitted, 0 = no GPU frame */
-    uint64_t gpu_start_ns; /* estimate: max(submit, previous fence done) */
-    uint64_t gpu_ns;       /* estimate: fence done - gpu_start, 0 = unknown */
+    uint64_t gpu_start_ns; /* max(submit, previous frame's present done) */
+    uint64_t gpu_ns;       /* rendering fence done - gpu_start, 0 = unknown */
     uint64_t update_ns, render_ns, acquire_ns, present_ns, pace_ns;
     uint32_t scope_count;
     uint32_t dropped;
@@ -49,6 +49,7 @@ typedef struct br_profiler_frame {
 typedef struct br_profiler_fence {
     SDL_GPUFence *fence;
     uint64_t      frame;     /* frame number */
+    bool          present;   /* the swapchain blit + present: its end is the next frame's earliest start */
     uint64_t      submit_ns;
     uint64_t      done_ns;   /* written by the poll thread, 0 = not signalled yet */
 } br_profiler_fence;

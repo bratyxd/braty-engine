@@ -56,6 +56,7 @@ struct br_gpu {
 
     /* current frame */
     SDL_GPUCommandBuffer *cmd;            /* non-NULL only between frame_begin and frame_end */
+    SDL_GPUCommandBuffer *present_cmd;    /* holds the swapchain texture; only the final blit */
     SDL_GPUTexture       *swapchain;
     br_render_target     *frame_target;
     bool                  frame_cleared;
@@ -65,7 +66,8 @@ struct br_gpu {
     /* profiler */
     br_gpu_frame_stats stats;
     bool               want_fence;   /* submit frames with a fence (the profiler's GPU estimate) */
-    SDL_GPUFence      *frame_fence;  /* the last frame's fence until the profiler takes it */
+    SDL_GPUFence      *frame_fence;  /* the last frame's rendering fence until the profiler takes it */
+    SDL_GPUFence      *present_fence; /* the last frame's swapchain blit + present, same owner */
 };
 
 /* Clears the transient streams. Called by the engine before any system of a frame runs. */

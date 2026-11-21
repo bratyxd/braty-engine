@@ -48,8 +48,9 @@ Command line (any app): `--profiler` (panel open), `--profiler-hud`, `--profile 
 - Scopes are main-thread only (others are ignored); a missing `br_profile_end` is closed at
   frame end with one warning, an extra one is ignored with one warning.
 - Names are cached by pointer: pass literals, or `br_profiler_intern(e, buf)` for built names.
-- The GPU number is an estimate (fence polling, ~0.5 ms resolution on Windows). With vsync on it
-  also contains display waits and is shown as `GPU <= x ms`; measure GPU cost with `--vsync off`.
+- The GPU number is an estimate (fence polling, ~0.5 ms resolution on Windows) of the time the
+  GPU spent rendering the frame. The wait for the display is not in it, with vsync on or off: the
+  swapchain blit + present is a second command buffer with its own fence (`br_gpu_frame_end`).
   The fence thread runs only while the panel / HUD / `--profile` / a play-test `profile` uses it
   (`br_profiler_gpu_estimating`); shipped games pay nothing.
 - F2 is the debug module's key: `br_debug_set_profiler_key`, or `br_debug_set_keys_enabled(e,

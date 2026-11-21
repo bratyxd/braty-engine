@@ -74,29 +74,35 @@ path, self and total ms and calls of the selected frame, and min / avg / max of 
 
 ### The GPU estimate
 
-SDL_GPU has no timer queries, so GPU time is measured from what is portable: every frame is
-submitted with `SDL_SubmitGPUCommandBufferAndAcquireFence`, and a small thread polls the pending
-fences with `SDL_QueryGPUFence` (non-blocking, no SDL lock on D3D12 or Vulkan; the game never
-waits for it). The first moment a fence is seen signalled is that frame's completion, `done(i)`.
-The GPU works through frames in submission order, so a frame can start when it was submitted
-**and** the previous frame was finished:
+SDL_GPU has no timer queries, so GPU time is measured from what is portable. A frame is two
+command buffers: the rendering (into the frame target), then the blit to the swapchain, which
+presents. Both are submitted with `SDL_SubmitGPUCommandBufferAndAcquireFence`, and a small thread
+polls the pending fences with `SDL_QueryGPUFence` (non-blocking, no SDL lock on D3D12 or Vulkan;
+the game never waits for it). The first moment a fence is seen signalled is that buffer's
+completion. The GPU queue works through buffers in submission order, and a present buffer
+finishes only when the display takes the image (with vsync: at the next refresh). So a frame's
+rendering can start when it was submitted **and** the previous frame's present was finished:
 
 ```
-gpu(i) = done(i) - max(submit(i), done(i - 1))
+gpu(i) = render_done(i) - max(submit(i), present_done(i - 1))
 ```
+
+That is the time the GPU spent on the frame; waiting for the display is not in it.
 
 What this number is, case by case:
 
-- **GPU bound, vsync off:** frames queue up, `start = done(i - 1)`, and `gpu(i)` is the time the
+- **GPU bound, vsync off:** frames queue up, `start = present_done(i - 1)`, and `gpu(i)` is the time the
   GPU spent on frame i. It matches the frame interval (`--gpu-load 3000`: 36.25 ms GPU, 36.21 ms
   frame interval on D3D12; 31.05 / 31.05 ms on Vulkan).
 - **CPU bound, vsync off:** the GPU idles between frames, `start = submit(i)`, and `gpu(i)` is
   submit-to-done, the GPU work plus the queue latency. The poll thread keeps watching while the
   main thread is busy, so a slow CPU frame does not inflate it (`--cpu-load 25`: 1.06 ms GPU in a
   26.4 ms frame).
-- **Vsync on:** the command buffer can wait for a swapchain image before it runs (Vulkan does;
-  D3D12 waits in acquire), so the estimate includes display waits. It is an upper bound and shown
-  as `GPU <= x ms (est., incl. vsync)`; the verdict does not use it then.
+- **Vsync on:** the frame's rendering queues behind the previous frame's present, which ends at
+  the display refresh; counting from there leaves the rendering alone (`--gpu-load 300`: 5.1 ms
+  with vsync on, 3.8 ms off on D3D12; 4.5 / 3.7 ms on Vulkan; a single fence over the whole frame
+  read 16.8 ms for all of them). Slightly more than with vsync off is real: an idle GPU clocks
+  down. A frame cheaper than the poll period can read near 0.
 - **Resolution:** the thread polls every 0.1 ms, which Windows rounds to ~0.5 ms
   (`test_profiler` prints the measured period: median 500 us). A late "done" also delays the
   next frame's start, so at thousands of FPS the estimate creeps up to the frame interval. The
@@ -123,8 +129,8 @@ Computed every frame from the averages of the last 30 frames
 2. **vsync limited** if vsync waits for the display (on / adaptive), `near(frame, refresh
    period)` and `cpu < 0.9 x refresh period`: the game runs at the display rate with time to
    spare.
-3. **GPU bound** if (vsync off and) `gpu > cpu + 1 ms`, or `waits > cpu` (the CPU spends more
-   time waiting for the GPU than working; this also covers vsync on and missing fence data).
+3. **GPU bound** if `gpu > cpu + 1 ms`, or `waits > cpu` (the CPU spends more time waiting for
+   the GPU than working; this also covers missing fence data).
 4. Otherwise **CPU bound (update)** if `update >= render`, else **CPU bound (render submit)**.
 
 The shown verdict changes only after the new one held for 15 consecutive frames (no flicker);
@@ -150,7 +156,7 @@ Windows 11, RTX 3060 Ti, 1280 x 720, `profiler_demo --vsync off --frames 300`, p
 `--draw-load` is ~12 us (D3D12) / ~31 us (Vulkan) per draw call in this Debug build: the
 validation layers dominate; Release builds are far cheaper per draw. With vsync on, this machine's
 session presented at ~4 FPS (the window was not on a visible desktop); the profiler then reads
-"GPU bound" with `GPU <= 255 ms (incl. vsync)`, i.e. "the CPU waits on the GPU/display". Vsync
+"GPU bound" (`waits > cpu`), i.e. "the CPU waits on the GPU/display". Vsync
 limited is covered by the unit test, not by this table.
 
 ## The panel (F2)

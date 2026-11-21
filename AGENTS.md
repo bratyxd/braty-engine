@@ -75,8 +75,9 @@ Everything, with the Python class: `docs/PLAYTESTING.md`.
 
 ## Profiling
 
-`--profiler-hud` shows FPS, CPU ms, GPU ms (estimated from fences) and the verdict (CPU update /
-CPU render submit / GPU / vsync / FPS cap) in a corner; F2 opens the panel; `--profile
+`--profiler-hud` shows one line in a corner: FPS, CPU ms and GPU ms (the GPU's rendering time
+from fences; the vsync wait is not in it). F2 opens the panel, which adds the verdict (CPU update /
+CPU render submit / GPU / vsync / FPS cap), scopes and counters; `--profile
 build/trace.json` writes a Chrome trace + `build/trace.json.txt`. Measure with `--vsync off`,
 outside play-test mode (play-tests are deterministic: the HUD shows placeholder times, but the
 `profile` command's numbers are real):
