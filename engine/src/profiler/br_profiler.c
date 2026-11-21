@@ -19,6 +19,7 @@ static const char *const br_profiler_counter_names[BR_PROFILER_COUNTER_COUNT] = 
     "nodes drawn",      "nodes culled",     "3D nodes",        "3D models",       "audio voices",
     "heap bytes",       "heap allocs",      "assets",          "assets loading",  "animators",
     "tweens",           "particles drawn",  "3D items",        "3D items culled", "3D shadow casters",
+    "3D items occluded",
 };
 
 static const char *const br_profiler_verdict_names[BR_PROFILER_VERDICT_COUNT] = {

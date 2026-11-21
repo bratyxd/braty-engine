@@ -134,6 +134,8 @@ void br_render3d_submit_with_parent(br_render3d_ctx *ctx, const br_draw3d *draw,
     }
     br_vec3 center = br_vec3_scale(br_vec3_add(draw->world_bounds.min, draw->world_bounds.max), 0.5f);
     item.depth = br_item_depth(v, center);
+    item.bounds = draw->world_bounds;
+    item.model = dst[0].model;
     if (passes & BR_PASS3D_SHADOW) {
         v->caster_bounds = br_aabb_union(v->caster_bounds, draw->world_bounds);
     }
@@ -437,6 +439,7 @@ void br_render3d_collect(br_engine *e, br_view3d_state *v)
     }
     br_render3d_sort(&v->opaque, items, true);
     br_render3d_sort(&v->transparent, items, false);
+    br_render3d_occlusion(e, v); /* hidden items leave the camera passes; shadows keep them */
 
     br_frame3d_uniforms *f = &v->frame;
     br_vec4_store(f->camera_position, v->camera_position.x, v->camera_position.y, v->camera_position.z, 1.0f);

@@ -72,6 +72,7 @@ Test: `tests/test_three_d.c`. Example: `examples/view3d_demo.c` (`--camera 0|1`,
 | `br_material3d_default(model)` + `br_material3d_create`, `br_material3d_get` | PBR / Phong / Flat / Toon / custom materials, edit live. |
 | `br_mesh3d_create(e, geo, mat)`, `br_mesh3d_get` (skin + morph slots) | A mesh node. |
 | `br_batched_mesh3d_create`, `_add(e, n, matrix, color)` | Instancing: one draw for N copies. |
+| `br_view3d_set_occlusion_culling(e, view, triangles)` | Occlusion culling budget (default `BR_VIEW3D_OCCLUSION_TRIANGLES`, 0 = off): items hidden behind opaque meshes are not drawn. |
 | `br_light3d_default(kind)` + `br_light3d_create` | Directional (cascaded shadows), point, spot (shadows). |
 | `br_light3d_spot_cone(&light)` | The (cos outer, cos inner) the shader gets: inner == outer (or inner > outer, NaN) becomes a hard edge instead of a division by zero in `smoothstep`. |
 | `br_camera_create_3d` + the `camera.orbit` component (`br_camera_orbit_make`, `br_camera.h`) | Mouse orbit camera. |
@@ -219,6 +220,12 @@ outliers (9-17 ms) from presentation, not from the renderer.
 
 ## Gotchas
 
+- Occlusion culling (`br_occlusion3d.c`) runs on the CPU in collect, after the front-to-back
+  sort: each item's world box is tested against a 192 x 108 depth buffer of the opaque meshes
+  nearer than it. Conservative (an item that can be seen is never dropped), no frame of delay,
+  works headless. It only removes camera draws: shadow casting, animation and game code do not
+  notice. Not occluders: transparent, alpha-masked, custom-shaded, skinned / morphed and
+  instanced items, and meshes over the remaining triangle budget (they are still tested).
 - Instances of a batched mesh are relative to its node; call `br_batched_mesh3d_update` after
   editing them in place (bounds).
 - The default camera sits under the view's root at (0, 2, 8) looking at the origin.

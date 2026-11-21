@@ -196,6 +196,15 @@ Your own code: `br_profile_begin(e, "name")` / `br_profile_end(e)`. `docs/PROFIL
      blend mode, mask, filter or custom shader between two sprites breaks the batch (F2 ->
      Counters shows why batches broke). Order siblings so the same texture and blend mode are
      adjacent; one text style and font per HUD; avoid filters and masks on many small nodes.
+   - **3D occlusion culling is on by default:** an item in the frustum whose box is hidden
+     behind opaque meshes is not drawn (it still casts shadows, animates and simulates; only its
+     draw calls go). It works per draw item, so it helps when the world is made of pieces: many
+     meshes rather than one huge one, tight bounds (a mesh spanning the whole level is never
+     hidden and hides nothing as a box). Occluders are opaque, single-instance, undeformed
+     meshes, nearest first, up to `br_view3d_set_occlusion_culling(e, view, triangles)` triangles
+     per frame (default 20000; 0 = off). `br_view3d_get_stats` -> `items_occluded` and the
+     profiler counter "3D items occluded" show what it removed; the scope `render3d.occlusion`
+     shows what it costs. Views with fewer than 8 camera items skip it.
    - **Both:** hide what is off screen or covered (`visible = false` draws nothing); every extra
      camera, view, render target and post pass is at least one more draw and set pass.
    - Play-tests can hold the line: `{"cmd": "expect", "path": "engine:draw_calls", "op": "<=",

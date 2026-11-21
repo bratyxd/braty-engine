@@ -80,6 +80,7 @@ typedef enum br_profiler_counter {
     BR_PROFILER_ITEMS_3D,          /* 3D draw items in the main passes (opaque + transparent, every view) */
     BR_PROFILER_ITEMS_3D_CULLED,   /* 3D draw items outside the camera frustum */
     BR_PROFILER_SHADOW_CASTERS_3D, /* 3D draw items in the shadow pass */
+    BR_PROFILER_ITEMS_3D_OCCLUDED, /* 3D draw items hidden behind opaque ones (occlusion culling) */
     BR_PROFILER_COUNTER_COUNT
 } br_profiler_counter;
 

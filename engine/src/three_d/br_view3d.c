@@ -259,6 +259,7 @@ static void br_view3d_on_create(br_engine *e, br_node n, void *data)
     v->width = 1.0f;
     v->height = 1.0f;
     v->msaa = 1;
+    v->occlusion_triangles = BR_VIEW3D_OCCLUSION_TRIANGLES;
     v->background = br_color_make(0.0f, 0.0f, 0.0f, 0.0f);
     v->sky = br_color_make(0.6f, 0.7f, 0.9f, 1.0f);
     v->ground = br_color_make(0.25f, 0.2f, 0.15f, 1.0f);
@@ -416,6 +417,20 @@ void br_view3d_set_msaa(br_engine *e, br_node view, uint32_t samples)
     }
 }
 
+void br_view3d_set_occlusion_culling(br_engine *e, br_node view, uint32_t triangles)
+{
+    br_view3d_state *v = br_view3d_state_get(e, view);
+    if (v != NULL) {
+        v->occlusion_triangles = triangles;
+    }
+}
+
+uint32_t br_view3d_occlusion_culling(br_engine *e, br_node view)
+{
+    br_view3d_state *v = br_view3d_state_get(e, view);
+    return v != NULL ? v->occlusion_triangles : 0;
+}
+
 void br_view3d_set_background(br_engine *e, br_node view, br_color color)
 {
     br_view3d_state *v = br_view3d_state_get(e, view);
@@ -525,6 +540,7 @@ bool br_view3d_copy_settings(br_engine *e, br_node from, br_node to)
         return false;
     }
     b->msaa = a->msaa;
+    b->occlusion_triangles = a->occlusion_triangles;
     b->resolution = a->resolution;
     b->background = a->background; /* premultiplied both sides: no round trip */
     b->sky = a->sky;

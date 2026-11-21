@@ -102,7 +102,9 @@ readout (FPS, CPU ms, GPU ms, draw calls and set passes of the last frame; the p
 limits the frame rate: CPU update, CPU render submit, GPU, vsync or the FPS cap). Games keep the
 draw and set-pass numbers low (shared materials, instancing, atlases: `AGENTS.md` "How to make a
 game" step 8) and take their memory from three preallocated arenas - frame, level, game - sized
-in game.json `"memory"` (step 7, `docs/agents/arena.md`); nothing allocates per frame. `--profile build/trace.json` writes a Chrome trace (open it in
+in game.json `"memory"` (step 7, `docs/agents/arena.md`); nothing allocates per frame. 3D views cull by frustum and by
+occlusion (items hidden behind opaque meshes are not drawn; on by default, CPU side, see
+`docs/agents/three_d.md`). `--profile build/trace.json` writes a Chrome trace (open it in
 <https://ui.perfetto.dev>) and `build/trace.json.txt`, a text summary. Measure with
 `--vsync off`:
 

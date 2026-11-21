@@ -115,6 +115,8 @@ typedef struct br_item3d {
     uint32_t            morph_count;
     br_draw3d_custom_fn custom_fn;       /* non-NULL = custom item */
     void               *custom_user;
+    br_aabb             bounds;          /* world box of all instances (occlusion test) */
+    br_mat4             model;           /* world matrix of the first instance (occluder) */
 } br_item3d;
 
 /* Fragment uniform block b0 of 3D shaders (mesh3d_common.hlsli). */
@@ -151,6 +153,7 @@ typedef struct br_view3d_state {
     bool      auto_resize;
     float     resolution;          /* 0 = window pixel density */
     uint32_t  msaa;
+    uint32_t  occlusion_triangles; /* occluder triangles rasterised per frame; 0 = occlusion culling off */
     br_color  background;
     br_color  sky;
     br_color  ground;
@@ -229,9 +232,20 @@ typedef struct br_three_d_state {
     uint32_t        light_type;
     uint32_t        camera_type;
     SDL_GPUBuffer  *dummy_storage;    /* bound when a deform draw has no joints / morphs */
+    float          *occlusion_depth;  /* br_occlusion3d.c: the CPU depth buffer, made on first use */
+    br_array        occlusion_scratch; /* projected vertices of the occluder being rasterised */
 } br_three_d_state;
 
+/* Fewer camera items than this in a view: occlusion culling is skipped (nothing to gain). */
+#define BR_OCCLUSION3D_MIN_ITEMS 8
+
 /* ---- shared between the module's files */
+
+/* br_occlusion3d.c */
+/* Drops the items of v->opaque / v->transparent that are hidden behind opaque ones (after the
+ * sort). Shadow casting and everything outside rendering is untouched. */
+void br_render3d_occlusion(br_engine *e, br_view3d_state *v);
+void br_occlusion3d_free(br_engine *e);
 
 /* br_node3d.c */
 void br_node3d_table_init(br_engine *e);

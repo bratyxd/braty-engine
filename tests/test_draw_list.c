@@ -273,6 +273,77 @@ static void test_frustum_and_sort(br_engine *e)
     step(e);
 }
 
+/* Occlusion culling: items hidden behind opaque meshes leave the camera passes, nothing else. */
+static void test_occlusion(br_engine *e)
+{
+    br_node view = view_on_stage(e); /* camera at (0, 2, 8) looking at the origin */
+    br_geometry3d cube = br_geometry3d_cube(e, br_vec3_make(1.0f, 1.0f, 1.0f));
+    br_geometry3d wall = br_geometry3d_cube(e, br_vec3_make(40.0f, 40.0f, 1.0f));
+    br_material3d opaque = material(e, false);
+    br_material3d glass = material(e, true);
+    BR_CHECK(br_view3d_occlusion_culling(e, view) == BR_VIEW3D_OCCLUSION_TRIANGLES); /* on by default */
+    mesh_at(e, view, wall, opaque, br_vec3_make(0.0f, 0.0f, -10.0f));
+    for (int i = 0; i < 8; i++) {
+        mesh_at(e, view, cube, opaque, br_vec3_make(-3.5f + (float)i, 0.0f, -30.0f)); /* behind the wall */
+    }
+    mesh_at(e, view, cube, opaque, br_vec3_make(0.0f, 0.0f, -4.0f));  /* in front of it */
+    mesh_at(e, view, cube, glass, br_vec3_make(0.0f, 0.0f, -31.0f));  /* transparent, behind */
+    mesh_at(e, view, cube, glass, br_vec3_make(0.0f, 0.0f, -3.0f));   /* transparent, in front */
+    step(e);
+    const br_view3d_state *v = br_render_debug_view3d(e, view);
+    BR_CHECK(v != NULL);
+    if (v == NULL) {
+        return;
+    }
+    BR_CHECK(v->items.count == 12);
+    BR_CHECK(v->opaque.count == 2 && v->transparent.count == 1); /* wall + front cube, front glass */
+    BR_CHECK(v->stats.items_occluded == 9 && v->stats.items_opaque == 2 && v->stats.items_transparent == 1);
+    BR_CHECK(v->shadow.count == 12); /* hidden from the camera, still casting */
+    const br_item3d *items = v->items.data;
+    const uint32_t *o = v->opaque.data;
+    BR_CHECK(item_z(e, &items[o[0]]) == -4.0f && item_z(e, &items[o[1]]) == -10.0f);
+
+    /* off: everything in the frustum is drawn again */
+    br_view3d_set_occlusion_culling(e, view, 0);
+    step(e);
+    v = br_render_debug_view3d(e, view);
+    BR_CHECK(v != NULL && v->opaque.count == 10 && v->transparent.count == 2 && v->stats.items_occluded == 0);
+
+    /* a budget too small for the wall's 12 triangles: no occluder, nothing hidden */
+    br_view3d_set_occlusion_culling(e, view, 11);
+    step(e);
+    v = br_render_debug_view3d(e, view);
+    BR_CHECK(v != NULL && v->opaque.count == 10 && v->stats.items_occluded == 0);
+    br_node_destroy(e, view);
+    step(e);
+
+    /* a floor seen from above hides what is under it; its two triangles reach behind the camera,
+     * so this also checks the cut at the camera plane and the front-face winding */
+    view = view_on_stage(e);
+    br_geometry3d floor = br_geometry3d_plane(e, 400.0f, 400.0f, 1, 1);
+    mesh_at(e, view, floor, opaque, br_vec3_make(0.0f, -1.0f, 0.0f));
+    for (int i = 0; i < 8; i++) {
+        mesh_at(e, view, cube, opaque, br_vec3_make(-3.5f + (float)i, -10.0f, -10.0f));
+    }
+    step(e);
+    v = br_render_debug_view3d(e, view);
+    BR_CHECK(v != NULL && v->opaque.count == 1 && v->stats.items_occluded == 8);
+    br_node_destroy(e, view);
+    step(e);
+
+    /* the same plane seen from below is back-face culled when drawn, so it hides nothing */
+    view = view_on_stage(e);
+    mesh_at(e, view, floor, opaque, br_vec3_make(0.0f, 3.5f, 0.0f));
+    for (int i = 0; i < 8; i++) {
+        mesh_at(e, view, cube, opaque, br_vec3_make(-3.5f + (float)i, 5.0f, -20.0f));
+    }
+    step(e);
+    v = br_render_debug_view3d(e, view);
+    BR_CHECK(v != NULL && v->opaque.count == 9 && v->stats.items_occluded == 0);
+    br_node_destroy(e, view);
+    step(e);
+}
+
 static br_node3d light_at(br_engine *e, br_node view, br_light3d l, br_vec3 p, br_vec3 target)
 {
     br_node3d n = br_light3d_create(e, &l);
@@ -432,6 +503,7 @@ int main(void)
     test_layers_and_order(e);
     test_culling(e);
     test_frustum_and_sort(e);
+    test_occlusion(e);
     test_light_selection(e);
     test_shadow_tiles(e);
     test_instancing(e);

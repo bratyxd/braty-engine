@@ -264,6 +264,13 @@ void br_view3d_set_auto_resize(br_engine *e, br_node view, bool auto_resize);
 void br_view3d_set_resolution(br_engine *e, br_node view, float resolution);
 /* MSAA sample count for the HDR pass: 1 (default), 2, 4 or 8 (clamped to what the GPU supports). */
 void br_view3d_set_msaa(br_engine *e, br_node view, uint32_t samples);
+/* Occlusion culling: items hidden behind opaque meshes are not drawn (they still cast shadows,
+ * animate and simulate; only their draw calls go). On by default. `triangles` is how many
+ * occluder triangles the CPU may rasterise per frame (default BR_VIEW3D_OCCLUSION_TRIANGLES);
+ * 0 switches it off. Occluders are opaque, single-instance, undeformed meshes, nearest first. */
+void br_view3d_set_occlusion_culling(br_engine *e, br_node view, uint32_t triangles);
+/* The occluder triangle budget (0 = off). */
+uint32_t br_view3d_occlusion_culling(br_engine *e, br_node view);
 /* Background (linear). Alpha 0 shows the 2D content under the view. */
 void br_view3d_set_background(br_engine *e, br_node view, br_color color);
 /* Hemisphere ambient light: sky colour from above, ground colour from below (linear). */
@@ -323,6 +330,9 @@ void br_node3d_off(br_engine *e, br_node3d n, br_event_type type, br_event3d_fn 
 
 /* ---- stats */
 
+/* Default occluder triangles per view and frame for occlusion culling. */
+#define BR_VIEW3D_OCCLUSION_TRIANGLES 20000
+
 typedef struct br_view3d_stats {
     uint32_t items_opaque;
     uint32_t items_transparent;
@@ -331,6 +341,7 @@ typedef struct br_view3d_stats {
     uint32_t draw_calls;     /* main + shadow passes */
     uint32_t lights;
     uint32_t shadow_tiles;
+    uint32_t items_occluded; /* in the frustum but hidden behind opaque items: not drawn */
 } br_view3d_stats;
 /* Numbers of the view's last collected frame. */
 void br_view3d_get_stats(br_engine *e, br_node view, br_view3d_stats *out);

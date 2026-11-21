@@ -22,6 +22,7 @@ static void br_three_d_shutdown(br_engine *e, void *user)
     br_geometry3d_free_all(e);
     br_material3d_free_all(e);
     br_array_free(&s->views);
+    br_occlusion3d_free(e);
     br_gpu *g = br_engine_gpu(e);
     if (g != NULL) {
         br_gpu_buffer_destroy(g, s->dummy_storage);
