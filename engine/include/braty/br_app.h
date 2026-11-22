@@ -169,6 +169,19 @@ typedef void (*br_shutdown_fn)(br_engine *e, void *user);
  * and before the GPU is destroyed. */
 void br_engine_on_shutdown(br_engine *e, br_shutdown_fn fn, void *user);
 
+/* ---- add-on registry (for add-ons; games call br_<name>_register) */
+
+#define BR_ADDON_MAX 16
+/* Stores an add-on's state under its name (a string literal). False (logged) when the name is
+ * taken or the table is full. The add-on frees its state in a br_engine_on_shutdown callback. */
+bool br_addon_add(br_engine *e, const char *name, void *state);
+/* The state stored under name, NULL when that add-on is not registered. */
+void *br_addon_get(br_engine *e, const char *name);
+/* Number of registered add-ons. */
+uint32_t br_addon_count(br_engine *e);
+/* Name of registered add-on `index`, NULL out of range. */
+const char *br_addon_name_at(br_engine *e, uint32_t index);
+
 /* ---- ticker (PixiJS Ticker) */
 
 /* Scaled, clamped delta of the current frame in seconds (what systems get as dt). */

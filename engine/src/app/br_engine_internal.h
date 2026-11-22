@@ -137,6 +137,11 @@ struct br_engine {
     struct br_loc_state         *loc;       /* string tables, locale, bound text nodes (Phase 3 B1) */
     struct br_text_field_state  *text_field;
     struct br_job_state         *job;       /* background jobs: slots, worker threads (br_job.c) */
+
+    /* add-on registry (br_addon_add): names are string literals, state belongs to the add-on */
+    const char *addon_names[BR_ADDON_MAX];
+    void       *addon_states[BR_ADDON_MAX];
+    uint32_t    addon_count;
 };
 
 /* A br_strdup of name made safe as a save folder name (br_file.c). */

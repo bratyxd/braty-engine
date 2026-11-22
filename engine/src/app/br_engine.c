@@ -225,6 +225,59 @@ void br_engine_on_shutdown(br_engine *e, br_shutdown_fn fn, void *user)
     br_array_push(&e->shutdown_handlers, &entry);
 }
 
+/* ---- add-on registry */
+
+/* Index of the add-on called name, -1 when none. The same literal is usually the same pointer,
+ * which skips the string compare. */
+static int br_addon_find(br_engine *e, const char *name)
+{
+    if (name == NULL) {
+        return -1;
+    }
+    for (uint32_t i = 0; i < e->addon_count; i++) {
+        if (e->addon_names[i] == name || SDL_strcmp(e->addon_names[i], name) == 0) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+bool br_addon_add(br_engine *e, const char *name, void *state)
+{
+    if (name == NULL) {
+        br_log_error("br_addon_add: name is NULL");
+        return false;
+    }
+    if (br_addon_find(e, name) >= 0) {
+        br_log_error("add-on '%s' is already registered", name);
+        return false;
+    }
+    if (e->addon_count >= BR_ADDON_MAX) {
+        br_log_error("add-on '%s': registry full (BR_ADDON_MAX %d)", name, BR_ADDON_MAX);
+        return false;
+    }
+    e->addon_names[e->addon_count] = name;
+    e->addon_states[e->addon_count] = state;
+    e->addon_count++;
+    return true;
+}
+
+void *br_addon_get(br_engine *e, const char *name)
+{
+    int i = br_addon_find(e, name);
+    return i >= 0 ? e->addon_states[i] : NULL;
+}
+
+uint32_t br_addon_count(br_engine *e)
+{
+    return e->addon_count;
+}
+
+const char *br_addon_name_at(br_engine *e, uint32_t index)
+{
+    return index < e->addon_count ? e->addon_names[index] : NULL;
+}
+
 /* ---- systems */
 
 static br_system_entry *br_system_find(br_array *systems, const char *name)
