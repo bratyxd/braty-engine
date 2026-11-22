@@ -78,6 +78,7 @@ uint8_t *p = br_frame_alloc(e, 4096);  /* valid until the next br_engine_step */
 - `br_level_arena_reset` leaves every pointer into the level arena dangling: clear them first.
   The engine never resets it (not on scene unload either): the game knows when a level ends.
 - `br_arena_untrack` before destroying a tracked arena, or the overlay reads freed memory.
-- Arenas are not thread-safe. Heap stats are (spinlock), and process-wide, not per engine.
+- Arenas are not thread-safe: a job (`docs/agents/job.md`) gets its arena memory before it starts,
+  and `br_job_cancel` comes before `br_level_arena_reset`. Heap stats are (spinlock), and process-wide, not per engine.
 - `br_alloc` blocks carry a size header: never free them with `SDL_free`/`free`, and never
   `br_free` memory from SDL (`SDL_LoadFile`, ...) or third-party libraries.

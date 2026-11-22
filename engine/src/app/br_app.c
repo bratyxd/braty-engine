@@ -4,6 +4,7 @@
 #include "data/br_data_internal.h"
 #include "playtest/br_playtest_internal.h"
 #include "braty/br_audio.h"
+#include "braty/br_job.h"
 #include "braty/br_profiler.h"
 
 #include "stb/stb_image_write.h"
@@ -478,6 +479,7 @@ void br_app_quit(void *appstate, SDL_AppResult result)
     if (e == NULL) {
         return;
     }
+    br_job_cancel_all(e); /* no job may still run when the game frees the memory it works on */
     if (e->game_shutdown != NULL) {
         br_engine_destroy_nodes(e); /* desc.shutdown may free state that node listeners use */
         e->game_shutdown(e);

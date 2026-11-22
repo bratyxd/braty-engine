@@ -22,7 +22,7 @@ build and run only the one test you are debugging (`ctest --preset windows-gcc -
 ```sh
 cmake --preset windows-gcc [-DCMAKE_PREFIX_PATH=<SDL3 prefix>]   # default prefix: .deps/sdl3
 cmake --build --preset windows-gcc                                  # engine, tests, examples, both samples
-ctest --preset windows-gcc                                          # 75 entries: unit tests, headless examples, play-tests, packs, golden images
+ctest --preset windows-gcc                                          # 76 entries: unit tests, headless examples, play-tests, packs, golden images
 build/windows-gcc/hello_quad.exe --frames 3 --screenshot build/out.png [--gpu-driver vulkan|direct3d12]
 build/windows-gcc/sample_projects/crate_rush/crate_rush.exe --level level1 --frames 120 --screenshot build/crate.png
 build/windows-gcc/sample_projects/crate_rush/crate_rush.exe --headless --playtest sample_projects/crate_rush/playtest/round.json
@@ -33,7 +33,7 @@ cmake --preset windows-gcc-release && cmake --build --preset windows-gcc-release
 ctest --preset windows-gcc-release                                  # the same tests in the release build
 ```
 
-CTest runs 41 `tests/test_*.c` programs (headless; `test_gpu`, `test_debug` and one profiler case
+CTest runs 42 `tests/test_*.c` programs (headless; `test_gpu`, `test_debug` and one profiler case
 open a window and skip without a GPU), every example with `--headless --frames 5` (label
 `headless`: `br_engine_gpu(e)` is NULL there, so code must not assume a GPU), both samples'
 `round.json` (Crate Rush's also from a `.brpack` with an empty asset root), the pack round trip
@@ -279,7 +279,37 @@ Your own code: `br_profile_begin(e, "name")` / `br_profile_end(e)`. `docs/PROFIL
     - The two samples are older and mix both layers in their systems; copy their data layout
       and engine usage, not that.
 
-11. **Or skip building the engine:** link the prebuilt SDK from the GitHub releases
+11. **Big tasks run as jobs, off the frame loop.** Anything that would take more than a frame
+    and can be cut into independent pieces (parsing a big file's rows, generating map chunks,
+    building a path grid or a lookup table, baking meshes' vertex data) is a `br_job`: worker
+    threads run it in ranges while the game keeps stepping (`docs/agents/job.md`).
+
+    ```c
+    static void build_rows(void *user, uint32_t begin, uint32_t end);   /* worker thread */
+    g->job = br_job_run(e, build_rows, g->build, row_count, 32);         /* returns at once */
+    /* in a system, every frame: */
+    if (br_job_is_done(e, g->job)) { /* use the result */ } else { /* bar: br_job_progress */ }
+    ```
+
+    - **Cut by data:** items `[0, count)` in ranges of `batch` items; pick the batch so one
+      range takes about a millisecond or less. `count` 1 is one plain background task.
+    - **The job function touches only the memory behind `user`**, each range its own items
+      (`out[i]` for `i` in `[begin, end)`), and calls nothing of the engine except `br_alloc` /
+      `br_free` / `br_log_*`. Main thread before the job: read files, take memory from the
+      level / game arena. Main thread after `br_job_is_done`: create nodes, textures, geometry
+      from the result. Never frame-arena memory.
+    - **`br_job_cancel` (or `br_job_cancel_all`) before the memory dies:** before
+      `br_level_arena_reset`, on restart, on leaving the level.
+    - **`br_job_wait`** turns it into a parallel loop for a result the same frame needs (the
+      caller works too); never wait on a long job from a system.
+    - The range function is gameplay: plain C in `src/sim/`, tested by calling it with
+      `(state, 0, count)`; only the view calls `br_job_run` (step 10).
+    - `--deterministic` runs (play-tests, `--frames`, goldens) finish the job inside
+      `br_job_run`, so scripts and images do not depend on thread timing. Assets already load
+      in the background on their own threads (`br_assets_load_async`, asset groups, async scene
+      loads): no job needed for those.
+
+12. **Or skip building the engine:** link the prebuilt SDK from the GitHub releases
    (`find_package(braty CONFIG REQUIRED)`, `braty::braty`); `docs/BUILDING.md` "The SDK".
 
 Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
@@ -326,6 +356,11 @@ Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
   without a window; systems only feed input in and show the state ("How to make a game" step
   10). In the engine the same split holds: logic that can be tested headless is kept apart from
   the code that draws it.
+- **Long work does not run inside a frame.** A task of more than a few milliseconds that
+  splits into independent pieces goes through `br_job_run` and is polled with `br_job_is_done`
+  ("How to make a game" step 11, `docs/agents/job.md`); the job function touches only its own
+  data, never the engine. In the engine the same holds: no module blocks a frame on a big parse
+  or build.
 - **Fewest set passes and draw calls.** A change that adds a pipeline, a material, a render
   target or a pass must show why the picture needs it; anything that looks the same shares one
   material and batches ("How to make a game" step 8).
@@ -419,6 +454,7 @@ Read the guide, then the module's public header (headers are the API reference).
 |---|---|---|
 | core | `docs/agents/core.md` | done (Task 1; storage layer, `.brpack` packs, log file: Phase 3 B3) |
 | arena | `docs/agents/arena.md` | done (Phase 2 Task 14) |
+| job | `docs/agents/job.md` | done (background jobs on worker threads: `br_job_run`, poll, wait, cancel) |
 | math | `docs/agents/math.md` | done (Task 1; audit, geometry, easing, random, noise, splines: Phase 2 Task 14c) |
 | gpu | `docs/agents/gpu.md` | done (Task 1) |
 | app | `docs/agents/app.md` | done (Task 1; pacing, `--deterministic`, groups: Phase 2 Task 14) |

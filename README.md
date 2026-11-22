@@ -26,11 +26,11 @@ name, arrays, vec4 / quat / 3D node references; string tables and locales; font 
 a storage layer with `.brpack` packs and an install rule; a text-field node; glTF cameras as
 `br_camera`; a headless draw-list harness. Both sample games use them (Task C).
 
-`ctest` runs 41 test programs (headless; `test_gpu`, `test_debug` and one profiler case open a
+`ctest` runs 42 test programs (headless; `test_gpu`, `test_debug` and one profiler case open a
 window and skip without a GPU), every example once with `--headless --frames 5`, the two sample
 games' play-test scripts (headless; Crate Rush's also from a `.brpack` with no loose files), the
 pack round trip and 29 golden images (Direct3D 12; Vulkan differs by a few edge pixels in some of
-them, `docs/TESTING.md`): 75 CTest entries. 27 examples and two sample games run on **Windows 11 + MinGW-w64 GCC with Direct3D 12 and Vulkan** (RTX 3060 Ti) -
+them, `docs/TESTING.md`): 76 CTest entries. 27 examples and two sample games run on **Windows 11 + MinGW-w64 GCC with Direct3D 12 and Vulkan** (RTX 3060 Ti) -
 the only tested platform, in Debug and with the `windows-gcc-release` preset. Linux, macOS, iOS,
 Android and MSVC presets exist but have never been built; Metal shaders are generated but have
 never run. Details: `docs/PLATFORMS.md`. What is not there yet: "Not implemented yet" below.
@@ -39,6 +39,7 @@ never run. Details: `docs/PLATFORMS.md`. What is not there yet: "Not implemented
 |---|---|---|---|
 | Core, app loop | handles + dense tables, systems in phases, vsync modes, FPS cap, fixed timestep with render interpolation, `--deterministic` | core, app, math | Done |
 | Memory | linear / stack / pool / scratch arenas, per-frame arena, arenas listed in the profiler | arena | Done |
+| Jobs | `br_job`: a big task split into ranges on worker threads, polled from a system; wait, cancel, progress; inline in `--deterministic` | job | Done |
 | 2D | sprites, nine-slice, tiling, graphics, text (TTF, bitmap, SDF, rich; font fallback chains and a missing-glyph box), meshes, particles, filters, masks, blend modes | gpu, scene, render, graphics, text, sprites, mesh, particles, filters | Done |
 | Localisation | `strings.<locale>.json` tables, system locale with fallbacks, `{name}` placeholders, zero / one / other plurals, `"text_key"` nodes that follow the locale | loc | Done (Phase 3 B1) |
 | Text entry | `text_field` node: caret, selection, clipboard, undo, max length, password, multi-line, IME composition; game actions do not see typed keys | text_field | Done (Phase 3 B6) |
@@ -53,7 +54,7 @@ never run. Details: `docs/PLATFORMS.md`. What is not there yet: "Not implemented
 | Audio | wav / ogg, streaming, buses, sound sprites | audio | Done |
 | Play-testing | scripts, interactive stdin, record / replay, `expect` / `wait_until`, state queries, `profile` | playtest | Done |
 | Profiler | CPU scopes, GPU estimate, counters, bottleneck verdict, F2 panel, HUD, Chrome trace | profiler | Done |
-| Tests | 41 test programs, headless runs of every example, play-test scripts, pack round trip, 29 golden images (`docs/TESTING.md`) | tests, tools | Done |
+| Tests | 42 test programs, headless runs of every example, play-test scripts, pack round trip, 29 golden images (`docs/TESTING.md`) | tests, tools | Done |
 | Platforms | presets for Linux, macOS, iOS, Android, MSVC; a `-release` preset for each | - | Configured, untested (only `windows-gcc` / `windows-gcc-release` built) |
 
 ## Quick start

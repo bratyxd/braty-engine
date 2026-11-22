@@ -10,6 +10,7 @@
 /* foundation (Task 1) */
 #include "braty/br_core.h"
 #include "braty/br_arena.h"
+#include "braty/br_job.h"
 #include "braty/br_math.h"
 #include "braty/br_gpu.h"
 #include "braty/br_app.h"

@@ -14,6 +14,7 @@
 void br_builtin_register(br_engine *e)
 {
     br_arena_register(e);          /* frame arena first: freed last at shutdown */
+    br_job_register(e);            /* worker threads stop after every later module shut down */
     br_storage_register(e);        /* files and packs: every later module may read files */
     br_scene_register(e);          /* node table, components, transform/sort/cull systems */
     br_render_register(e);         /* textures, sprite type, batcher, collect/submit systems */

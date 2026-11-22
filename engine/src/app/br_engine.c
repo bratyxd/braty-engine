@@ -1,6 +1,7 @@
 /* br_engine: lifetime, window, systems and phases, ticker, event and shutdown hooks. */
 #include "app/br_engine_internal.h"
 #include "gpu/br_gpu_internal.h"
+#include "braty/br_job.h"
 #include "braty/br_profiler.h"
 #include "scene/br_scene_internal.h"
 #include "three_d/br_three_d_internal.h"
@@ -80,6 +81,7 @@ void br_engine_destroy(br_engine *e)
     if (e == NULL) {
         return;
     }
+    br_job_cancel_all(e); /* before any shutdown callback frees memory a job works on */
     /* before any shutdown callback: node destroy listeners still see live module and game state */
     br_engine_destroy_nodes(e);
     for (uint32_t i = e->shutdown_handlers.count; i > 0; i--) {

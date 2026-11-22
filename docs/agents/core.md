@@ -5,7 +5,8 @@ Header: `engine/include/braty/br_core.h`. Source: `engine/src/core/` (the storag
 async reads from a pack, the log file).
 
 Plain C over SDL. No window or GPU needed. Arenas (linear, stack, pool, scratch, per-frame):
-`docs/agents/arena.md`. Containers own their memory and are freed by their
+`docs/agents/arena.md`. Background jobs on worker threads (`br_job`): `docs/agents/job.md`.
+Containers own their memory and are freed by their
 `*_free` function.
 
 ## Functions you actually need
