@@ -83,7 +83,7 @@ void br_websocket_set_max_message(br_engine *e, br_websocket ws, size_t bytes);
 /* Keep-alive: a ping after `seconds` (real time) without anything received; nothing received
  * within another `seconds` drops the socket as CLOSED with code 1006. 0 = off; default 30. */
 void br_websocket_set_ping_interval(br_engine *e, br_websocket ws, float seconds);
-/* Starts the closing handshake (code 1000 = normal; 1000-1003, 1007-1011 or 3000-4999, anything
+/* Starts the closing handshake (code 1000 = normal; 1000-1003, 1007-1014 or 3000-4999, anything
  * else sends 1000; reason up to 123 bytes of UTF-8 or NULL): OPEN -> CLOSING -> CLOSED.
  * CONNECTING -> CLOSED at once. The slot is freed by br_websocket_release. */
 void br_websocket_close(br_engine *e, br_websocket ws, uint16_t code, const char *reason);

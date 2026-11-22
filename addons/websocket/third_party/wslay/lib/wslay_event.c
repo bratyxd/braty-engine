@@ -551,9 +551,12 @@ static void wslay_event_call_on_frame_recv_end_callback
   }
 }
 
+/* braty patch (not upstream, see third_party/README.md): 1012-1014 (service
+   restart, try again later, bad gateway; IANA registry after RFC 6455) are
+   valid, as in libwebsockets and browsers. Upstream: status_code <= 1011. */
 static int wslay_event_is_valid_status_code(uint16_t status_code)
 {
-  return (1000 <= status_code && status_code <= 1011 &&
+  return (1000 <= status_code && status_code <= 1014 &&
           status_code != 1004 && status_code != 1005 && status_code != 1006) ||
     (3000 <= status_code && status_code <= 4999);
 }
@@ -641,7 +644,10 @@ int wslay_event_recv(wslay_event_context_ptr ctx)
             ctx->imsg->opcode == WSLAY_CONNECTION_CLOSE) {
         size_t i;
         if(ctx->imsg->opcode == WSLAY_CONNECTION_CLOSE) {
-          i = 2;
+          /* braty patch (not upstream, see third_party/README.md): skip only
+             the 2 code bytes of the frame, not 2 bytes of every piece of it.
+             Upstream: i = 2. */
+          i = ctx->ipayloadoff < 2 ? (size_t)(2 - ctx->ipayloadoff) : 0;
         } else {
           i = 0;
         }
@@ -846,8 +852,14 @@ int wslay_event_send(wslay_event_context_ptr ctx)
       iocb.opcode = ctx->omsg->opcode;
       iocb.rsv = ctx->omsg->rsv;
       iocb.mask = ctx->server^1;
-      iocb.data = ctx->omsg->data+ctx->opayloadoff;
-      iocb.data_length = ctx->opayloadlen-ctx->opayloadoff;
+      /* braty patch: upstream commit 1c97e7a ("Fix errors with ubsan", after
+         1.1.1): no NULL + 0 for an empty message (a ping without payload). */
+      iocb.data = ctx->omsg->data;
+      iocb.data_length = ctx->opayloadlen;
+      if(ctx->opayloadoff) {
+        iocb.data += ctx->opayloadoff;
+        iocb.data_length -= ctx->opayloadoff;
+      }
       iocb.payload_length = ctx->opayloadlen;
       r = wslay_frame_send(ctx->frame_ctx, &iocb);
       if(r >= 0) {

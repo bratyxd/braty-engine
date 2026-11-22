@@ -426,7 +426,8 @@ static void test_protocol_errors(void)
     expect_failure((const uint8_t *)"\x88\x02\x03\xe7", 4, 0, 1002, "close code 999");
     expect_failure((const uint8_t *)"\x88\x02\x13\x88", 4, 0, 1002, "close code 5000");
     expect_failure((const uint8_t *)"\x88\x01\x03", 3, 0, 1002, "close body of 1 byte");
-    expect_failure((const uint8_t *)"\x88\x02\x03\xf4", 4, 0, 1002, "close code 1012 (wslay: invalid)");
+    expect_failure((const uint8_t *)"\x88\x02\x03\xf7", 4, 0, 1002, "close code 1015 (never sent)");
+    expect_failure((const uint8_t *)"\x88\x02\x03\xf8", 4, 0, 1002, "close code 1016");
 
     /* a character split over two fragments is fine */
     br_websocket_conn c;
@@ -446,6 +447,27 @@ static void test_closing(void)
     BR_CHECK(c.state == BR_WEBSOCKET_CLOSED && c.close_code == 1001 && c.error[0] == '\0');
     BR_CHECK(output_frames(&c) == 1 && frames[0].opcode == 8 && frames[0].masked && ws_test_close_code(&frames[0]) == 1001);
     BR_CHECK(!br_websocket_conn_send(&c, true, "late", 4));
+    br_websocket_conn_free(&c);
+    /* 1012-1014 (IANA, after RFC 6455): a clean close with that code (patched wslay) */
+    for (uint16_t code = 1012; code <= 1014; code++) {
+        open_conn(&c);
+        n = ws_test_close_write(wire, code, "restart");
+        feed(&c, wire, n);
+        BR_CHECK(c.state == BR_WEBSOCKET_CLOSED && c.close_code == code && c.error[0] == '\0');
+        BR_CHECK(output_frames(&c) == 1 && ws_test_close_code(&frames[0]) == code);
+        br_websocket_conn_free(&c);
+    }
+    /* a close frame in two reads: every reason byte is checked once (wslay 1.1.1 skipped
+     * the first two bytes of every piece, not only the code) */
+    open_conn(&c);
+    feed(&c, "\x88\x05\x03\xe8" "a\xc3", 6);
+    feed(&c, "\xa9", 1);
+    BR_CHECK(c.state == BR_WEBSOCKET_CLOSED && c.close_code == 1000 && c.error[0] == '\0');
+    br_websocket_conn_free(&c);
+    open_conn(&c);
+    feed(&c, "\x88\x05\x03\xe8" "a", 5);
+    feed(&c, "\xff\xfe", 2);
+    BR_CHECK(c.state == BR_WEBSOCKET_FAILED && contains(c.error, "1007"));
     br_websocket_conn_free(&c);
     /* a close without a code: 1005 */
     open_conn(&c);

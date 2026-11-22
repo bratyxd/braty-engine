@@ -149,7 +149,7 @@ release. CLOSED or FAILED, the handle keeps its slot until `br_websocket_release
 | A masked frame from the server | wslay | 1002 |
 | Unknown opcode (3-7, B-F) | wslay | 1002 |
 | Continuation without a start; a new text / binary frame inside a fragmented message | wslay | 1002 |
-| Close code not 1000-1003, 1007-1011, 3000-4999 (so 1005, 1006, 999, 5000, also 1012-1014) | wslay | 1002 |
+| Close code not 1000-1003, 1007-1014, 3000-4999 (so 1005, 1006, 1015, 999, 5000) | wslay (1012-1014 accepted by our patch, as libwebsockets does) | 1002 |
 | Close frame with a 1-byte body | ours (wslay reads it as "no code") | 1002 |
 | Text message not valid UTF-8 (checked as it arrives, across fragments; also cut inside a character) | wslay | 1007 |
 | Close reason not valid UTF-8 | wslay | 1007 |
@@ -181,10 +181,9 @@ After FAILED from a protocol error the close frame is sent and the connection cl
 
 ## Gotchas
 
-- **Close codes 1012-1014** (service restart, try again later, bad gateway) are registered by IANA
-  after RFC 6455 but wslay refuses them as invalid: a server that closes with 1012 shows up as
-  FAILED "... (closed with 1002)", close code 1006. Treat FAILED after OPEN like a drop and
-  reconnect.
+- **Close codes 1012-1014** (service restart, try again later, bad gateway; IANA, after RFC 6455)
+  are a normal close: CLOSED with that code (wslay 1.1.1 refused them; our copy is patched, as
+  libwebsockets accepts them). 1015 is never valid in a close frame.
 - **No subprotocol getter:** when you offer several protocols, the one the server chose is checked
   but not returned. Offer one, or put the version in the URL.
 - **wslay allocates** (libc `malloc`, not `br_alloc`) a block per received frame and per queued
@@ -193,9 +192,6 @@ After FAILED from a protocol error the close frame is sent and the connection cl
 - **Not implemented** (`// ponytail:` in the plan): permessage-deflate and other extensions,
   proxies, redirects of the upgrade request (a 3xx FAILS with its status), a WebSocket server,
   fragmenting what you send (each message is one frame).
-- **Close reason in pieces:** wslay checks the UTF-8 of a close reason per received piece and
-  skips the first two bytes of every piece, not only of the first; a close frame split over two
-  reads has two bytes of its reason unchecked (harmless for us: the reason is not shown).
 
 ## Limits
 
@@ -215,7 +211,8 @@ Each socket also takes a `tls` stream (`BR_TLS_MAX_STREAMS` 32) and a `net` sock
 ## Updating wslay
 
 Copy `lib/*.c`, `lib/*.h`, `lib/includes/wslay/wslay.h` and `wslayver.h.in` and `COPYING` from
-the new release over `addons/websocket/third_party/wslay/`, set `PACKAGE_VERSION` in
+the new release over `addons/websocket/third_party/wslay/`, re-apply the three `braty patch`
+changes in `lib/wslay_event.c` (listed in `third_party/README.md`), set `PACKAGE_VERSION` in
 `addons/websocket/CMakeLists.txt` (it writes `wslayver.h` and the `config.h` wslay expects:
 `htons` / `ntohs` / `ntohl` from SDL's byte swaps, `ssize_t`, the byte order), update
 `third_party/README.md`, run `test_websocket_frame` and `test_websocket`.

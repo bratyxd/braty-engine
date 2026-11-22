@@ -473,10 +473,11 @@ void br_websocket_set_timeouts(br_engine *e, br_websocket ws, float handshake, f
     }
 }
 
-/* A code a client may send (RFC 6455 section 7.4; wslay accepts the same on receive). */
+/* A code that may be sent (RFC 6455 section 7.4 and the IANA registry: 1012-1014 too; our
+ * patched wslay accepts the same on receive). */
 static bool br_websocket_code_valid(uint16_t code)
 {
-    return (code >= 1000 && code <= 1003) || (code >= 1007 && code <= 1011) || (code >= 3000 && code <= 4999);
+    return (code >= 1000 && code <= 1003) || (code >= 1007 && code <= 1014) || (code >= 3000 && code <= 4999);
 }
 
 void br_websocket_close(br_engine *e, br_websocket ws, uint16_t code, const char *reason)
@@ -497,7 +498,7 @@ void br_websocket_close(br_engine *e, br_websocket ws, uint16_t code, const char
         return;
     }
     if (!br_websocket_code_valid(code)) {
-        br_log_error("br_websocket_close: code %u cannot be sent (1000-1003, 1007-1011, 3000-4999): sending 1000",
+        br_log_error("br_websocket_close: code %u cannot be sent (1000-1003, 1007-1014, 3000-4999): sending 1000",
                      (unsigned)code);
         code = 1000;
     }
