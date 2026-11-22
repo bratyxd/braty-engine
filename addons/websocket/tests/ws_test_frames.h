@@ -71,6 +71,7 @@ static inline size_t ws_test_close_write(uint8_t *out, uint16_t code, const char
         size = 2;
         if (reason != NULL) {
             size_t length = SDL_strlen(reason);
+            length = length > 123 ? 123 : length;   /* a close body is at most 125 bytes (and GCC -O3 sees it) */
             SDL_memcpy(body + 2, reason, length);
             size += length;
         }
