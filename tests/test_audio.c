@@ -281,13 +281,31 @@ static void test_loaders(void)
 
 /* ---- streaming voices decode outside the audio lock */
 
+#define STRESS_MAX_MIXES 8192
+#define STRESS_MAX_CALLS 65536
+/* A call counts as "inside a mix" when it began this long after the mix began and returned this
+ * long before the mix ended (the last microseconds of a mix run without the lock in any case). */
+#define STRESS_INSIDE_MARGIN_NS 100000
+
 typedef struct mixer_thread {
     br_engine    *e;
     SDL_AtomicInt running;  /* 1 while the thread mixes */
     SDL_AtomicInt stop;
     uint64_t      mix_ns;   /* longest br_audio_mix call */
+    uint64_t      mix_total_ns;
     bool          finite;
+    SDL_AtomicInt current;  /* index + 1 of the mix in progress, 0 between mixes */
+    uint32_t      mix_count;
+    uint64_t      mix_start[STRESS_MAX_MIXES]; /* read by the main thread after the join */
+    uint64_t      mix_end[STRESS_MAX_MIXES];
 } mixer_thread;
+
+/* One main-thread call that began while mix `mix` was in progress. */
+typedef struct stress_call {
+    uint32_t mix;
+    uint64_t begin;
+    uint64_t end;
+} stress_call;
 
 static bool all_finite_mix(const float *out, uint32_t count)
 {
@@ -306,10 +324,22 @@ static int SDLCALL mixer_main(void *user)
     static float buf[2 * 12000];
     SDL_SetAtomicInt(&m->running, 1);
     while (SDL_GetAtomicInt(&m->stop) == 0) {
+        bool record = m->mix_count < STRESS_MAX_MIXES;
         uint64_t t0 = SDL_GetTicksNS();
+        if (record) {
+            m->mix_start[m->mix_count] = t0;
+            SDL_SetAtomicInt(&m->current, (int)m->mix_count + 1);
+        }
         br_audio_mix(m->e, buf, 12000);
-        uint64_t t = SDL_GetTicksNS() - t0;
+        uint64_t t1 = SDL_GetTicksNS();
+        if (record) {
+            m->mix_end[m->mix_count] = t1;
+            SDL_SetAtomicInt(&m->current, 0);
+            m->mix_count++;
+        }
+        uint64_t t = t1 - t0;
         m->mix_ns = t > m->mix_ns ? t : m->mix_ns;
+        m->mix_total_ns += t;
         m->finite = m->finite && all_finite_mix(buf, 2 * 12000);
     }
     SDL_SetAtomicInt(&m->running, 0);
@@ -317,10 +347,15 @@ static int SDLCALL mixer_main(void *user)
 }
 
 /* Many plays / stops / seeks / speed changes on streaming voices while another thread mixes.
- * The main thread's calls must never wait for a whole decode: the longest seek / speed / volume /
- * pause call stays far below the longest mix (which is mostly Vorbis decoding). Before the fix
- * the lock was held for the whole mix, so a call could wait as long as one (measured: 10.6 ms
- * call, 11.2 ms mix). */
+ * The main thread's calls must never wait for a whole decode (a mix is mostly Vorbis decoding).
+ * Before the fix the lock was held for the whole mix, so a call could wait as long as one
+ * (measured: 10.6 ms call, 11.2 ms mix).
+ *
+ * The check counts the seek / speed / volume / pause calls that began and returned inside one
+ * mix. With the decode outside the lock nearly all of them do; with the lock held for the whole
+ * mix none can (they run only in the gaps between mixes). It used to compare the longest call
+ * with the longest mix, which failed now and then on CI: one call the scheduler interrupts is
+ * as long as a mix without ever waiting for the lock. */
 static void test_stream_stress(void)
 {
     char *cwd = SDL_GetCurrentDirectory();
@@ -342,7 +377,8 @@ static void test_stream_stress(void)
         d.start = (float)i * 0.2f;
         voices[i] = br_audio_play(e, gong, &d);
     }
-    mixer_thread m;
+    static mixer_thread m;
+    static stress_call calls[STRESS_MAX_CALLS];
     SDL_zero(m);
     m.e = e;
     m.finite = true;
@@ -352,11 +388,14 @@ static void test_stream_stress(void)
         SDL_Delay(0);
     }
     uint64_t worst = 0;
+    uint32_t call_count = 0;     /* seek / speed / volume / pause calls */
+    uint32_t recorded = 0;       /* those that began while a mix was in progress */
     uint32_t rng = 12345u;
     uint64_t until = SDL_GetTicksNS() + 1500000000ull; /* 1.5 s of churn */
     while (SDL_GetTicksNS() < until) {
         rng = rng * 1664525u + 1013904223u;
         int k = (int)((rng >> 8) % 24u);
+        int current = SDL_GetAtomicInt(&m.current);
         uint64_t t0 = SDL_GetTicksNS();
         switch ((rng >> 4) % 5u) {
         case 0:
@@ -376,17 +415,35 @@ static void test_stream_stress(void)
             br_audio_set_paused(e, voices[k], ((rng >> 12) & 1u) != 0);
             break;
         }
-        uint64_t t = SDL_GetTicksNS() - t0;
+        uint64_t t1 = SDL_GetTicksNS();
+        uint64_t t = t1 - t0;
         if ((rng >> 4) % 5u != 0) { /* play opens and seeks a decoder itself (no lock): not a wait */
             worst = t > worst ? t : worst;
+            call_count++;
+            if (current != 0 && recorded < STRESS_MAX_CALLS) {
+                calls[recorded].mix = (uint32_t)current - 1;
+                calls[recorded].begin = t0;
+                calls[recorded].end = t1;
+                recorded++;
+            }
         }
     }
     SDL_SetAtomicInt(&m.stop, 1);
     SDL_WaitThread(thread, NULL);
-    SDL_Log("stream stress: longest main-thread call %.3f ms, longest mix %.3f ms", (double)worst / 1e6,
-            (double)m.mix_ns / 1e6);
+    uint32_t inside = 0;
+    for (uint32_t i = 0; i < recorded; i++) {
+        const stress_call *c = &calls[i];
+        if (c->mix < m.mix_count && c->begin >= m.mix_start[c->mix] + STRESS_INSIDE_MARGIN_NS &&
+            c->end + STRESS_INSIDE_MARGIN_NS <= m.mix_end[c->mix]) {
+            inside++;
+        }
+    }
+    SDL_Log("stream stress: %u calls, %u inside a mix, longest %.3f ms; %u mixes, mean %.3f ms, longest %.3f ms",
+            call_count, inside, (double)worst / 1e6, m.mix_count,
+            m.mix_count > 0 ? (double)m.mix_total_ns / (double)m.mix_count / 1e6 : 0.0, (double)m.mix_ns / 1e6);
     BR_CHECK(m.finite && br_audio_instance_count(e) <= 24);
-    BR_CHECK(worst * 4 < m.mix_ns);
+    BR_CHECK(call_count > 0 && m.mix_count > 0);
+    BR_CHECK(inside * 4 > call_count);
     /* destroying the sound with voices on it while nothing mixes: all gone */
     br_assets_unload(e, "gong.ogg");
     BR_CHECK(br_audio_instance_count(e) == 0);
