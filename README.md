@@ -103,7 +103,9 @@ limits the frame rate: CPU update, CPU render submit, GPU, vsync or the FPS cap)
 draw and set-pass numbers low (shared materials, instancing, atlases: `AGENTS.md` "How to make a
 game" step 8) and take their memory from three preallocated arenas - frame, level, game - sized
 in game.json `"memory"` (step 7, `docs/agents/arena.md`); nothing allocates per frame, and game
-data sits in dense arrays walked in order, described by data files rather than code (step 9). 3D views cull by frustum and by
+data sits in dense arrays walked in order, described by data files rather than code (step 9). Gameplay rules live apart from the systems
+that show them (plain C with no engine dependency, in `src/sim/`), so they are tested on their
+own without a window or GPU (step 10). 3D views cull by frustum and by
 occlusion (items hidden behind opaque meshes are not drawn; on by default, CPU side, see
 `docs/agents/three_d.md`). `--profile build/trace.json` writes a Chrome trace (open it in
 <https://ui.perfetto.dev>) and `build/trace.json.txt`, a text summary. Measure with

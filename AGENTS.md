@@ -104,7 +104,8 @@ Your own code: `br_profile_begin(e, "name")` / `br_profile_end(e)`. `docs/PROFIL
      hot-reload).
    - `src/game.h` - component structs + the ONE game-state struct handed to systems as `user`.
    - `src/components.c` - a `br_field_desc` list per component (`br_component_register`).
-   - systems in `src/*.c`, each file a group (input, rules, movement, UI...).
+   - systems in `src/*.c`, each file a group (input, rules, movement, UI...). New games put
+     the rules in `src/sim/` with no engine dependency and test them on their own (step 10).
    - `src/main.c` - `br_main` is `return br_game_config_main("game.json", argc, argv, init);`;
      init registers components and systems and exposes game state (`br_playtest_expose`).
    - `playtest/round.json` registered with CTest; `CMakeLists.txt` = `add_subdirectory(<braty>)`,
@@ -247,7 +248,38 @@ Your own code: `br_profile_begin(e, "name")` / `br_profile_end(e)`. `docs/PROFIL
    - **Measure, do not guess:** `br_profile_begin` / `_end` around a suspect system, F2 for the
      scopes, `profile` in a play-test for `frame_ms_p95` (`docs/PROFILING.md`).
 
-10. **Or skip building the engine:** link the prebuilt SDK from the GitHub releases
+10. **Gameplay separate from view, tested without the engine.** A game is two layers, and the
+    rules must build and run with no window, no GPU, no nodes and no `br_engine`:
+
+    - **`src/sim/` - the gameplay.** Plain C: a state struct, an input struct and
+      `sim_init` / `sim_step(state, input, dt)` plus the rule functions under them (movement,
+      collision, scoring, spawning, AI, win / lose, turn order). It takes no `br_engine *` and
+      includes no engine header except the pure ones whose functions take none (`br_math.h`;
+      `br_random.h` with a `br_random` the sim owns and seeds, never `br_random_engine`). No
+      nodes, cameras, input module, audio, text, assets or file reading: tuning and level data
+      arrive as plain structs filled by the view layer at load. Memory is handed in (pointers
+      into the level / game arena, fixed arrays), so the sim allocates nothing.
+    - **`src/*.c` - the view.** Engine systems only. One reads the input actions into the sim's
+      input struct; one calls `sim_step` (FIXED_UPDATE or UPDATE); the rest copy sim state to
+      nodes: positions, visibility, animation parameters, HUD text. It decides nothing about
+      the game: no score, health, collision or win check lives here.
+    - **One direction.** The view reads sim state and never writes it except through the input
+      struct; the sim never calls the view. What the view must react to once (a hit, a pickup,
+      a death: sounds, particles, popups, camera shake) the sim appends to a fixed event array
+      in its state, cleared at the start of each step; the view drains it after the step.
+    - **`tests/test_*.c` - the check.** A plain `main` that builds a sim state by hand, feeds
+      inputs, steps it and checks the result (`BR_CHECK` from `tests/br_test.h` in this
+      repository, plain `if` + exit code elsewhere). The test target compiles `src/sim/*.c` and
+      `tests/*.c` only: if a rule cannot be tested without a view file, it is in the wrong
+      layer. One test per rule that can break (each scoring case, each collision edge, win,
+      lose, restart), registered with CTest and run before every commit; it takes
+      milliseconds. A changed rule ships with its test, as in the engine.
+    - The play-test (`round.json`) stays: it checks that the view and the data are wired to the
+      sim. The sim tests check the rules. `br_playtest_expose` exposes the sim state struct.
+    - The two samples are older and mix both layers in their systems; copy their data layout
+      and engine usage, not that.
+
+11. **Or skip building the engine:** link the prebuilt SDK from the GitHub releases
    (`find_package(braty CONFIG REQUIRED)`, `braty::braty`); `docs/BUILDING.md` "The SDK".
 
 Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
@@ -289,6 +321,11 @@ Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
   pools, component rows) and refers to things by index or handle: no linked lists, no per-object
   heap blocks, no string or path lookups per frame. What varies between things is data in a
   table, not a branch in code ("How to make a game" step 9).
+- **Gameplay code does not depend on view code.** Rules (state, movement, collision, scoring,
+  AI) are plain C with no `br_engine`, nodes, input or rendering, and have tests that run
+  without a window; systems only feed input in and show the state ("How to make a game" step
+  10). In the engine the same split holds: logic that can be tested headless is kept apart from
+  the code that draws it.
 - **Fewest set passes and draw calls.** A change that adds a pipeline, a material, a render
   target or a pass must show why the picture needs it; anything that looks the same shares one
   material and batches ("How to make a game" step 8).
