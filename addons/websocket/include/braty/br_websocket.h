@@ -68,6 +68,9 @@ bool br_websocket_register(br_engine *e);
 br_websocket br_websocket_open(br_engine *e, const char *url, const char *protocols, const char *headers);
 /* CONNECTING, OPEN, CLOSING, CLOSED or FAILED; CLOSED for zero / stale handles. */
 br_websocket_state br_websocket_socket_state(br_engine *e, br_websocket ws);
+/* The subprotocol the server chose from the offered `protocols` ("" when it chose none, before
+ * the handshake completed, and for zero / stale handles); valid until release. */
+const char *br_websocket_protocol(br_engine *e, br_websocket ws);
 /* Sends a text message (NUL-terminated, valid UTF-8). False (logged) unless OPEN, or when the
  * text is not valid UTF-8. */
 bool br_websocket_send_text(br_engine *e, br_websocket ws, const char *text);

@@ -23,6 +23,7 @@ response parser), the limits, the keep-alive, the timeouts and the handle-and-po
 | `br_websocket_register(e)` | Once in init. Idempotent; registers `http`, `tls`, `net`. |
 | `br_websocket_open(e, url, protocols, headers)` | `ws://` / `wss://`. Returns at once in CONNECTING. `protocols` = `"chat, v2"` or NULL; `headers` = extra `"Name: value\r\n"` lines (Origin, Authorization, Cookie) or NULL. |
 | `br_websocket_socket_state(e, ws)` | CONNECTING -> OPEN -> (CLOSING) -> CLOSED, or FAILED. CLOSED for zero / stale handles. |
+| `br_websocket_protocol(e, ws)` | The subprotocol the server chose from your `protocols` ("" when none, or before OPEN). |
 | `br_websocket_send_text(e, ws, text)` | A text message (valid UTF-8, else false + log). False unless OPEN. |
 | `br_websocket_send_binary(e, ws, data, size)` | A binary message. False unless OPEN. |
 | `br_websocket_receive(e, ws, &m)` | The next whole message (`m.data` NUL-terminated, `m.size`, `m.text`); valid until the next receive. Works after CLOSED / FAILED for what arrived before. |
@@ -184,8 +185,6 @@ After FAILED from a protocol error the close frame is sent and the connection cl
 - **Close codes 1012-1014** (service restart, try again later, bad gateway; IANA, after RFC 6455)
   are a normal close: CLOSED with that code (wslay 1.1.1 refused them; our copy is patched, as
   libwebsockets accepts them). 1015 is never valid in a close frame.
-- **No subprotocol getter:** when you offer several protocols, the one the server chose is checked
-  but not returned. Offer one, or put the version in the URL.
 - **wslay allocates** (libc `malloc`, not `br_alloc`) a block per received frame and per queued
   message; our buffers (the output, the unread queue, the current message) grow once and are
   reused. `br_memory_get_stats` does not see wslay's blocks.

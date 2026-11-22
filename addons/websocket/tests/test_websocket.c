@@ -184,6 +184,7 @@ static br_websocket open_socket(br_engine *e, br_net_server listener, const char
     BR_CHECK(server_accept(e, listener, secure));
     server_answer(NULL, NULL, 0, false);
     BR_CHECK(wait_while(e, ws, BR_WEBSOCKET_CONNECTING, 10.0) == BR_WEBSOCKET_OPEN);
+    BR_CHECK(SDL_strcmp(br_websocket_protocol(e, ws), "") == 0);   /* none offered, none chosen */
     return ws;
 }
 
@@ -253,6 +254,7 @@ static void test_zero_handles(br_engine *e)
     br_websocket_set_ping_interval(e, wild, 1.0f);
     br_websocket_close(e, zero, 1000, NULL);
     BR_CHECK(br_websocket_close_code(e, zero) == 0);
+    BR_CHECK(SDL_strcmp(br_websocket_protocol(e, wild), "") == 0);
     BR_CHECK(SDL_strcmp(br_websocket_error(e, wild), "") == 0);
     br_websocket_release(e, zero);
     br_websocket_release(e, wild);
@@ -286,12 +288,14 @@ static void test_echo(br_engine *e, br_net_server listener)
     BR_CHECK(contains(request, "\r\nSec-WebSocket-Protocol: chat, v2\r\n"));
     BR_CHECK(contains(request, "\r\nOrigin: braty-test\r\n"));
     BR_CHECK(!br_websocket_send_text(e, ws, "too early"));   /* not OPEN yet */
+    BR_CHECK(SDL_strcmp(br_websocket_protocol(e, ws), "") == 0);
     /* the 101 and the first message in one send: the bytes after the headers reach wslay */
     uint8_t first[64];
     size_t first_size = ws_test_frame_write(first, 0x81, "welcome", 7);
     server_answer("Sec-WebSocket-Protocol: chat\r\n", first, first_size, false);
     BR_CHECK(wait_while(e, ws, BR_WEBSOCKET_CONNECTING, 10.0) == BR_WEBSOCKET_OPEN);
     BR_CHECK(receive_text(e, ws, "welcome", 5.0));
+    BR_CHECK(SDL_strcmp(br_websocket_protocol(e, ws), "chat") == 0);   /* the server's choice */
 
     /* text echo */
     BR_CHECK(br_websocket_send_text(e, ws, "hello, server"));

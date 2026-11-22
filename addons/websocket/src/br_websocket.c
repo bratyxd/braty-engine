@@ -21,7 +21,8 @@ typedef struct br_websocket_slot {
     size_t             request_size;
     char              *protocols;     /* the offered protocols (copy), NULL = none */
     char               accept[BR_WEBSOCKET_ACCEPT_LENGTH + 1];
-    br_websocket_conn  conn;          /* after the 101 (conn.ctx != NULL) */
+    char               protocol[128]; /* the one the server chose, "" = none */
+    br_websocket_conn  conn;         /* after the 101 (conn.ctx != NULL) */
     br_websocket_state state;         /* CONNECTING, or CLOSED / FAILED before a conn existed */
     uint64_t           start;         /* SDL_GetTicksNS at open */
     float              handshake_timeout;
@@ -225,6 +226,9 @@ static void br_websocket_handshake(br_engine *e, br_websocket_addon *w, br_webso
         br_websocket_fail(e, slot, "%s", reason);
         return;
     }
+    /* checked: one of the offered tokens (picohttpparser trimmed the spaces) */
+    const char *chosen = br_http_parser_header(slot->parser, "Sec-WebSocket-Protocol");
+    SDL_strlcpy(slot->protocol, chosen != NULL ? chosen : "", sizeof slot->protocol);
     br_websocket_upgrade(e, slot, now);
 }
 
@@ -389,6 +393,12 @@ br_websocket_state br_websocket_socket_state(br_engine *e, br_websocket ws)
 {
     br_websocket_slot *slot = br_websocket_slot_get(br_websocket_get_state(e), ws);
     return slot != NULL ? br_websocket_slot_state(slot) : BR_WEBSOCKET_CLOSED;
+}
+
+const char *br_websocket_protocol(br_engine *e, br_websocket ws)
+{
+    br_websocket_slot *slot = br_websocket_slot_get(br_websocket_get_state(e), ws);
+    return slot != NULL ? slot->protocol : "";
 }
 
 static bool br_websocket_send(br_engine *e, br_websocket ws, bool text, const void *data, size_t size)
