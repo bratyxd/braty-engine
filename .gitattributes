@@ -1,0 +1,3 @@
+# PEM certificates and keys are kept byte for byte (tests and the CA bundle parse them).
+*.pem -text
+*.key -text

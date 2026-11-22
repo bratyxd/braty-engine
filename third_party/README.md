@@ -23,3 +23,12 @@ else fetches the source with FetchContent and builds it static (`addons/<name>/C
 | Library | Add-on | Upstream | Version | Licence |
 |---|---|---|---|---|
 | SDL3_net | `net` | github.com/libsdl-org/SDL_net | release-3.2.0 | zlib |
+| Mbed TLS | `tls` | github.com/Mbed-TLS/mbedtls (release tarball `mbedtls-3.6.8.tar.bz2`, SHA-256 in `addons/tls/CMakeLists.txt`) | 3.6.8 LTS | Apache-2.0 |
+
+Committed with an add-on:
+
+| Data | Add-on | Upstream | Version | Licence |
+|---|---|---|---|---|
+| Mozilla CA bundle `addons/tls/certs/cacert.pem` | `tls` | curl.se/ca/cacert.pem | "Certificate data from Mozilla as of: Thu Nov  5 04:12:01 2026 GMT" (downloaded 2026-11-22) | MPL-2.0 |
+
+To update the bundle: download https://curl.se/ca/cacert.pem over `addons/tls/certs/cacert.pem`, update the date above; CMake regenerates the C array at the next configure.
