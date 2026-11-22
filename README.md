@@ -31,9 +31,10 @@ window and skip without a GPU), every example once with `--headless --frames 5`,
 games' play-test scripts (headless; Crate Rush's also from a `.brpack` with no loose files), the
 pack round trip and 29 golden images (Direct3D 12; Vulkan differs by a few edge pixels in some of
 them, `docs/TESTING.md`): 76 CTest entries. 27 examples and two sample games run on **Windows 11 + MinGW-w64 GCC with Direct3D 12 and Vulkan** (RTX 3060 Ti) -
-the only tested platform, in Debug and with the `windows-gcc-release` preset. Linux, macOS, iOS,
-Android and MSVC presets exist but have never been built; Metal shaders are generated but have
-never run. Details: `docs/PLATFORMS.md`. What is not there yet: "Not implemented yet" below.
+the only platform run on a real GPU, in Debug and with the `windows-gcc-release` preset. CI
+builds and tests Windows (MinGW, MSVC), Linux and macOS on every push; Metal shaders are
+generated but have never run on a GPU. Priorities: Windows, macOS and Linux are the primary
+targets; consoles and mobile are not a priority (iOS and Android presets exist, never built). Details: `docs/PLATFORMS.md`. What is not there yet: "Not implemented yet" below.
 
 | Area | What | Modules | Status |
 |---|---|---|---|
@@ -60,7 +61,7 @@ never run. Details: `docs/PLATFORMS.md`. What is not there yet: "Not implemented
 | Add-on `http` | HTTP/1.1 client: any method, headers, body, chunked, redirects, real-time timeouts, response limits, progress (`addons/http/README.md`) | http | Done (0.2.0) |
 | Add-on `websocket` | RFC 6455 client: text / binary messages, subprotocols, keep-alive pings, close codes, every disconnect reported by polling (`addons/websocket/README.md`) | websocket | Done (0.2.0) |
 | Tests | 43 test programs, headless runs of every example, play-test scripts, pack round trip, the add-on resolver, 29 golden images: 81 CTest entries; with `-DBRATY_ADDONS=all` 6 add-on tests more (loopback only): 87 (`docs/TESTING.md`) | tests, tools | Done |
-| Platforms | presets for Linux, macOS, iOS, Android, MSVC; a `-release` preset for each | - | Configured, untested (only `windows-gcc` / `windows-gcc-release` built) |
+| Platforms | Windows (MinGW, MSVC), Linux, macOS built and tested by CI; a `-release` preset for each; presets for iOS and Android; consoles would need the platform holder's SDL3 port (mobile and consoles: not a priority) | - | Desktop: CI on every push, real GPU only on Windows MinGW. Consoles, mobile: never built |
 
 ## Quick start
 
@@ -252,8 +253,8 @@ SVG file import beyond path data, GPU compute culling.
 ## Limits
 
 - **Platforms:** tested only on Windows 11 with MinGW-w64 GCC, D3D12 and Vulkan, one GPU (RTX
-  3060 Ti). Linux, macOS, iOS, Android and MSVC have presets and CI jobs (MSVC, Linux, macOS)
-  that have never run.
+  3060 Ti). MSVC, Linux and macOS are built and tested by CI on every push without a real GPU
+  (software renderers or the dummy video driver); iOS, Android and consoles have never been built.
 - **Golden images are Direct3D 12 images:** Vulkan and other GPUs differ by a few pixels and
   would need goldens of their own (`docs/TESTING.md`).
 - **GPU time is an estimate:** SDL_GPU has no timer queries; the profiler polls fences (~0.5 ms

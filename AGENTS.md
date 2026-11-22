@@ -8,6 +8,12 @@ profiler and scriptable play-testing. One static library, `braty`. All scene dat
 tables inside a `br_engine`; behaviour is a list of systems (plain functions) run in phase order
 every frame. Games are JSON data + component structs + systems.
 
+**Platform priorities: Windows, macOS and Linux are the primary targets; consoles and mobile
+are not a priority.** A change must build and pass on all three desktop platforms (CI runs
+them on every push); do not spend effort on console- or mobile-only features, ports or testing
+unless asked. Code stays portable as before: plain C, platform access only through SDL
+(`docs/PLATFORMS.md`).
+
 Plans and feature maps: `docs/plans/2026-11-19-braty-engine.md` (Phase 1),
 `docs/plans/2026-11-19-braty-engine-phase2.md` (Phase 2). What works and what does not:
 `README.md` (Status, Limits).

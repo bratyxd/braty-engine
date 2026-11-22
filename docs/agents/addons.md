@@ -18,6 +18,11 @@ Code: `cmake/BratyAddons.cmake` (resolver + `braty_addon()`), `addons/CMakeLists
 registry in `engine/include/braty/br_app.h` ("add-on registry"), `engine/src/app/br_engine.c`.
 Tests: `tests/test_addon.c`, `tests/addon_resolve.cmake` with `tests/addon_fixtures/`.
 
+**Third-party code stays inside.** An add-on's library is an implementation detail: no
+third-party type or header in the add-on's public header, and other add-ons and games call only
+`br_<name>_*`. The library can then be updated or replaced (another version, another platform's
+own stack) without changing anything above it.
+
 ## Selecting add-ons: `BRATY_ADDONS`
 
 A cache variable of the engine's `CMakeLists.txt`: names separated by `;`, or `all` (every

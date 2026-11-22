@@ -2,23 +2,33 @@
 
 One code base, every platform SDL3 runs on: the engine calls only SDL3 and the C standard
 library, uses SDL's main callbacks (no blocking main loop), reads files through SDL, and ships
-shaders precompiled for every GPU backend. **Honest status: only Windows with MinGW-w64 GCC has
-ever been built and run.** Everything else below is configured, written down, and untested.
+shaders precompiled for every GPU backend.
+
+**Priorities (the owner's, 2026-11-22): Windows, macOS and Linux are the primary targets.
+Consoles and mobile (iOS, Android) are not a priority for now.** Design choices are weighed for
+the three desktop platforms; no effort goes into console- or mobile-only features, ports or
+testing unless asked. Keeping the code portable costs nothing and stays the rule (plain C,
+platform access only through SDL), so a later port remains possible.
+
+**Honest status:** Windows with MinGW-w64 GCC is the only platform run on a real GPU. CI
+(`.github/workflows/build.yml`, every push) also builds with warnings as errors and runs the
+tests on Windows with MSVC, on Linux and on macOS, without a real GPU (below). Consoles and
+mobile have never been built.
 
 | Platform | Preset | GPU backend | Status |
 |---|---|---|---|
 | Windows 10/11, MinGW-w64 GCC | `windows-gcc`, `windows-gcc-release` | Direct3D 12, Vulkan | **Tested**: all tests (Debug and release presets), every example, both sample games. Goldens are D3D12; Vulkan screenshots differ by a few edge pixels in 11 of 29 cases (`docs/TESTING.md`) |
-| Windows, MSVC | `windows-msvc` | Direct3D 12, Vulkan | **Never built, never run** (no MSVC on the dev machine). The CI workflow has a `windows-msvc` job, but the workflow itself has never run |
-| Linux (GCC/Clang) | `linux` | Vulkan | Configured, never built. CI builds it once the workflow runs |
-| macOS (Apple Clang) | `macos` | Metal | Configured, never built. **MSL shaders are generated but have never run** |
-| iOS | `ios` (Xcode generator) | Metal | Configured, never built; tests off |
-| Android | `android` (NDK toolchain) | Vulkan | Configured, never built; tests off; needs SDL's Java glue |
-| Consoles | - | the console's native format | Not possible yet: needs an SDL3 port from the platform holder (below) |
+| Windows, MSVC | `windows-msvc` | Direct3D 12, Vulkan | Built and tested by CI on every push (tests without the golden images); never run on a developer machine or a real GPU |
+| Linux (GCC) | `linux` | Vulkan | Built and tested by CI on every push (Ubuntu 24.04; golden images through lavapipe, software Vulkan, under Xvfb); never run on a real GPU |
+| macOS (Apple Clang, arm64) | `macos` | Metal | Built and tested by CI on every push with the dummy video driver (no golden images). **MSL shaders are generated but have never run on a GPU**; one recorded play-test diverges on arm64 (`docs/API_REVIEW.md` item 63) |
+| Consoles (not a priority) | - | the console's native format | Not possible yet: needs the SDL3 port from the platform holder (below) |
+| iOS (not a priority) | `ios` (Xcode generator) | Metal | Configured, never built; tests off |
+| Android (not a priority) | `android` (NDK toolchain) | Vulkan | Configured, never built; tests off; needs SDL's Java glue |
 
 Every desktop preset has a `-release` twin (`docs/BUILDING.md`, "Release builds"). The workflow
 `.github/workflows/build.yml` builds Windows (MinGW, Debug and release), Windows (MSVC), Linux and
-macOS with engine warnings as errors and runs the tests; **it has never run**, so none of those
-jobs is known to pass.
+macOS with engine warnings as errors and runs the tests on every push; the release workflow
+builds and tests the SDK archives for the same four toolchains.
 
 ## Add-ons
 
@@ -33,7 +43,14 @@ TLS from Mbed TLS.
   a web build would need the browser's `fetch` / `WebSocket`, which no add-on wraps.
 - **iOS and Android:** never built with add-ons (like the rest of those presets: configured,
   untested). SDL3_net and Mbed TLS support both.
-- Consoles: SDL3_net needs the platform's socket layer; not tried.
+- **Consoles (not a priority): not tried, and not to be assumed.** SDL3 itself has console ports (Switch,
+  PlayStation: NDA-only forks given to licensed developers; Xbox through the GDK), but the
+  public SDL3_net has no console code and no source says the console forks include it. It is a
+  thin layer over BSD sockets / Winsock, so a port is probably small (the GDK has Winsock);
+  ask whoever grants the SDL console fork. Platform holders may also require their own TLS /
+  HTTP libraries for certification. If a port is ever wanted, the layering helps: it would
+  replace what sits under `net` (sockets) and `tls` (Mbed TLS) behind the same `br_net_*` /
+  `br_tls_*` functions; `http`, `websocket` and game code would not change.
 
 ## Common requirements
 
