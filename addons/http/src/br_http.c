@@ -423,6 +423,24 @@ const char *br_http_header(br_engine *e, br_http_request r, const char *name)
     return slot != NULL && slot->state == BR_HTTP_DONE ? br_http_parser_header(slot->parser, name) : NULL;
 }
 
+uint32_t br_http_header_count(br_engine *e, br_http_request r)
+{
+    br_http_slot *slot = br_http_slot_get(br_http_get_state(e), r);
+    return slot != NULL && slot->state == BR_HTTP_DONE ? br_http_parser_header_count(slot->parser) : 0;
+}
+
+bool br_http_header_get_at(br_engine *e, br_http_request r, uint32_t index, const char **name, const char **value)
+{
+    if (name != NULL) {
+        *name = NULL;
+    }
+    if (value != NULL) {
+        *value = NULL;
+    }
+    br_http_slot *slot = br_http_slot_get(br_http_get_state(e), r);
+    return slot != NULL && slot->state == BR_HTTP_DONE && br_http_parser_header_at(slot->parser, index, name, value);
+}
+
 const void *br_http_body(br_engine *e, br_http_request r, size_t *size)
 {
     br_http_slot *slot = br_http_slot_get(br_http_get_state(e), r);

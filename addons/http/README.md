@@ -23,6 +23,7 @@ MIT); URLs, the request, body framing, limits, redirects and timeouts are ours.
 | `br_http_request_state(e, r)` | PENDING -> DONE (a complete response, any status) or FAILED. NONE for zero / stale / released handles. |
 | `br_http_status(e, r)` | 200, 404...; 0 until DONE. |
 | `br_http_header(e, r, name)` | Case-insensitive; the first when repeated; NULL when absent. |
+| `br_http_header_count(e, r)`, `br_http_header_get_at(e, r, i, &name, &value)` | Every header line in order, repeated names (each `Set-Cookie`) included. |
 | `br_http_body(e, r, &size)` | NUL-terminated body; valid until release. |
 | `br_http_progress(e, r)` | Body bytes / Content-Length (0 when unknown, 1 when DONE): a download bar. |
 | `br_http_error(e, r)` | Why it FAILED ("timed out after 30.0 s", "bad response: body of 100 bytes is over the limit of 10", the tls reason...). |
@@ -115,8 +116,8 @@ g->submit = br_http_send(e, &desc);
 - **Body without a length vs. truncation:** a response with neither Content-Length nor chunked
   ends at the close, and `tls` reads a TCP end without close_notify as a close too, so such a
   body cut short by the network looks complete. Servers that send a length are safe.
-- **One response header per name:** `br_http_header` returns the first line of a name;
-  repeated headers (`Set-Cookie`) beyond the first are not reachable. No cookies are kept.
+- **Repeated headers:** `br_http_header` returns the first line of a name; walk
+  `br_http_header_get_at` for all of them (several `Set-Cookie`). No cookies are kept.
 - **Not implemented** (`// ponytail:` in the plan): keep-alive (one connection per request),
   gzip (`Accept-Encoding: identity` is sent), proxies, cookies, HTTP/2, `Expect: 100-continue`
   waits (a 100 is skipped if a server sends one), user info in URLs (`user:pw@host` fails: send an

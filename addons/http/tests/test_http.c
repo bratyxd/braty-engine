@@ -107,6 +107,9 @@ static void test_zero_handles(br_engine *e)
     BR_CHECK(br_http_request_state(e, wild) == BR_HTTP_NONE);
     BR_CHECK(br_http_status(e, zero) == 0);
     BR_CHECK(br_http_header(e, zero, "Host") == NULL);
+    const char *name = "x", *value = "y";
+    BR_CHECK(br_http_header_count(e, wild) == 0);
+    BR_CHECK(!br_http_header_get_at(e, zero, 0, &name, &value) && name == NULL && value == NULL);
     BR_CHECK(br_http_body(e, wild, &size) == NULL && size == 0);
     BR_CHECK(br_http_progress(e, zero) == 0.0f);
     BR_CHECK(SDL_strcmp(br_http_error(e, wild), "") == 0);
@@ -139,7 +142,8 @@ static void test_bad_arguments(br_engine *e)
 static void test_get(br_engine *e, br_net_server server)
 {
     static const char *const ok[] = {
-        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nX-Game: braty\r\nContent-Length: 12\r\n\r\nhello, world"
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nX-Game: braty\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\n"
+        "Content-Length: 12\r\n\r\nhello, world"
     };
     br_http_request r = br_http_get(e, "http://127.0.0.1:47821/scores?top=10");
     BR_CHECK(r.generation != 0);
@@ -153,6 +157,15 @@ static void test_get(br_engine *e, br_net_server server)
     BR_CHECK(contains(br_http_header(e, r, "content-type"), "text/plain"));
     BR_CHECK(contains(br_http_header(e, r, "X-GAME"), "braty"));
     BR_CHECK(br_http_header(e, r, "Missing") == NULL);
+    /* every line, repeated names included, in order */
+    BR_CHECK(br_http_header_count(e, r) == 5);
+    const char *name = NULL, *value = NULL;
+    BR_CHECK(br_http_header_get_at(e, r, 2, &name, &value));
+    BR_CHECK(SDL_strcmp(name, "Set-Cookie") == 0 && SDL_strcmp(value, "a=1") == 0);
+    BR_CHECK(br_http_header_get_at(e, r, 3, &name, &value));
+    BR_CHECK(SDL_strcmp(name, "Set-Cookie") == 0 && SDL_strcmp(value, "b=2") == 0);
+    BR_CHECK(br_http_header_get_at(e, r, 4, NULL, &value) && SDL_strcmp(value, "12") == 0);
+    BR_CHECK(!br_http_header_get_at(e, r, 5, &name, &value) && name == NULL && value == NULL);
     BR_CHECK(br_http_progress(e, r) == 1.0f);
     BR_CHECK(SDL_strcmp(br_http_error(e, r), "") == 0);
     /* what went on the wire */

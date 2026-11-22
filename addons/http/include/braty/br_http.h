@@ -98,6 +98,13 @@ int br_http_status(br_engine *e, br_http_request r);
 /* Value of the final response's header `name` (case-insensitive; the first when repeated),
  * NUL-terminated and valid until release. NULL when absent or not DONE. */
 const char *br_http_header(br_engine *e, br_http_request r, const char *name);
+/* Number of header lines of the final response (repeated names count each time, so every
+ * Set-Cookie is reachable); 0 until DONE. */
+uint32_t br_http_header_count(br_engine *e, br_http_request r);
+/* Name and value of header line `index` (0..count-1, in the order received), NUL-terminated and
+ * valid until release. False (and *name / *value NULL) out of range or not DONE. name and value
+ * may be NULL. */
+bool br_http_header_get_at(br_engine *e, br_http_request r, uint32_t index, const char **name, const char **value);
 /* The response body, NUL-terminated (the NUL is not in *size); valid until release. NULL (and
  * *size 0) until DONE. size may be NULL. */
 const void *br_http_body(br_engine *e, br_http_request r, size_t *size);
