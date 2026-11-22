@@ -153,8 +153,11 @@ Your own code: `br_profile_begin(e, "name")` / `br_profile_end(e)`. `docs/PROFIL
      render levels, 16 prefab levels, 16 names per `{a,b}` pattern, 8192-point concave fills,
      glTF counts, text sizes) are in README "Limits" and `docs/DATA_FORMATS.md`.
 
-7. **Memory: three arenas, sized up front.** Every game gets three arenas, created with the
-   engine. Put each piece of game data in the one whose lifetime matches, instead of `br_alloc`:
+7. **Memory: do not allocate unless it is absolutely necessary.** The default answer to "where
+   does this memory come from" is: it already exists (a field of the game-state struct, a fixed
+   array, a component row, a hidden node waiting to be reused). When new memory really is
+   needed, it comes from one of three arenas created with the engine and sized up front. Put
+   each piece of game data in the one whose lifetime matches, instead of `br_alloc`:
 
    | Arena | Allocate with | Lives until | Use for |
    |---|---|---|---|
@@ -181,7 +184,9 @@ Your own code: `br_profile_begin(e, "name")` / `br_profile_end(e)`. `docs/PROFIL
      engine objects, not arena memory: create them at setup / level load and destroy them with
      the level. Details: `docs/agents/arena.md`.
 
-8. **Draw calls and set passes: keep them low.** The corner readout (`"profiler": { "hud": true }`
+8. **Draw calls and set passes: as few as possible.** Set passes first: a pipeline change costs
+   far more than one more draw with the same pipeline, so the target is the smallest `SETPASS`
+   the picture allows, then the smallest `DRAWS`. The corner readout (`"profiler": { "hud": true }`
    or `--profiler-hud`) ends with `DRAWS n   SETPASS n`: GPU draw calls of the last frame and
    how many of them changed the pipeline (shader / blend / depth state: the costly kind). Both
    count everything (2D, 3D, shadows, post-processing, the readout itself). Look at them after
@@ -210,7 +215,39 @@ Your own code: `br_profile_begin(e, "name")` / `br_profile_end(e)`. `docs/PROFIL
    - Play-tests can hold the line: `{"cmd": "expect", "path": "engine:draw_calls", "op": "<=",
      "value": 150}` and `engine:set_passes` (windowed runs only; headless reads 0).
 
-9. **Or skip building the engine:** link the prebuilt SDK from the GitHub releases
+9. **Data layout: data-driven and cache-friendly.** The engine keeps everything in flat tables
+   and runs systems over them; game code does the same, so the CPU reads memory in order and
+   the cache hits.
+
+   - **Data, not code, describes the game.** Scenes, prefabs, levels, waves, item and enemy
+     tables are JSON / glTF loaded into components and plain tables; every gameplay number is in
+     `tuning.json`. A new enemy kind or level is a new data row, not a new `if` or `switch`
+     branch. Behaviour differences are fields (speed, hp, a mode enum) read by one system.
+   - **One system, one tight loop over one dense array.** `br_component_count` / `_at` /
+     `_owner_at` rows are contiguous; walk them front to back (`br_query` for several
+     components at once). Game data that is not a component is a plain array of structs (or one
+     array per field when a loop reads only one or two fields) in the level or game arena, with
+     a count. Process everything of one kind in one pass, not object by object through
+     callbacks.
+   - **No pointer chasing in the hot path.** No linked lists, no per-object heap blocks, no
+     arrays of pointers to separately allocated things, no name or path lookups per frame
+     (`br_node_find_by_label`, asset by path, component id by name: resolve once at setup / level load
+     and keep the handle or index). Refer to other things by index or handle.
+   - **Keep hot rows small.** A component a system touches every frame holds only what that
+     loop reads; names, descriptions and rarely used settings go in a separate table indexed by
+     the row's kind. Small types where they fit (`uint8_t` cell kinds, `uint16_t` indices, bit
+     flags instead of several `bool`s); a grid is one flat array indexed `y * width + x`, walked
+     row by row.
+   - **Skip work instead of doing it faster.** Keep live items packed at the front
+     (swap-remove) so loops do not test a dead flag per slot; disable a system group
+     (`br_system_group_set_enabled`) rather than early-return in each system; spread expensive
+     updates (path finding, mesh rebuilds) over frames; set a property only when its value
+     changed (`br_text_set_text` with the same string is free, a new one lays the text out
+     again).
+   - **Measure, do not guess:** `br_profile_begin` / `_end` around a suspect system, F2 for the
+     scopes, `profile` in a play-test for `frame_ms_p95` (`docs/PROFILING.md`).
+
+10. **Or skip building the engine:** link the prebuilt SDK from the GitHub releases
    (`find_package(braty CONFIG REQUIRED)`, `braty::braty`); `docs/BUILDING.md` "The SDK".
 
 Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
@@ -248,6 +285,13 @@ Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
   `br_text_set_text` with a new string copies it and lays the text out again (free when the text
   is unchanged), and geometry has no in-place update, so a changed mesh is `br_geometry3d_destroy` +
   `br_geometry3d_create` (CPU copy + new GPU buffers; spread rebuilds over frames).
+- **Cache-friendly, data-driven hot paths.** Per-frame code walks dense arrays in order (tables,
+  pools, component rows) and refers to things by index or handle: no linked lists, no per-object
+  heap blocks, no string or path lookups per frame. What varies between things is data in a
+  table, not a branch in code ("How to make a game" step 9).
+- **Fewest set passes and draw calls.** A change that adds a pipeline, a material, a render
+  target or a pass must show why the picture needs it; anything that looks the same shares one
+  material and batches ("How to make a game" step 8).
 - Shaders are compiled offline (`tools/compile_shaders.py`); the runtime never compiles source.
 - Comments explain why, briefly. Every public function has a one-line doc comment.
 - Deliberate shortcuts get a `// ponytail:` comment naming the limit and the upgrade path.
