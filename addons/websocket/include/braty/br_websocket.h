@@ -29,6 +29,9 @@
 #define BR_WEBSOCKET_DEFAULT_MAX_MESSAGE (16 * 1024 * 1024)
 /* Unread received bytes a socket keeps; more fails the connection (close code 1008). */
 #define BR_WEBSOCKET_MAX_UNREAD (64 * 1024 * 1024)
+/* Bytes waiting to go out to a server that does not read. A send that would pass it returns
+ * false; pongs to a ping flood that pass it drop the connection (CLOSED, 1006). */
+#define BR_WEBSOCKET_MAX_UNSENT (16 * 1024 * 1024)
 /* Keep-alive ping interval when br_websocket_set_ping_interval was not called (seconds). */
 #define BR_WEBSOCKET_DEFAULT_PING_INTERVAL 30.0f
 /* Real-time seconds from br_websocket_open to the end of the opening handshake. */
@@ -71,10 +74,11 @@ br_websocket_state br_websocket_socket_state(br_engine *e, br_websocket ws);
 /* The subprotocol the server chose from the offered `protocols` ("" when it chose none, before
  * the handshake completed, and for zero / stale handles); valid until release. */
 const char *br_websocket_protocol(br_engine *e, br_websocket ws);
-/* Sends a text message (NUL-terminated, valid UTF-8). False (logged) unless OPEN, or when the
- * text is not valid UTF-8. */
+/* Sends a text message (NUL-terminated, valid UTF-8). False (logged) unless OPEN, when the
+ * text is not valid UTF-8, or when it would put more than BR_WEBSOCKET_MAX_UNSENT bytes in the
+ * queue to a server that is not reading. */
 bool br_websocket_send_text(br_engine *e, br_websocket ws, const char *text);
-/* Sends a binary message (size 0 is fine). False unless OPEN. */
+/* Sends a binary message (size 0 is fine). False as br_websocket_send_text. */
 bool br_websocket_send_binary(br_engine *e, br_websocket ws, const void *data, size_t size);
 /* The next whole message, false when none waits. data is NUL-terminated and valid until the next
  * br_websocket_receive on this socket. Messages that arrived before a close stay readable while

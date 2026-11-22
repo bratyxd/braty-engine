@@ -156,6 +156,7 @@ release. CLOSED or FAILED, the handle keeps its slot until `br_websocket_release
 | Close reason not valid UTF-8 | wslay | 1007 |
 | Message over `max_message` (whole message, checked at each frame header before its payload is stored) | wslay (we set the limit) | 1009 |
 | Unread messages over `BR_WEBSOCKET_MAX_UNREAD` (64 MB: the game stopped reading) | ours | 1008 |
+| A ping flood from a server that reads nothing (our pongs over `BR_WEBSOCKET_MAX_UNSENT` unsent; curl CVE-2026-11586) | ours | - (CLOSED, 1006, "the server is not reading") |
 | Out of memory storing a message | ours | 1011 |
 | A ping | wslay answers with a pong of the same payload, also between fragments | - |
 | The server's close | wslay answers with the same code, then sends nothing more; we close the TCP connection | its code |
@@ -172,7 +173,9 @@ After FAILED from a protocol error the close frame is sent and the connection cl
 - **Read every frame.** Messages wait in a per-socket queue until `br_websocket_receive`; a game
   that stops reading (a paused system group) fails the socket at 64 MB of unread data.
 - **Sends go out at once** (`br_websocket_send_*` hands the frame to `tls` in the call). Large
-  messages are fine (one frame, any size); there is no limit on what you send.
+  messages are fine (one frame, up to 16 MB). A server that does not read makes the queue grow:
+  a send that would leave more than `BR_WEBSOCKET_MAX_UNSENT` (16 MB) waiting returns false
+  (logged; the socket stays OPEN, try again later).
 - **Timeouts are real time** (`SDL_GetTicksNS`): handshake 30 s (`BR_WEBSOCKET_HANDSHAKE_TIMEOUT`),
   closing handshake 5 s (`BR_WEBSOCKET_CLOSE_TIMEOUT`), keep-alive 30 s
   (`BR_WEBSOCKET_DEFAULT_PING_INTERVAL`). A game that must notice a dead server quickly sets
@@ -198,6 +201,7 @@ After FAILED from a protocol error the close frame is sent and the connection cl
 |---|---|---|
 | `BR_WEBSOCKET_MAX` | 8 | sockets (any state, until released); one more: zero handle + log |
 | `BR_WEBSOCKET_DEFAULT_MAX_MESSAGE` | 16 MB | received message size when `set_max_message` was not called (1009 over it) |
+| `BR_WEBSOCKET_MAX_UNSENT` | 16 MB | bytes waiting to go out (a server not reading): sends over it return false, pongs over it drop the socket |
 | `BR_WEBSOCKET_MAX_UNREAD` | 64 MB | received bytes waiting for `br_websocket_receive` (1008 over it); also the largest `max_message` |
 | `BR_WEBSOCKET_DEFAULT_PING_INTERVAL` | 30 s | keep-alive ping after this much silence; dropped after twice it |
 | `BR_WEBSOCKET_HANDSHAKE_TIMEOUT` | 30 s | open to OPEN |

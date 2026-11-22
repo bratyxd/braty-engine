@@ -562,6 +562,43 @@ static void test_timeouts(br_engine *e, br_net_server listener)
     br_websocket_release(e, ws);
 }
 
+/* A server that reads nothing: sends stop at BR_WEBSOCKET_MAX_UNSENT, and a ping flood (each
+ * answered by a pong) drops the connection instead of growing the send queue without end. */
+static void test_not_reading(br_engine *e, br_net_server listener)
+{
+    static uint8_t chunk[1024 * 1024];
+    br_websocket ws = open_socket(e, listener, "ws://127.0.0.1:47831/", false);
+    int sent = 0;
+    bool refused = false;
+    uint64_t deadline = deadline_in(20.0);
+    while (!refused && sent < 200 && before(deadline)) {
+        if (br_websocket_send_binary(e, ws, chunk, sizeof chunk)) {
+            sent++;
+        } else {
+            refused = true;
+        }
+        step(e);   /* no peer_pump: the server reads nothing */
+    }
+    br_log_info("test_websocket: %d MB accepted before the send queue was full", sent);
+    BR_CHECK(refused && sent >= 16);
+    BR_CHECK(br_websocket_socket_state(e, ws) == BR_WEBSOCKET_OPEN);   /* a refused send is not fatal */
+    static uint8_t ping[125];
+    size_t n = 0;
+    while (n + 127 <= sizeof wire) {
+        n += ws_test_frame_write(wire + n, 0x89, ping, sizeof ping);
+    }
+    deadline = deadline_in(20.0);
+    while (br_websocket_socket_state(e, ws) == BR_WEBSOCKET_OPEN && before(deadline)) {
+        BR_CHECK(peer_send(wire, n));
+        step(e);
+    }
+    br_log_info("test_websocket: ping flood: %s", br_websocket_error(e, ws));
+    BR_CHECK(br_websocket_socket_state(e, ws) == BR_WEBSOCKET_CLOSED && br_websocket_close_code(e, ws) == 1006);
+    BR_CHECK(contains(br_websocket_error(e, ws), "not reading"));
+    br_websocket_release(e, ws);
+    peer_close();
+}
+
 static void test_wss(br_engine *e)
 {
     BR_CHECK(tls_test_server_start(&tls_server, e, TLS_PORT, "server.pem"));
@@ -625,6 +662,7 @@ int main(void)
     test_violations(e, listener);
     test_keep_alive(e, listener);
     test_timeouts(e, listener);
+    test_not_reading(e, listener);
     br_net_server_close(e, listener);
     test_wss(e);
     test_table_full(e);

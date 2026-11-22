@@ -145,6 +145,16 @@ static void br_websocket_pump(br_engine *e, br_websocket_addon *w, br_websocket_
     }
     br_websocket_conn_update(&slot->conn, now);
     br_websocket_flush(e, slot);
+    /* wslay answers every ping: a server that floods pings and reads nothing would grow the
+     * socket's send queue without end (curl CVE-2026-11586) */
+    size_t unsent = br_tls_send_pending(e, slot->stream);
+    if (unsent > BR_WEBSOCKET_MAX_UNSENT && slot->stream.generation != 0) {
+        char reason[160];
+        SDL_snprintf(reason, sizeof reason, "the server is not reading: %llu bytes unsent (BR_WEBSOCKET_MAX_UNSENT)",
+                     (unsigned long long)unsent);
+        br_websocket_conn_end(&slot->conn, reason, now);
+        br_websocket_flush(e, slot);
+    }
 }
 
 /* The 101 passed its checks: the conn takes over, with the bytes that came after the headers. */
@@ -405,6 +415,12 @@ static bool br_websocket_send(br_engine *e, br_websocket ws, bool text, const vo
 {
     br_websocket_slot *slot = br_websocket_slot_get(br_websocket_get_state(e), ws);
     if (slot == NULL || slot->conn.ctx == NULL || slot->conn.state != BR_WEBSOCKET_OPEN) {
+        return false;
+    }
+    size_t unsent = br_tls_send_pending(e, slot->stream);
+    if (size > BR_WEBSOCKET_MAX_UNSENT || unsent > BR_WEBSOCKET_MAX_UNSENT - size) {
+        br_log_error("br_websocket_send: %llu bytes would pass BR_WEBSOCKET_MAX_UNSENT (%llu unsent: the server is "
+                     "not reading)", (unsigned long long)size, (unsigned long long)unsent);
         return false;
     }
     bool ok = br_websocket_conn_send(&slot->conn, text, data, size);
