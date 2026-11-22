@@ -309,7 +309,49 @@ Your own code: `br_profile_begin(e, "name")` / `br_profile_end(e)`. `docs/PROFIL
       in the background on their own threads (`br_assets_load_async`, asset groups, async scene
       loads): no job needed for those.
 
-12. **Or skip building the engine:** link the prebuilt SDK from the GitHub releases
+12. **Juice: every interaction answers the player.** A game where things only change state
+    feels dead. Whenever something happens that the player caused or must notice (a hit, a
+    pickup, a jump and a landing, a kill, the player's death, a checkpoint, a level end, a
+    button press, a score change), the game answers on several channels at once, and nothing
+    just appears or vanishes. A finished rule with no feedback is an unfinished feature.
+
+    - **Nothing pops in or out.** A thing that dies, is collected or is removed plays a short
+      exit: a flash, a squash and a scale to zero, a burst of particles, a fade, debris that
+      falls. A thing that spawns scales or drops in. A panel slides or fades. Typical lengths:
+      0.1 - 0.4 s; it must never make the player wait for control.
+    - **Layer the answer.** For each event pick from every channel that fits, not one:
+      *motion* (tween: squash / stretch, punch scale, recoil, overshoot with
+      `BR_EASE_OUT_BACK`), *flash* (tint, a filter flash), *particles* (burst at the contact
+      point, trail), *camera* (`camera.shake` trauma via `br_camera_shake_add`, a small kick or
+      zoom), *time* (a hit-stop of 2 - 6 frames with `br_ticker_set_speed`, animating UI with
+      unscaled tweens), *sound* (one per event, pitch varied a little so repeats do not
+      grate), *UI* (the number that changed punches, a popup rises from where it happened:
+      canvas3d in 3D), *controller rumble* where a pad is used.
+    - **Scale it to the event.** A coin is a small pop and a tick; a boss kill is hit-stop,
+      big shake, a flash and a long burst. The player's own death and the level end are the
+      strongest moments in the game. Idle things move too: pickups bob, the selected button
+      breathes, the character has an idle animation.
+    - **It is view, driven by sim events** (step 10). The sim decides and removes the thing at
+      once; it appends `{kind, position, strength}` to its event array and knows nothing about
+      effects. One view system drains the events and starts the feedback, so the rule stays
+      testable and the play-test's `expect` values do not wait for an animation. The dying
+      thing's node is the view's: it plays the exit and is then hidden for reuse.
+    - **Data, not code.** One table row per event kind in `tuning.json` (shake, hit-stop
+      frames, particle prefab, sound, tween length and ease, popup text), read by that one
+      system: a new event is a new row, and tuning the feel needs no rebuild (hot reload).
+    - **Within the other rules.** Effect nodes, particle emitters and popups are created at
+      setup and reused (step 7: no create / destroy per event); particles and popups share one
+      atlas and one text style so they batch (step 8); the sequences are `br_tween_sequence`
+      and `*.anim.json` clips, not hand-written timers (`docs/agents/animation.md`,
+      `particles.md`, `camera.md`, `filters.md`, `audio.md`).
+    - **Restraint.** Feedback must never hide what the player needs to read or change the
+      rules: shake and flashes are short and capped (several hits in one frame do not add up
+      without limit), and a settings switch for shake and flashes is part of a shipped game.
+    - **Check it by looking:** a screenshot sequence a few frames apart across a hit and a
+      death (`step 2` + `screenshot` in a play-test) shows the flash, the particles and the
+      exit; if two frames in a row look the same except that something is gone, it is not done.
+
+13. **Or skip building the engine:** link the prebuilt SDK from the GitHub releases
    (`find_package(braty CONFIG REQUIRED)`, `braty::braty`); `docs/BUILDING.md` "The SDK".
 
 Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
@@ -361,6 +403,9 @@ Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
   ("How to make a game" step 11, `docs/agents/job.md`); the job function touches only its own
   data, never the engine. In the engine the same holds: no module blocks a frame on a big parse
   or build.
+- **Games answer the player.** Every interaction has feedback on several channels, and nothing
+  appears or vanishes without a short sequence; it lives in the view, is driven by sim events
+  and is tuned in data ("How to make a game" step 12).
 - **Fewest set passes and draw calls.** A change that adds a pipeline, a material, a render
   target or a pass must show why the picture needs it; anything that looks the same shares one
   material and batches ("How to make a game" step 8).
@@ -379,7 +424,7 @@ Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
 
 ## Engine changes from a game, and releasing
 
-Games are built against a released SDK ("How to make a game" step 12), so an engine change
+Games are built against a released SDK ("How to make a game" step 13), so an engine change
 reaches a game only through a release.
 
 - **Change the engine only when it is necessary.** A game that needs something first uses what
