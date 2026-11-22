@@ -25,6 +25,14 @@ else fetches the source with FetchContent and builds it static (`addons/<name>/C
 | SDL3_net | `net` | github.com/libsdl-org/SDL_net | release-3.2.0 | zlib |
 | Mbed TLS | `tls` | github.com/Mbed-TLS/mbedtls (release tarball `mbedtls-3.6.8.tar.bz2`, SHA-256 in `addons/tls/CMakeLists.txt`) | 3.6.8 LTS | Apache-2.0 |
 
+Vendored with an add-on (unmodified, compiled without the engine's warning flags):
+
+| Library | Add-on | Upstream | Commit | Licence |
+|---|---|---|---|---|
+| picohttpparser (`picohttpparser.c`, `.h`) in `addons/http/third_party/picohttpparser/` | `http` | github.com/h2o/picohttpparser | dd573d8fa926 (2026-10-27) | MIT (or Perl); `LICENSE` there is the notice from the source header (upstream has no licence file) |
+
+To update picohttpparser: copy `picohttpparser.c` and `picohttpparser.h` from the new commit over the two files, update the commit above, run `test_http_parse`.
+
 Committed with an add-on:
 
 | Data | Add-on | Upstream | Version | Licence |
