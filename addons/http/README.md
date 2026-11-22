@@ -6,6 +6,7 @@ parser), `addons/http/src/br_http_internal.h` (the pure parts, for the parse tes
 `websocket`). Tests: `addons/http/tests/test_http_parse.c` (no sockets) and
 `addons/http/tests/test_http.c` (loopback, ports 47821..47823). Example:
 `addons/http/examples/http_get.c` (`http_get <url> [max_body]`, built, not run by CTest).
+Protocol audit against curl, llhttp and picohttpparser: `docs/ADDONS_PROTOCOL_AUDIT.md`.
 
 An add-on on top of `tls`: built when `BRATY_ADDONS` names it (or `websocket`). Link
 `braty::http` (`braty::tls`, `braty::net`, Mbed TLS and SDL3_net come with it), call

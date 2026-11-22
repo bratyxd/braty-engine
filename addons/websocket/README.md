@@ -8,6 +8,7 @@ handshake checks and `br_websocket_conn`, our wrapper around wslay over in-memor
 `addons/websocket/tests/test_websocket.c` (loopback, ports 47831..47833, `wss://` against the tls
 test server). Example: `addons/websocket/examples/websocket_echo.c` (`websocket_echo <url> <text>`,
 built, not run by CTest).
+Protocol audit against libwebsockets, curl, wslay master and Autobahn: `docs/ADDONS_PROTOCOL_AUDIT.md`.
 
 An add-on on top of `http`: built when `BRATY_ADDONS` names it. Link `braty::websocket` (`http`,
 `tls`, `net`, Mbed TLS and SDL3_net come with it), call `br_websocket_register(e)` in init (it
