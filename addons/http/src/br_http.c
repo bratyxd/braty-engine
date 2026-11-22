@@ -235,9 +235,14 @@ static void br_http_step(br_engine *e, br_http *h, br_http_slot *slot, uint64_t 
                 br_http_fail(e, slot, "%s", br_tls_error(e, slot->stream));
                 return;
             }
-            /* ponytail: a TCP end without close_notify also reads as the close here (tls cannot
-             * tell them apart), so a truncated body without a length is only as safe as that. */
             result = br_http_parser_finish(slot->parser);
+            /* DONE here means a body that ends at the close: over TLS only close_notify proves
+             * it is all there; a bare TCP end may be a truncation (curl fails it too) */
+            if (result == BR_HTTP_PARSE_DONE && slot->url.secure && !br_tls_closed_cleanly(e, slot->stream)) {
+                br_http_fail(e, slot, "the connection ended without TLS close_notify inside a body without a "
+                             "length (it may be cut short)");
+                return;
+            }
             break;
         }
         result = br_http_parser_feed(slot->parser, h->read_buffer, (size_t)n);

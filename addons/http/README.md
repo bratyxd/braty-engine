@@ -109,13 +109,14 @@ g->submit = br_http_send(e, &desc);
 | obs-fold (a header line starting with space / tab) | Joined to the line before with spaces (RFC 9112 section 5.2) |
 | A CR or LF in your `url`, `method` or `headers`; a header line that is not `Name: value`; an empty line; a method that is not a token; `CONNECT` | `br_http_send` returns a zero handle and logs; nothing is sent |
 | The connection closes before the response is complete (headers, Content-Length, chunked) | FAILED "connection closed ..."; never DONE |
-| No length at all | The body runs until the close (RFC 9112 section 6.3 item 8) |
+| No length at all | The body runs until the close (RFC 9112 section 6.3 item 8); over TLS the close must be close_notify, else FAILED (truncation) |
 
 ## Gotchas
 
 - **Body without a length vs. truncation:** a response with neither Content-Length nor chunked
-  ends at the close, and `tls` reads a TCP end without close_notify as a close too, so such a
-  body cut short by the network looks complete. Servers that send a length are safe.
+  ends at the close. Over `https://` it is DONE only when the server sent TLS close_notify; a
+  bare TCP end FAILS it ("... without TLS close_notify ..."), as curl does, because it may be
+  cut short. Over `http://` the TCP close is all there is: such a body is only as safe as that.
 - **Repeated headers:** `br_http_header` returns the first line of a name; walk
   `br_http_header_get_at` for all of them (several `Set-Cookie`). No cookies are kept.
 - **Not implemented** (`// ponytail:` in the plan): keep-alive (one connection per request),

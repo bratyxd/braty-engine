@@ -409,14 +409,13 @@ static void test_table_full(br_engine *e)
     BR_CHECK(br_http_request_state(e, requests[0]) == BR_HTTP_NONE);
 }
 
-static void test_https(br_engine *e)
+/* Steps until r leaves PENDING, answering its request on the TLS test server with reply; the
+ * server then closes with close_notify, or (clean false) drops the TCP connection without it. */
+static br_http_state serve_tls(br_engine *e, br_http_request r, const char *reply, bool clean, char *request,
+                               size_t capacity)
 {
-    BR_CHECK(tls_test_server_start(&tls_server, e, TLS_PORT, "server.pem"));
-    BR_CHECK(tls_test_trust_ca(e));
-    br_http_request r = br_http_get(e, "https://localhost:47822/secure");
-    static const char reply[] = "HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\nsecret";
-    char request[4096] = "";
     size_t got = 0;
+    request[0] = '\0';
     bool answered = false;
     uint64_t deadline = deadline_in(20.0);
     while (br_http_request_state(e, r) == BR_HTTP_PENDING && before(deadline)) {
@@ -424,46 +423,57 @@ static void test_https(br_engine *e)
         if (!tls_conn.used) {
             tls_test_server_accept(&tls_server, &tls_conn);
         }
-        int n = tls_test_conn_receive(&tls_conn, request + got, (int)(sizeof request - 1 - got));
+        int n = tls_test_conn_receive(&tls_conn, request + got, (int)(capacity - 1 - got));
         if (n > 0) {
             got += (size_t)n;
             request[got] = '\0';
         }
         if (!answered && request_complete(request, got)) {
-            BR_CHECK(tls_test_conn_send(&tls_conn, reply, sizeof reply - 1));
+            BR_CHECK(tls_test_conn_send(&tls_conn, reply, SDL_strlen(reply)));
+            if (!clean) {
+                tls_conn.state = -1;   /* tls_test_conn_close then skips close_notify */
+            }
             tls_test_conn_close(&tls_conn);
             answered = true;
         }
     }
-    BR_CHECK(br_http_request_state(e, r) == BR_HTTP_DONE);
+    return br_http_request_state(e, r);
+}
+
+static void test_https(br_engine *e)
+{
+    BR_CHECK(tls_test_server_start(&tls_server, e, TLS_PORT, "server.pem"));
+    BR_CHECK(tls_test_trust_ca(e));
+    char request[4096];
+    br_http_request r = br_http_get(e, "https://localhost:47822/secure");
+    BR_CHECK(serve_tls(e, r, "HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\nsecret", true, request, sizeof request) ==
+             BR_HTTP_DONE);
     BR_CHECK(br_http_status(e, r) == 200 && SDL_strcmp(br_http_body(e, r, NULL), "secret") == 0);
     BR_CHECK(SDL_strncmp(request, "GET /secure HTTP/1.1\r\nHost: localhost:47822\r\n", 45) == 0);
+    br_http_release(e, r);
+
+    /* a body without a length ends at the close: complete with close_notify ... */
+    static const char to_close[] = "HTTP/1.1 200 OK\r\n\r\nall of it";
+    r = br_http_get(e, "https://localhost:47822/to-close");
+    BR_CHECK(serve_tls(e, r, to_close, true, request, sizeof request) == BR_HTTP_DONE);
+    BR_CHECK(SDL_strcmp(br_http_body(e, r, NULL), "all of it") == 0);
+    br_http_release(e, r);
+    /* ... and maybe cut short without it (curl fails it too) */
+    r = br_http_get(e, "https://localhost:47822/cut");
+    BR_CHECK(serve_tls(e, r, to_close, false, request, sizeof request) == BR_HTTP_FAILED);
+    br_log_info("test_http: no close_notify: %s", br_http_error(e, r));
+    BR_CHECK(contains(br_http_error(e, r), "close_notify") && br_http_body(e, r, NULL) == NULL);
+    br_http_release(e, r);
+    /* a body with a length needs no close_notify */
+    r = br_http_get(e, "https://localhost:47822/length");
+    BR_CHECK(serve_tls(e, r, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok", false, request, sizeof request) ==
+             BR_HTTP_DONE);
     br_http_release(e, r);
 
     /* https never follows a redirect to http */
     r = br_http_get(e, "https://localhost:47822/downgrade");
     static const char downgrade[] = "HTTP/1.1 302 Found\r\nLocation: http://localhost:47821/\r\nContent-Length: 0\r\n\r\n";
-    got = 0;
-    request[0] = '\0';
-    answered = false;
-    deadline = deadline_in(20.0);
-    while (br_http_request_state(e, r) == BR_HTTP_PENDING && before(deadline)) {
-        step(e);
-        if (!tls_conn.used) {
-            tls_test_server_accept(&tls_server, &tls_conn);
-        }
-        int n = tls_test_conn_receive(&tls_conn, request + got, (int)(sizeof request - 1 - got));
-        if (n > 0) {
-            got += (size_t)n;
-            request[got] = '\0';
-        }
-        if (!answered && request_complete(request, got)) {
-            BR_CHECK(tls_test_conn_send(&tls_conn, downgrade, sizeof downgrade - 1));
-            tls_test_conn_close(&tls_conn);
-            answered = true;
-        }
-    }
-    BR_CHECK(br_http_request_state(e, r) == BR_HTTP_FAILED);
+    BR_CHECK(serve_tls(e, r, downgrade, true, request, sizeof request) == BR_HTTP_FAILED);
     br_log_info("test_http: downgrade: %s", br_http_error(e, r));
     BR_CHECK(contains(br_http_error(e, r), "https to http"));
     br_http_release(e, r);
