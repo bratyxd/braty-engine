@@ -9,7 +9,9 @@
 # "golden-<job>" artifact; to accept a change, copy the new image from the artifact into the
 # variant folder (and re-baseline tests/golden/ on a real GPU).
 #
-# SDL 3.4.20 is fetched and built by CMake (FetchContent), a few minutes per job.
+# SDL 3.4.20 is fetched and built by CMake (FetchContent), a few minutes per job. Every job
+# builds all add-ons (-DBRATY_ADDONS=all; SDL3_net and the rest are fetched too) and runs their
+# tests (label `addons`).
 # ponytail: no compiler cache; add ccache if the SDL build time starts to hurt.
 name: build
 
@@ -41,7 +43,7 @@ jobs:
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-python
       - name: Configure
-        run: cmake --preset windows-gcc -DBRATY_WERROR=ON
+        run: cmake --preset windows-gcc -DBRATY_WERROR=ON -DBRATY_ADDONS=all
       - name: Build
         run: cmake --build --preset windows-gcc
       - name: Test
@@ -58,7 +60,7 @@ jobs:
       # A build directory of a different depth: tests must not depend on where it is.
       - name: Release (configure, build, test in build/ci/release)
         run: |
-          cmake --preset windows-gcc-release -B build/ci/release -DBRATY_WERROR=ON
+          cmake --preset windows-gcc-release -B build/ci/release -DBRATY_WERROR=ON -DBRATY_ADDONS=all
           cmake --build build/ci/release
           ctest --test-dir build/ci/release --output-on-failure -LE golden
       - uses: actions/upload-artifact@v4
@@ -77,7 +79,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ilammy/msvc-dev-cmd@v1
       - name: Configure
-        run: cmake --preset windows-msvc -DBRATY_WERROR=ON
+        run: cmake --preset windows-msvc -DBRATY_WERROR=ON -DBRATY_ADDONS=all
       - name: Build
         run: cmake --build --preset windows-msvc -- -k 0
       - name: Test
@@ -102,7 +104,7 @@ jobs:
             libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev libdbus-1-dev \
             xvfb mesa-vulkan-drivers libvulkan1
       - name: Configure
-        run: cmake --preset linux -DBRATY_WERROR=ON
+        run: cmake --preset linux -DBRATY_WERROR=ON -DBRATY_ADDONS=all
       - name: Build
         run: cmake --build --preset linux
       - name: Test
@@ -135,7 +137,7 @@ jobs:
       - name: Install Ninja
         run: brew install ninja
       - name: Configure
-        run: cmake --preset macos -DBRATY_WERROR=ON
+        run: cmake --preset macos -DBRATY_WERROR=ON -DBRATY_ADDONS=all
       - name: Build
         run: cmake --build --preset macos
       - name: Test
