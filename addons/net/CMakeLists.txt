@@ -17,6 +17,12 @@ else()
         GIT_TAG release-3.2.0
         GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(SDL3_net)
+    # SDL_net is written for gnu C: under the project's -std=c11 glibc hides getaddrinfo, and
+    # newer mingw-w64 headers declare the POSIX read / write that SDL_net defines for sockets.
+    set_target_properties(SDL3_net-static PROPERTIES C_EXTENSIONS ON)
+    if(MINGW)
+        target_compile_definitions(SDL3_net-static PRIVATE NO_OLDNAMES)
+    endif()
 endif()
 
 braty_addon(net SOURCES src/br_net.c LINK SDL3_net::SDL3_net)
