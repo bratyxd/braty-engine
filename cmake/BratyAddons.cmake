@@ -2,8 +2,8 @@
 # their dependants). Each add-on folder has addon.cmake (set(BRATY_ADDON_DEPENDS <names>), nothing
 # else) and a CMakeLists.txt that calls braty_addon(). docs/agents/addons.md.
 #
-# The resolver creates no targets, so `cmake -P` scripts can include this file
-# (tests/addon_resolve.cmake).
+# The resolver creates no targets, so `cmake -P` scripts can include this file after
+# cmake_minimum_required(VERSION 3.24) (tests/addon_resolve.cmake).
 
 get_filename_component(BRATY_ENGINE_DIR ${CMAKE_CURRENT_LIST_DIR}/.. ABSOLUTE)  # the engine sources
 
