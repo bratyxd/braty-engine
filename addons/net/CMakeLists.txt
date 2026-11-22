@@ -1,4 +1,4 @@
-# net: TCP client and server, UDP and addresses on SDL3_net (docs/agents/net.md).
+# net: TCP client and server, UDP and addresses on SDL3_net (addons/net/README.md).
 # SDL3_net: an installed package first, else built from source (static, no samples). It is a
 # private dependency of braty_net; static linking still passes it on, so a game or add-on that
 # links braty::net gets SDL3_net without naming it.
@@ -23,6 +23,13 @@ else()
     if(MINGW)
         target_compile_definitions(SDL3_net-static PRIVATE NO_OLDNAMES)
     endif()
+    # SDL_net's static library calls SDL but does not link it, so a single-pass linker (GNU ld)
+    # could see libSDL3.a before libSDL3_net.a; this puts SDL3 after it, here and in the SDK's
+    # SDL3_net package.
+    target_link_libraries(SDL3_net-static PRIVATE SDL3::SDL3)
+    if(BRATY_INSTALL)
+        install(FILES ${sdl3_net_SOURCE_DIR}/LICENSE.txt DESTINATION licenses/SDL3_net)
+    endif()
 endif()
 
-braty_addon(net SOURCES src/br_net.c LINK SDL3_net::SDL3_net)
+braty_addon(net SOURCES src/br_net.c LINK SDL3_net::SDL3_net PACKAGES SDL3_net)

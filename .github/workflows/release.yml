@@ -1,12 +1,16 @@
 # The prebuilt SDK: one archive per toolchain with the engine and SDL3 as static libraries,
 # headers, a CMake package (find_package(braty)), tools/ and docs/ (docs/BUILDING.md "The SDK").
+# Built with every add-on (-DBRATY_ADDONS=all): braty::net, braty::tls, braty::http and
+# braty::websocket with SDL3_net and Mbed TLS; a game gets them only when it links them.
 #
 #   git tag v0.1.0 && git push origin v0.1.0     -> builds the four archives and publishes a
 #                                                   GitHub release with them
 #   gh workflow run release.yml                  -> builds and tests them, uploads artifacts only
 #
 # Every archive is tested before it is uploaded: Crate Rush is built against the SDK alone (the
-# engine is not compiled again) and plays its recorded round headless.
+# engine is not compiled again), plays its recorded round headless and has no add-on library on
+# its link line; tests/sdk_consumer builds the add-on examples against the SDK (they need the
+# internet, so they are not run here) and runs addons_registered (offline).
 #
 # One flavour: optimised, with the profiler and --playtest-stdin compiled in, so a game can be
 # developed and play-tested against it. ponytail: no separate "shipping" flavour and no MSVC
@@ -68,7 +72,7 @@ jobs:
         run: brew install ninja
       - name: Build the SDK
         run: |
-          cmake -S . -B build/sdk -G Ninja -DCMAKE_BUILD_TYPE=Release -DBRATY_INSTALL=ON \
+          cmake -S . -B build/sdk -G Ninja -DCMAKE_BUILD_TYPE=Release -DBRATY_INSTALL=ON -DBRATY_ADDONS=all \
             -DBRATY_BUILD_TESTS=OFF -DBRATY_BUILD_EXAMPLES=OFF -DBRATY_BUILD_SAMPLES=OFF
           cmake --build build/sdk
           cmake --install build/sdk --prefix "dist/$SDK"
@@ -79,6 +83,19 @@ jobs:
           grep -q "braty_DIR:PATH=.*dist" build/consume/CMakeCache.txt   # the SDK was used, not the sources
           cmake --build build/consume
           build/consume/crate_rush${{ matrix.exe }} --headless --playtest sample_projects/crate_rush/playtest/round.json
+      - name: Crate Rush links no add-on
+        run: |
+          grep "LINK_LIBRARIES" build/consume/build.ninja | grep -q "braty"   # the check reads the right line
+          if grep "LINK_LIBRARIES" build/consume/build.ninja | grep -E "braty_(net|tls|http|websocket)|SDL3_net|mbed"; then
+            echo "Crate Rush links an add-on library it did not ask for"; exit 1
+          fi
+      - name: Build the add-on examples against the SDK (tests/sdk_consumer)
+        run: |
+          cmake -S tests/sdk_consumer -B build/sdk_consumer -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            "-DCMAKE_PREFIX_PATH=$PWD/dist/$SDK"
+          grep -q "braty_DIR:PATH=.*dist" build/sdk_consumer/CMakeCache.txt
+          cmake --build build/sdk_consumer
+          build/sdk_consumer/addons_registered${{ matrix.exe }}
       - name: Archive
         run: cd dist && cmake -E tar cf "$SDK.zip" --format=zip "$SDK"
       - uses: actions/upload-artifact@v4

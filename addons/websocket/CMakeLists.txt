@@ -50,6 +50,9 @@ braty_addon(websocket SOURCES src/br_websocket.c src/br_websocket_frame.c ${wsla
 # wslay's headers and ours; http's internal header (URL parser, request writer, response parser).
 set(websocket_includes ${wslay}/includes ${wslay_generated} ${CMAKE_CURRENT_SOURCE_DIR}/../http/src)
 target_include_directories(braty_websocket PRIVATE ${websocket_includes} ${wslay})
+if(BRATY_INSTALL)
+    install(FILES ${wslay}/../COPYING DESTINATION licenses/wslay)
+endif()
 foreach(test test_websocket test_websocket_frame)
     if(TARGET ${test})
         target_include_directories(${test} PRIVATE ${websocket_includes})

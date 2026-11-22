@@ -8,6 +8,9 @@ set_source_files_properties(${pico}/picohttpparser.c PROPERTIES
 
 braty_addon(http SOURCES src/br_http.c src/br_http_parse.c ${pico}/picohttpparser.c)
 target_include_directories(braty_http PRIVATE ${pico})
+if(BRATY_INSTALL)
+    install(FILES ${pico}/LICENSE DESTINATION licenses/picohttpparser)
+endif()
 
 # test_http runs the loopback TLS server of the tls tests for its https case.
 if(TARGET test_http)

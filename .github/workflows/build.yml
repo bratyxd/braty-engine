@@ -118,6 +118,20 @@ jobs:
           BRATY_GOLDEN_SKIP: sprites # a few pixels differ from run to run on CI (API_REVIEW item 65)
           SDL_AUDIODRIVER: dummy
         run: xvfb-run -a ctest --preset linux -L golden
+      # The core builds and passes its add-on tests alone: with BRATY_ADDONS empty no add-on
+      # target or library may exist in that build directory.
+      - name: Core without add-ons (build/core)
+        run: |
+          cmake --preset linux -B build/core -DBRATY_WERROR=ON -DBRATY_ADDONS= \
+            "-DFETCHCONTENT_SOURCE_DIR_SDL3=$PWD/build/linux/_deps/sdl3-src"
+          cmake --build build/core --target braty test_addon
+          ctest --test-dir build/core --output-on-failure -R "^(test_addon|addon_resolve_.*)$"
+          if cmake --build build/core --target help | grep -E "braty_(net|tls|http|websocket)"; then
+            echo "an add-on target exists with BRATY_ADDONS empty"; exit 1
+          fi
+          if find build/core -name "*braty_net*" -o -name "*braty_tls*" -o -name "*braty_http*" -o -name "*braty_websocket*" | grep .; then
+            echo "an add-on library exists with BRATY_ADDONS empty"; exit 1
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:

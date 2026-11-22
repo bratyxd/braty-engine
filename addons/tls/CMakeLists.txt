@@ -1,4 +1,4 @@
-# tls: byte streams, plain or TLS, on Mbed TLS over net (docs/agents/tls.md).
+# tls: byte streams, plain or TLS, on Mbed TLS over net (addons/tls/README.md).
 # Mbed TLS 3.6.8 LTS from the release tarball (the git tag needs a submodule: framework/), built
 # static with its default configuration, as a private dependency of braty_tls (static linking
 # still passes it on, so nobody names it).
@@ -50,7 +50,12 @@ const unsigned char br_tls_cacert[@BR_TLS_CACERT_SIZE@ + 1] = {
 const size_t br_tls_cacert_size = @BR_TLS_CACERT_SIZE@;
 " @ONLY)
 
-braty_addon(tls SOURCES src/br_tls.c ${CMAKE_CURRENT_BINARY_DIR}/br_tls_cacert.c LINK MbedTLS::mbedtls)
+braty_addon(tls SOURCES src/br_tls.c ${CMAKE_CURRENT_BINARY_DIR}/br_tls_cacert.c LINK MbedTLS::mbedtls
+    PACKAGES MbedTLS)
+if(BRATY_INSTALL)
+    install(FILES ${mbedtls_SOURCE_DIR}/LICENSE DESTINATION licenses/MbedTLS)
+    install(FILES certs/LICENSE.md DESTINATION licenses/cacert)
+endif()
 
 # The loopback TLS server of the tests (tests/tls_test_server.h): test_tls, and the http and
 # websocket tests through target_link_libraries(<test> PRIVATE braty_tls_test_server).

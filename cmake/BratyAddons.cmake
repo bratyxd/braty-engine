@@ -60,12 +60,17 @@ function(braty_addons_resolve root requested out_var)
     set(${out_var} ${_braty_order} PARENT_SCOPE)
 endfunction()
 
-# braty_addon(<name> SOURCES <files> [LINK <private libs>] [DEFINITIONS <private defs>]), called
-# from addons/<name>/CMakeLists.txt: static library braty_<name> (alias braty::<name>) on
-# braty::braty and the add-ons its addon.cmake names, include/ public, src/ private; tests from
-# tests/test_*.c (label `addons`), examples from examples/*.c (built, not run).
+# braty_addon(<name> SOURCES <files> [LINK <private libs>] [DEFINITIONS <private defs>]
+#             [PACKAGES <CMake packages>]), called from addons/<name>/CMakeLists.txt:
+# static library braty_<name> (alias braty::<name>) on braty::braty and the add-ons its
+# addon.cmake names, include/ public, src/ private; tests from tests/test_*.c (label `addons`),
+# examples from examples/*.c (built, not run). With BRATY_INSTALL the SDK gets the library
+# (export set bratyAddonTargets), include/braty/*.h and README.md as addons/<name>/README.md;
+# PACKAGES are the packages the LINK targets come from, found again by the SDK's
+# bratyConfig.cmake (static linking passes private libraries on to the game). Third-party
+# licences: the add-on's CMakeLists.txt installs them to licenses/<library>/.
 function(braty_addon name)
-    cmake_parse_arguments(PARSE_ARGV 1 ARG "" "" "SOURCES;LINK;DEFINITIONS")
+    cmake_parse_arguments(PARSE_ARGV 1 ARG "" "" "SOURCES;LINK;DEFINITIONS;PACKAGES")
     set(dir ${CMAKE_CURRENT_SOURCE_DIR})
     set(BRATY_ADDON_DEPENDS "")
     include(${dir}/addon.cmake)
@@ -78,13 +83,21 @@ function(braty_addon name)
 
     add_library(braty_${name} STATIC ${ARG_SOURCES})
     add_library(braty::${name} ALIAS braty_${name})
+    set_target_properties(braty_${name} PROPERTIES EXPORT_NAME ${name})   # braty::<name> in the SDK too
     target_include_directories(braty_${name}
         PUBLIC $<BUILD_INTERFACE:${dir}/include> $<INSTALL_INTERFACE:include>
         PRIVATE ${dir}/src)
     target_link_libraries(braty_${name} PUBLIC braty::braty ${deps} PRIVATE ${ARG_LINK})
     target_compile_definitions(braty_${name} PRIVATE ${ARG_DEFINITIONS})
     target_compile_options(braty_${name} PRIVATE ${warnings} ${werror})
-    # Install rules (BRATY_INSTALL) come with the SDK work: plan 2026-11-22-addons Task 6.
+    if(BRATY_INSTALL)
+        install(TARGETS braty_${name} EXPORT bratyAddonTargets ARCHIVE DESTINATION lib)
+        install(DIRECTORY ${dir}/include/braty DESTINATION include)
+        install(FILES ${dir}/README.md DESTINATION addons/${name})
+        # read by the root CMakeLists.txt, which writes the SDK's bratyAddons.cmake
+        set_property(GLOBAL APPEND PROPERTY BRATY_INSTALLED_ADDONS ${name})
+        set_property(GLOBAL APPEND PROPERTY BRATY_ADDON_PACKAGES ${ARG_PACKAGES})
+    endif()
 
     if(BRATY_BUILD_TESTS)
         file(GLOB tests CONFIGURE_DEPENDS ${dir}/tests/test_*.c)
