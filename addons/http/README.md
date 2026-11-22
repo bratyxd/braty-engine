@@ -123,7 +123,8 @@ g->submit = br_http_send(e, &desc);
   waits (a 100 is skipped if a server sends one), user info in URLs (`user:pw@host` fails: send an
   `Authorization` header). Relative redirects keep `.` / `..` segments as sent.
 - **URLs are not escaped for you:** a space or a control character in the path fails; percent-
-  encode it. The fragment (`#...`) is dropped.
+  encode it. The fragment (`#...`) is dropped. A redirect `Location` with spaces or raw UTF-8 is
+  percent-encoded for you (as curl and browsers do).
 - **Memory:** `br_http_send` copies the headers and body; the response buffer grows to the
   header block plus the body (reserved once when Content-Length is known) and is freed at
   release. A steady download allocates only when that buffer grows.

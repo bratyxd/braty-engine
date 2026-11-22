@@ -87,7 +87,13 @@ static void test_resolve(void)
     BR_CHECK(br_http_url_resolve(&base, "#f", &out, error, sizeof error) && equal(out.path, "/dir/page?x=1"));
     BR_CHECK(!br_http_url_resolve(&base, "wss://a.example/", &out, error, sizeof error));
     BR_CHECK(!br_http_url_resolve(&base, "javascript:alert(1)", &out, error, sizeof error));
-    BR_CHECK(!br_http_url_resolve(&base, "/a b", &out, error, sizeof error));
+    /* spaces and raw UTF-8 in a Location are percent-encoded (as curl does); controls fail */
+    BR_CHECK(br_http_url_resolve(&base, "/a b", &out, error, sizeof error) && equal(out.path, "/a%20b"));
+    BR_CHECK(br_http_url_resolve(&base, "/caf\xc3\xa9?q=\xc3\xa9", &out, error, sizeof error));
+    BR_CHECK(equal(out.path, "/caf%C3%A9?q=%C3%A9"));
+    BR_CHECK(!br_http_url_resolve(&base, "/a\tb", &out, error, sizeof error));
+    BR_CHECK(!br_http_url_resolve(&base, "/a\x7f", &out, error, sizeof error));
+    BR_CHECK(!br_http_url_resolve(&base, "http://b\xc3\xa9.example/", &out, error, sizeof error));
     BR_CHECK(br_http_url_parse("http://[::1]:8080/a", &base));
     BR_CHECK(br_http_url_resolve(&base, "/b", &out, error, sizeof error));
     BR_CHECK(equal(out.host, "::1") && out.port == 8080 && equal(out.path, "/b"));

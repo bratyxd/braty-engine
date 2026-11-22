@@ -220,6 +220,25 @@ bool br_http_url_resolve(const br_http_url *base, const char *location, br_http_
         br_http_set_error(error, error_capacity, "no URL");
         return false;
     }
+    /* Servers send spaces and raw UTF-8 in Location; like curl and browsers, percent-encode them
+     * (RFC 3986 section 2.1). Other control characters stay refused by br_http_url_split. */
+    char escaped[sizeof base->host + sizeof base->path];
+    size_t used = 0;
+    for (const unsigned char *c = (const unsigned char *)location; *c != '\0'; c++) {
+        bool encode = *c == ' ' || *c >= 0x80;
+        if (used + (encode ? 3 : 1) >= sizeof escaped) {
+            br_http_set_error(error, error_capacity, "redirect URL is too long");
+            return false;
+        }
+        if (encode) {
+            SDL_snprintf(escaped + used, 4, "%%%02X", (unsigned)*c);
+            used += 3;
+        } else {
+            escaped[used++] = (char)*c;
+        }
+    }
+    escaped[used] = '\0';
+    location = escaped;
     char text[sizeof base->host + sizeof base->path + 64];
     const char *scheme = base->secure ? "https" : "http";
     size_t scheme_end = strcspn(location, ":/?#");
