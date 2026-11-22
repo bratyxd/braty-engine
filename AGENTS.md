@@ -22,7 +22,9 @@ build and run only the one test you are debugging (`ctest --preset windows-gcc -
 ```sh
 cmake --preset windows-gcc [-DCMAKE_PREFIX_PATH=<SDL3 prefix>]   # default prefix: .deps/sdl3
 cmake --build --preset windows-gcc                                  # engine, tests, examples, both samples
-ctest --preset windows-gcc                                          # 76 entries: unit tests, headless examples, play-tests, packs, golden images
+ctest --preset windows-gcc                                          # 81 entries: unit tests, headless examples, play-tests, packs, golden images
+cmake --preset windows-gcc -DBRATY_ADDONS=all                       # also every add-on (net, tls, http, websocket: 87 entries; "Add-ons")
+ctest --preset windows-gcc -R test_http                             # one add-on test (label addons; loopback, no internet)
 build/windows-gcc/hello_quad.exe --frames 3 --screenshot build/out.png [--gpu-driver vulkan|direct3d12]
 build/windows-gcc/sample_projects/crate_rush/crate_rush.exe --level level1 --frames 120 --screenshot build/crate.png
 build/windows-gcc/sample_projects/crate_rush/crate_rush.exe --headless --playtest sample_projects/crate_rush/playtest/round.json
@@ -33,12 +35,14 @@ cmake --preset windows-gcc-release && cmake --build --preset windows-gcc-release
 ctest --preset windows-gcc-release                                  # the same tests in the release build
 ```
 
-CTest runs 42 `tests/test_*.c` programs (headless; `test_gpu`, `test_debug` and one profiler case
+CTest runs 43 `tests/test_*.c` programs (headless; `test_gpu`, `test_debug` and one profiler case
 open a window and skip without a GPU), every example with `--headless --frames 5` (label
 `headless`: `br_engine_gpu(e)` is NULL there, so code must not assume a GPU), both samples'
 `round.json` (Crate Rush's also from a `.brpack` with an empty asset root), the pack round trip
-(`pack_build`, `pack_matches_loose`), `tools/playtest.py`'s parser and 29 golden images
-(`-L` / `-LE golden|headless|playtest` select).
+(`pack_build`, `pack_matches_loose`), `tools/playtest.py`'s parser, the add-on resolver
+(`addon_resolve_*`, run with add-ons off) and 29 golden images (`-L` / `-LE
+golden|headless|playtest|addons` select): 81 entries with add-ons off (the default). With
+`-DBRATY_ADDONS=all` (what CI configures) the 6 add-on tests join them (label `addons`): 87.
 
 Every app built on `br_app` takes `--frames N --screenshot out.png` (fixed 1/60 s steps, exits 0),
 plus `--vsync`, `--max-fps`, `--deterministic`, `--headless`, `--assets DIR` and the play-test
@@ -351,8 +355,30 @@ Your own code: `br_profile_begin(e, "name")` / `br_profile_end(e)`. `docs/PROFIL
       death (`step 2` + `screenshot` in a play-test) shows the flash, the particles and the
       exit; if two frames in a row look the same except that something is gone, it is not done.
 
-13. **Or skip building the engine:** link the prebuilt SDK from the GitHub releases
-   (`find_package(braty CONFIG REQUIRED)`, `braty::braty`); `docs/BUILDING.md` "The SDK".
+13. **Networking: view-layer code that never stalls the game.** Online scores, a server
+    connection or a download use the add-ons ("Add-ons": `http`, `websocket`, `net`, `tls`).
+    - **It is view, the sim sees plain structs** (step 10). A system reads the network and turns
+      each received message into the sim's input struct (a move, a snapshot, a score table) or
+      into plain data the view shows; a sim event that the server must know becomes a sent
+      message. No socket, request handle or JSON from the wire goes into `src/sim/`.
+    - **Nothing blocks a frame.** Start a request or a connection, keep its handle, poll it from a
+      system every frame; never loop waiting for DONE or OPEN.
+    - **Every request has a failure path the player sees:** FAILED (offline, DNS, certificate,
+      server error), a timeout (`br_http_desc.timeout`, the WebSocket keep-alive) and a dropped
+      connection all end in a state the system handles: a message on screen, a retry button, or a
+      reconnect with backoff (the pattern in `addons/websocket/README.md`). The game stays
+      playable while it is offline wherever it can.
+    - **Tests pass without a network.** Sim tests feed the input struct by hand; play-tests and
+      CTest never need a server: the game runs without its online parts (a FAILED request is a
+      state it already handles), so a round plays the same offline. Add-on tests use loopback
+      only.
+    - **Never ship `br_tls_set_verify(e, false)`.** For your own server's certificate use
+      `br_tls_set_ca_pem`. Everything received is untrusted: check sizes and values before the
+      sim sees them.
+
+14. **Or skip building the engine:** link the prebuilt SDK from the GitHub releases
+   (`find_package(braty CONFIG REQUIRED)`, `braty::braty`, and `braty::<add-on>` for an add-on:
+   the SDK has all four); `docs/BUILDING.md` "The SDK".
 
 Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
 
@@ -375,7 +401,9 @@ Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
 - Errors: return `bool` (true = ok) or a handle/pointer (0/NULL = failure) and call
   `br_log_error(...)` with the reason. Never abort on bad user data.
 - Only SDL3 and C standard math/string functions. No `<windows.h>`, no POSIX, no `fopen`
-  (use `br_file_*`). No platform `#ifdef`s.
+  (use `br_file_*`). No platform `#ifdef`s. This is the core's rule; an add-on may bring
+  third-party code it declares (fetched or vendored by its `CMakeLists.txt`, listed with its
+  licence in `third_party/README.md`), and its own sources still use no platform headers.
 - **No heap allocation in the hot path** (anything that runs every frame: systems, collect,
   render, input, audio mixing). Allocate in `br_<module>_register`, on create / load, or when a
   buffer first grows, then reuse it: `br_array` that keeps its capacity, pools, fixed `char[N]`
@@ -424,7 +452,7 @@ Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
 
 ## Engine changes from a game, and releasing
 
-Games are built against a released SDK ("How to make a game" step 13), so an engine change
+Games are built against a released SDK ("How to make a game" step 14), so an engine change
 reaches a game only through a release.
 
 - **Change the engine only when it is necessary.** A game that needs something first uses what
@@ -453,6 +481,62 @@ gh release view vX.Y.Z                       # four SDK archives are attached
 
 A release is public and cannot be taken back: tag only from a green `main`, never move or
 reuse a tag; a bad release is fixed by the next patch release.
+
+## Add-ons
+
+Optional libraries that ship with the engine (`addons/<name>/`, and in the SDK) but are not part
+of the core: **nothing from `addons/` is compiled or linked unless a build asks for it**, and the
+core never includes an add-on header. An add-on may depend on other add-ons (never in a cycle)
+and may bring third-party code. The system in full (resolver, `braty_addon()`, the registry,
+writing one): `docs/agents/addons.md`.
+
+| Add-on | What it does | Depends on | Guide |
+|---|---|---|---|
+| `net` | TCP client and server, UDP, addresses (SDL3_net) | - | `addons/net/README.md` |
+| `tls` | byte streams, plain or TLS 1.2 / 1.3 with certificate and host-name checks (Mbed TLS, Mozilla roots) | `net` | `addons/tls/README.md` |
+| `http` | HTTP/1.1 client, `http://` and `https://`: any method, redirects, timeouts, limits | `tls` | `addons/http/README.md` |
+| `websocket` | RFC 6455 client, `ws://` and `wss://`: messages, keep-alive, close codes | `http` | `addons/websocket/README.md` |
+
+**Enable one** (its dependencies come with it, nobody names them):
+
+- Engine as a subdirectory: `set(BRATY_ADDONS http)` (names separated by `;`, or `all`) before
+  `add_subdirectory(<braty>)`, then `target_link_libraries(game PRIVATE braty::braty braty::http)`.
+  In this repository: `cmake --preset windows-gcc -DBRATY_ADDONS=all`.
+- Prebuilt SDK (built with all four): `find_package(braty CONFIG REQUIRED)`, then
+  `target_link_libraries(game PRIVATE braty::braty braty::http)`. A game that links only
+  `braty::braty` gets no add-on library on its link line.
+
+**Register it in init:** `br_http_register(e)` (each add-on has `br_<name>_register(e)`; it is
+idempotent and registers what it depends on, so call only the one you use).
+
+**Handle and poll**, like the rest of the engine: start something, keep its handle (zero = none),
+read its state from a system every frame. Nothing blocks and nothing calls you back; zero and
+stale handles are safe everywhere.
+
+```c
+static void scores_system(br_engine *e, float dt, void *user)    /* BR_PHASE_UPDATE */
+{
+    game *g = user;
+    (void)dt;
+    br_http_state state = br_http_request_state(e, g->scores);   /* NONE for a zero handle */
+    if (state == BR_HTTP_DONE || state == BR_HTTP_FAILED) {
+        if (state == BR_HTTP_DONE && br_http_status(e, g->scores) == 200) {
+            size_t size = 0;
+            const char *json = br_http_body(e, g->scores, &size); /* copy out what you keep */
+            scores_from_json(&g->view.scores, json, size);
+        } else {
+            show_offline_message(g, br_http_error(e, g->scores)); /* "" for a non-200 status */
+        }
+        br_http_release(e, g->scores);
+        g->scores = (br_http_request){ 0, 0 };
+    }
+}
+/* when the screen opens: g->scores = br_http_get(e, "https://example.com/scores.json"); */
+```
+
+A WebSocket connection can drop at any time: `addons/websocket/README.md` "Snippet" is a
+system that reads every message, notices CLOSED / FAILED by polling and reconnects with backoff.
+How networking fits a game: "How to make a game" step 13.
 
 ## The data-driven model
 
@@ -519,6 +603,17 @@ The contracts are fixed in the plan under "Core contracts".
   and adds its systems, and `docs/agents/<module>.md`. CMake globs sources, no list to edit.
   Drawing from a node type, offscreen rendering, callback commands and the effects hook:
   `docs/agents/render.md`.
+- **An add-on**: a folder `addons/<name>/` with `addon.cmake` (only
+  `set(BRATY_ADDON_DEPENDS <names>)`), a `CMakeLists.txt` that fetches or vendors its third-party
+  code and calls `braty_addon(<name> SOURCES ... [LINK ...] [PACKAGES ...])` (static library
+  `braty::<name>`, tests from `tests/test_*.c` with label `addons`, examples, SDK install),
+  `include/braty/br_<name>.h`, `src/`, `tests/`, and a guide at `addons/<name>/README.md`. State
+  lives in the engine through `br_addon_add(e, "<name>", state)` / `br_addon_get(e, "<name>")`,
+  set up by an idempotent `br_<name>_register(e)` that registers its dependencies first and frees
+  the state in `br_engine_on_shutdown`. Dependencies go one way: the resolver stops the configure
+  on a cycle, an add-on includes headers only of the add-ons it declares, the core never includes
+  an add-on header. Tests use loopback and a block of ten ports of their own (47801 and up). Add a
+  row to the table in "Add-ons". Step by step with a working example: `docs/agents/addons.md`.
 - **A test**: `tests/test_<module>.c` with a plain `main` and `BR_CHECK(cond)` from
   `tests/br_test.h`, return `br_test_finish()`. CMake picks it up automatically. A golden image:
   a line in `tools/golden.py`'s `CASES`, then `python tools/golden.py update --only <name>`.
@@ -563,6 +658,7 @@ Read the guide, then the module's public header (headers are the API reference).
 | scenes | `docs/agents/scenes.md` | done (Phase 2 Task 16) |
 | animation | `docs/agents/animation.md` | done (Phase 2 Task 17) |
 | profiler | `docs/agents/profiler.md` | done (Phase 2 Task 18b) |
+| add-ons | `docs/agents/addons.md`; each add-on: `addons/<name>/README.md` (`net`, `tls`, `http`, `websocket`; table in "Add-ons") | done (plan `docs/plans/2026-11-22-addons.md`) |
 
 Phase 2: `docs/plans/2026-11-19-braty-engine-phase2.md`. Done: Tasks 14 (arenas, pacing,
 play-testing), 14c (input, math, queries), 15 (cameras, canvas3d), 16 (scenes, asset groups), 17
@@ -594,6 +690,9 @@ engine/include/braty/   public headers; braty.h includes them all, braty_main.h 
 engine/src/<module>/    sources; private headers *_internal.h
 engine/shaders/         HLSL sources + compiled/ generated headers (committed)
 third_party/            stb, cgltf, cJSON, microui (+ licences, see third_party/README.md)
+addons/<name>/          optional add-ons, built only when BRATY_ADDONS names them: net, tls, http, websocket;
+                        addon.cmake, CMakeLists.txt, README.md (the guide), include/braty/, src/, tests/,
+                        examples/, third_party/ (cmake/BratyAddons.cmake is the resolver)
 tools/                  compile_shaders.py, playtest.py, golden.py, check_getting_started.py,
                         pack_assets.py (an asset folder -> .brpack), install_game.cmake
 sample_projects/        star_courier (2D) and crate_rush (3D); each builds standalone or from the root project
