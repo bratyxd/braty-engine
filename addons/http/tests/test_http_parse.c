@@ -315,6 +315,15 @@ static void test_limits(void)
     BR_CHECK(parse_and_close("HTTP/1.1 200 OK\r\n\r\n0123456789", 10) == BR_HTTP_PARSE_DONE);
     BR_CHECK(parse_and_close("HTTP/1.1 200 OK\r\n\r\n0123456789A", 10) == BR_HTTP_PARSE_ERROR);
 
+    /* a caller without a limit (max_body SIZE_MAX) and a huge Content-Length: ERROR, not a buffer
+     * size that wraps (the growth loop never ended) */
+    static const unsigned long long huge[] = { (unsigned long long)(SIZE_MAX / 2) + 1, (unsigned long long)SIZE_MAX - 5 };
+    for (size_t i = 0; i < BR_ARRAY_COUNT(huge); i++) {
+        char text[128];
+        SDL_snprintf(text, sizeof text, "HTTP/1.1 200 OK\r\nContent-Length: %llu\r\n\r\nab", huge[i]);
+        BR_CHECK(parse(text, SDL_strlen(text), SIZE_MAX, false, 0, NULL) == BR_HTTP_PARSE_ERROR);
+    }
+
     /* endless interim responses count against the header limit */
     p = br_http_parser_create(0, false);
     r = BR_HTTP_PARSE_MORE;

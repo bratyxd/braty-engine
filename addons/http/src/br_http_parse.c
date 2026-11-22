@@ -445,6 +445,10 @@ static void br_http_fail(br_http_parser *p, const char *fmt, ...)
 /* Room for `need` bytes plus a NUL. */
 static bool br_http_reserve(br_http_parser *p, size_t need)
 {
+    if (need >= SIZE_MAX / 2) {  /* the doubling below would wrap to 0 and never end */
+        br_http_fail(p, "response of %llu bytes is too large", (unsigned long long)need);
+        return false;
+    }
     need += 1;
     if (need <= p->capacity) {
         return true;
@@ -586,7 +590,7 @@ static void br_http_choose_framing(br_http_parser *p)
         p->framing = BR_HTTP_FRAME_CLOSE;  /* item 8 */
         return;
     }
-    if (p->content_length > p->max_body) {
+    if (p->content_length > p->max_body || p->content_length >= SIZE_MAX / 2) {  /* header + body must fit */
         br_http_fail(p, "body of %llu bytes is over the limit of %llu", (unsigned long long)p->content_length,
                      (unsigned long long)p->max_body);
         return;
