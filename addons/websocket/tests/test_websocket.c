@@ -5,7 +5,8 @@
  * server close 1001; br_websocket_close -> the server sees 1000, CLOSED; messages readable after
  * CLOSED; the server drops the connection -> 1006; wrong accept key, extensions, a protocol not
  * offered, HTTP 403 -> FAILED; set_max_message -> 1009; invalid UTF-8 -> 1007; keep-alive (dead
- * server dropped as 1006, answering server stays OPEN); handshake and close timeouts; wss://;
+ * server dropped as 1006, answering server stays OPEN; both also over wss://); handshake and
+ * close timeouts; a server that reads nothing (send queue bound, ping flood); wss://;
  * send before OPEN and after close; release while OPEN; the table full; zero / stale handles.
  * Ports 47831..47833. */
 #include "braty/braty.h"
@@ -609,12 +610,45 @@ static void test_wss(br_engine *e)
     BR_CHECK(server_frame(e, 5.0) && frame.opcode == 1 && SDL_strcmp((const char *)frame.payload, "secret") == 0);
     server_send_frame(0x81, "secret back", 11);
     BR_CHECK(receive_text(e, ws, "secret back", 5.0));
+    /* keep-alive over TLS: a server that answers every ping stays OPEN */
+    br_websocket_set_ping_interval(e, ws, 0.2f);
+    int pings = 0;
+    uint64_t deadline = deadline_in(1.2);
+    while (before(deadline) && br_websocket_socket_state(e, ws) == BR_WEBSOCKET_OPEN) {
+        if (server_frame(e, 0.01) && frame.opcode == 9) {
+            pings++;
+            server_send_frame(0x8A, frame.payload, (size_t)frame.length);
+        }
+    }
+    br_log_info("test_websocket: wss: %d pings answered in 1.2 s", pings);
+    BR_CHECK(br_websocket_socket_state(e, ws) == BR_WEBSOCKET_OPEN && pings >= 3);
+    br_websocket_set_ping_interval(e, ws, 0.0f);
     br_websocket_close(e, ws, 1000, NULL);
-    BR_CHECK(server_frame(e, 5.0) && frame.opcode == 8 && ws_test_close_code(&frame) == 1000);
+    BR_CHECK(server_frame(e, 5.0));
+    while (frame.opcode == 9) {   /* a ping sent before it was switched off */
+        BR_CHECK(server_frame(e, 5.0));
+    }
+    BR_CHECK(frame.opcode == 8 && ws_test_close_code(&frame) == 1000);
     size_t n = ws_test_close_write(wire, 1000, NULL);
     BR_CHECK(peer_send(wire, n));
     BR_CHECK(wait_while(e, ws, BR_WEBSOCKET_CLOSING, 5.0) == BR_WEBSOCKET_CLOSED);
     BR_CHECK(br_websocket_close_code(e, ws) == 1000);
+    br_websocket_release(e, ws);
+    peer_close();
+
+    /* keep-alive over TLS: a server that stops answering is dropped as 1006 */
+    ws = br_websocket_open(e, "wss://localhost:47832/secure", NULL, NULL);
+    br_websocket_set_ping_interval(e, ws, 0.2f);
+    BR_CHECK(server_accept(e, none, true));
+    server_answer(NULL, NULL, 0, false);
+    BR_CHECK(wait_while(e, ws, BR_WEBSOCKET_CONNECTING, 10.0) == BR_WEBSOCKET_OPEN);
+    uint64_t start = SDL_GetTicksNS();
+    BR_CHECK(wait_while(e, ws, BR_WEBSOCKET_OPEN, 5.0) == BR_WEBSOCKET_CLOSED);
+    double seconds = seconds_since(start);
+    br_log_info("test_websocket: wss: dead server dropped after %.3f s", seconds);
+    BR_CHECK(seconds >= 0.35 && seconds < 1.0);
+    BR_CHECK(br_websocket_close_code(e, ws) == 1006 && contains(br_websocket_error(e, ws), "keep-alive"));
+    BR_CHECK(server_frame(e, 1.0) && frame.opcode == 9);   /* the ping went out over TLS */
     br_websocket_release(e, ws);
     peer_close();
     tls_test_server_stop(&tls_server);
