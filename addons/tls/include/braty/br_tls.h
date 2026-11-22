@@ -55,6 +55,11 @@ bool br_tls_send(br_engine *e, br_tls_stream s, const void *data, size_t size);
  * CONNECTING), -1 when CLOSED or FAILED. The read that finds the peer gone returns -1 and sets
  * CLOSED; a TLS error sets FAILED. */
 int br_tls_receive(br_engine *e, br_tls_stream s, void *buffer, int capacity);
+/* True when the stream is CLOSED by an orderly end: the peer's close_notify on a secure stream,
+ * the TCP close on a plain one. False when a secure stream ended without close_notify (the data
+ * may have been cut short by the network or an attacker), while open, FAILED, and for zero /
+ * stale handles. Check it when the end of the stream is the end of the data. */
+bool br_tls_closed_cleanly(br_engine *e, br_tls_stream s);
 /* Frees the handle; a secure OPEN stream sends close_notify first. Queued bytes still go out
  * (br_net_close's linger). */
 void br_tls_close(br_engine *e, br_tls_stream s);

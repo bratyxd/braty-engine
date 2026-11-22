@@ -25,6 +25,7 @@ succeeded and the certificate was verified; anything else ends FAILED with a rea
 | `br_tls_state(e, s)` | CONNECTING (TCP connect, root certificates loading, handshake) -> OPEN, or FAILED. CLOSED after the peer closed, and for zero / stale handles. |
 | `br_tls_send(e, s, data, size)` | Encrypts and queues everything; false unless OPEN. |
 | `br_tls_receive(e, s, buf, cap)` | Decrypted bytes, 0 = nothing now (also while CONNECTING), -1 = CLOSED / FAILED. |
+| `br_tls_closed_cleanly(e, s)` | After CLOSED: true for close_notify (secure) or a TCP close (plain); false for a secure stream cut without close_notify. |
 | `br_tls_close(e, s)` | close_notify (secure, OPEN), then `br_net_close` (queued bytes still go out). |
 | `br_tls_error(e, s)` | Why it FAILED: "certificate of host:443 not accepted: The certificate validity has expired", "TLS handshake with host:443 failed: ...". |
 | `br_tls_set_ca_pem(e, pem, size)` | Your own roots instead of the Mozilla bundle (your server's CA, pinning). |
@@ -78,8 +79,9 @@ Games normally use `http` or `websocket` on top; `tls` is for your own protocol 
 - **The handshake's public-key maths runs on the main thread** inside `tls.update` (a few ms per
   connection; `// ponytail:` in the plan: a job per handshake if many connections open at once).
 - **Peer close:** close_notify and a TCP end without close_notify both read as CLOSED (many
-  servers skip close_notify). Protocols that end a message at the close (HTTP bodies without a
-  length) should check the length they got when they have one.
+  servers skip close_notify). `br_tls_closed_cleanly` tells them apart: a protocol that ends a
+  message at the close (an HTTP body without a length) treats a secure stream that did not close
+  cleanly as truncated (`http` does, as curl does).
 - **TLS 1.2 minimum.** TLS 1.0 / 1.1 servers fail ("Handshake protocol not within min/max
   boundaries"). No session resumption (TLS 1.3 tickets are read and ignored).
 - **No timeout of its own**, like `net`: a server that accepts and never answers keeps the

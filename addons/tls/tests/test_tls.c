@@ -205,7 +205,9 @@ static void test_plain(br_engine *e)
     br_net_close(e, peer);
     BR_CHECK(client_until_end(e, s));
     BR_CHECK(br_tls_state(e, s) == BR_NET_CLOSED);
+    BR_CHECK(br_tls_closed_cleanly(e, s));   /* plain: the TCP close is the orderly end */
     br_tls_close(e, s);
+    BR_CHECK(!br_tls_closed_cleanly(e, s));  /* stale */
     br_net_server_close(e, server);
 
     br_tls_stream refused = br_tls_open(e, "127.0.0.1", CLOSED_PORT, false);
@@ -251,10 +253,12 @@ static void test_secure(br_engine *e)
     BR_CHECK(client_receive(e, s, big_in, BIG_SIZE));
     BR_CHECK(SDL_memcmp(big_in, big_out, BIG_SIZE) == 0);
 
-    /* the server closes (close_notify): the client reads -1, CLOSED */
+    /* the server closes (close_notify): the client reads -1, CLOSED, cleanly */
+    BR_CHECK(!br_tls_closed_cleanly(e, s));   /* still OPEN */
     tls_test_conn_close(&conn);
     BR_CHECK(client_until_end(e, s));
     BR_CHECK(br_tls_state(e, s) == BR_NET_CLOSED);
+    BR_CHECK(br_tls_closed_cleanly(e, s));
     BR_CHECK(!br_tls_send(e, s, "x", 1));
     br_tls_close(e, s);
 
@@ -284,8 +288,13 @@ static void test_secure(br_engine *e)
     BR_CHECK(SDL_strcmp(br_tls_error(e, c), "") == 0);
     br_tls_close(e, c); /* no-op */
     BR_CHECK(br_tls_state(e, again) == BR_NET_OPEN);
-    br_tls_close(e, again);
+    /* the server's TCP connection ends without close_notify (a truncation): CLOSED, not cleanly */
+    conn.state = -1;   /* tls_test_conn_close then skips close_notify */
     tls_test_conn_close(&conn);
+    BR_CHECK(client_until_end(e, again));
+    BR_CHECK(br_tls_state(e, again) == BR_NET_CLOSED);
+    BR_CHECK(!br_tls_closed_cleanly(e, again));
+    br_tls_close(e, again);
 }
 
 /* Opens host:port securely against server and expects FAILED with `part` in the error. */

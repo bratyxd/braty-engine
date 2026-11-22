@@ -35,6 +35,7 @@ typedef struct br_tls_slot {
     bool                secure;
     bool                verify;       /* br_tls_set_verify at open time */
     bool                ssl_ready;    /* mbedtls_ssl_setup done */
+    bool                clean_close;  /* secure: CLOSED by the peer's close_notify */
     char                host[BR_TLS_MAX_HOST + 1];
     char                error[512];
 } br_tls_slot;
@@ -429,6 +430,7 @@ br_tls_stream br_tls_open(br_engine *e, const char *host, uint16_t port, bool se
     slot->secure = secure;
     slot->verify = t->verify;
     slot->ssl_ready = false;
+    slot->clean_close = false;
     slot->error[0] = '\0';
     SDL_strlcpy(slot->host, host, sizeof slot->host);
     if (secure) {
@@ -513,8 +515,10 @@ int br_tls_receive(br_engine *e, br_tls_stream s, void *buffer, int capacity)
             continue;  /* TLS 1.3 tickets: not used (no session resumption) */
         }
         if (ret == 0 || ret == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY || ret == MBEDTLS_ERR_SSL_CONN_EOF) {
-            /* close_notify, or the TCP stream ended without it (many servers do that) */
+            /* close_notify, or the TCP stream ended without it (many servers do that; so can an
+             * attacker cutting the data short: br_tls_closed_cleanly tells the two apart) */
             slot->state = BR_NET_CLOSED;
+            slot->clean_close = ret == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY;
             return -1;
         }
         char what[300];
@@ -523,6 +527,18 @@ int br_tls_receive(br_engine *e, br_tls_stream s, void *buffer, int capacity)
         return -1;
     }
     return 0;
+}
+
+bool br_tls_closed_cleanly(br_engine *e, br_tls_stream s)
+{
+    br_tls_slot *slot = br_tls_slot_get(br_tls_get(e), s);
+    if (slot == NULL) {
+        return false;
+    }
+    if (!slot->secure) {
+        return br_net_socket_state(e, slot->socket) == BR_NET_CLOSED;
+    }
+    return slot->state == BR_NET_CLOSED && slot->clean_close;
 }
 
 void br_tls_close(br_engine *e, br_tls_stream s)
