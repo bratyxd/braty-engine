@@ -165,13 +165,15 @@ static bool br_http_follow(br_engine *e, br_http_slot *slot, int status)
         br_http_remove_header(slot->headers, "Content-Type");
         br_http_remove_header(slot->headers, "Transfer-Encoding");
     }
-    /* Credentials go to the origin they were meant for only (curl does the same). */
+    /* Credentials go to the origin they were meant for only, and a Host of the caller's names
+     * that origin, not the next one (curl drops all of them too). */
     bool same_origin = next.secure == slot->url.secure && next.port == slot->url.port &&
                        SDL_strcasecmp(next.host, slot->url.host) == 0;
     if (!same_origin) {
         br_http_remove_header(slot->headers, "Authorization");
         br_http_remove_header(slot->headers, "Cookie");
         br_http_remove_header(slot->headers, "Proxy-Authorization");
+        br_http_remove_header(slot->headers, "Host");
     }
     br_tls_close(e, slot->stream);
     slot->url = next;

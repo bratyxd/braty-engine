@@ -88,8 +88,8 @@ g->submit = br_http_send(e, &desc);
   `BR_HTTP_MAX_REDIRECTS` (5; the 6th fails). 303, and 301 / 302 after a POST, become GET
   without the body (and without your `Content-Length` / `Content-Type` / `Transfer-Encoding`);
   307 / 308 keep method and body. Never from https to http. On a redirect to another host, port
-  or scheme your `Authorization`, `Cookie` and `Proxy-Authorization` lines are dropped (as curl
-  does). A 3xx without `Location` is the response.
+  or scheme your `Authorization`, `Cookie`, `Proxy-Authorization` and `Host` lines are dropped
+  (as curl does; they stay dropped for the rest of the chain). A 3xx without `Location` is the response.
 - **Timeout** (`desc.timeout`, default 30 s) is real time (`SDL_GetTicksNS`) and covers the whole
   request: DNS, connect, TLS handshake, every redirect, the body. A paused game still times out.
 

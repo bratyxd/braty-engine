@@ -301,7 +301,7 @@ static void test_redirects(br_engine *e, br_net_server server)
     SDL_zero(desc);
     desc.method = "POST";
     desc.url = "http://127.0.0.1:47821/form";
-    desc.headers = "Authorization: Bearer x\r\nContent-Type: text/plain\r\n";
+    desc.headers = "Authorization: Bearer x\r\nContent-Type: text/plain\r\nHost: 127.0.0.1:47821\r\n";
     desc.body = "data";
     desc.body_size = 4;
     r = br_http_send(e, &desc);
@@ -321,6 +321,8 @@ static void test_redirects(br_engine *e, br_net_server server)
     BR_CHECK(SDL_strncmp(last_request, "POST /again HTTP/1.1\r\n", 22) == 0);
     BR_CHECK(contains(last_request, "\r\nContent-Length: 4\r\n") && contains(last_request, "\r\n\r\ndata"));
     BR_CHECK(!contains(last_request, "Authorization"));
+    /* the caller's Host names the first origin: the new one gets its own (as curl does) */
+    BR_CHECK(contains(last_request, "\r\nHost: localhost:47821\r\n") && !contains(last_request, "Host: 127.0.0.1"));
     br_http_release(e, r);
 
     /* six redirects: FAILED */
