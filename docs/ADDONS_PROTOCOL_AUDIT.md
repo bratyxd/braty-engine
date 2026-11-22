@@ -101,7 +101,7 @@ behaviour). Every gap and bug below is fixed; the commit is in the last column.
 | W30 | Drop without a close frame -> 1006; protocol error -> close frame then TCP close (7.1.7) | the same | the same | same | `test_dropped`, `test_violations` |
 | W31 | Keep-alive ping and dead-peer detection, also over TLS | lws ping-pong timer | the same; wss now tested | same | `test_keep_alive`, `test_wss`; 4cf7e37 |
 | W32 | No `NULL + 0` (UB) sending an empty message (wslay master 1c97e7a) | fixed upstream after 1.1.1 | reached by our keep-alive ping | **bug** (UB) -> backported | `test_keep_alive`; bd71db3 |
-| W33 | Empty messages both ways; endless loop on zero-length frames (curl CVE-2025-5399 class) | - | each frame consumes at least 2 bytes; empty messages work | same | `test_echo`, `test_round_trips` |
+| W33 | Empty messages both ways; no endless loop on any frame (curl CVE-2025-5399: a crafted frame trapped libcurl in a busy loop) | - | each frame consumes at least 2 bytes; empty messages work | same | `test_echo`, `test_round_trips` |
 
 **Counts:** HTTP 41 items: 23 same, 10 different-but-correct, 2 known limits, 3 gaps (H10, H38,
 H41), 3 bugs (H25, H31, H37). WebSocket 33 items: 24 same, 4 different-but-correct, 2 gaps (W6,
@@ -150,7 +150,7 @@ patches (marked `braty patch` in `lib/wslay_event.c`, listed in `third_party/REA
 | Class | Examples | Exposed? |
 |---|---|---|
 | Request smuggling inputs (TE + CL, duplicate CL, bare LF / CR, chunk-ext tricks) | llhttp and proxy CVEs | No: one response per connection, then it is closed; CL / TE rules above; refused on the request side (H7, H10) |
-| Header injection (CRLF in URL, method, headers) | curl CVE-2022-27776 class, many | No: refused before sending (H7) |
+| Header injection (CRLF in URL, method, headers) | a CR or LF in a caller's URL or header value starts a new header line (a common HTTP-client bug class) | No: refused before sending (H7) |
 | Redirect credential leaks | curl CVE-2018-1000007, CVE-2022-27774, CVE-2022-27776, CVE-2025-14524 | No after H37: credentials and Host dropped on any origin change; https -> http refused |
 | Integer overflow in lengths | - | Was (H25, only with `max_body = SIZE_MAX`); fixed. CL / chunk sizes checked before use; wslay rejects 2^63 lengths |
 | Unbounded buffering | curl CVE-2023-38039 (headers), CVE-2026-11586 (auto-pong) | Was (W16); fixed. Header block, body, message, unread queue and unsent queue are bounded |
@@ -189,3 +189,10 @@ Browser behaviour for close codes 1012-1014 (not read from Chromium / Firefox so
 commit that fixed CVE-2026-11586 (its advisory names the version, not the mechanism; curl master
 keeps one pending control frame, read in `ws_enc_add_cntrl`). Nothing was run against a real
 Autobahn fuzzing server; its case list was used as a checklist only.
+
+Every CVE identifier above was checked on 2026-11-22 against curl's advisory list
+(https://curl.se/docs/vuln.json, the data behind curl.se/docs/security.html): each exists and its
+summary matches the row ("HTTP headers eat all memory", "HTTP authentication leak in redirects",
+"Credential leak on redirect", "Auth/cookie leak on redirect", "bearer token leak on
+cross-protocol redirect", "predictable WebSocket mask", "WebSocket endless loop", "WS Auto-PONG
+memory exhaustion").
