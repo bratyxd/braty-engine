@@ -163,7 +163,6 @@ static bool br_http_follow(br_engine *e, br_http_slot *slot, int status)
         slot->send_length = false;
         br_http_remove_header(slot->headers, "Content-Length");
         br_http_remove_header(slot->headers, "Content-Type");
-        br_http_remove_header(slot->headers, "Transfer-Encoding");
     }
     /* Credentials go to the origin they were meant for only, and a Host of the caller's names
      * that origin, not the next one (curl drops all of them too). */

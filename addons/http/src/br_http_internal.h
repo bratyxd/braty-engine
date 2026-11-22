@@ -47,7 +47,7 @@ bool br_http_headers_has(const char *headers, const char *name);
  * send_length) unless the caller's headers name them. Returns its length without the NUL, or the
  * capacity it needs (length + 1 > capacity: call again with a bigger out; out may be NULL then).
  * 0 with a reason when method (a token, at most BR_HTTP_MAX_METHOD bytes; CONNECT refused) or
- * headers are not valid. */
+ * headers are not valid, or name Transfer-Encoding (bodies go with a Content-Length). */
 size_t br_http_write_request(char *out, size_t capacity, const char *method, const br_http_url *url,
                              const char *headers, bool send_length, size_t body_size, char *error,
                              size_t error_capacity);

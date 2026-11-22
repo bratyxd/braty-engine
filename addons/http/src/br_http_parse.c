@@ -394,6 +394,12 @@ size_t br_http_write_request(char *out, size_t capacity, const char *method, con
     if (!br_http_headers_valid(headers, error, error_capacity)) {
         return 0;
     }
+    if (br_http_headers_has(headers, "Transfer-Encoding")) {
+        /* the body goes as it is with a Content-Length; both would frame it twice (RFC 9112 6.2) */
+        br_http_set_error(error, error_capacity, "Transfer-Encoding is not supported (the body is sent with a "
+                          "Content-Length)");
+        return 0;
+    }
     br_http_writer w = { out, capacity, 0 };
     br_http_put(&w, method);
     br_http_put(&w, " ");

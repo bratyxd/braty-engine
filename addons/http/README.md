@@ -86,7 +86,7 @@ g->submit = br_http_send(e, &desc);
   your `headers` name it. One connection per request.
 - **Redirects** 301 / 302 / 303 / 307 / 308 with a `Location` are followed, up to
   `BR_HTTP_MAX_REDIRECTS` (5; the 6th fails). 303, and 301 / 302 after a POST, become GET
-  without the body (and without your `Content-Length` / `Content-Type` / `Transfer-Encoding`);
+  without the body (and without your `Content-Length` / `Content-Type`);
   307 / 308 keep method and body. Never from https to http. On a redirect to another host, port
   or scheme your `Authorization`, `Cookie`, `Proxy-Authorization` and `Host` lines are dropped
   (as curl does; they stay dropped for the rest of the chain). A 3xx without `Location` is the response.
@@ -107,7 +107,7 @@ g->submit = br_http_send(e, &desc);
 | Interim `100 Continue`, `103 Early Hints` | Skipped; the final response follows (RFC 9110 section 15.2). An unasked `101` FAILS. |
 | NUL, a lone CR or another control character in a header name or value | FAILED (picohttpparser). A lone LF ends a line (RFC 9112 section 2.2 allows it). |
 | obs-fold (a header line starting with space / tab) | Joined to the line before with spaces (RFC 9112 section 5.2) |
-| A CR or LF in your `url`, `method` or `headers`; a header line that is not `Name: value`; an empty line; a method that is not a token; `CONNECT` | `br_http_send` returns a zero handle and logs; nothing is sent |
+| A CR or LF in your `url`, `method` or `headers`; a header line that is not `Name: value`; an empty line; a method that is not a token; `CONNECT`; a `Transfer-Encoding` line (the body is always sent with a `Content-Length`) | `br_http_send` returns a zero handle and logs; nothing is sent |
 | The connection closes before the response is complete (headers, Content-Length, chunked) | FAILED "connection closed ..."; never DONE |
 | No length at all | The body runs until the close (RFC 9112 section 6.3 item 8); over TLS the close must be close_notify, else FAILED (truncation) |
 

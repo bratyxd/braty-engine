@@ -143,6 +143,9 @@ static void test_writer(void)
         " folded\r\n",                       /* obs-fold */
         "X: a\r\n\n",
     };
+    /* the body goes with our Content-Length: a Transfer-Encoding too would frame it twice */
+    BR_CHECK(br_http_write_request(out, sizeof out, "POST", &u, "transfer-encoding: chunked\r\n", true, 4, error,
+                                   sizeof error) == 0);
     for (size_t i = 0; i < BR_ARRAY_COUNT(bad_headers); i++) {
         BR_CHECK(!br_http_headers_valid(bad_headers[i], error, sizeof error));
         BR_CHECK(br_http_write_request(out, sizeof out, NULL, &u, bad_headers[i], false, 0, error, sizeof error) == 0);
