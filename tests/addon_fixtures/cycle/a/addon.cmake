@@ -1,0 +1,1 @@
+set(BRATY_ADDON_DEPENDS b)

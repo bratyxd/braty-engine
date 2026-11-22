@@ -81,6 +81,11 @@ add_library(braty::braty ALIAS braty)   # games: add_subdirectory(<braty> ...) t
 set(BRATY_TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools CACHE INTERNAL "tools/ of the Braty engine")
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/BratyGame.cmake)
 
+# Add-ons (addons/<name>/): built only when named here or needed by one that is. A game that
+# embeds the engine sets BRATY_ADDONS before add_subdirectory(<braty>) and links braty::<name>.
+set(BRATY_ADDONS "" CACHE STRING "Add-ons to build: names separated by ';', or all")
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/BratyAddons.cmake)
+
 # --- the SDK (BRATY_INSTALL): everything a game needs to build without the engine's sources
 if(BRATY_INSTALL)
     include(CMakePackageConfigHelpers)
@@ -155,6 +160,17 @@ if(BRATY_BUILD_TESTS)
     if(Python3_FOUND)
         add_test(NAME test_playtest_tool COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_playtest_tool.py)
     endif()
+    # the add-on resolver against fake add-on trees (tests/addon_fixtures), with add-ons off
+    set(BR_RESOLVE -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/addon_resolve.cmake)
+    add_test(NAME addon_resolve_ok COMMAND ${CMAKE_COMMAND} -DCASE=ok -DREQUEST=c ${BR_RESOLVE})
+    add_test(NAME addon_resolve_all COMMAND ${CMAKE_COMMAND} -DCASE=ok -DREQUEST=all ${BR_RESOLVE})
+    add_test(NAME addon_resolve_cycle COMMAND ${CMAKE_COMMAND} -DCASE=cycle -DREQUEST=a ${BR_RESOLVE})
+    add_test(NAME addon_resolve_unknown COMMAND ${CMAKE_COMMAND} -DCASE=unknown -DREQUEST=a ${BR_RESOLVE})
+    # PASS_REGULAR_EXPRESSION ignores the exit code (and WILL_FAIL would invert the match), so the
+    # failing cases match the FATAL_ERROR text, which only a failed run prints.
+    set_tests_properties(addon_resolve_ok addon_resolve_all PROPERTIES PASS_REGULAR_EXPRESSION "resolved: [[]a, b, c[]]")
+    set_tests_properties(addon_resolve_cycle PROPERTIES PASS_REGULAR_EXPRESSION "add-on dependency cycle: a -> b -> a")
+    set_tests_properties(addon_resolve_unknown PROPERTIES PASS_REGULAR_EXPRESSION "unknown add-on 'zz' [(]available: a[)]")
 endif()
 
 # --- examples: every examples/*.c is one executable
@@ -174,6 +190,9 @@ if(BRATY_BUILD_EXAMPLES)
         endif()
     endforeach()
 endif()
+
+# --- add-ons: after the tests block, so enable_testing() covers their tests
+add_subdirectory(addons)
 
 # --- sample games: each builds standalone too (cmake -S sample_projects/<name>)
 if(BRATY_BUILD_SAMPLES)
