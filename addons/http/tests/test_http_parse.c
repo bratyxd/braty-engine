@@ -210,7 +210,7 @@ static void test_pieces(void)
     BR_CHECK(equal(br_http_parser_body(bytes, &b), "hello world") && b == 11);
     BR_CHECK(br_http_parser_header_count(whole) == 5 && br_http_parser_header_count(bytes) == 5);
     for (uint32_t i = 0; i < br_http_parser_header_count(whole); i++) {
-        const char *n1, *v1, *n2, *v2;
+        const char *n1 = NULL, *v1 = NULL, *n2 = NULL, *v2 = NULL;
         BR_CHECK(br_http_parser_header_at(whole, i, &n1, &v1) && br_http_parser_header_at(bytes, i, &n2, &v2));
         BR_CHECK(equal(n1, n2) && equal(v1, v2));
     }
