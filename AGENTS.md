@@ -367,11 +367,47 @@ Known rough edges (and their workarounds) are in `docs/API_REVIEW.md`.
 - Shaders are compiled offline (`tools/compile_shaders.py`); the runtime never compiles source.
 - Comments explain why, briefly. Every public function has a one-line doc comment.
 - Deliberate shortcuts get a `// ponytail:` comment naming the limit and the upgrade path.
-- Git: small commits, imperative subject prefixed by module (`gpu: add readback`), `git add`
-  specific paths only.
+- Git: small commits, imperative subject prefixed by module (`gpu: add readback`) that says
+  what now works, `git add` specific paths only. Never commit a state that does not build; a
+  change and its test go in the same commit.
+- **Done means checked by you.** Before reporting work as finished: the build has no warnings,
+  the tests for what changed pass (CI green after a push), visible changes were looked at, and
+  `git status` is clean. Another agent's "done" is a claim: run the check yourself.
 - **Every behaviour change ships with a test that fails without it.** Logic -> `tests/test_*.c`;
   game flow -> a play-test script; anything visible -> a golden image (`tools/golden.py`). Update
   a golden only after looking at the new image and the diff (`docs/TESTING.md`).
+
+## Engine changes from a game, and releasing
+
+Games are built against a released SDK ("How to make a game" step 12), so an engine change
+reaches a game only through a release.
+
+- **Change the engine only when it is necessary.** A game that needs something first uses what
+  exists (the module guides, `docs/API_REVIEW.md` workarounds, game-side code). The engine
+  changes when it is wrong (a bug, a crash, a documented behaviour that does not hold) or lacks
+  something a game cannot reasonably build on its side. Never patch a copy of the engine or the
+  SDK inside a game, and never work around an engine bug silently: fix it here.
+- **An engine change made for a game follows every rule in this file:** the smallest change that
+  solves it, in this repository, with a test that fails without it, docs updated, pushed, CI
+  green. Nothing game-specific goes into the engine.
+- **Then release** (below) and let the game pick up the new SDK. The game's commit that starts
+  using it names the release.
+
+Releasing (version `X.Y.Z` in `project(braty VERSION ...)`, root `CMakeLists.txt`; patch for
+fixes, minor for new API or features, and say so in the commit that needs it):
+
+```sh
+gh run list --branch main --limit 1          # the last push on main is green
+# edit CMakeLists.txt: project(braty VERSION X.Y.Z ...)
+git add CMakeLists.txt && git commit -m "build: version X.Y.Z" && git push
+gh run watch --exit-status                   # CI green on the version commit
+git tag vX.Y.Z && git push origin vX.Y.Z     # .github/workflows/release.yml builds and publishes
+gh run watch --exit-status                   # the release run (it tests every archive)
+gh release view vX.Y.Z                       # four SDK archives are attached
+```
+
+A release is public and cannot be taken back: tag only from a green `main`, never move or
+reuse a tag; a bad release is fixed by the next patch release.
 
 ## The data-driven model
 
