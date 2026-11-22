@@ -24,6 +24,7 @@ succeeded and the certificate was verified; anything else ends FAILED with a rea
 | `br_tls_open(e, host, port, secure)` | Returns at once in CONNECTING. `host` is also the name the certificate must carry (and the SNI). |
 | `br_tls_state(e, s)` | CONNECTING (TCP connect, root certificates loading, handshake) -> OPEN, or FAILED. CLOSED after the peer closed, and for zero / stale handles. |
 | `br_tls_send(e, s, data, size)` | Encrypts and queues everything; false unless OPEN. |
+| `br_tls_send_pending(e, s)` | Bytes still queued (the peer is slow or not reading): bound your sends with it. |
 | `br_tls_receive(e, s, buf, cap)` | Decrypted bytes, 0 = nothing now (also while CONNECTING), -1 = CLOSED / FAILED. |
 | `br_tls_closed_cleanly(e, s)` | After CLOSED: true for close_notify (secure) or a TCP close (plain); false for a secure stream cut without close_notify. |
 | `br_tls_close(e, s)` | close_notify (secure, OPEN), then `br_net_close` (queued bytes still go out). |

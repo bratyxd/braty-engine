@@ -208,6 +208,7 @@ static void test_plain(br_engine *e)
     BR_CHECK(br_tls_closed_cleanly(e, s));   /* plain: the TCP close is the orderly end */
     br_tls_close(e, s);
     BR_CHECK(!br_tls_closed_cleanly(e, s));  /* stale */
+    BR_CHECK(br_tls_send_pending(e, s) == 0);
     br_net_server_close(e, server);
 
     br_tls_stream refused = br_tls_open(e, "127.0.0.1", CLOSED_PORT, false);
@@ -235,6 +236,7 @@ static void test_secure(br_engine *e)
     BR_CHECK(server_receive(e, buf, 9));
     BR_CHECK(SDL_memcmp(buf, "hello tls", 9) == 0);
     BR_CHECK(conn.state == 1);
+    BR_CHECK(br_tls_send_pending(e, s) < 64);   /* 9 bytes went straight to the OS */
     BR_CHECK(tls_test_conn_send(&conn, "HELLO TLS", 9));
     BR_CHECK(client_receive(e, s, buf, 9));
     BR_CHECK(SDL_memcmp(buf, "HELLO TLS", 9) == 0);

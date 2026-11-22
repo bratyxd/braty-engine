@@ -488,6 +488,12 @@ bool br_tls_send(br_engine *e, br_tls_stream s, const void *data, size_t size)
     return true;
 }
 
+size_t br_tls_send_pending(br_engine *e, br_tls_stream s)
+{
+    br_tls_slot *slot = br_tls_slot_get(br_tls_get(e), s);
+    return slot != NULL ? br_net_send_pending(e, slot->socket) : 0;
+}
+
 int br_tls_receive(br_engine *e, br_tls_stream s, void *buffer, int capacity)
 {
     br_tls_slot *slot = br_tls_slot_get(br_tls_get(e), s);

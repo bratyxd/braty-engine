@@ -51,6 +51,9 @@ br_net_state br_tls_state(br_engine *e, br_tls_stream s);
 /* Encrypts (when secure) and queues all size bytes; false unless OPEN. A secure send that fails
  * turns the stream FAILED. */
 bool br_tls_send(br_engine *e, br_tls_stream s, const void *data, size_t size);
+/* Bytes queued on the stream's socket, not yet handed to the operating system (encrypted bytes
+ * for a secure stream); 0 for zero / stale handles. Grows while the peer does not read. */
+size_t br_tls_send_pending(br_engine *e, br_tls_stream s);
 /* As br_net_receive: bytes read (decrypted), 0 when nothing is there now (also while
  * CONNECTING), -1 when CLOSED or FAILED. The read that finds the peer gone returns -1 and sets
  * CLOSED; a TLS error sets FAILED. */
