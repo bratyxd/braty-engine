@@ -14,3 +14,12 @@ Include them as `#include "stb/stb_image.h"`, `"cjson/cJSON.h"`, `"cgltf/cgltf.h
 Compile definitions set for everyone (see CMakeLists.txt): `STBI_NO_STDIO`, `STBI_WRITE_NO_STDIO`,
 `STB_VORBIS_NO_STDIO`, so the engine reads files only through SDL (`br_file_*`).
 To use stb_vorbis declarations: `#define STB_VORBIS_HEADER_ONLY` then `#include "stb/stb_vorbis.c"`.
+
+## Fetched by add-ons
+
+Not in this folder: an add-on's `CMakeLists.txt` uses an installed package when CMake finds one,
+else fetches the source with FetchContent and builds it static (`addons/<name>/CMakeLists.txt`).
+
+| Library | Add-on | Upstream | Version | Licence |
+|---|---|---|---|---|
+| SDL3_net | `net` | github.com/libsdl-org/SDL_net | release-3.2.0 | zlib |
