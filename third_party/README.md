@@ -25,16 +25,31 @@ else fetches the source with FetchContent and builds it static (`addons/<name>/C
 | SDL3_net | `net` | github.com/libsdl-org/SDL_net | release-3.2.0 | zlib |
 | Mbed TLS | `tls` | github.com/Mbed-TLS/mbedtls (release tarball `mbedtls-3.6.8.tar.bz2`, SHA-256 in `addons/tls/CMakeLists.txt`) | 3.6.8 LTS | Apache-2.0 |
 
+Both are installed into the SDK with their CMake packages (`lib/`) and licences
+(`licenses/SDL3_net/`, `licenses/MbedTLS/`) when the build fetched them.
+
+To update SDL3_net: change `GIT_TAG` in `addons/net/CMakeLists.txt` (and the version here and in
+`docs/BUILDING.md` "Add-ons"), configure a fresh build directory with `-DBRATY_ADDONS=net`, run
+`test_net`. The two build fixes there (`C_EXTENSIONS ON`, `NO_OLDNAMES` on MinGW) and the
+`SDL3::SDL3` link of `SDL3_net-static` may become unnecessary; keep them until a build without
+them passes CI.
+
+To update Mbed TLS: take a release tarball of an LTS branch from its GitHub release page (the git
+tag needs a submodule), put its URL and its SHA-256 (`cmake -E sha256sum <file>`) in
+`addons/tls/CMakeLists.txt`, update the version here, and run `test_tls`, `test_http` and
+`test_websocket` (all three use TLS over loopback).
+
 Vendored with an add-on (unmodified except the wslay patches below, compiled without the engine's
 warning flags):
 
 | Library | Add-on | Upstream | Commit | Licence |
 |---|---|---|---|---|
 | picohttpparser (`picohttpparser.c`, `.h`) in `addons/http/third_party/picohttpparser/` | `http` | github.com/h2o/picohttpparser | dd573d8fa926 (2026-10-27) | MIT (or Perl); `LICENSE` there is the notice from the source header (upstream has no licence file) |
-
 | wslay (`lib/*.c`, `lib/*.h`, `lib/includes/wslay/wslay.h`, `wslayver.h.in`) in `addons/websocket/third_party/wslay/` | `websocket` | github.com/tatsuhiro-t/wslay | release-1.1.1 (c9a84aa6df85, 2020-06-20) | MIT (`COPYING`); its UTF-8 decoder is Bjoern Hoehrmann's, MIT, notice in `wslay_event.c` |
 
-To update picohttpparser: copy `picohttpparser.c` and `picohttpparser.h` from the new commit over the two files, update the commit above, run `test_http_parse`.
+Their licences go into the SDK's `licenses/picohttpparser/` and `licenses/wslay/`.
+
+To update picohttpparser: copy `picohttpparser.c` and `picohttpparser.h` from the new commit over the two files, update the commit above, run `test_http_parse` and `test_http`.
 **wslay is patched** (three changes in `lib/wslay_event.c`, each marked `braty patch`; wslay master
 0e7d106 has none of the first two): (1) `wslay_event_is_valid_status_code` accepts close codes
 1012-1014 (IANA registry; libwebsockets accepts them too); (2) the UTF-8 check of a close reason
@@ -50,4 +65,6 @@ Committed with an add-on:
 |---|---|---|---|---|
 | Mozilla CA bundle `addons/tls/certs/cacert.pem` | `tls` | curl.se/ca/cacert.pem | "Certificate data from Mozilla as of: Thu Nov  5 04:12:01 2026 GMT" (downloaded 2026-11-22) | MPL-2.0 |
 
-To update the bundle: download https://curl.se/ca/cacert.pem over `addons/tls/certs/cacert.pem`, update the date above; CMake regenerates the C array at the next configure.
+The licence note `addons/tls/certs/LICENSE.md` goes into the SDK's `licenses/cacert/`.
+
+To update the bundle (before every release: roots expire and are withdrawn): download https://curl.se/ca/cacert.pem over `addons/tls/certs/cacert.pem`, check its SHA-256 against https://curl.se/ca/cacert.pem.sha256, update the date above (and the root count in `addons/tls/README.md`); CMake regenerates the C array at the next configure; run `test_tls`.

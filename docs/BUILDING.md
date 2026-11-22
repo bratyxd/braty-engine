@@ -164,9 +164,46 @@ struct, `SV_Position` included, or Direct3D 12 rejects the pipeline.
 | `BRATY_PLAYTEST_STDIN` | ON on desktop, OFF on Android / iOS / Emscripten and in release presets | `--playtest-stdin`: the one engine file that uses C stdio (`engine/src/playtest/br_playtest_stdin.c`) |
 | `BRATY_PROFILER` | ON (OFF in release presets) | profiler scopes and counters (`docs/PROFILING.md`) |
 | `BRATY_WERROR` | OFF (ON in CI) | warnings in engine code are errors (`-Werror` / `/WX`) |
+| `BRATY_ADDONS` | empty | add-ons to build: names separated by `;`, or `all` ("Add-ons" below) |
+| `BRATY_INSTALL` | OFF | install rules for the SDK ("The SDK" below) |
 
 Tests read their data from the source tree (`BRATY_SOURCE_DIR`, set by CMake), so a build
 directory can be anywhere: `cmake --preset windows-gcc -B build/any/depth` works with `ctest`.
+
+## Add-ons
+
+Optional libraries in `addons/` (`net`, `tls`, `http`, `websocket`; `docs/agents/addons.md`).
+Nothing there is configured, fetched or compiled unless `BRATY_ADDONS` names it:
+
+```sh
+cmake --preset windows-gcc -DBRATY_ADDONS=all            # every add-on (what CI does)
+cmake --preset windows-gcc -DBRATY_ADDONS=websocket      # websocket + http, tls, net (added for you)
+cmake --preset windows-gcc -DBRATY_ADDONS=               # none (the default)
+```
+
+A game that embeds the engine writes `set(BRATY_ADDONS http)` before
+`add_subdirectory(<braty>)` and links `braty::http`. An unknown name or a dependency cycle stops
+the configure with an error naming it.
+
+What is fetched, and from where (everything else is in the repository: picohttpparser and wslay
+under `addons/<name>/third_party/`, the CA bundle `addons/tls/certs/cacert.pem`):
+
+| Add-on | Fetched | From |
+|---|---|---|
+| `net` | SDL3_net `release-3.2.0` (only when no installed `SDL3_net` package is found) | `git clone --depth 1` of https://github.com/libsdl-org/SDL_net.git |
+| `tls` | Mbed TLS 3.6.8 (always) | https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.8/mbedtls-3.6.8.tar.bz2, checked against the SHA-256 in `addons/tls/CMakeLists.txt` |
+
+**Build time:** all four add a little over 100 s of CPU time to a build (Mbed TLS about 90 s,
+SDL3_net about 5 s, the add-ons themselves about 10 s; for comparison SDL about 300 s and the
+engine about 230 s; measured with MinGW GCC, Release).
+
+**Offline builds:** FetchContent downloads once into `<build>/_deps/`; later configures of the
+same build directory reuse it. For a new build directory without network, point CMake at sources
+you already have: `-DFETCHCONTENT_SOURCE_DIR_SDL3_NET=<SDL_net checkout>`,
+`-DFETCHCONTENT_SOURCE_DIR_MBEDTLS=<extracted mbedtls-3.6.8>` (and
+`-DFETCHCONTENT_SOURCE_DIR_SDL3=<SDL checkout>` when SDL is fetched too), or an installed SDL3_net
+package on `CMAKE_PREFIX_PATH`. `-DFETCHCONTENT_FULLY_DISCONNECTED=ON` makes a configure fail
+instead of trying the network.
 
 ## The SDK (a game without the engine's sources)
 
@@ -190,6 +227,30 @@ braty_install_game(my_game ${CMAKE_CURRENT_SOURCE_DIR}/data)   # cmake --install
 The tools are in `<SDK>/tools` (`playtest.py`, `pack_assets.py`, `golden.py`). Both sample games
 use the SDK when `CMAKE_PREFIX_PATH` points at one and build the engine from source otherwise.
 
+**Add-ons in the SDK.** The release archives are built with `-DBRATY_ADDONS=all`, so the package
+also defines `braty::net`, `braty::tls`, `braty::http` and `braty::websocket`. Link the one you
+use; its dependencies (the add-ons under it, SDL3_net, Mbed TLS, and system libraries such as
+`ws2_32`, `iphlpapi` and `bcrypt` on Windows) come with it:
+
+```cmake
+target_link_libraries(my_game PRIVATE braty::braty braty::websocket)   # + http, tls, net, SDL3_net, Mbed TLS
+```
+
+and call `br_websocket_register(e)` in init. A game that links only `braty::braty` has no add-on
+library on its link line (the release workflow checks Crate Rush's). In the SDK: the add-on
+libraries (`lib/libbraty_<name>.a` or `braty_<name>.lib`), SDL3_net and Mbed TLS (`mbedtls`,
+`mbedx509`, `mbedcrypto`, `everest`, `p256m`) with their CMake packages in `lib/`, the headers in
+`include/braty/`, each add-on's guide in `addons/<name>/README.md`, and the licences of SDL3_net,
+Mbed TLS, picohttpparser, wslay and the CA bundle in `licenses/<library>/`. `BRATY_SDK_ADDONS`
+lists the add-ons of the SDK you found. `tests/sdk_consumer/` is a small project that builds the
+`http_get` and `websocket_echo` examples against an installed SDK only.
+
+Building an SDK yourself: `-DBRATY_INSTALL=ON -DBRATY_ADDONS=all` (as `release.yml`), then
+`cmake --install <build> --prefix <folder>`. SDL3 and SDL3_net go into it only when they were
+fetched and built in that build: a configure that found them as installed packages (the presets'
+`.deps/sdl3`, a system SDL3_net) leaves them out, and a game then needs those prefixes on
+`CMAKE_PREFIX_PATH` too. The release workflow fetches both, so its archives are complete.
+
 - One flavour: optimised, profiler and `--playtest-stdin` compiled in. For a stripped shipping
   build, or a toolchain with no archive (consoles, Intel Macs), build from source
   (`add_subdirectory(<braty>)` and the `<preset>-release` presets).
@@ -197,4 +258,5 @@ use the SDK when `CMAKE_PREFIX_PATH` points at one and build the engine from sou
 - Linux: built on Ubuntu 22.04 (its glibc or newer).
 - Making a release: `git tag v0.2.0 && git push origin v0.2.0` (bump `project(braty VERSION ...)`
   first). `.github/workflows/release.yml` builds each archive, builds Crate Rush against it,
-  plays its round, and publishes. `gh workflow run release.yml` does the same without publishing.
+  plays its round, checks its link line has no add-on, builds `tests/sdk_consumer` against it,
+  and publishes. `gh workflow run release.yml` does the same without publishing.

@@ -20,6 +20,21 @@ Every desktop preset has a `-release` twin (`docs/BUILDING.md`, "Release builds"
 macOS with engine warnings as errors and runs the tests; **it has never run**, so none of those
 jobs is known to pass.
 
+## Add-ons
+
+The add-ons (`net`, `tls`, `http`, `websocket`; `docs/agents/addons.md`) are built and their tests
+run (loopback only) by CI on Windows with MinGW-w64 GCC and with MSVC, on Linux (Ubuntu 24.04,
+GCC) and on macOS (Apple Clang, arm64), with warnings as errors; the release workflow builds them
+into all four SDK archives (Windows MSVC and MinGW, Linux x64 on Ubuntu 22.04, macOS arm64) and
+builds programs against them. Their sources use no platform headers: sockets come from SDL3_net,
+TLS from Mbed TLS.
+
+- **Emscripten: not supported.** SDL3_net builds only a stub there (a browser has no sockets);
+  a web build would need the browser's `fetch` / `WebSocket`, which no add-on wraps.
+- **iOS and Android:** never built with add-ons (like the rest of those presets: configured,
+  untested). SDL3_net and Mbed TLS support both.
+- Consoles: SDL3_net needs the platform's socket layer; not tried.
+
 ## Common requirements
 
 CMake >= 3.24, Ninja (or Xcode for iOS), a C11 compiler, SDL 3.4. SDL is found with

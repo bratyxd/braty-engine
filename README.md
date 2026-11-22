@@ -54,7 +54,12 @@ never run. Details: `docs/PLATFORMS.md`. What is not there yet: "Not implemented
 | Audio | wav / ogg, streaming, buses, sound sprites | audio | Done |
 | Play-testing | scripts, interactive stdin, record / replay, `expect` / `wait_until`, state queries, `profile` | playtest | Done |
 | Profiler | CPU scopes, GPU estimate, counters, bottleneck verdict, F2 panel, HUD, Chrome trace | profiler | Done |
-| Tests | 42 test programs, headless runs of every example, play-test scripts, pack round trip, 29 golden images (`docs/TESTING.md`) | tests, tools | Done |
+| Add-on system | optional libraries in `addons/`, built only when `BRATY_ADDONS` names them; dependency resolver (cycle / unknown-name errors), `braty_addon()`, core registry `br_addon_add` / `br_addon_get`; in the SDK as `braty::<name>` (`docs/agents/addons.md`) | addons | Done (0.2.0) |
+| Add-on `net` | TCP client and server, UDP, address resolution on SDL3_net (`addons/net/README.md`) | net | Done (0.2.0) |
+| Add-on `tls` | byte streams, plain or TLS 1.2 / 1.3 with certificate-chain and host-name verification and SNI (Mbed TLS 3.6, Mozilla roots); random, SHA-1, base64 (`addons/tls/README.md`) | tls | Done (0.2.0) |
+| Add-on `http` | HTTP/1.1 client: any method, headers, body, chunked, redirects, real-time timeouts, response limits, progress (`addons/http/README.md`) | http | Done (0.2.0) |
+| Add-on `websocket` | RFC 6455 client: text / binary messages, subprotocols, keep-alive pings, close codes, every disconnect reported by polling (`addons/websocket/README.md`) | websocket | Done (0.2.0) |
+| Tests | 43 test programs, headless runs of every example, play-test scripts, pack round trip, the add-on resolver, 29 golden images: 81 CTest entries; with `-DBRATY_ADDONS=all` 6 add-on tests more (loopback only): 87 (`docs/TESTING.md`) | tests, tools | Done |
 | Platforms | presets for Linux, macOS, iOS, Android, MSVC; a `-release` preset for each | - | Configured, untested (only `windows-gcc` / `windows-gcc-release` built) |
 
 ## Quick start
@@ -238,6 +243,11 @@ SVG file import beyond path data, GPU compute culling.
 - **Windows subsystem:** executables are console programs (a console window opens next to the
   game; add `WIN32_EXECUTABLE` to your target, `docs/BUILDING.md`).
 - **Aspect-ratio goldens:** one 16:9 golden per case; nothing checks 21:9 or 9:16 automatically.
+- **Add-ons (networking):** keep-alive connections (`http` opens one connection per request),
+  gzip / deflate, HTTP/2 and HTTP/3, proxies, cookies (no cookie jar), streaming a download to
+  disk, permessage-deflate and other WebSocket extensions, a WebSocket server, TLS session
+  resumption and client certificates, connect timeouts in `net` / `tls` (`http` and `websocket`
+  have their own), Emscripten (SDL3_net does not support it). Each add-on's README lists the rest.
 
 ## Limits
 
@@ -280,6 +290,20 @@ SVG file import beyond path data, GPU compute culling.
   box with the last error (never in `--headless`, `--frames`, `--deterministic` or play-test
   runs; no test sees the dialog). Release builds mirror the log into `log.txt` in user storage,
   written at shutdown and on a failed start (first 1 MB), so a crash loses it.
+- **Add-ons** (each over-limit case fails the call or the connection with a logged reason):
+  - `net`: `BR_NET_MAX_SOCKETS` 64 TCP sockets (connecting, open, lingering), `BR_NET_MAX_SERVERS`
+    8, `BR_NET_MAX_UDP` 8, `BR_NET_MAX_ADDRESSES` 32 address handles, `BR_NET_MAX_DATAGRAM` 64 KB,
+    `BR_NET_CLOSE_LINGER` 5 s of sending after close.
+  - `tls`: `BR_TLS_MAX_STREAMS` 32, `BR_TLS_MAX_HOST` 255-byte host names; TLS 1.2 minimum.
+  - `http`: `BR_HTTP_MAX_REQUESTS` 16 in flight, `BR_HTTP_MAX_HEADER_BYTES` 64 KB response header
+    block, `BR_HTTP_MAX_HEADERS` 128 lines, `BR_HTTP_DEFAULT_MAX_BODY` 16 MB (per request:
+    `max_body`), `BR_HTTP_DEFAULT_TIMEOUT` 30 s for the whole request (per request: `timeout`),
+    `BR_HTTP_MAX_REDIRECTS` 5, `BR_HTTP_MAX_METHOD` 31 bytes; URLs: host 255, path 2047 bytes.
+  - `websocket`: `BR_WEBSOCKET_MAX` 8 sockets, `BR_WEBSOCKET_DEFAULT_MAX_MESSAGE` 16 MB (per
+    socket: `br_websocket_set_max_message`), `BR_WEBSOCKET_MAX_UNREAD` 64 MB received and unread,
+    `BR_WEBSOCKET_MAX_UNSENT` 16 MB waiting to go out, `BR_WEBSOCKET_DEFAULT_PING_INTERVAL` 30 s,
+    `BR_WEBSOCKET_HANDSHAKE_TIMEOUT` 30 s, `BR_WEBSOCKET_CLOSE_TIMEOUT` 5 s; close reasons 123 bytes.
+  - The `*_UPDATE_PRIORITY` constants are system priorities, not limits.
 - Open API rough edges and their proposed fixes: `docs/API_REVIEW.md`.
 
 ## Deliberate shortcuts (`ponytail:` comments)

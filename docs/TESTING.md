@@ -29,6 +29,7 @@ ctest --preset windows-gcc -LE golden   # without the golden images (no windows 
 ctest --preset windows-gcc -L golden    # only the golden images
 ctest --preset windows-gcc -L playtest  # only the play-test scripts
 ctest --preset windows-gcc -L headless  # only the examples run with --headless --frames 5
+ctest --preset windows-gcc -L addons    # only the add-on tests (configure with -DBRATY_ADDONS=all)
 ```
 
 | Kind | Where | Needs |
@@ -40,9 +41,31 @@ ctest --preset windows-gcc -L headless  # only the examples run with --headless 
 | Tools | `test_playtest_tool` (`tools/playtest.py`'s short-command parser and UTF-8 pipes) | Python 3 |
 | Getting-started guide | `python tools/check_getting_started.py` (by hand, not in CTest: builds 16 programs, installs step 13 with `cmake --install` and runs the installed copy, runs step 14's play-test) | a GPU for the screenshots |
 | Golden images | `tools/golden.py` + `tests/golden/*.png`, test `golden`, label `golden` | a GPU; reported **skipped** without one |
+| Add-on resolver | `addon_resolve_ok`, `_all`, `_cycle`, `_unknown` (`tests/addon_resolve.cmake` against `tests/addon_fixtures/`) and `test_addon` (the core registry); they run with add-ons off | CMake |
+| Add-ons | `addons/<name>/tests/test_*.c`, one CTest each, label `addons`; only in a build configured with `BRATY_ADDONS` (CI: `all`) | nothing: loopback (127.0.0.1) only, no internet |
 
 **Rule (AGENTS.md):** every behaviour change ships with a test that fails without it. Logic gets
 a unit test; anything visible gets a golden image.
+
+## Add-on tests
+
+Built only when the add-on is (`-DBRATY_ADDONS=all` locally to get all six); CI configures every
+job with `all`, and its Linux job also builds the core with `BRATY_ADDONS` empty and fails if any
+add-on target or library appears there. With add-ons off CTest has 81 entries, with `all` 87.
+
+- **No internet.** Every test talks to a server inside the test process on 127.0.0.1: the
+  `net` tests to `br_net` servers, `tls` / `http` / `websocket` to the loopback TLS server
+  `addons/tls/tests/tls_test_server.h` (certificates in `tests/data/tls/`) or to canned-response
+  servers written in the test. Parsers and codecs (`test_http_parse`, `test_websocket_frame`)
+  open no socket at all. The examples (`http_get`, `websocket_echo`) need the internet, so they
+  are built but never run by CTest or CI.
+- **A block of fixed ports per add-on**, so tests can run in parallel: `net` 47801-47804,
+  `tls` 47811-47816, `http` 47821-47823, `websocket` 47831-47833. A new add-on takes the next
+  free block of ten (47841...).
+- Timeouts in these tests are real time and short (0.2 s for the HTTP timeout case); each test
+  has a CTest timeout of 120 s.
+- The SDK side is checked by the release workflow: `tests/sdk_consumer/` builds both examples
+  and `addons_registered` (runs offline) against the installed SDK.
 
 ## Unit tests
 
