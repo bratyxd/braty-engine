@@ -1,5 +1,11 @@
 # http - HTTP/1.1 client (add-on)
 
+An HTTP/1.1 client for `http://` and `https://`: GET, POST and any other method, headers, a
+body, redirects, timeouts and limits, in the engine's handle-and-poll style. Depends on `tls`
+(and through it `net`). The status line, the headers and chunked bodies are parsed by
+**picohttpparser** (vendored in `addons/http/third_party/picohttpparser/`, MIT); URLs, the
+request, body framing, limits, redirects and timeouts are ours.
+
 Header: `addons/http/include/braty/br_http.h`. Sources: `addons/http/src/br_http.c` (requests,
 redirects, timeouts), `addons/http/src/br_http_parse.c` (URLs, the request writer, the response
 parser), `addons/http/src/br_http_internal.h` (the pure parts, for the parse test and
@@ -7,33 +13,45 @@ parser), `addons/http/src/br_http_internal.h` (the pure parts, for the parse tes
 `addons/http/tests/test_http.c` (loopback, ports 47821..47823). Example:
 `addons/http/examples/http_get.c` (`http_get <url> [max_body]`, built, not run by CTest).
 Protocol audit against curl, llhttp and picohttpparser: `docs/ADDONS_PROTOCOL_AUDIT.md`.
+The add-on system: `docs/agents/addons.md`.
 
-An add-on on top of `tls`: built when `BRATY_ADDONS` names it (or `websocket`). Link
-`braty::http` (`braty::tls`, `braty::net`, Mbed TLS and SDL3_net come with it), call
-`br_http_register(e)` in init (it registers `tls` and `net`). The status line, the headers and
-chunked bodies are parsed by picohttpparser (vendored in `addons/http/third_party/picohttpparser/`,
-MIT); URLs, the request, body framing, limits, redirects and timeouts are ours.
+## Enable it
 
-## Functions you actually need
+- **Engine as a subdirectory:** `set(BRATY_ADDONS http)` before `add_subdirectory(<braty>)` (or
+  `-DBRATY_ADDONS=http`; `tls` and `net` are built with it), then
+  `target_link_libraries(game PRIVATE braty::braty braty::http)`.
+- **Prebuilt SDK:** `find_package(braty CONFIG REQUIRED)`, then
+  `target_link_libraries(game PRIVATE braty::braty braty::http)`.
+
+`braty::tls`, `braty::net`, Mbed TLS and SDL3_net come with it. In init: `br_http_register(e)`
+(idempotent; it registers `tls` and `net`).
+
+## Functions
 
 | Function | What for |
 |---|---|
-| `br_http_register(e)` | Once in init. Idempotent; registers `tls` and `net`. |
-| `br_http_get(e, url)` | A GET with the defaults. Returns at once in PENDING. |
-| `br_http_send(e, &desc)` | Any method, headers, body, `timeout`, `max_body`. Copies everything. |
-| `br_http_request_state(e, r)` | PENDING -> DONE (a complete response, any status) or FAILED. NONE for zero / stale / released handles. |
-| `br_http_status(e, r)` | 200, 404...; 0 until DONE. |
-| `br_http_header(e, r, name)` | Case-insensitive; the first when repeated; NULL when absent. |
-| `br_http_header_count(e, r)`, `br_http_header_get_at(e, r, i, &name, &value)` | Every header line in order, repeated names (each `Set-Cookie`) included. |
-| `br_http_body(e, r, &size)` | NUL-terminated body; valid until release. |
-| `br_http_progress(e, r)` | Body bytes / Content-Length (0 when unknown, 1 when DONE): a download bar. |
-| `br_http_error(e, r)` | Why it FAILED ("timed out after 30.0 s", "bad response: body of 100 bytes is over the limit of 10", the tls reason...). |
-| `br_http_release(e, r)` | Always, when done with it: frees the response; cancels a pending request. |
-| `br_http_url_parse(url, &out)` | Splits `http://`, `https://`, `ws://`, `wss://` URLs. |
+| `bool br_http_register(e)` | Once in init. Idempotent; registers `tls` and `net`; false (logged) when tls cannot start. |
+| `br_http_request br_http_get(e, url)` | A GET with the defaults. Returns at once in PENDING. |
+| `br_http_request br_http_send(e, &desc)` | Any method, headers, body, `timeout`, `max_body` (`br_http_desc`). Copies everything. Zero handle (logged) when not registered, full, or a bad URL / method / header. |
+| `br_http_state br_http_request_state(e, r)` | PENDING -> DONE (a complete response, any status) or FAILED. NONE for zero / stale / released handles. |
+| `int br_http_status(e, r)` | 200, 404...; 0 until DONE. |
+| `const char *br_http_header(e, r, name)` | Case-insensitive; the first when repeated; NULL when absent or not DONE. |
+| `uint32_t br_http_header_count(e, r)` | Header lines of the final response (repeated names count each time); 0 until DONE. |
+| `bool br_http_header_get_at(e, r, i, &name, &value)` | Line `i` in the order received (every `Set-Cookie`); false out of range or not DONE. |
+| `const void *br_http_body(e, r, &size)` | NUL-terminated body (the NUL not in size); valid until release; NULL until DONE. |
+| `float br_http_progress(e, r)` | Body bytes / Content-Length (0 when unknown, 1 when DONE): a download bar. |
+| `const char *br_http_error(e, r)` | Why it FAILED ("timed out after 30.0 s", "bad response: body of 100 bytes is over the limit of 10", the tls reason...). |
+| `void br_http_release(e, r)` | Always, when done with it: frees the response; cancels a pending request. |
+| `bool br_http_url_parse(url, &out)` | Splits `http://`, `https://`, `ws://`, `wss://` URLs into `br_http_url` (secure, host, port, path). |
 
 ## Snippet
 
 ```c
+typedef struct game {
+    br_http_request scores;       /* zero = none */
+    br_http_request submit;
+} game;
+
 static void scores_system(br_engine *e, float dt, void *user)   /* BR_PHASE_UPDATE */
 {
     game *g = user;
@@ -60,7 +78,8 @@ static void scores_system(br_engine *e, float dt, void *user)   /* BR_PHASE_UPDA
 
 /* init */
 br_http_register(e);
-g->scores = br_http_get(e, "https://example.com/scores.json");
+br_system_add(e, "game.scores", BR_PHASE_UPDATE, 0, scores_system, g);
+g->scores = br_http_get(e, "https://example.com/scores.json");    /* e.g. when the screen opens */
 
 /* a POST */
 br_http_desc desc = { 0 };
@@ -93,6 +112,9 @@ g->submit = br_http_send(e, &desc);
   (as curl does; they stay dropped for the rest of the chain). A 3xx without `Location` is the response.
 - **Timeout** (`desc.timeout`, default 30 s) is real time (`SDL_GetTicksNS`) and covers the whole
   request: DNS, connect, TLS handshake, every redirect, the body. A paused game still times out.
+- **Every request has a failure path the player sees** (offline, server down, timeout): show it
+  and offer a retry; never wait for DONE without handling FAILED.
+- Zero and stale handles are safe everywhere (NONE, 0, NULL, "").
 
 ## What is checked (the response is untrusted)
 
@@ -112,25 +134,6 @@ g->submit = br_http_send(e, &desc);
 | The connection closes before the response is complete (headers, Content-Length, chunked) | FAILED "connection closed ..."; never DONE |
 | No length at all | The body runs until the close (RFC 9112 section 6.3 item 8); over TLS the close must be close_notify, else FAILED (truncation) |
 
-## Gotchas
-
-- **Body without a length vs. truncation:** a response with neither Content-Length nor chunked
-  ends at the close. Over `https://` it is DONE only when the server sent TLS close_notify; a
-  bare TCP end FAILS it ("... without TLS close_notify ..."), as curl does, because it may be
-  cut short. Over `http://` the TCP close is all there is: such a body is only as safe as that.
-- **Repeated headers:** `br_http_header` returns the first line of a name; walk
-  `br_http_header_get_at` for all of them (several `Set-Cookie`). No cookies are kept.
-- **Not implemented** (`// ponytail:` in the plan): keep-alive (one connection per request),
-  gzip (`Accept-Encoding: identity` is sent), proxies, cookies, HTTP/2, `Expect: 100-continue`
-  waits (a 100 is skipped if a server sends one), user info in URLs (`user:pw@host` fails: send an
-  `Authorization` header). Relative redirects keep `.` / `..` segments as sent.
-- **URLs are not escaped for you:** a space or a control character in the path fails; percent-
-  encode it. The fragment (`#...`) is dropped. A redirect `Location` with spaces or raw UTF-8 is
-  percent-encoded for you (as curl and browsers do).
-- **Memory:** `br_http_send` copies the headers and body; the response buffer grows to the
-  header block plus the body (reserved once when Content-Length is known) and is freed at
-  release. A steady download allocates only when that buffer grows.
-
 ## Limits
 
 | Constant | Value | What |
@@ -142,10 +145,35 @@ g->submit = br_http_send(e, &desc);
 | `BR_HTTP_DEFAULT_TIMEOUT` | 30 s | whole request when `desc.timeout` is 0 |
 | `BR_HTTP_MAX_REDIRECTS` | 5 | redirects followed |
 | `BR_HTTP_MAX_METHOD` | 31 | method name bytes |
+| `BR_HTTP_UPDATE_PRIORITY` | `BR_TLS_UPDATE_PRIORITY + 1` | priority of `http.update` in the INPUT phase |
 | `br_http_url` | host 255, path 2047 | URL parts (bytes) |
 
 Each request also takes a `tls` stream (`BR_TLS_MAX_STREAMS` 32) and a `net` socket while it is
 pending.
+
+## Gotchas
+
+- **Body without a length vs. truncation:** a response with neither Content-Length nor chunked
+  ends at the close. Over `https://` it is DONE only when the server sent TLS close_notify; a
+  bare TCP end FAILS it ("... without TLS close_notify ..."), as curl does, because it may be
+  cut short. Over `http://` the TCP close is all there is: such a body is only as safe as that.
+- **Repeated headers:** `br_http_header` returns the first line of a name; walk
+  `br_http_header_get_at` for all of them (several `Set-Cookie`). No cookies are kept.
+- Relative redirects keep `.` / `..` segments as sent.
+- **URLs are not escaped for you:** a space or a control character in the path fails; percent-
+  encode it. The fragment (`#...`) is dropped. A redirect `Location` with spaces or raw UTF-8 is
+  percent-encoded for you (as curl and browsers do).
+- **Memory:** `br_http_send` copies the headers and body; the response buffer grows to the
+  header block plus the body (reserved once when Content-Length is known) and is freed at
+  release. A steady download allocates only when that buffer grows.
+
+## Not implemented
+
+`// ponytail:` in the plan: keep-alive (one connection per request, closed after the response),
+gzip / deflate (`Accept-Encoding: identity` is sent), proxies, cookies (no cookie jar; read
+`Set-Cookie` yourself), HTTP/2 and HTTP/3, `Expect: 100-continue` waits (a 100 is skipped if a
+server sends one), user info in URLs (`user:pw@host` fails: send an `Authorization` header),
+streaming a body to disk (the whole body is held in memory up to `max_body`), Emscripten.
 
 ## For `websocket`: the handshake through `br_http_internal.h`
 
